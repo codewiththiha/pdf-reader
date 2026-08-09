@@ -1,0 +1,16 @@
+{
+  "name": "pdf-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:css": "tailwindcss -i styles/input.css -o styles.css --minify",
+    "watch:css": "tailwindcss -i styles/input.css -o styles.css --watch",
+    "vendor:pdfjs": "node scripts/vendor-pdfjs.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "pdfjs-dist": "6.2.108",
+    "tailwindcss": "^4.3.3"
+  }
+}
