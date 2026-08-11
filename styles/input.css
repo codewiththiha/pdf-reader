@@ -195,7 +195,23 @@
    opacity transition starts drives the transition's before-change value to a
    random mid-pulse opacity, and on WebKit can snap the cover off with no
    transition at all. A background-color pulse reads against the same-family
-   backdrop and leaves opacity untouched, so the fade always starts from 1. */
+   backdrop and leaves opacity untouched, so the fade always starts from 1.
+
+   The pulse DARKENS (color-mix toward black), never brightens. A brightening
+   pulse is the root cause of the residual sepia/green brightness flicker on
+   scroll: in those themes --color-line is darker than --color-surface, so the
+   old 50% keyframe `color-mix(... line 28%, surface 72%)` was LIGHTER than the
+   base --thumb-bg. During the 300ms opacity fade-out, that lighter pulse tint
+   was partially visible over the multiply-blended canvas result (which is
+   DARKER — multiply darkens a white page toward the backdrop tint), so the
+   visible color spiked brighter mid-fade before settling to the canvas result
+   — the "high brightness then fall back to normal" flicker the user observed.
+   Darkening the pulse makes the crossfade interpolate between a darker pulse
+   tint and the darker canvas result (both on the same dark side of base), so
+   there is no brightness peak in any theme. The shimmer stays readable (~25%
+   toward black is a 50+ RGB-point delta in light/sepia/green; ~9 points in
+   dark/night/dim — comparable to or larger than the old amplitude, which was
+   imperceptible in light and dark). */
 .thumb-skeleton {
   background: var(--thumb-bg);
   border-radius: inherit;
@@ -204,7 +220,7 @@
 
 @keyframes thumb-skeleton-pulse {
   50% {
-    background-color: color-mix(in srgb, var(--color-line) 28%, var(--color-surface));
+    background-color: color-mix(in srgb, var(--thumb-bg) 75%, black);
   }
 }
 
