@@ -336,3 +336,47 @@ Anything that adds a further stacked layer inside `.pdf-page` must keep this
 invariant. Regression guard: **section K of `verify-zoom.mjs`** runs a zoom in
 light/sepia/green/dim and asserts the max number of visible canvases never
 exceeds 1 and settles at exactly 1.
+
+### Appendix entry 6 — outline indent is capped; thumbnail pulse freezes at resolve
+
+Two independent fixes, both "the state at the moment of a transition".
+
+**Outline rows must always have room for text.** The indent was an unbounded
+`8 + depth * 14` px against a fixed 288px (`w-72`) sidebar, so from about depth
+12 the padding consumed the entire row and the `truncate` class
+(`overflow:hidden` + `text-overflow:ellipsis`) collapsed the label to a bare
+"...". Real-world TOCs nest 5-10 levels (part > chapter > section > ...), so
+deep entries rendered as dots carrying no information. `indent_px(depth)` in
+`outline_panel.rs` now uses a 12px step capped at `INDENT_MAX = 120`, keeping
+>= 150px for every label at any depth, and each row carries a `title` attribute
+so a genuinely long name is still recoverable on hover. Unit-tested for depths
+0..64 against the panel geometry; depth beyond the cap is still conveyed by
+tree order.
+
+**A thumbnail's skeleton tint must not move while the cover fades.** The pulse
+(`thumb-skeleton-pulse`, 1.6s) swings a long way — measured in sepia, 54
+luminance units, min 159.7 / max 213.7 — and is deliberately left running
+through the 300ms fade-out, because REMOVING the class mid-fade cancels the
+animation and snaps the tint back to base in one frame. But a render can resolve
+at ANY phase of that cycle, so every freshly rendered cell began its reveal from
+a different brightness and kept oscillating while fading; cells in the same row
+resolve a few ms apart, so they shimmered against one another. That is the
+residual flicker on newly rendered thumbnails during virtual scrolling (the
+cached remount path was already clean and is unchanged).
+
+```css
+.thumb-skeleton-settling { animation-play-state: paused; }
+```
+
+added at resolve, and the EXISTING `PULSE_STOP_MS` timer now removes
+`thumb-skeleton-loading` **and** `thumb-skeleton-settling` together once the
+cover is fully transparent. Pausing rather than removing is the whole point: the
+computed background stays exactly where the animation left it, so nothing snaps,
+and the reveal becomes a plain monotonic fade from a stable colour. Measured
+after the fix: tint movement during a reveal is **0** across 24 cells (was ~54).
+
+Regression guards in `verify-ui.mjs`: outline rows all keep >= 100px of text
+width, the 6-level-deep entry renders its real title, every row has a tooltip;
+and thumbnails reveal with a worst tint swing <= 1 with zero cells left covered
+or stuck paused. Fixture: `public/samples/Outlined Book.pdf` (12pp, 14 outline
+entries — UTF-16BE, accented, CJK, plain-ASCII titles and a 6-level branch).

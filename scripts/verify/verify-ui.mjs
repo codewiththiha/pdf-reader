@@ -350,6 +350,137 @@ if (!host) {
 check(errors.length === 0, "no console/page errors during the run",
   errors.slice(0, 3).join(" | ") || "clean");
 
+// ---------------------------------------------------------------------------
+// Outline panel — deep entries must render TEXT, not a bare ellipsis.
+//
+// The indent was an unbounded `8 + depth * 14` against a fixed 288px (`w-72`)
+// sidebar, so from ~depth 12 the padding consumed the whole row and `truncate`
+// collapsed the title to "...". Real TOCs nest 5-10 levels, so deep entries
+// showed as dots. `Outlined Book.pdf` carries a 6-level branch for this.
+{
+  await openViaApp("/samples/Outlined Book.pdf");
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")]
+      .find((x) => /outline/i.test(x.title || "") || x.textContent.trim() === "Outline");
+    if (b) b.click();
+  });
+  await page.waitForTimeout(600);
+
+  const rows = await page.evaluate(() => {
+    const out = [];
+    for (const b of document.querySelectorAll("aside button")) {
+      if (!b.className.includes("truncate")) continue;
+      const cs = getComputedStyle(b);
+      const padL = parseFloat(cs.paddingLeft) || 0;
+      const padR = parseFloat(cs.paddingRight) || 0;
+      out.push({
+        text: b.textContent.trim(),
+        // Space actually available to paint the label.
+        textW: Math.round(b.getBoundingClientRect().width - padL - padR),
+        title: b.getAttribute("title") || "",
+      });
+    }
+    return out;
+  });
+
+  check(rows.length >= 6, "outline renders its entries", `${rows.length} rows`);
+  // Every row must have real room for text, not just an ellipsis.
+  const starved = rows.filter((r) => r.textW < 100);
+  check(starved.length === 0, "no outline row is squeezed to the ellipsis",
+    starved.length ? `${starved.length} rows under 100px (worst ${Math.min(...starved.map((s) => s.textW))}px)` : "all rows >= 100px");
+  // And the deepest entry must still carry its real text.
+  const deep = rows.find((r) => r.text.startsWith("7.1.1.1.1.1"));
+  check(!!deep, "the 6-level-deep entry renders its title as text",
+    deep ? `"${deep.text}" with ${deep.textW}px` : "not found");
+  // Truncated titles stay recoverable.
+  check(rows.every((r) => r.title.length > 0), "every outline row exposes its full title as a tooltip");
+}
+
+// ---------------------------------------------------------------------------
+// Thumbnails — a freshly rendered cell must reveal at a CONSTANT tint.
+//
+// The skeleton pulse swings ~54 luminance units over a 1.6s cycle and used to
+// keep running through the 300ms fade-out. A render can resolve at any phase,
+// so each new cell started its reveal from a different brightness and kept
+// oscillating while fading; row-mates resolve a few ms apart and shimmered
+// against each other. `.thumb-skeleton-settling` pauses the animation at
+// resolve (pausing, not removing, so nothing snaps) and the existing timer
+// drops both classes once the cover is invisible.
+{
+  await openViaApp(JUNK);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")]
+      .find((x) => /thumb/i.test(x.title || "") || x.textContent.trim() === "Thumbs");
+    if (b) b.click();
+  });
+  await page.waitForTimeout(1200);
+
+  const r = await page.evaluate(async () => {
+    const sc = [...document.querySelectorAll("aside div")]
+      .filter((d) => d.scrollHeight > d.clientHeight + 50)[0];
+    if (!sc) return null;
+    // Resolve any colour (oklab/color(srgb ...)) to real rgb via a canvas.
+    const c1 = document.createElement("canvas");
+    c1.width = c1.height = 1;
+    const ctx = c1.getContext("2d", { willReadFrequently: true });
+    const lum = (css) => {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = css;
+      ctx.fillRect(0, 0, 1, 1);
+      const q = ctx.getImageData(0, 0, 1, 1).data;
+      return 0.2126 * q[0] + 0.7152 * q[1] + 0.0722 * q[2];
+    };
+    const track = new Map();
+    let stop = false;
+    const obs = () => {
+      for (const card of sc.querySelectorAll(".thumb-card")) {
+        const cv = card.querySelector("canvas");
+        const cover = card.querySelector(".thumb-skeleton");
+        if (!cv || !cover) continue;
+        const cs = getComputedStyle(cover);
+        const op = +cs.opacity;
+        if (op >= 0.999 || op <= 0.001) continue;   // sample only mid-reveal
+        if (!track.has(cv.id)) track.set(cv.id, []);
+        track.get(cv.id).push(lum(cs.backgroundColor));
+      }
+      if (!stop) requestAnimationFrame(obs);
+    };
+    requestAnimationFrame(obs);
+    sc.scrollTop = sc.scrollHeight * 0.5;
+    await new Promise((r) => setTimeout(r, 2000));
+    sc.scrollTop = sc.scrollHeight * 0.85;
+    await new Promise((r) => setTimeout(r, 2000));
+    stop = true;
+
+    let worst = 0, cells = 0;
+    for (const [, Ls] of track) {
+      if (Ls.length < 3) continue;
+      cells++;
+      worst = Math.max(worst, Math.max(...Ls) - Math.min(...Ls));
+    }
+    // Everything must settle: no cover left visible, no class left behind.
+    await new Promise((r) => setTimeout(r, 900));
+    let stuck = 0;
+    for (const card of sc.querySelectorAll(".thumb-card")) {
+      const cover = card.querySelector(".thumb-skeleton");
+      if (!cover) continue;
+      if (+getComputedStyle(cover).opacity > 0.01
+        || cover.className.includes("thumb-skeleton-settling")) stuck++;
+    }
+    return { worst: +worst.toFixed(1), cells, stuck };
+  });
+
+  check(r !== null && r.cells >= 3, "observed several thumbnails revealing",
+    r ? `${r.cells} cells` : "no scroller");
+  // 1 unit of slack for sub-pixel colour rounding; it was ~54 before the fix.
+  check(r !== null && r.worst <= 1,
+    "a thumbnail's tint stays constant through its reveal (no pulse shimmer)",
+    r ? `worst swing ${r.worst}` : "n/a");
+  check(r !== null && r.stuck === 0,
+    "no thumbnail is left covered or stuck paused",
+    r ? `${r.stuck} stuck` : "n/a");
+}
+
 await browser.close();
 
 const failed = results.filter((r) => !r.ok);
