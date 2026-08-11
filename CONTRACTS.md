@@ -221,3 +221,47 @@ paints the cached thumbnail of `page` into a full-size page canvas as a blurry
 placeholder, so a page scrolled into view isn't a flash of white. Best-effort:
 returns false when nothing is cached. The pre-existing internal helper of the
 same name is now `paintCached`.
+
+### Appendix entry 3 — page counter metric, and the sidebar slide
+
+**The page counter reports the DOMINANT page, not the top-edge page.**
+`core::layout::dominant_page(scroll_top, viewport_h, heights, gap)` returns the
+page occupying the most of the viewport, ties going to the lower page number.
+`page_from_scroll` (top-edge) is still used for scroll targeting, where "which
+page starts here" is the right question.
+
+Why: zooming out shrinks every page, so more of the PREVIOUS page slides into
+the top of the viewport. With a top-edge counter the reported page walked
+1 -> 2 -> 3 -> 4 while zooming out and back down while zooming in, even though
+the view was correctly anchored and the reader never moved. The view was right;
+the counter was measuring the wrong thing. Area-of-viewport degrades correctly
+at both extremes: zoomed in one page fills the viewport and wins outright;
+zoomed out the page you see most of wins; and after a jump aligning page P's
+top with the viewport top, P still wins, so jumps report where they landed.
+
+`effects::page_tracking` effects 2 and 3 MUST use the same metric, or they
+disagree about whether a jump has arrived and fight each other.
+
+**`.pdf-page` must keep `flex-shrink: 0`.** The host is a flex child carrying an
+explicit inline width/height from `PageCanvas`. With the default
+`flex-shrink: 1`, any moment the host is wider than its container — mid-zoom, or
+mid-sidebar-slide — the browser shrinks the width while the inline height stays,
+and the page visibly squishes (a letter page measured 0.77 -> 0.58 aspect)
+before snapping back at the end. The inline size is the source of truth for page
+geometry; layout must never renegotiate it.
+
+**The sidebar slide is a continuous fit animation, not a freeze.** While
+`FitMode::Width`/`Page` is active, `fit_effect` follows the `<aside>`'s 300ms
+width animation in LAYOUT every frame: each `container_size` burst writes
+`display_scale` and re-anchors the scroll with `zoom_animating` held true, and a
+120ms debounce commits ONE crisp render at the end. Freezing the scale instead
+(the earlier approach) is what caused the squish-then-snap. A real window resize
+takes the same path; `window.innerWidth` still distinguishes the two, but now
+only to decide whether the fit target should be recomputed at all.
+
+**`PageCanvas`'s render effect returns early whenever `zoom_animating` is true**
+— including for pages with NO geometry yet. Such pages mount constantly during a
+slide (a shrinking scale fits more pages on screen); rendering them at the
+in-flight scale is work that is obsolete before it resolves. Measured on one
+sidebar toggle: 11 renders across 2 scales became 8 renders at 1 scale. The
+`blitThumb` underlay covers the gap until the commit pass.
