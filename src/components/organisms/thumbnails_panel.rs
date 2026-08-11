@@ -21,9 +21,11 @@
 //! Each cell is its own `ThumbCell`, which registers + renders its canvas on
 //! mount and unregisters it in `on_cleanup`; `<For>` evicts out-of-window cells
 //! automatically, so canvases are created lazily and released as you scroll.
-//! While `render_page` is in flight a themed skeleton cover
-//! (`thumb-skeleton-loading`, a background-tint pulse) hides the still-empty
-//! canvas; once resolved, the cover fades OUT. The
+//! A static `thumb-skeleton-loading` (a background-tint pulse) covers the
+//! still-empty canvas while `render_page` is in flight and keeps pulsing
+//! through the fade-out, so resolve never cancels a running animation; once
+//! the fade has run its full duration the cover is invisible and a short
+//! timer removes the pulse. The
 //! canvas itself stays fully opaque and blended from its first painted frame,
 //! so the crossfade interpolates between two same-family themed colors instead
 //! of between the raw un-blended canvas and the multiply result — the
@@ -39,6 +41,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::closure::Closure;
@@ -74,6 +77,14 @@ const GLIDE_DEBOUNCE_MS: u64 = 150;
 /// the panel away from the row they are browsing. A page change that lands
 /// inside the grace is NOT dropped — it is centered once the grace lapses.
 const GRACE_MS: f64 = 1500.0;
+/// Delay (ms) before the skeleton pulse is removed after a thumbnail render
+/// resolves. The cover's opacity fade runs `duration-300` (300 ms); this sits
+/// just past it so the pulse keeps running through the whole fade and the
+/// class is only dropped once the cover is fully transparent — removing it
+/// earlier would CANCEL the running `background-color` animation and snap the
+/// cover back to base mid-fade (the flicker this code eliminates). Bounded
+/// one-shot, not a forever-animation, so idle cells don't pulse indefinitely.
+const PULSE_STOP_MS: u64 = 400;
 
 /// One thumbnail cell: a fully-opaque, fully-blended `.thumb-canvas` under a
 /// themed `.thumb-skeleton` cover that fades out once the engine render
@@ -93,6 +104,12 @@ fn ThumbCell(
     bound: Arc<Mutex<Vec<u32>>>,
 ) -> impl IntoView {
     let loaded = RwSignal::new(false);
+    // Two-phase skeleton-stop state: a NodeRef onto the cover (the timer
+    // removes the pulse class from the real DOM node) and the timer handle,
+    // parked in a StoredValue so on_cleanup can cancel a pending removal if
+    // this cell unmounts mid-fade.
+    let cover_ref: NodeRef<html::Div> = NodeRef::new();
+    let pulse_timer = StoredValue::new_local(None::<TimeoutHandle>);
     // Whether this cell is the reader's current page (drives the accent ring
     // and the number-band highlight). Reads `viewer.page` so every cell
     // re-evaluates as the reader turns pages in the main viewer. The number
@@ -126,6 +143,10 @@ fn ThumbCell(
         engine::unregister_page(&cid_cleanup);
         if let Ok(mut guard) = bound_cleanup.lock() {
             guard.retain(|&p| p != page_cleanup);
+        }
+        // Cancel a pending pulse-removal so it can't fire on a detached node.
+        if let Some(h) = pulse_timer.get_value() {
+            h.clear();
         }
     });
 
@@ -182,6 +203,36 @@ fn ThumbCell(
                         }
                     }
                     loaded.set(true);
+                    // Deterministic two-phase stop: the pulse stays live
+                    // through the fade (resolve never cancels a running
+                    // animation), and ~PULSE_STOP_MS later — once the fade
+                    // has run its full duration — the cover is fully
+                    // transparent, so removing the pulse class snaps only an
+                    // invisible background. A timer (not `transitionend`) so
+                    // the removal can't be lost to event-delivery edge cases
+                    // (WebKit <13.1 fires only `webkitTransitionEnd`, a
+                    // bubbled descendant opacity transition could remove the
+                    // class mid-fade, and a throttled renderer may never
+                    // dispatch the event). The handle is parked so on_cleanup
+                    // cancels it if the cell unmounts mid-fade. If the render
+                    // errors, `loaded` stays false and the pulsing skeleton
+                    // persists as the intended fallback.
+                    if let Some(h) = set_timeout_with_handle(
+                        move || {
+                            if let Some(el) = cover_ref.get() {
+                                let _ =
+                                    el.class_list().remove_1("thumb-skeleton-loading");
+                            }
+                        },
+                        Duration::from_millis(PULSE_STOP_MS),
+                    )
+                    .ok()
+                    {
+                        if let Some(prev) = pulse_timer.get_value() {
+                            prev.clear();
+                        }
+                        pulse_timer.set_value(Some(h));
+                    }
                 }
                 Err(e) => {
                     // Cancellations are the normal eviction path (unregister
@@ -253,20 +304,40 @@ fn ThumbCell(
                 />
                 // The fade-out cover: plain themed tint (no filter, no blend),
                 // mounted after the canvas so it stacks above it. It pulses
-                // (background-tint, see .thumb-skeleton-loading) and fully
-                // covers the card while the render is in flight, then fades to
-                // transparent once `loaded` flips — interpolating between two
-                // same-family themed colors, never between the raw and the
-                // blended canvas. aria-hidden: the page number is already
-                // announced by the in-flow `.thumb-num` band (which also reads
-                // through the transparent canvas pre-resolve), so the cover's
-                // copy must not double-announce; for the current page the
-                // cover's number is also hidden visually so it can't ghost
-                // behind the z-10 accent pill.
+                // (background-tint, see .thumb-skeleton-loading) — a STATIC
+                // class, NOT gated on `loaded` — and fully covers the card
+                // while the render is in flight, then fades to transparent
+                // once `loaded` flips — interpolating between two same-family
+                // themed colors, never between the raw and the blended
+                // canvas. The pulse is deliberately NOT dropped at resolve:
+                // removing the class on the same frame the fade starts would
+                // CANCEL the running `background-color` animation mid-flight,
+                // and a cancelled CSS animation snaps its property back to
+                // the base value in one frame — the cover jumps from its
+                // mid-pulse lighter tint (the 50% keyframe) to base
+                // `--thumb-bg` just as the fade begins (the residual
+                // sepia/green brightness flicker). Left alive, the pulse
+                // continues smoothly under the fade and is simply invisible
+                // at opacity 0. Two-phase stop: the pulse stays live THROUGH
+                // the fade so the background is continuous at resolve, and
+                // `PULSE_STOP_MS` (~400ms) later — once the opacity
+                // transition has run its full duration — the cover is fully
+                // invisible, so the timer drops the class to halt the
+                // now-invisible infinite animation (a deterministic timer
+                // instead of `transitionend`, which WebKit <13.1 never fires,
+                // bubbles from descendant transitions, and throttled renderers
+                // can drop). If the render never resolves, `loaded` stays
+                // false — no fade, no timer, no removal — and the pulsing
+                // skeleton persists as the intended fallback. aria-hidden: the
+                // page number is already announced by the in-flow `.thumb-num`
+                // band (which also reads through the transparent canvas
+                // pre-resolve), so the cover's copy must not double-announce;
+                // for the current page the cover's number is also hidden
+                // visually so it can't ghost behind the z-10 accent pill.
                 <div
-                    class="thumb-skeleton absolute inset-0 flex items-center justify-center transition-opacity duration-300"
+                    node_ref=cover_ref
+                    class="thumb-skeleton thumb-skeleton-loading absolute inset-0 flex items-center justify-center transition-opacity duration-300"
                     aria-hidden="true"
-                    class=("thumb-skeleton-loading", move || !loaded.get())
                     class=("opacity-100", move || !loaded.get())
                     class=("opacity-0", move || loaded.get())
                 >
