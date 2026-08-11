@@ -192,7 +192,14 @@ pub fn zoom_system(state: AppState) {
         }
 
         // Commits the gesture: one crisp render at the final scale.
-        let commit = move |final_scale: f64| commit_scale(state, final_scale);
+        let commit = move |final_scale: f64| {
+            state.viewer.display_scale.set(final_scale);
+            state.viewer.scale.set(final_scale);
+            // Releasing `zoom_animating` BEFORE render_scale would let the
+            // canvases re-render at the stale scale for one tick. Order matters.
+            state.viewer.render_scale.set(final_scale);
+            state.viewer.zoom_animating.set(false);
+        };
 
         if !animate || prefers_reduced_motion() {
             // Instant — but still a proper anchored relayout, never a bare
@@ -236,22 +243,19 @@ pub fn zoom_system(state: AppState) {
     });
 }
 
-/// Commit a settled scale: one crisp render at `s`, animation flag cleared.
-///
-/// Ordering matters — releasing `zoom_animating` before `render_scale` would
-/// let the canvases render once at the stale scale first.
-fn commit_scale(state: AppState, s: f64) {
-    state.viewer.display_scale.set(s);
-    state.viewer.scale.set(s);
-    state.viewer.render_scale.set(s);
-    state.viewer.zoom_animating.set(false);
-}
-
 /// Must be called once from the app root (ReaderView).
 pub fn fit_effect(state: AppState) {
-    // Width of the window at the last refit, used to tell a WINDOW resize from
-    // a sidebar slide: both move `container_size`, but only the former moves
-    // `window.innerWidth`. No timers, no guessing.
+    // Width of the window at the last refit. A fit recompute is only legitimate
+    // when the WINDOW changed size; if the window is the same width and only
+    // `container_size` moved, the sidebar is sliding.
+    //
+    // That distinction is the sidebar-flash fix. `container_size` tracks the
+    // viewer content box, which the 300ms `<aside>` width animation shrinks and
+    // grows — so with FitMode::Width active, toggling the sidebar refit the
+    // document and re-rendered every page, changing the zoom % the user never
+    // asked to change. Preview doesn't do that: the page keeps its zoom and the
+    // content area just gets wider. Comparing `window.innerWidth` between runs
+    // tells the two apart with no timers and no guessing.
     let last_win_w: StoredValue<f64> = StoredValue::new(f64::NAN);
 
     Effect::new(move |_| {
@@ -269,65 +273,37 @@ pub fn fit_effect(state: AppState) {
             .and_then(|v| v.as_f64())
             .unwrap_or(f64::NAN);
         let prev_win_w = last_win_w.get_value();
-        // First run (NaN) is the document opening, which always fits.
-        let first_run = prev_win_w.is_nan();
-        let window_resized = first_run || (win_w - prev_win_w).abs() >= 0.5;
-        if window_resized {
-            last_win_w.set_value(win_w);
-        }
+        // First run (NaN) always refits — that's the document opening.
+        let window_resized = prev_win_w.is_nan() || (win_w - prev_win_w).abs() >= 0.5;
 
-        let target = fit_scale(
-            fit,
-            cw,
-            ch,
-            p.width,
-            p.height,
-            48.0,
-            state.viewer.scale.get_untracked(),
-        );
-
-        // --- the sidebar slide ------------------------------------------------
-        // The `<aside>` animates its width over 300ms, so `container_size`
-        // arrives as a burst of per-frame values. FREEZING the scale through
-        // that burst (the previous approach) keeps the page host wider than the
-        // content box it now has to fit in — and because the host is a flex
-        // child, the browser SQUISHES it: width shrinks, the inline height
-        // doesn't, and a letter page goes from a 0.77 aspect to 0.61. The page
-        // is visibly distorted, then snaps back at the end. That snap is the
-        // "flicker then instantly switch" being reported.
-        //
-        // So: follow the slide continuously in LAYOUT only. Each frame writes
-        // `display_scale` (pages CSS-stretch, aspect preserved) and re-anchors
-        // the scroll, with `zoom_animating` held true so nothing renders. The
-        // debounce below then commits ONE crisp render when the slide settles.
-        // Same rule as a zoom gesture, same machinery — a smooth ride, one
-        // render, and no distortion at any point along the way.
-        if !first_run {
-            let cur = state.viewer.display_scale.get_untracked();
-            if (target - cur).abs() >= 0.0005 {
-                state.viewer.zoom_animating.set(true);
-                relayout_to(state, target / cur);
-                state.viewer.display_scale.set(target);
-            }
-        }
-
-        // Debounce: each `container_size` change re-runs this effect and clears
-        // the previous timer, so the commit fires once the size has been stable
-        // for ~120ms — one render per slide or per resize drag, at the end.
+        // Debounce: each `container_size` change re-runs this effect, which
+        // clears the previous timer (same pattern as the toast auto-dismiss in
+        // organisms/toast.rs), so the recompute only fires once the size has
+        // settled for ~120ms. A window resize therefore costs exactly one
+        // anchored refit, at the end of the drag.
         let handle = set_timeout_with_handle(
             move || {
-                if first_run {
-                    // Opening a document: no layout to animate from.
-                    commit_scale(state, target);
+                if !window_resized {
+                    // Sidebar slide (or any other container-only change):
+                    // freeze the zoom. Deliberately does not update
+                    // `last_win_w` — the window never moved.
                     return;
                 }
+                last_win_w.set_value(win_w);
+                let s = fit_scale(
+                    fit,
+                    cw,
+                    ch,
+                    p.width,
+                    p.height,
+                    48.0,
+                    state.viewer.scale.get_untracked(),
+                );
                 let prev = state.viewer.render_scale.get_untracked();
-                if (target - prev).abs() >= 0.0005 {
-                    commit_scale(state, target);
-                } else {
-                    // Already rendered at this scale (e.g. the sidebar returned
-                    // to where it started): just release the gate.
-                    state.viewer.zoom_animating.set(false);
+                if (s - prev).abs() >= 0.0005 {
+                    // Programmatic relayout: instant, but still anchored, so a
+                    // resize doesn't scroll the reader somewhere else.
+                    request_zoom(state, s, false);
                 }
             },
             Duration::from_millis(120),

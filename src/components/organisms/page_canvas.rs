@@ -132,22 +132,12 @@ pub fn PageCanvas(
         }
         let (gw, gh, gs) = geo.get_value();
         let has_geo = gw > 0.0 && gh > 0.0 && gs > 0.0;
-        // A zoom or a sidebar slide is in flight: stay out of the way entirely.
-        //
-        // With a bitmap, rendering here would relayout mid-animation — the
-        // teleport/flicker this whole design removes. WITHOUT one (a page that
-        // just scrolled into the window, which happens constantly during a
-        // slide because the shrinking scale fits more pages on screen), the
-        // render would be at a scale that is already obsolete: it resolves,
-        // reports geometry, and is immediately superseded by the commit pass.
-        // Measured on one sidebar toggle, that was 3 of 11 renders — wasted
-        // work whose only visible effect is a page popping in at the wrong
-        // size. The thumbnail underlay below covers the gap, and the commit
-        // pass (~200ms later) renders it once, correctly.
-        if anim {
-            if !has_geo {
-                let _ = engine::blit_thumb(&cid_effect, page);
-            }
+        // A zoom is in flight and we already have a bitmap to stretch: stay out
+        // of the way. Rendering here would relayout mid-animation, which is
+        // exactly the teleport/flicker we are removing. A page with NO bitmap
+        // (freshly scrolled into view) still renders, so it doesn't sit blank
+        // for the duration of the gesture.
+        if anim && has_geo {
             return;
         }
         let page_no = page;

@@ -8,13 +8,10 @@
 //!   1. mode-flip — entering continuous mode aligns `scroll_top` to the current
 //!      page. `viewer.page` is the source of truth here, NOT the stale offset
 //!      left over from a previous continuous session.
-//!   2. scroll->page — scrolling derives the DOMINANT page (the one filling
-//!      most of the viewport) and writes `viewer.page`. This also reacts to
-//!      height changes (zoom, lazy render fills), so the counter tracks
-//!      whichever page the current offset now shows. It deliberately does NOT
-//!      use the top-edge page: zooming out slides more of the previous page
-//!      into the top of the viewport, which walked the counter (1 -> 2 -> 3...)
-//!      while the reader was in fact holding perfectly still.
+//!   2. scroll->page — scrolling derives the page at the top of the scrollport
+//!      and writes `viewer.page`. This also reacts to height changes (zoom,
+//!      lazy render fills), so the counter tracks whichever page the current
+//!      offset now shows.
 //!   3. page->scroll — an explicit page jump scrolls the `scroll_top` signal AND
 //!      the actual `#page-list` DOM to the page top when they disagree, rounded
 //!      UP so a fractional page top is crossed (an `as i32` floor would land
@@ -48,7 +45,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::core::layout::{dominant_page, page_top_css, ViewMode, PAGE_GAP};
+use crate::core::layout::{page_from_scroll, page_top_css, ViewMode, PAGE_GAP};
 use crate::core::state::AppState;
 
 /// How long a smooth jump is allowed to be in flight. The browser owns the
@@ -129,16 +126,7 @@ pub fn page_tracking(state: AppState) {
         if hs.is_empty() {
             return;
         }
-        // Read the scrollport's real height; `container_size` is tracked too so
-        // this re-runs when the viewer is resized.
-        let (_, cont_h) = state.viewer.container_size.get();
-        let vh = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
-            .map(|el| el.client_height() as f64)
-            .filter(|h| *h > 1.0)
-            .unwrap_or(cont_h);
-        let p = dominant_page(st, vh, &hs, PAGE_GAP);
+        let p = page_from_scroll(st, &hs, PAGE_GAP);
         if page.get_untracked() != p {
             suppress_a.set(true);
             page.set(p);
@@ -188,15 +176,7 @@ pub fn page_tracking(state: AppState) {
         // tops — `as i32` truncation (floor) would land short.
         let target_px = target_top.ceil();
         // Align the scroll signal (drives the visible-page window)...
-        // Compared with the SAME metric effect 2 uses, or the two would
-        // disagree about whether we have arrived and fight each other.
-        let vh_now = web_sys::window()
-            .and_then(|w| w.document())
-            .and_then(|d| d.get_element_by_id("page-list"))
-            .map(|el| el.client_height() as f64)
-            .filter(|h| *h > 1.0)
-            .unwrap_or_else(|| state.viewer.container_size.get_untracked().1);
-        if hs.is_empty() || dominant_page(scroll_top.get_untracked(), vh_now, &hs, PAGE_GAP) != p {
+        if hs.is_empty() || page_from_scroll(scroll_top.get_untracked(), &hs, PAGE_GAP) != p {
             scroll_top.set(target_px);
         }
         // ...and the real scrollport.
@@ -204,7 +184,7 @@ pub fn page_tracking(state: AppState) {
             .and_then(|w| w.document())
             .and_then(|d| d.get_element_by_id("page-list"))
         {
-            if hs.is_empty() || dominant_page(list.scroll_top() as f64, vh_now, &hs, PAGE_GAP) != p {
+            if hs.is_empty() || page_from_scroll(list.scroll_top() as f64, &hs, PAGE_GAP) != p {
                 let cur = list.scroll_top() as f64;
                 let vh = list.client_height() as f64;
                 // Nearby (a page turn) glides; far (outline/thumb/search jump)
