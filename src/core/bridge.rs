@@ -71,6 +71,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "hasThumb")]
     pub fn has_thumb(page: u32, scale: f64) -> bool;
 
+    /// Paint the cached thumbnail of `page` into `canvas_id` as a blurry
+    /// placeholder. Best-effort: returns false when there is nothing cached.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "blitThumb")]
+    pub fn blit_thumb(canvas_id: &str, page: u32) -> bool;
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "updatePage")]
     pub async fn update_page(canvas_id: &str, scale: f64) -> JsValue;
 

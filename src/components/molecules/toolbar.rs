@@ -81,10 +81,21 @@ pub fn open_path(state: AppState, path: String) {
                 state.viewer.page.set(1);
                 state.viewer.scroll_top.set(0.0);
                 state.viewer.fit.set(FitMode::Width);
+                // Heights belong to the document that was just closed; leaving
+                // them would have the zoom coordinator anchor against a stale
+                // column on the first gesture. PageList re-seeds them.
+                state.doc.page_heights.set(Vec::new());
                 let (cw, ch) = state.viewer.container_size.get();
                 let s =
                     fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, 48.0, 1.0);
+                // Direct writes are correct HERE and nowhere else: this is the
+                // initial scale for a brand-new document, so there is no layout
+                // to animate from and nothing to anchor to. All three scales
+                // must start in agreement.
+                state.viewer.zoom_animating.set(false);
+                state.viewer.zoom_request.set(None);
                 state.viewer.scale.set(s);
+                state.viewer.display_scale.set(s);
                 state.viewer.render_scale.set(s);
 
                 // Reset search + clear stale highlights. The floating search

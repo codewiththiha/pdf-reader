@@ -91,7 +91,7 @@ function cachePut(page, entry) {
 /// CSS box is owned by the cell's stylesheet classes. Assigning width/height
 /// clears the target, but the very next statement paints the full cached frame
 /// in the SAME task, so the browser never composites the empty intermediate.
-function blitThumb(dst, entry) {
+function paintCached(dst, entry) {
   if (!dst || !entry || entry.canvas.width <= 0 || entry.canvas.height <= 0) {
     return null;
   }
@@ -114,6 +114,39 @@ function blitThumb(dst, entry) {
 function hasThumb(page, scale) {
   const hit = thumbCache.get(page);
   return !!hit && Math.abs(hit.scale - scale) < 1e-9;
+}
+
+/// Paint the cached THUMBNAIL of `page` into a full-size page canvas as a
+/// placeholder, stretched to fill it. Returns true if anything was painted.
+///
+/// A page scrolled freshly into view is a white card until its render resolves
+/// — a bright pop against the reader. The sidebar has usually already
+/// rasterised a thumbnail of that page, and an upscaled thumbnail is blurry but
+/// the RIGHT COLOUR and the right shape, so the card reads as "this page,
+/// loading" instead of a flash of white. The real render replaces it a moment
+/// later.
+///
+/// Purely additive and best-effort: no cache entry, no canvas, no paint — the
+/// caller carries on exactly as before. Scale is ignored deliberately; any
+/// cached thumbnail of the page is better than nothing.
+function blitThumb(canvasId, page) {
+  const dst = el(canvasId);
+  const hit = thumbCache.get(page);
+  if (!dst || !hit || hit.canvas.width <= 0 || hit.canvas.height <= 0) return false;
+  // Keep the destination's own backing store if it already has one (the host
+  // sizes it); otherwise adopt the thumb's aspect at a usable resolution.
+  if (dst.width <= 0 || dst.height <= 0) {
+    dst.width = hit.canvas.width;
+    dst.height = hit.canvas.height;
+  }
+  const ctx = dst.getContext("2d");
+  if (!ctx) return false;
+  try {
+    ctx.drawImage(hit.canvas, 0, 0, dst.width, dst.height);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function itemRect(item, pageH) {
@@ -481,7 +514,7 @@ async function renderThumb(canvasId, page, scale) {
   // --- fast path: cached bitmap, painted before the first composite --------
   const hit = thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    const size = blitThumb(canvas, hit);
+    const size = paintCached(canvas, hit);
     if (size) {
       // Refresh LRU position.
       cachePut(page, hit);
@@ -531,7 +564,7 @@ async function renderThumb(canvasId, page, scale) {
     // The cell may have unmounted while the render was in flight; re-resolve
     // the element instead of trusting the one captured above.
     const live = el(canvasId);
-    if (live) blitThumb(live, entry);
+    if (live) paintCached(live, entry);
 
     return { ok: true, width: cssW, height: cssH, scale, cached: false };
   } catch (e) {
@@ -677,6 +710,7 @@ globalThis.PDFReader = {
   renderThumb,
   cancelThumb,
   hasThumb,
+  blitThumb,
   updatePage,
   buildSearchIndex,
   search,

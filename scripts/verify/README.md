@@ -47,6 +47,34 @@ through persisted settings), so no test hooks exist in the production build.
 | selection CSS reverted | `402 new dark px` (engine) — the doubled text |
 | `starts_cached` forced false | `504/1132 opaque cover samples, peak opacity 1.00` — the scroll flicker |
 
+## `verify-zoom.mjs` — Preview-style zoom & navigation
+
+`node scripts/verify/verify-zoom.mjs` (needs `trunk serve` on :1420). 14 checks.
+
+Everything here asks one of two questions: does the thing the user is LOOKING AT
+stay where it was, and did we render more times than we needed to? Renders are
+counted by wrapping `PDFReader.renderPage` in the page — the same boundary the
+Rust side calls through.
+
+| group | asserts |
+|---|---|
+| A. anchoring | the page under the viewport centre is the same page after a zoom |
+| B. retargeting | 3 fast `+` clicks advance 3 presets (none swallowed by the animation) and still cost ~one render pass, not one each |
+| C. clamping | zooming at the end of the document stays within `[0, max_scroll]` |
+| D. sidebar | toggling the sidebar changes neither the zoom % nor renders a single page |
+| E. render count | one gesture = one crisp pass (~one render per visible page, not per frame) |
+| F. navigation | `ArrowRight` advances exactly one page, the status counter agrees, and the scrollport actually lands there |
+| G. reduced motion | with `prefers-reduced-motion` the zoom is instant but still anchored |
+
+Typical numbers on the 40-page fixture at 1100x800: a zoom costs **7**
+`renderPage` calls (the visible window), a 3-click burst also **7**, and a
+sidebar toggle **0**.
+
+**Harness note:** each section starts from the 100% preset. The document opens
+at fit-width, which is >200% for this fixture, and repeatedly rasterising
+full pages at that size crashes the headless shell's renderer — a harness
+limit, not an app one. Every behaviour checked here is scale-independent.
+
 ## Fixtures
 
 `public/samples/Programming Pearls (2nd Edition) - Jon Bentley.pdf` is generated

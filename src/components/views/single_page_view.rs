@@ -24,7 +24,7 @@ use crate::core::state::AppState;
 
 #[component]
 pub fn SinglePageView(state: AppState) -> impl IntoView {
-    let render_scale = state.viewer.render_scale.read_only();
+    let display_scale = state.viewer.display_scale.read_only();
 
     // Previously shown page, for the direction-aware page-turn animation.
     // Non-reactive on purpose: reading it inside the render closure doesn't
@@ -114,7 +114,7 @@ pub fn SinglePageView(state: AppState) -> impl IntoView {
                             <div class=dir>
                                 <PageCanvas
                                     page=page
-                                    scale=render_scale
+                                    scale=display_scale
                                     canvas_id=format!("sp-{page}-cv")
                                     host_id=format!("sp-{page}-pg")
                                     render_text=true
