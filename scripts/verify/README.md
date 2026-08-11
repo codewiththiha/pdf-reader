@@ -70,7 +70,21 @@ Typical numbers on the 40-page fixture at 1100x800: a zoom costs **7**
 `renderPage` calls (the visible window), a 3-click burst also **7**, and a
 sidebar toggle **0**.
 
-**Harness note:** each section starts from the 100% preset. The document opens
+**Sections H/I run in the DEFAULT fit-width state** — deliberately without
+applying a zoom preset first, because a preset clears `FitMode::Width` and takes
+a different code path. Both follow-up bug reports (the counter walking during
+zoom, and the sidebar squish-then-snap) lived in exactly that gap: every earlier
+check set a preset first and so never exercised the state a real user is in
+right after opening a document.
+
+| check | asserts |
+|---|---|
+| H. counter stability | the page counter holds still through a 4-out/4-in zoom cycle |
+| I. slide continuity | the page moves through intermediate sizes (no hold-then-snap) |
+| I. slide geometry | the page keeps its true aspect ratio on every frame |
+| I. slide cost | the whole slide is one render pass, at the end |
+
+**Harness note:** sections A-G start from the 100% preset. The document opens
 at fit-width, which is >200% for this fixture, and repeatedly rasterising
 full pages at that size crashes the headless shell's renderer — a harness
 limit, not an app one. Every behaviour checked here is scale-independent.
