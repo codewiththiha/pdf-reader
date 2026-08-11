@@ -332,9 +332,13 @@ console.log("\nH/I — default fit-width state (no preset applied)");
   const slideRenders = await renders(page);
 
   // Continuous motion: the page must pass through real intermediate sizes
-  // rather than holding still and snapping at the end.
+  // rather than holding still and snapping at the end. The old freeze scored
+  // exactly 1; this typically scores 5, but the exact count depends on how
+  // often ResizeObserver fires during the 300ms CSS width animation, which
+  // varies with machine load. >= 3 distinguishes "moves" from "snaps" without
+  // being flaky.
   check(
-    widths.length >= 5,
+    widths.length >= 3,
     "I. the sidebar slide moves the page through intermediate sizes",
     `${widths.length} distinct widths across ${frames.length} frames`
   );
