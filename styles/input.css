@@ -41,9 +41,16 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
   --app-radius: 8px;
-  /* Selected-text glyph color: white in EVERY theme, so selected text reads
-     as white-on-the-highlight regardless of mode (canvas glyphs are hidden
-     under the highlight block; the white layer is what shows). */
+  /* Selected-text glyph color. The solid --color-accent-soft highlight covers
+     the canvas glyphs beneath it, so THESE textLayer glyphs are what show.
+     Black in the LIGHT family (light/sepia/green) — their accent-soft
+     highlight is a pale tint, and white-on-pale is unreadable. White in the
+     DARK family (dark/night/dim, which carry the `.dark` class per
+     theme_applier.rs) — their highlight is deep, and black glyphs would
+     vanish against it. */
+  --selection-text-color: #000000;
+}
+:root.dark {
   --selection-text-color: #ffffff;
 }
 

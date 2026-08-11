@@ -237,9 +237,8 @@ fn ThumbCell(
                     style:height=format!("{}px", cell_h)
                 >
                     <span
-                        class="text-xs"
+                        class="text-sm font-bold"
                         class=("text-accent", is_current)
-                        class=("font-semibold", is_current)
                         class=("text-muted", move || !is_current())
                         // Translucent surface pill behind the accent digit so
                         // it stays legible over the rendered page.
@@ -272,7 +271,7 @@ fn ThumbCell(
                     class=("opacity-0", move || loaded.get())
                 >
                     <span
-                        class="text-xs text-muted"
+                        class="text-sm font-bold text-muted"
                         class=("invisible", is_current)
                     >{page}</span>
                 </div>
