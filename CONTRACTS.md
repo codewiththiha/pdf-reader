@@ -296,3 +296,43 @@ rects once per rAF across a zoom and asserts `max |canvas - host| <= 1px`, plus
 `>= 3` distinct intermediate host widths so an instant zoom cannot vacuously
 pass. Consumers deriving a CSS size from a canvas must divide the backing store
 by `min(devicePixelRatio, 2)` (see `sizeHost` in `verify.mjs`).
+
+### Appendix entry 5 — only ONE blended canvas may be visible per `.pdf-page`
+
+`.pdf-page canvas` carries `mix-blend-mode: var(--canvas-blend)` and
+`filter: var(--canvas-filter)`. Those are per-theme (`multiply` for
+light/sepia/green, `screen` for dark/night, `soft-light` for dim).
+
+Blend modes do not compose idempotently. On the commit frame of a zoom the
+`.page-snapshot` underlay and the freshly rendered canvas are both in the host,
+so the backdrop composites as `B*L*S` instead of `B*L` and the theme filter is
+applied **twice** — green's `hue-rotate(70deg)` effectively lands as `140deg`.
+Measured on the blank paper of the sepia theme, that single frame went
+`rgb(238,230,206)` -> `rgb(232,224,197)`; in light mode the shift is exactly `0`
+because white multiplied by white is white. Hence the user-visible symptom: an
+end-of-zoom flicker that was invisible in light mode and obvious in
+sepia/green/dim and on textured paper.
+
+The invariant is therefore **not** "at most one canvas in the host" (the
+snapshot exists precisely so there are two) but **at most one VISIBLE blended
+canvas**:
+
+```css
+.pdf-page:has(canvas.page-snapshot) canvas:not(.page-snapshot) {
+  visibility: hidden;
+}
+```
+
+Deliberately `:has()` and `visibility`, not a Rust-toggled class and not
+`display`/opacity:
+
+- the rule stops matching the instant the snapshot leaves the DOM, so a failed
+  render or a missed cleanup can strand nothing — where `:has()` is unsupported
+  it degrades to the old one-frame flicker, never to a blank page;
+- `visibility: hidden` keeps the element laid out, so the canvas keeps its
+  geometry and the stretch effect keeps tracking the host underneath.
+
+Anything that adds a further stacked layer inside `.pdf-page` must keep this
+invariant. Regression guard: **section K of `verify-zoom.mjs`** runs a zoom in
+light/sepia/green/dim and asserts the max number of visible canvases never
+exceeds 1 and settles at exactly 1.

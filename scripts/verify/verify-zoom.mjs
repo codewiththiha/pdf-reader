@@ -486,6 +486,68 @@ console.log("\nG — reduced motion");
   await page.close();
 }
 
+// ---------------------------------------------------------------------------
+// K — no double-blended frame at the end of a zoom.
+//
+// `.pdf-page canvas` carries `mix-blend-mode` + `--canvas-filter`. On the
+// commit frame the `.page-snapshot` underlay and the freshly rendered canvas
+// are BOTH in the host, so both blend against the paper: the backdrop composites
+// as B*L*S instead of B*L and the theme filter is applied twice. Measured in
+// sepia, the blank paper went rgb(238,230,206) -> rgb(232,224,197) for a single
+// frame. In light mode the shift is exactly 0 (white multiplied by white is
+// white), which is why this read as "only visible in sepia/green/textured".
+//
+// The invariant that matters is therefore not "how many canvases exist" but
+// "how many VISIBLE ones blend at once" — it must never exceed 1.
+for (const theme of ["light", "sepia", "green", "dim"]) {
+  const { page, errors } = await newCtx();
+  await page.goto(BASE, { waitUntil: "load" });
+  await page.evaluate((t) => {
+    const K = "pdfreader.settings.v1";
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(K) || "{}"); } catch {}
+    s.theme_id = t;
+    localStorage.setItem(K, JSON.stringify(s));
+  }, theme);
+  await openViaApp(page, DOC);
+
+  const r = await page.evaluate(async () => {
+    const host = document.querySelector(".pdf-page");
+    if (!host) return null;
+    const btn = [...document.querySelectorAll("button")].find((x) => x.title === "Zoom in (+)");
+    if (!btn) return null;
+    const countVisible = () => {
+      let n = 0;
+      for (const c of host.querySelectorAll("canvas")) {
+        if (getComputedStyle(c).visibility !== "hidden") n++;
+      }
+      return n;
+    };
+    let worst = 0;
+    const t0 = performance.now();
+    btn.click();
+    await new Promise((done) => {
+      const tick = () => {
+        worst = Math.max(worst, countVisible());
+        if (performance.now() - t0 > 900) return done();
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    return { worst, settled: countVisible() };
+  });
+
+  if (theme === "light") console.log("\nK — no double-blended commit frame");
+  check(r !== null && r.worst <= 1, `K. ${theme}: never 2 blended canvases at once`,
+    r ? `max visible = ${r.worst}` : "probe failed");
+  // The page must not be left invisible if a snapshot is ever stranded.
+  check(r !== null && r.settled === 1, `K. ${theme}: exactly one canvas visible once settled`,
+    r ? `settled = ${r.settled}` : "probe failed");
+  const fatal = errors.filter((e) => !/ResizeObserver loop/i.test(e));
+  check(fatal.length === 0, `K. ${theme}: no page errors`, fatal.slice(0, 1).join(" | "));
+  await page.close();
+}
+
 await browser.close();
 
 const failed = results.filter((r) => !r.ok);
