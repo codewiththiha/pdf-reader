@@ -380,3 +380,53 @@ width, the 6-level-deep entry renders its real title, every row has a tooltip;
 and thumbnails reveal with a worst tint swing <= 1 with zero cells left covered
 or stuck paused. Fixture: `public/samples/Outlined Book.pdf` (12pp, 14 outline
 entries — UTF-16BE, accented, CJK, plain-ASCII titles and a 6-level branch).
+
+### Appendix entry 7 — texture is page-anchored; blank outline titles; unpainted thumb canvases
+
+**Textures scale with the page.** `.pdf-page::before` carries every paper
+texture as a repeating background. Their geometry used to be hard-coded in CSS
+px — 26px rules, an 8px dot pitch, a 180x180 noise tile — so a zoom grew the
+page while the pattern pitch stayed identical: measured at 145%, the host was
+1.454x larger and `background-size` was still `auto`, so the lines slid across
+the text rather than moving with it. That is what reads as "the texture is just
+a filter, not attached to the page".
+
+`.pdf-page::before` now derives its geometry from the page's own scale:
+
+```css
+--tex-scale: var(--scale-factor, 1);
+--tex-unit:  calc(26px * var(--tex-scale));
+--tex-line:  clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+background-origin: border-box;
+background-position: 0 0;
+```
+
+`--scale-factor` is the right hook because `page_canvas.rs` writes it in the
+SAME inline style as the host's width/height (the text layer already depends on
+it), so the texture rescales on exactly the frame the page does — including
+every intermediate frame of a zoom animation, with no extra plumbing. `--tex-line`
+is clamped so hairlines neither vanish at small zoom nor become bars at large
+zoom. Measured after: page x1.018 / texture x1.018, host-to-pitch ratio spread
+0.0003 across 50 frames. Any NEW texture variant must express its geometry in
+`--tex-unit` / `--tex-scale`, never raw px. Guard: **section L of
+`verify-zoom.mjs`**.
+
+**Outline titles must survive normalisation.** `it.title || "(untitled)"` only
+catches the empty string. Real PDFs also carry whitespace-only ("   "),
+newline-only ("\r\n") and zero-width (U+200B/U+FEFF/U+00AD) bookmark titles;
+those rendered a row whose text had no height, so the row collapsed from 28px to
+**8px** — a sliver that reads as a dot. `outlineTitle()` in `pdfEngine.js` strips
+zero-width characters, collapses whitespace runs (so an embedded newline cannot
+double a row's height either) and falls back to "(untitled)". `min-h-7` +
+`leading-5` on the row is the backstop so no future title can collapse the box.
+
+**An unpainted thumbnail canvas must not composite.** `.thumb-canvas` carries
+`mix-blend-mode` + the theme filter. A canvas with no width/height attributes
+defaults to **300x150** — a 2:1 box stretched over a ~3:4 card — so before its
+first render each cell blended an empty, wrong-aspect surface under the fading
+cover, tinting it (worst in the multiply themes, sepia/green) and then changing
+shape when the real 153x198 bitmap arrived. `.thumb-canvas-blank
+{ visibility: hidden }` is applied while `!loaded` and dropped exactly when the
+cover begins to fade. Same invariant as appendix entry 5: never blend a layer
+with no real pixels in it. Measured: the sepia reveal's downward hook fell from
+10 luminance units to 1.

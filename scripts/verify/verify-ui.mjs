@@ -375,6 +375,7 @@ check(errors.length === 0, "no console/page errors during the run",
       const padR = parseFloat(cs.paddingRight) || 0;
       out.push({
         text: b.textContent.trim(),
+        h: +b.getBoundingClientRect().height.toFixed(1),
         // Space actually available to paint the label.
         textW: Math.round(b.getBoundingClientRect().width - padL - padR),
         title: b.getAttribute("title") || "",
@@ -384,6 +385,16 @@ check(errors.length === 0, "no console/page errors during the run",
   });
 
   check(rows.length >= 6, "outline renders its entries", `${rows.length} rows`);
+  // A title that is whitespace-only, newline-only or made of zero-width
+  // characters used to render an 8px row instead of 28px — a sliver that reads
+  // as a dot. The engine normalises those to "(untitled)" and `min-h-7` is the
+  // backstop. The fixture carries all four pathological cases.
+  const shortRows = rows.filter((r) => r.h < 24);
+  check(shortRows.length === 0, "no outline row collapses to a sliver",
+    shortRows.length ? `${shortRows.length} rows under 24px (min ${Math.min(...shortRows.map((s) => s.h))}px)` : "all rows >= 24px");
+  const blank = rows.filter((r) => r.text.length === 0);
+  check(blank.length === 0, "no outline row renders as blank text",
+    blank.length ? `${blank.length} blank rows` : "every row has a visible label");
   // Every row must have real room for text, not just an ellipsis.
   const starved = rows.filter((r) => r.textW < 100);
   check(starved.length === 0, "no outline row is squeezed to the ellipsis",

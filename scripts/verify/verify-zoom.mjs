@@ -548,6 +548,91 @@ for (const theme of ["light", "sepia", "green", "dim"]) {
   await page.close();
 }
 
+// ---------------------------------------------------------------------------
+// L — the paper texture is anchored to the PAGE, not to the screen.
+//
+// Every texture is a repeating background on `.pdf-page::before`. Their
+// geometry used to be hard-coded in CSS px (26px rules, 8px dot pitch, 180px
+// noise tile), so zooming grew the page but left the pattern pitch identical —
+// at 145% the host was 1.45x larger while `background-size` was still `auto`,
+// and the lines slid across the text instead of moving with it. That is what
+// reads as "the texture behaves like a filter". The pitch now derives from
+// `--scale-factor`, which page_canvas.rs writes in the SAME inline style as the
+// host's width/height, so it tracks per frame during the zoom animation too.
+{
+  const { page, errors } = await newCtx();
+  await page.goto(BASE, { waitUntil: "load" });
+  // Seed the texture and the path TOGETHER, then let openViaApp reload: it
+  // rewrites this same settings key, so seeding beforehand would be discarded.
+  await page.evaluate((doc) => {
+    const K = "pdfreader.settings.v1";
+    let s = {};
+    try { s = JSON.parse(localStorage.getItem(K) || "{}"); } catch {}
+    s.texture = "lined";      // a pitch that is trivial to read back
+    s.last_path = doc;
+    localStorage.setItem(K, JSON.stringify(s));
+  }, DOC);
+  await openViaApp(page, DOC);
+  // The app persists settings on load; re-assert the texture through the app's
+  // own store if the reload reset it.
+  await page.waitForTimeout(200);
+  console.log("\nL — texture scales with the page");
+
+  const sample = () => page.evaluate(() => {
+    const host = document.querySelector(".pdf-page");
+    const img = getComputedStyle(host, "::before").backgroundImage;
+    // repeating-linear-gradient(..., transparent Apx Bpx) -> B is the pitch
+    const m = img.match(/([\d.]+)px\)\s*$/);
+    return { w: host.getBoundingClientRect().width, pitch: m ? +m[1] : null };
+  });
+
+  const before = await sample();
+  check(before.pitch !== null, "L. the lined texture exposes a readable pitch",
+    before.pitch !== null ? `${before.pitch.toFixed(1)}px` : "no match");
+
+  // Per-frame during a zoom: the host/pitch ratio must not move.
+  const track = await page.evaluate(async () => {
+    const host = document.querySelector(".pdf-page");
+    const read = () => {
+      const img = getComputedStyle(host, "::before").backgroundImage;
+      const m = img.match(/([\d.]+)px\)\s*$/);
+      return { w: host.getBoundingClientRect().width, pitch: m ? +m[1] : null };
+    };
+    const btn = [...document.querySelectorAll("button")].find((x) => x.title === "Zoom in (+)");
+    const frames = [];
+    const t0 = performance.now();
+    btn.click();
+    await new Promise((done) => {
+      const tick = () => {
+        frames.push(read());
+        if (performance.now() - t0 > 900) return done();
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const ok = frames.filter((f) => f.pitch);
+    const ratios = ok.map((f) => f.w / f.pitch);
+    return {
+      n: ok.length,
+      spread: Math.max(...ratios) - Math.min(...ratios),
+      grew: ok.length ? ok[ok.length - 1].pitch / ok[0].pitch : 0,
+      hostGrew: ok.length ? ok[ok.length - 1].w / ok[0].w : 0,
+    };
+  });
+
+  check(track.n >= 5, "L. sampled the zoom frames", `${track.n} frames`);
+  // Locked: the page-to-pattern ratio is the same on every frame.
+  check(track.spread < 0.5, "L. texture pitch stays locked to the page EVERY frame",
+    `host/pitch ratio spread ${track.spread.toFixed(4)}`);
+  // And it genuinely scaled, rather than being locked because nothing moved.
+  check(Math.abs(track.grew - track.hostGrew) < 0.02 && track.hostGrew > 1.01,
+    "L. the texture grew by the same factor as the page",
+    `page x${track.hostGrew.toFixed(3)}, texture x${track.grew.toFixed(3)}`);
+  const fatal = errors.filter((e) => !/ResizeObserver loop/i.test(e));
+  check(fatal.length === 0, "L. no page errors", fatal.slice(0, 1).join(" | "));
+  await page.close();
+}
+
 await browser.close();
 
 const failed = results.filter((r) => !r.ok);
