@@ -25,11 +25,16 @@
 //! still-empty canvas while `render_page` is in flight and keeps pulsing
 //! through the fade-out, so resolve never cancels a running animation; once
 //! the fade has run its full duration the cover is invisible and a short
-//! timer removes the pulse. The
-//! canvas itself stays fully opaque and blended from its first painted frame,
-//! so the crossfade interpolates between two same-family themed colors instead
-//! of between the raw un-blended canvas and the multiply result — the
-//! sepia/green "neon flash" settling to muted.
+//! timer removes the pulse. The canvas itself stays fully opaque and blended
+//! from its first painted frame, so the crossfade interpolates between two
+//! same-family themed colors instead of between the raw un-blended canvas and
+//! the multiply result — the sepia/green "neon flash" settling to muted. The
+//! pulse 50% keyframe DARKENS (color-mix toward black), never brightens: a
+//! brightening pulse was the residual sepia/green scroll flicker — in those
+//! themes the old lighter 50% tint was partially visible over the darker
+//! multiply-blended canvas mid-fade, spiking the visible color brighter
+//! before settling. Darker pulse keeps both ends of the crossfade on the
+//! dark side of base, so no theme peaks bright during the fade.
 //!
 //! A generation counter (`Arc<AtomicU32>`, bumped on document change) aborts
 //! in-flight renders from a previous document so they can never paint into a
@@ -314,12 +319,26 @@ fn ThumbCell(
                 // CANCEL the running `background-color` animation mid-flight,
                 // and a cancelled CSS animation snaps its property back to
                 // the base value in one frame — the cover jumps from its
-                // mid-pulse lighter tint (the 50% keyframe) to base
-                // `--thumb-bg` just as the fade begins (the residual
-                // sepia/green brightness flicker). Left alive, the pulse
-                // continues smoothly under the fade and is simply invisible
-                // at opacity 0. Two-phase stop: the pulse stays live THROUGH
-                // the fade so the background is continuous at resolve, and
+                // mid-pulse tint to base `--thumb-bg` just as the fade
+                // begins (a residual snap). Left alive, the pulse continues
+                // smoothly under the fade and is simply invisible at opacity
+                // 0.
+                //
+                // The pulse 50% keyframe DARKENS (color-mix toward black),
+                // never brightens. A brightening pulse was the root cause of
+                // the sepia/green scroll flicker: in those themes --color-line
+                // is darker than --color-surface, so the old "lighter line-mix"
+                // 50% keyframe produced a tint LIGHTER than the base --thumb-bg,
+                // and during the 300ms opacity fade-out that lighter tint was
+                // partially visible over the multiply-blended canvas (which
+                // is DARKER — multiply darkens a white page toward the
+                // backdrop tint), spiking the visible color brighter mid-fade
+                // before settling to the canvas result — the "high brightness
+                // then fall back to normal" flicker the user observed on
+                // scroll. Darker pulse keeps both ends of the crossfade on
+                // the dark side of base, so no theme peaks bright during the
+                // fade. Two-phase stop: the pulse stays live THROUGH the fade
+                // so the background is continuous at resolve, and
                 // `PULSE_STOP_MS` (~400ms) later — once the opacity
                 // transition has run its full duration — the cover is fully
                 // invisible, so the timer drops the class to halt the
