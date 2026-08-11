@@ -145,6 +145,12 @@ pub fn has_thumb(page: u32, scale: f64) -> bool {
     bridge::has_thumb(page, scale)
 }
 
+/// Paint the cached thumbnail of `page` into `canvas_id`, upscaled, as a
+/// placeholder while the real render is in flight. Returns true if painted.
+pub fn blit_thumb(canvas_id: &str, page: u32) -> bool {
+    bridge::blit_thumb(canvas_id, page)
+}
+
 /// Re-render one canvas at a new scale without a full remount (cancel + render).
 /// Engine API contract (CONTRACTS.md §1); unused while PageCanvas handles
 /// scale changes itself.

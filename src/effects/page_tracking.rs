@@ -40,12 +40,39 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::core::layout::{page_from_scroll, page_top_css, ViewMode, PAGE_GAP};
 use crate::core::state::AppState;
+
+/// How long a smooth jump is allowed to be in flight. The browser owns the
+/// animation and doesn't tell us when it finishes, so effect 4's takeover
+/// detection is gated for this long: during a smooth scroll the offset moves
+/// on its own, which looks exactly like the user grabbing the scrollbar. Long
+/// enough to cover a ~300ms native smooth scroll with margin.
+const JUMP_SETTLE_MS: f64 = 450.0;
+
+/// Scroll `#page-list` to `top`, smoothly for nearby targets and instantly for
+/// far ones.
+///
+/// Preview glides between adjacent pages but cuts straight to a distant jump —
+/// a smooth scroll across fifty pages is a long blur through content nobody
+/// asked to see, and it thrashes the virtualizer mounting and unmounting every
+/// page on the way. The `2 * viewport` threshold is the same one the thumbnail
+/// panel's glide uses, so navigation feels consistent in both places.
+fn scroll_to(list: &web_sys::Element, top: f64, smooth: bool) {
+    let opts = web_sys::ScrollToOptions::new();
+    opts.set_top(top);
+    opts.set_behavior(if smooth {
+        web_sys::ScrollBehavior::Smooth
+    } else {
+        web_sys::ScrollBehavior::Instant
+    });
+    list.scroll_to_with_scroll_to_options(&opts);
+}
 
 /// Uniform page height used when real heights haven't been measured yet — the
 /// same placeholder PageList seeds `page_heights` with.
@@ -120,8 +147,14 @@ pub fn page_tracking(state: AppState) {
     //               while the target moves, so we keep re-aiming.
     let pending = Rc::new(Cell::new(None::<u32>));
     let last_ours = Rc::new(Cell::new(f64::NAN));
+    // Timestamp until which a smooth jump owns the scrollport (0 = none).
+    let jump_settle = Rc::new(Cell::new(0.0f64));
+    // Wakes effect 4 once the settle gate lapses.
+    let settle_timer: StoredValue<Option<TimeoutHandle>> = StoredValue::new(None);
     let pending_e3 = pending.clone();
     let last_ours_e3 = last_ours.clone();
+    let jump_settle_e3 = jump_settle.clone();
+    let jump_settle_e4 = jump_settle;
     Effect::new(move || {
         // `page`/`mode` are read unconditionally (see module docs).
         let p = page.get();
@@ -152,7 +185,18 @@ pub fn page_tracking(state: AppState) {
             .and_then(|d| d.get_element_by_id("page-list"))
         {
             if hs.is_empty() || page_from_scroll(list.scroll_top() as f64, &hs, PAGE_GAP) != p {
-                let _ = list.set_scroll_top(target_px as i32);
+                let cur = list.scroll_top() as f64;
+                let vh = list.client_height() as f64;
+                // Nearby (a page turn) glides; far (outline/thumb/search jump)
+                // cuts. See `scroll_to`.
+                let smooth = vh > 0.0 && (target_px - cur).abs() <= 2.0 * vh;
+                scroll_to(&list, target_px, smooth);
+                if smooth {
+                    // Arm the settle gate: a smooth scroll moves the offset for
+                    // the next few hundred ms, and effect 4 must not read that
+                    // motion as the user taking over and abandon the landing.
+                    jump_settle_e3.set(js_sys::Date::now() + JUMP_SETTLE_MS);
+                }
             }
         }
         // The target wrapper may not be mounted yet for a far jump; effect 4
@@ -184,6 +228,29 @@ pub fn page_tracking(state: AppState) {
         let Some(target) = pending_b.get() else {
             return;
         };
+        // A smooth jump is still gliding: the offset is moving under browser
+        // control, which is indistinguishable from a user drag by value alone.
+        // Hold off entirely until it settles, then do ONE instant correction if
+        // it mis-landed (heights can change mid-glide as pages render in).
+        let settling = js_sys::Date::now() < jump_settle_e4.get();
+        if settling {
+            // Re-check after the gate lapses; without this the correction would
+            // only run if some other signal happened to fire again.
+            let remain = (jump_settle_e4.get() - js_sys::Date::now()).max(0.0);
+            if let Some(h) = settle_timer.get_value() {
+                h.clear();
+            }
+            let bump = scroll_top;
+            settle_timer.set_value(
+                set_timeout_with_handle(
+                    move || bump.update(|v| *v += 0.0),
+                    Duration::from_millis(remain as u64 + 30),
+                )
+                .ok(),
+            );
+            return;
+        }
+
         // User takeover: the scroll signal moved to something we didn't write.
         let mine = last_ours_b.get();
         if !mine.is_nan() && (scroll_top.get() - mine).abs() >= 0.5 {

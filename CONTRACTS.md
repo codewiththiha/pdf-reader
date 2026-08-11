@@ -163,3 +163,61 @@ holds its own reference to the wasm-bindgen shim, so a resize notification
 queued during teardown (e.g. a view-mode switch removing `#page-list`) otherwise
 invokes freed memory and aborts the runtime with "closure invoked recursively or
 after being dropped".
+
+### Appendix entry 2 — the zoom pipeline
+
+**Three scales, three owners.** `ViewerState` now carries `display_scale`,
+`zoom_animating` and `zoom_request` alongside `scale` / `render_scale`:
+
+| signal | meaning | written by |
+| --- | --- | --- |
+| `scale` | the committed, user-visible zoom (the toolbar %) | the zoom coordinator, once per gesture |
+| `display_scale` | what the layout is DRAWN at right now | the zoom coordinator, every animation frame |
+| `render_scale` | what the bitmaps were RASTERISED at | the zoom coordinator, once per gesture |
+| `zoom_animating` | a zoom is in flight; renders + geometry write-back suspended | the zoom coordinator |
+| `zoom_request` | `(target, animate, token)` — a request for a new zoom | any control, via `request_zoom` |
+
+**The rule: a zoom is a layout animation of bitmaps that are already painted,
+followed by exactly one crisp render.** It is never a render-driven relayout.
+
+**`effects::fit::request_zoom(state, target, animate)` is the ONLY supported way
+to change zoom.** No component may write `scale` or `render_scale` directly. The
+single exception is `toolbar::open_path`, which seeds all three for a brand-new
+document (there is no prior layout to animate from). Writing them directly from
+a control reintroduces the original bug: the scale changes instantly while the
+wrappers' `top:` offsets and the spacer height only catch up as each render
+resolves, so the scroll offset ends up pointing at a different page.
+
+`core::layout::anchored_scroll(scroll_top, viewport_h, heights, gap, factor,
+anchor_screen_y)` is the pure anchor math (unit-tested). Page heights are linear
+in scale, so a scale change is applied to the whole column in one synchronous
+step; the scroll is re-anchored in that SAME step. Gaps are chrome and do not
+scale. Scroll offset `<= 0.5` pins the top of the document instead of the
+centre, so zooming on page 1 doesn't push page 1 off-screen.
+
+**`PageCanvas` has two effects, and they must stay separate.** The STRETCH
+effect follows the `scale` prop (callers pass `display_scale`) and only ever
+CSS-resizes the host so the existing bitmap follows the layout — it never
+renders. The RENDER effect follows `render_scale` and early-returns while
+`zoom_animating` is true and the page already has geometry. Merging them is the
+ghost/double-image bug.
+
+**`PageList::on_geometry` returns early while `zoom_animating`.** During a zoom
+the coordinator owns `page_heights`; a render resolving mid-flight would write
+one page's height at the wrong scale and shift everything below it.
+
+**Fit is frozen during a sidebar slide.** `fit_effect` compares
+`window.innerWidth` between runs: `container_size` changes with no window change
+mean the `<aside>` is animating, and the zoom must not move. Only a real window
+resize refits, and it does so via `request_zoom(.., animate=false)` — instant,
+but still anchored.
+
+**Post-await StoredValue access must use `try_get_value` / `try_set_value`.** A
+render can outlive its component (`<For>` unmounts a page whose rasterisation is
+still in flight); touching a `StoredValue` after its owner is disposed panics.
+
+**Engine addition (additive):** `PDFReader.blitThumb(canvasId, page) -> bool`
+paints the cached thumbnail of `page` into a full-size page canvas as a blurry
+placeholder, so a page scrolled into view isn't a flash of white. Best-effort:
+returns false when nothing is cached. The pre-existing internal helper of the
+same name is now `paintCached`.
