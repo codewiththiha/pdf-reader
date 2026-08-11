@@ -280,6 +280,108 @@ console.log("\nA/B/C/D/E/F — main session");
 }
 
 // ---------------------------------------------------------------------------
+// H/I — the DEFAULT fit-width state.
+//
+// The checks above all set an explicit zoom preset first, which clears
+// FitMode::Width. A real user who just opened a document is still IN fit mode,
+// and that is a different code path — it is where both follow-up reports lived.
+console.log("\nH/I — default fit-width state (no preset applied)");
+{
+  const { page, errors } = await newCtx();
+  await page.goto(BASE, { waitUntil: "load" });
+  await page.waitForFunction(() => !!globalThis.PDFReader, null, { timeout: 30000 });
+  await openViaApp(page, DOC);            // deliberately NO setZoomPreset
+  await installCounter(page);
+
+  const trueAspect = await page.evaluate(() => {
+    const h = document.querySelector(".pdf-page");
+    const r = h.getBoundingClientRect();
+    return +(r.width / r.height).toFixed(4);
+  });
+
+  // --- I. the sidebar slide is continuous AND undistorted ----------------
+  // Runs FIRST, while FitMode::Width is still active: pressing +/- below sets
+  // FitMode::None, and with a fixed zoom the page correctly keeps its size
+  // when the sidebar opens (it just gets less room) — a different behaviour.
+  await page.evaluate(() => {
+    const l = document.getElementById("page-list");
+    l.scrollTop = l.scrollHeight * 0.25;
+  });
+  await page.waitForTimeout(1200);
+  await resetRenders(page);
+  const frames = await page.evaluate(async () => {
+    const out = []; const t0 = performance.now();
+    const btn = [...document.querySelectorAll("button")]
+      .find((x) => (x.getAttribute("title") || "").toLowerCase().includes("sidebar"));
+    btn && btn.click();
+    return await new Promise((res) => {
+      function tick() {
+        const h = document.querySelector(".pdf-page");
+        const r = h ? h.getBoundingClientRect() : null;
+        if (r && r.height > 0) {
+          out.push({ w: +r.width.toFixed(1), a: +(r.width / r.height).toFixed(4) });
+        }
+        if (performance.now() - t0 < 1200) requestAnimationFrame(tick); else res(out);
+      }
+      requestAnimationFrame(tick);
+    });
+  });
+  const widths = [...new Set(frames.map((f) => f.w))];
+  const worstAspect = frames.reduce(
+    (a, f) => (Math.abs(f.a - trueAspect) > Math.abs(a - trueAspect) ? f.a : a), trueAspect);
+  const slideRenders = await renders(page);
+
+  // Continuous motion: the page must pass through real intermediate sizes
+  // rather than holding still and snapping at the end.
+  check(
+    widths.length >= 5,
+    "I. the sidebar slide moves the page through intermediate sizes",
+    `${widths.length} distinct widths across ${frames.length} frames`
+  );
+  // ...and never squishes on the way. Flex shrink on the page host used to
+  // take the aspect from 0.77 to 0.58 mid-slide.
+  check(
+    Math.abs(worstAspect - trueAspect) < 0.01,
+    "I. the page keeps its aspect ratio through the whole slide",
+    `worst ${worstAspect} vs true ${trueAspect}`
+  );
+  // Layout every frame, but still only ONE crisp pass at the end.
+  check(
+    slideRenders > 0 && slideRenders <= 16,
+    "I. the slide costs one render pass, at the end",
+    `${slideRenders} renderPage calls`
+  );
+
+  // --- H. the counter must not walk while zooming ------------------------
+  await page.evaluate(() => {
+    const l = document.getElementById("page-list");
+    l.scrollTop = l.scrollHeight * 0.25;
+  });
+  await page.waitForTimeout(1400);
+  const p0 = await statusPage(page);
+  const seen = [p0];
+  for (let i = 0; i < 4; i++) {
+    await clickZoom(page, "Zoom out (-)");
+    await page.waitForTimeout(750);
+    seen.push(await statusPage(page));
+  }
+  for (let i = 0; i < 4; i++) {
+    await clickZoom(page, "Zoom in (+)");
+    await page.waitForTimeout(750);
+    seen.push(await statusPage(page));
+  }
+  check(
+    seen.every((x) => x === p0),
+    "H. the page counter holds still through a zoom out/in cycle",
+    `saw ${[...new Set(seen)].join(",")}`
+  );
+
+  const fatal = errors.filter((e) => !/ResizeObserver loop/i.test(e));
+  check(fatal.length === 0, "no page errors in the fit-width session", fatal.slice(0, 2).join(" | "));
+  await page.close();
+}
+
+// ---------------------------------------------------------------------------
 console.log("\nG — reduced motion");
 {
   const { page, errors } = await newCtx({ reducedMotion: true });

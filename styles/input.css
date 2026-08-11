@@ -127,6 +127,15 @@
   position: relative;
   background-color: var(--color-paper);
   overflow: hidden;
+
+  /* The page host is a flex child with an EXPLICIT inline width/height set by
+     PageCanvas. Flex items default to `flex-shrink: 1`, so any moment the host
+     is wider than its container — mid-zoom, or mid-sidebar-slide — the browser
+     shrinks the width while the inline height stays put, and the page visibly
+     squishes (a letter page went from a 0.77 aspect to 0.58) before snapping
+     back. The inline size is the source of truth for page geometry; never let
+     layout renegotiate it. */
+  flex-shrink: 0;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 8px 24px -6px rgb(0 0 0 / 0.22);
 
   --user-unit: 1;
