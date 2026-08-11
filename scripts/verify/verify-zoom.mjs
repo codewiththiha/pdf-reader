@@ -418,6 +418,74 @@ console.log("\nG — reduced motion");
   await page.close();
 }
 
+// ---------------------------------------------------------------------------
+// J — the canvas stretches WITH its host on every frame of the zoom.
+//
+// Zoom animates already-painted bitmaps and lands one crisp render. That only
+// looks right if the painted bitmap is stretched by the same factor as the host
+// on every intermediate frame. It regressed once because `renderPage` pinned an
+// inline `style.width/height` on the canvas: an inline style beats the
+// stylesheet's `width:100%`, so the canvas stayed frozen at the last completed
+// render's size while the host and its `::before` paper texture (inset:0, so it
+// does track) grew — measured as a 72px divergence on a single `+`, snapping
+// shut only on the last frame. Sampling per rAF is the only way to catch it;
+// the start and end states are identical either way.
+{
+  const { page, errors } = await newCtx();
+  await page.goto(BASE, { waitUntil: "load" });
+  await openViaApp(page, DOC);
+  console.log("\nJ — canvas tracks its host during the zoom");
+
+  const track = await page.evaluate(async () => {
+    const host = document.querySelector('[id^="cont-"][id$="-pg"]');
+    const cv = host && host.querySelector("canvas:not(.page-snapshot)");
+    if (!host || !cv) return null;
+    const btn = [...document.querySelectorAll("button")]
+      .find((x) => x.title === "Zoom in (+)");
+    if (!btn) return null;
+
+    const frames = [];
+    const t0 = performance.now();
+    btn.click();
+    await new Promise((done) => {
+      const tick = () => {
+        const h = host.getBoundingClientRect();
+        const c = cv.getBoundingClientRect();
+        frames.push({ host: h.width, cvs: c.width });
+        if (performance.now() - t0 > 900) return done();
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const widths = [...new Set(frames.map((f) => Math.round(f.host)))];
+    return {
+      maxDelta: Math.max(...frames.map((f) => Math.abs(f.cvs - f.host))),
+      steps: widths.length,
+    };
+  });
+
+  check(track !== null, "J. captured the zoom frames");
+  if (track) {
+    // Sub-pixel tolerance: both boxes are fractional, and the canvas is sized
+    // as a percentage of the host, so they can disagree by a rounding hair.
+    check(
+      track.maxDelta <= 1,
+      "J. canvas stretches with the host on EVERY frame",
+      `max |canvas - host| = ${track.maxDelta.toFixed(2)}px`
+    );
+    // Guard the guard: if the zoom were instant there would be no mid-frames
+    // and maxDelta would be trivially 0.
+    check(
+      track.steps >= 3,
+      "J. the zoom really did animate (multiple intermediate sizes)",
+      `${track.steps} distinct host widths`
+    );
+  }
+  const fatal = errors.filter((e) => !/ResizeObserver loop/i.test(e));
+  check(fatal.length === 0, "no page errors during the frame audit", fatal.slice(0, 2).join(" | "));
+  await page.close();
+}
+
 await browser.close();
 
 const failed = results.filter((r) => !r.ok);

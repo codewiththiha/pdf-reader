@@ -72,8 +72,12 @@ const sizeHost = () => page.evaluate(() => {
   const st = { w: 0, h: 0 };
   const cv = document.getElementById("cv1");
   const host = document.getElementById("pg1");
-  st.w = parseFloat(cv.style.width) || cv.width;
-  st.h = parseFloat(cv.style.height) || cv.height;
+  // The engine owns the canvas BACKING STORE only; its CSS box comes from the
+  // stylesheet (width/height:100% of this host), so derive the CSS size from
+  // the backing store over the device pixel ratio the engine rendered at.
+  const out = Math.min(window.devicePixelRatio || 1, 2);
+  st.w = parseFloat(cv.style.width) || cv.width / out;
+  st.h = parseFloat(cv.style.height) || cv.height / out;
   host.style.width = st.w + "px";
   host.style.height = st.h + "px";
   return st;

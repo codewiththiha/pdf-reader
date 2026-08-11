@@ -401,14 +401,27 @@ async function renderPageInternal(canvasId, scale, renderText) {
   const page = await pdf.getPage(st.page);
   const viewport = page.getViewport({ scale });
 
-  // HiDPI backing store; CSS size stays CSS px.
+  // HiDPI backing store. Only the BACKING STORE (width/height attributes) is
+  // touched — the canvas's CSS box is owned by the stylesheet
+  // (`.pdf-page canvas { inset: 0; width: 100%; height: 100% }`), exactly as it
+  // already is for thumbnails in `paintCached`.
+  //
+  // ZOOM-STRETCH FIX: this used to also pin `style.width/height` to the render's
+  // CSS px. An inline style beats the stylesheet, so the canvas was frozen at
+  // the size of the LAST COMPLETED render while the host (and its ::before paper
+  // texture, which is inset:0 and therefore does track) grew frame by frame
+  // during a zoom. Measured on a single `+`: the host animated 1152 -> 1224px
+  // while the canvas sat at 1152 the whole way, a 72px divergence that snapped
+  // shut only on the final frame — the page bitmap visibly lagging its own
+  // texture and border. Dropping the inline size lets the painted bitmap stretch
+  // with the host every frame (which is the whole premise of zoom: animate
+  // already-painted bitmaps, then land one crisp render), and the crisp render
+  // below still resets the backing store to the new scale.
   const out = Math.min(globalThis.devicePixelRatio || 1, 2);
   const cssW = Math.floor(viewport.width);
   const cssH = Math.floor(viewport.height);
   st.canvas.width = Math.floor(viewport.width * out);
   st.canvas.height = Math.floor(viewport.height * out);
-  st.canvas.style.width = cssW + "px";
-  st.canvas.style.height = cssH + "px";
   const ctx = st.canvas.getContext("2d");
   const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 

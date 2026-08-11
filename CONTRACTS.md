@@ -265,3 +265,34 @@ slide (a shrinking scale fits more pages on screen); rendering them at the
 in-flight scale is work that is obsolete before it resolves. Measured on one
 sidebar toggle: 11 renders across 2 scales became 8 renders at 1 scale. The
 `blitThumb` underlay covers the gap until the commit pass.
+
+### Appendix entry 4 — the engine owns the canvas BACKING STORE, never its CSS box
+
+`renderPage` sets `canvas.width/height` (the backing store) and **must not** set
+`canvas.style.width/height`. The canvas's CSS box belongs to the stylesheet:
+
+```css
+.pdf-page canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+```
+
+This is the same rule `paintCached` already documents for thumbnails, now true
+of the page path too.
+
+**Why it is a contract and not a detail.** Zoom is a layout animation of
+already-painted bitmaps followed by one crisp render. An inline width/height on
+the canvas beats the stylesheet's `100%`, which pinned the canvas to the size of
+the *last completed render* while the host — and the `::before` paper texture,
+which is `inset: 0` and so does track — grew every frame. Measured on a single
+`+`: the host animated 1152 -> 1224px while the canvas sat at 1152 the whole
+way, a 72px divergence that snapped shut only on the final frame. The page
+bitmap visibly lagged its own texture and border.
+
+`renderPage`'s return value still reports the render's CSS size (`{ok, width,
+height, scale}`) and `PageCanvas` still sizes the HOST from it — the host is the
+one element with an explicit pixel size, and everything inside it is `inset: 0`.
+
+Regression guard: **section J of `verify-zoom.mjs`** samples the host and canvas
+rects once per rAF across a zoom and asserts `max |canvas - host| <= 1px`, plus
+`>= 3` distinct intermediate host widths so an instant zoom cannot vacuously
+pass. Consumers deriving a CSS size from a canvas must divide the backing store
+by `min(devicePixelRatio, 2)` (see `sizeHost` in `verify.mjs`).
