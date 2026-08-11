@@ -113,3 +113,53 @@ Conflict-avoidance rules:
 ### Appendix — additions (branches append here, never modify above)
 
 _(none yet)_
+
+---
+
+### Appendix entry 1 — thumbnail lane + filename (additive only)
+
+**Engine (`window.PDFReader`), NEW functions.** Existing entries unchanged.
+
+| fn | signature | notes |
+|---|---|---|
+| `renderThumb(canvasId, page, scale)` | `async () -> {ok, width, height, scale, cached}` | Cached thumbnail lane. No `registerPage` needed, never builds a text layer. Renders into a DETACHED canvas and blits the finished frame, so the live canvas is never shown mid-render. `cached:true` = the bitmap was blitted SYNCHRONOUSLY from the LRU cache before the promise suspended; the caller MUST then skip its loading skeleton (covering an already-painted thumbnail and crossfading it away is the per-row scroll flicker). |
+| `cancelThumb(canvasId)` | `() -> void` | Cancels an in-flight thumbnail render. Deliberately does NOT evict the cache — a row that scrolls out and back must repaint instantly. |
+| `hasThumb(page, scale)` | `() -> bool` | SYNCHRONOUS cache probe, read while a cell builds its view so a hit can mount with no skeleton and no animation classes at all. |
+
+`destroy()` additionally cancels in-flight thumbnail renders and clears the
+thumbnail cache (no cross-document bitmap bleed). Cache is LRU-bounded at 256
+entries and keyed on `(page, scale)`.
+
+**Rust bridge additions** (`src/core/bridge.rs`): `render_thumb`, `cancel_thumb`,
+`has_thumb`. **`src/api/engine.rs`**: same three, plus `ThumbResult` in
+`src/core/document.rs` (`{width, height, scale, cached}`).
+
+**Text layer ownership change.** `renderPage` now builds the text layer in a
+DETACHED `div.textLayer` and swaps it into the host in one mutation once the
+render completes. `PageCanvas`'s `.textLayer` node is therefore a placeholder
+that the engine REPLACES; Leptos must not own its contents. This removes the
+overlapping-span duplicates a superseded render used to leave behind (visible as
+doubled/offset text when selecting, and doubled highlight boxes).
+
+**New module `src/core/filename.rs`** (pure, unit-tested): `display_name(title,
+path)` decides what the toolbar shows. A PDF `/Title` is used only when it looks
+like a title — path-shaped, URL-shaped, percent-encoded, placeholder, or
+overlong titles are rejected in favour of the percent-decoded file stem.
+
+**New component `molecules::doc_title::DocTitle(state)`**, rendered by the
+toolbar. It measures the toolbar's live geometry and caps its own width so the
+name folds only on a real collision. It depends on these MEASUREMENT ANCHOR ids
+in `molecules/toolbar.rs`: `#toolbar-row`, `#toolbar-left-pre`, `#toolbar-right`,
+and `#toolbar-center` (present only in Single mode — its presence is how the
+label knows the centered nav is in play). Renaming one silently degrades the
+label to "never truncate".
+
+**`atoms::segmented::Segmented`** options are now `(value, label, title)`; the
+title is required because the segments are icon-only.
+
+**ResizeObserver lifecycle rule.** Every `ResizeObserver` MUST be
+`disconnect()`ed in `on_cleanup` BEFORE its `Closure` is dropped. The browser
+holds its own reference to the wasm-bindgen shim, so a resize notification
+queued during teardown (e.g. a view-mode switch removing `#page-list`) otherwise
+invokes freed memory and aborts the runtime with "closure invoked recursively or
+after being dropped".

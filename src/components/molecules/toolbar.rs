@@ -24,6 +24,7 @@ use crate::core::math::{fit_scale, FitMode};
 use crate::core::state::{AppState, SidebarMode, Toast, ToastKind};
 
 use super::appearance_menu::AppearanceMenu;
+use super::doc_title::DocTitle;
 use super::more_menu::MoreMenu;
 use super::page_nav::PageNav;
 use super::zoom_controls::ZoomControls;
@@ -128,9 +129,16 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
     let filename_state = state;
 
     view! {
-        <div class="relative flex h-12 items-center gap-2 px-3">
+        // `#toolbar-row` and the `#toolbar-*` ids below are MEASUREMENT
+        // ANCHORS for molecules::doc_title, which sizes the document-name label
+        // from the real widths of the groups around it so the name is only
+        // folded with `…` when it would truly collide. Renaming or removing one
+        // silently degrades the label to "never truncate" (see doc_title.rs).
+        <div id="toolbar-row" class="relative flex h-12 items-center gap-2 px-3">
             // LEFT GROUP: hamburger + Open + filename.
             <div class="flex min-w-0 items-center gap-1">
+                // Fixed-size controls left of the name, measured as one unit.
+                <div id="toolbar-left-pre" class="flex shrink-0 items-center gap-1">
                 <Tooltip text="Toggle sidebar".to_string()>
                     <Button
                         on_click=move |_| {
@@ -155,29 +163,29 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         title="Open PDF (Cmd/Ctrl+O)".to_string()
                     />
                 </Tooltip>
-                <span class="min-w-0 max-w-40 truncate text-sm text-ink">
-                    {move || {
-                        filename_state
-                            .doc
-                            .title
-                            .get()
-                            .or(filename_state.doc.path.get())
-                            .unwrap_or_else(|| "No document".to_string())
-                    }}
-                </span>
+                </div>
+                // Document name. Self-measuring: it folds with `…` ONLY when it
+                // would otherwise collide with the centered page nav (single
+                // mode) or the right-hand controls, and hides itself entirely
+                // when the window is too narrow for any useful name.
+                <DocTitle state=filename_state />
             </div>
 
             // CENTER: absolutely positioned, TRUE viewport centering (Single
             // mode only; the self-sized wrapper stays out of the left/right
-            // groups' way).
+            // groups' way). `#toolbar-center` is a doc_title measurement anchor:
+            // its PRESENCE is how the label knows the centered nav is in play.
             <Show when=move || mode.get() == ViewMode::Single>
-                <div class="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
+                <div
+                    id="toolbar-center"
+                    class="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
+                >
                     <PageNav state=state.clone() />
                 </div>
             </Show>
 
             // RIGHT GROUP.
-            <div class="ml-auto flex items-center gap-1">
+            <div id="toolbar-right" class="ml-auto flex shrink-0 items-center gap-1">
                 // Floating-search toggle (U4): lets mouse-only users open search
                 // between Phase 1 and Phase 3; Cmd/Ctrl+F does the same. A raw
                 // button (not the Button atom) so pointerdown can stop
@@ -195,11 +203,23 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                         <Icon name=IconName::Search size=16 />
                     </button>
                 </Tooltip>
+                // Per-segment titles: the segments are icon-only, so without
+                // them the two buttons are unlabelled for screen readers,
+                // hover tooltips, and UI tests alike (the wrapping Tooltip only
+                // titles the group, not the individual options).
                 <Tooltip text="View mode".to_string()>
                     <Segmented
                         options=vec![
-                            (ViewMode::Single, SegmentedLabel::Icon(IconName::SinglePage)),
-                            (ViewMode::Continuous, SegmentedLabel::Icon(IconName::Continuous)),
+                            (
+                                ViewMode::Single,
+                                SegmentedLabel::Icon(IconName::SinglePage),
+                                "Single page view",
+                            ),
+                            (
+                                ViewMode::Continuous,
+                                SegmentedLabel::Icon(IconName::Continuous),
+                                "Continuous scroll view",
+                            ),
                         ]
                         value={mode.read_only()}
                         on_change=move |m: ViewMode| mode_state.viewer.mode.set(m)

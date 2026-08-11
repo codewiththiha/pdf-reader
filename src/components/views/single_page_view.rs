@@ -68,6 +68,20 @@ pub fn SinglePageView(state: AppState) -> impl IntoView {
         }
     });
 
+    // MUST disconnect before the Closure is dropped — see the identical note in
+    // continuous_view.rs. A mode switch unmounts this view and removes
+    // `#single-page-container`, which queues a resize notification into a
+    // closure that is about to be freed; without an explicit disconnect the
+    // wasm runtime aborts with "closure invoked recursively or after being
+    // dropped".
+    on_cleanup(move || {
+        if let Some(observer) = observer_handle.try_get_value().flatten() {
+            observer.disconnect();
+        }
+        observer_handle.try_set_value(None);
+        callback_handle.try_set_value(None);
+    });
+
     // Fit-width/fit-page scale computation now lives in the app-root
     // `effects::fit::fit_effect` (shared with the continuous view).
 

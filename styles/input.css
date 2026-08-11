@@ -41,18 +41,17 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
   --app-radius: 8px;
-  /* Selected-text glyph color. The solid --color-accent-soft highlight covers
-     the canvas glyphs beneath it, so THESE textLayer glyphs are what show.
-     Black in the LIGHT family (light/sepia/green) — their accent-soft
-     highlight is a pale tint, and white-on-pale is unreadable. White in the
-     DARK family (dark/night/dim, which carry the `.dark` class per
-     theme_applier.rs) — their highlight is deep, and black glyphs would
-     vanish against it. */
-  --selection-text-color: #000000;
 }
-:root.dark {
-  --selection-text-color: #ffffff;
-}
+
+/* NOTE: the former `--selection-text-color` is gone on purpose. It existed
+   because selection used a SOLID `--color-accent-soft` background, which hid
+   the canvas glyphs underneath, so the text layer had to paint readable glyphs
+   itself. Painting those glyphs is exactly what produced the doubled,
+   slightly-offset text on selection: the text layer's substituted font never
+   matches the PDF's embedded font metrically, so its glyphs sat a hair off the
+   canvas ones. Selection is now a TRANSLUCENT tint over transparent text (see
+   §4), so the canvas glyphs read straight through and there is only ever one
+   copy of the text on screen. */
 
 /* ---------------------------------------------------------------------
    3. Eye-protection / reading themes — the ONLY place theme values live.
@@ -235,9 +234,49 @@
   color: transparent;
 }
 
+/* Selection highlight.
+   The glyphs the user SEES are painted on the canvas; the text layer holds
+   transparent positional spans on top of it purely so text can be selected.
+   pdf.js's own spans are already glyph-accurate, so selecting must tint the
+   span box and NOT repaint the text — repainting draws the text-layer glyph
+   over the canvas glyph, and since the substituted layer font never matches
+   the embedded PDF font metrically, the two copies land a hair apart. That is
+   the "double / slightly offset text when selecting" — it is not a
+   misalignment of the highlight box, it is a second rendering of the text
+   appearing on top of the first.
+
+   `color: transparent` in ::selection keeps the text layer invisible during a
+   selection, so only the canvas glyphs show, under a translucent tint that
+   lets them read straight through. */
 .pdf-page .textLayer ::selection {
-  background: var(--color-accent-soft);
-  color: var(--selection-text-color);
+  background: color-mix(in srgb, var(--color-accent) 34%, transparent);
+  color: transparent;
+  text-shadow: none;
+  -webkit-text-fill-color: transparent;
+}
+.pdf-page .textLayer ::-moz-selection {
+  background: color-mix(in srgb, var(--color-accent) 34%, transparent);
+  color: transparent;
+  text-shadow: none;
+}
+
+/* The dark themes invert the canvas, so a multiply-ish translucent accent would
+   muddy the inverted glyphs; a slightly stronger tint keeps the selection
+   obvious without hiding them. */
+:root.dark .pdf-page .textLayer ::selection {
+  background: color-mix(in srgb, var(--color-accent) 42%, transparent);
+}
+:root.dark .pdf-page .textLayer ::-moz-selection {
+  background: color-mix(in srgb, var(--color-accent) 42%, transparent);
+}
+
+/* pdf.js appends an `.endOfContent` block (inset:100% 0 0) that it moves to
+   `top:0` while selecting, to make drag-selection past the last line work. It
+   is not a text node, but it IS selectable, and in a `user-select` sweep it can
+   pick up a selection box spanning the whole page. Excluded from the selection
+   painting above so it can never draw a stray band over the page. */
+.pdf-page .textLayer .endOfContent::selection {
+  background: transparent;
 }
 
 /* Snapshot overlay stacked while a scale re-render is in flight
@@ -250,15 +289,43 @@
 /* Search highlights (engine appends .highlight divs into the text layer).
    The vendored pdf_viewer.css `.textLayer .highlight` rule adds a 1px
    margin/padding (for pdf.js's own merged highlights); neutralise it so our
-   rects sit exactly on the glyphs. */
+   rects sit exactly on the glyphs.
+
+   `all: unset`-style resets first: the vendored sheet's
+   `.textLayer > :not(.markedContent)` rule applies a
+   `rotate() scaleX() scale()` transform and a computed `font-size` to EVERY
+   direct child of the text layer — including these highlight divs. The engine
+   measures highlight rects with getBoundingClientRect (already-transformed,
+   final screen pixels), so letting the inherited transform apply again scaled
+   the box a second time and slid it off the glyphs. Neutralising transform /
+   font-size / line-height pins each box exactly where it was measured. */
 .pdf-page .textLayer .highlight {
   position: absolute;
   margin: 0;
   padding: 0;
+  transform: none;
+  font-size: 0;
+  line-height: 0;
   background: color-mix(in srgb, var(--color-accent) 30%, transparent);
   mix-blend-mode: multiply;
   border-radius: 2px;
   pointer-events: none;
+  user-select: none;
+}
+
+/* Highlight boxes must never take part in a text selection: they are decorative
+   divs living inside a selectable container, and a sweep across one would give
+   it a ::selection box of its own — a stray filled rectangle over the page. */
+.pdf-page .textLayer .highlight::selection {
+  background: transparent;
+}
+
+/* Multiply is right on the light themes (it darkens the paper under the text)
+   but on the inverted dark canvases it drives the highlight toward black and
+   swallows the glyphs. Screen keeps it a visible glow there. */
+:root.dark .pdf-page .textLayer .highlight {
+  mix-blend-mode: screen;
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
 }
 
 /* ---------------------------------------------------------------------

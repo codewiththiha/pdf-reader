@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>engine verification harness</title>
+    <link rel="stylesheet" href="/vendor/pdfjs/pdf_viewer.css" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      body { margin: 0; }
+      #stage { padding: 20px; }
+      #thumbs { width: 288px; }
+    </style>
+    <script type="module" src="/vendor/pdfjs/pdf.min.mjs"></script>
+    <script type="module" src="/pdfEngine.js"></script>
+  </head>
+  <body>
+    <div id="stage">
+      <!-- Mirrors the real PageCanvas DOM: .pdf-page host > canvas + .textLayer -->
+      <div id="pg1" class="pdf-page">
+        <canvas id="cv1"></canvas>
+        <div class="textLayer" aria-hidden="true"></div>
+      </div>
+      <!-- Thumbnail cell mirror -->
+      <div id="thumbs">
+        <div class="thumb-card" style="width:120px;position:relative">
+          <canvas id="thumb-1" class="thumb-canvas" style="display:block;width:100%"></canvas>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
