@@ -841,3 +841,44 @@ fit_w)` holds it explains the held-back zoom ("Zoom — fitted to the window;
 returns to N% when there is room"), otherwise plain "Zoom". Selecting on
 user-visible prose broke the gate into `NaN%` readings. Before changing any
 user-facing string, grep `scripts/verify/` for selectors that depend on it.
+
+### Appendix 17 — an effect that writes a signal it tracks must have an OFF switch
+
+`fit_effect` reads `zoom_animating` reactively (appendix 16) and its 120ms
+debounce timer also *writes* it on the quiet path — "already rendered at this
+scale, just release the gate". Those two facts together are a cycle:
+
+```
+timer fires -> zoom_animating.set(false) -> fit_effect re-runs
+            -> arms another timer -> timer fires -> ...
+```
+
+Leptos notifies subscribers on `set` even when the value is unchanged, so
+writing `false` over `false` still re-triggers. The loop ran at ~33 renders a
+second forever.
+
+It hid well. The page never moved, so every width-sampling probe reported the
+layout as perfectly stable — the symptom was pure render churn, visible to the
+reader as constant flicker but invisible to the existing gates. Reproduce it by
+zooming IN past the fit in a narrow window and then widening: the page lands on
+a scale that already fits and is already rendered, so every run takes the quiet
+path. Clicking zoom in/out appears to "fix" it because a gesture ends in
+`commit_scale`, whose `COMMIT_ECHO` makes the next run return early.
+
+**Rules:**
+
+1. **Return before arming the timer when there is nothing to do.** If `target`
+   already equals both `render_scale` and `display_scale` and `zoom_animating`
+   is already false, the layout is settled: do not arm a debounce that will
+   write a signal this effect tracks.
+2. **Never write a tracked signal unconditionally from that timer.** The quiet
+   path is guarded by `if zoom_animating.get_untracked()`, so the write only
+   happens when it actually changes something.
+
+Both are needed: (1) stops the cycle starting, (2) stops it if some other path
+arms the timer on a settled layout.
+
+**Gate:** verify-zoom section M, "a settled layout renders nothing while idle" —
+counts `renderPage` calls for 2.5s after everything settles and requires ≤ 2.
+Measured 100 before the fix, 0 after. Any effect that both reads and writes a
+signal needs a check of this shape; a width/geometry assertion cannot see it.

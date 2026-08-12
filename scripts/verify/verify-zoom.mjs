@@ -846,6 +846,21 @@ for (const theme of ["light", "sepia", "green", "dim"]) {
     `page ${zoomedIn.pageW} vs avail ${zoomedIn.availW}`
   );
 
+  // The layout must go QUIET when it settles.
+  //
+  // `fit_effect` tracks `zoom_animating` and its debounce timer wrote that same
+  // signal on the quiet path, so a settled layout re-triggered the effect,
+  // which armed another timer, forever: ~33 re-renders a second with the page
+  // never moving. Width sampling cannot see it (the page is stable) — only a
+  // render count can. Reproduced by zooming in past the fit while narrow and
+  // then widening, which lands on a scale that already fits and is already
+  // rendered, so every run took the quiet path.
+  await installCounter(page);
+  await resetRenders(page);
+  await page.waitForTimeout(2500);
+  const idle = await renders(page);
+  check(idle <= 2, "M. a settled layout renders nothing while idle", `${idle} renderPage calls in 2.5s`);
+
   check(errors.length === 0, "M. no page errors", errors.slice(0, 2).join(" | "));
   await page.close();
 }
