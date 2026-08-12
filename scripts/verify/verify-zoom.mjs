@@ -88,8 +88,11 @@ async function installCounter(page) {
 const renders = (page) => page.evaluate(() => globalThis.__renderCount);
 const resetRenders = (page) => page.evaluate(() => { globalThis.__renderCount = 0; });
 
+// The readout is found by `data-zoom-readout`, NOT by title: the title is
+// user-facing copy that changes to explain a space-constrained zoom
+// ("returns to N% when there is room"), so it is not a stable identity.
 const zoomPct = (page) => page.evaluate(() => {
-  const b = [...document.querySelectorAll("button")].find((x) => x.title === "Zoom");
+  const b = document.querySelector("button[data-zoom-readout]");
   return b ? parseInt(b.textContent, 10) : NaN;
 });
 const scrollTop = (page) => page.evaluate(() => document.getElementById("page-list").scrollTop);
@@ -104,7 +107,7 @@ const clickZoom = (page, title) => page.evaluate((t) => {
  *  below is scale-independent, so we start each one from a controlled 100%. */
 async function setZoomPreset(page, pct) {
   await page.evaluate(() => {
-    const b = [...document.querySelectorAll("button")].find((x) => x.title === "Zoom");
+    const b = document.querySelector("button[data-zoom-readout]");
     b && b.click();
   });
   await page.waitForTimeout(200);

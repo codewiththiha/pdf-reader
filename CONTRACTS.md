@@ -779,3 +779,65 @@ root) rather than calling `setViewportSize` repeatedly — the fit effect reads
 identical, but repeated OS-window resizes crash the headless renderer. Large
 PDFs at high zoom can also OOM the sandbox; zoom OUT to reach a fitting scale
 instead of zooming in.
+
+### Appendix 16 — exactly one animator owns the layout at a time
+
+Two independent things write `display_scale`, and both raise `zoom_animating`:
+
+- `zoom_system` — the rAF tween behind a zoom GESTURE (button, shortcut, preset).
+- `fit_effect` — the follow for a sidebar slide or a window resize.
+
+Because both raise the same flag, `zoom_animating` cannot arbitrate between
+them. Ownership is tracked separately, by two thread-locals in
+`src/effects/fit.rs`:
+
+- `ZOOM_GESTURE` — claimed in `request_zoom` immediately after
+  `desired_scale.set(target)`, released as the first statement of
+  `commit_scale`, read via `gesture_owns_layout()`.
+- `COMMIT_ECHO` — set by `commit_scale`, consumed once by the `fit_effect` run
+  that its own signal writes trigger (`take_commit_echo()`).
+
+**The rules, each paid for by a real bug:**
+
+1. **`fit_effect` returns early on `gesture_owns_layout()` ALONE** — never on
+   `zoom_animating && owned`. `apply_zoom` writes `fit = None` before
+   `request_zoom`, so the effect re-runs at the very start of every zoom. The
+   claim is taken before `zoom_system` has raised `zoom_animating`, so a
+   conjunction leaves that gap open: the effect recomputed the same target,
+   wrote `display_scale` straight to it, and the tween then started with
+   `from == target` and had nothing to interpolate. **Every zoom snapped in one
+   frame.**
+
+2. **Every exit from `zoom_system` goes through `commit_scale`** — including the
+   `(target - from).abs() < 1e-9` "nothing to move" path. That path hand-rolled
+   its three signal writes and so never released the claim; `fit_effect` was
+   then locked out permanently and the sidebar stopped resizing the page at all.
+
+3. **The run after a commit reconciles nothing — it returns.** `commit_scale`
+   writes `scale`/`display_scale`/`render_scale`, which re-runs `fit_effect`.
+   Re-entering the slide path there raised `zoom_animating` again and armed
+   another commit: a self-feeding loop, **one zoom costing 42–49 render passes**
+   instead of one. Detect that run with `COMMIT_ECHO`, not by comparing
+   container widths — the effect legitimately runs *twice per container size*
+   during a slide (measured), so width-comparison misclassifies half of a real
+   slide's frames as an echo and the sidebar stops moving the page.
+
+4. **The shrink-to-fit ceiling (appendix 15) answers "the space got smaller",
+   never "the reader asked for more."** Applying it on the post-commit run
+   clamped the gesture itself: from a fit-width start every `+` was computed,
+   animated, then instantly undone, so the page could never grow past the
+   window. Zooming in past the fit is deliberate — the page overflows and
+   scrolls. The ceiling still applies on the next genuine container change.
+
+**Probe for smoothness:** sample `.pdf-page` `getBoundingClientRect().width`
+every rAF for ~700ms after a click. 6+ distinct widths = smooth; 1–2 = a snap.
+Assert distinct aspect ratios ≤ 2 in the same pass to catch the flex-squish
+described in appendix 3. Keep such probes to a single short loop — several
+concurrent in-page rAF accumulators destabilise the sandbox.
+
+**Test identity:** the zoom readout is found by `button[data-zoom-readout]`, not
+by its `title`. Its tooltip is reactive — when `is_space_constrained(desired,
+fit_w)` holds it explains the held-back zoom ("Zoom — fitted to the window;
+returns to N% when there is room"), otherwise plain "Zoom". Selecting on
+user-visible prose broke the gate into `NaN%` readings. Before changing any
+user-facing string, grep `scripts/verify/` for selectors that depend on it.
