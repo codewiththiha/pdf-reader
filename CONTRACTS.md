@@ -728,3 +728,54 @@ filter and blend on `.thumb-canvas` and `.pdf-page canvas` were already
 byte-identical, and only the backdrop underneath differed. Gate L samples real
 pixels from a blank region of the page and the same relative region of a
 thumbnail and requires a max channel delta <= 6.
+
+### Appendix 15 — the page fits the space it actually has
+
+**`shown = min(desired, fit_width)`.** Two numbers, and keeping them separate
+is the whole design:
+
+- `viewer.desired_scale` — what the READER asked for. Written only by
+  `request_zoom` (every control and shortcut already funnels through it) and by
+  an active fit mode, which is equally deliberate. A resize NEVER writes it;
+  that is exactly what makes the memory survive a resize.
+- `viewer.scale` — what is shown: the desired scale, or the width-fit scale
+  when the desired one would be cropped.
+
+`core::math::constrained_scale` is the whole rule, and it is pure so it can be
+unit-tested without a browser.
+
+**Why.** A hand-zoomed page used to keep its scale when the window narrowed or
+the sidebar opened, so the document was simply CROPPED — content pushed off
+screen with no affordance to get it back. It now shrinks to fit, and when the
+room returns it grows back and STOPS at the reader's zoom. Growing past it
+would be the app overriding a deliberate choice.
+
+**Recompute from `desired`, never from the current scale.** The previous code
+carried the zoom across a sidebar slide *proportionally*, multiplying the live
+scale by the container ratio on every run. That drifted — three open/close
+cycles never quite returned to the starting zoom — and it only ran during a
+slide, which is why narrowing the WINDOW cropped the page instead. Deriving the
+shown scale from `desired` each time makes shrinking lossless: a container
+dragged through any number of intermediate widths returns to `desired` exactly.
+
+**Scope, confirmed with the user.**
+- Width only. Continuous scrolling down a page is normal reading, so height is
+  not constrained; only horizontal cropping is a loss of access.
+- Zooming IN past the fit stays allowed. It is a deliberate request to inspect
+  detail, and every desktop reader permits it. The constraint applies to the
+  space changing, not to the reader asking.
+- A page that still fits is left ALONE. Shrinking a page that has room would
+  mean smaller text for no reason — that is what section D of verify-zoom now
+  asserts, having previously asserted the opposite.
+
+**Guards.** A container width of `<= 1px` (mount, mid-animation) is ignored
+rather than treated as "fits nothing", which would slam the page to
+`MIN_SCALE`. `constrained_scale` also ignores non-finite or non-positive fit
+widths for the same reason.
+
+**Harness note.** Resize the viewer container directly (set a width on the app
+root) rather than calling `setViewportSize` repeatedly — the fit effect reads
+`container_size` from a ResizeObserver either way, so the code path is
+identical, but repeated OS-window resizes crash the headless renderer. Large
+PDFs at high zoom can also OOM the sandbox; zoom OUT to reach a fitting scale
+instead of zooming in.

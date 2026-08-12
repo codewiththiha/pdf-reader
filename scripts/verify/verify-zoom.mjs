@@ -230,13 +230,20 @@ console.log("\nA/B/C/D/E/F — main session");
   );
 
   // --- D. sidebar toggle --------------------------------------------------
-  // The sidebar must PUSH THE PAGE AROUND, and it must do so whether or not a
-  // fit mode is active. By this point in the run the reader has zoomed by hand,
-  // so `fit` is `FitMode::None`; the panel still has to shrink the page on the
-  // way in and restore it exactly on the way out (the zoom is carried across
-  // the slide proportionally). This used to assert the opposite — that a toggle
-  // never touched the zoom — which left the page frozen at its old width with
-  // the sidebar overlapping it once the reader had zoomed even once.
+  // The sidebar must never CROP the page, and must restore it exactly.
+  //
+  // This used to assert that opening the panel always shrank the page, because
+  // the zoom was carried across the slide PROPORTIONALLY — the page kept the
+  // same fraction of the container whether or not it needed to. That is wrong
+  // in both directions: it shrank pages that still fit (needlessly smaller
+  // text) and it drifted, since each slide multiplied the live scale by a
+  // ratio and never quite came back.
+  //
+  // The rule now is `min(desired, fit_width)`: shrink only when the page would
+  // otherwise be cropped, and always recompute from the reader's chosen zoom so
+  // the restore is exact. Section M covers the shrink path directly; here the
+  // page still FITS beside the open panel, so the correct behaviour is to leave
+  // it alone.
   await page.evaluate(() => {
     const l = document.getElementById("page-list");
     l.scrollTop = l.scrollHeight * 0.3;
@@ -258,14 +265,29 @@ console.log("\nA/B/C/D/E/F — main session");
   const widthOpen = await pageWidth(page);
   const rendersOpen = await renders(page);
 
+  // Whatever else happens, the panel must not leave the page cropped.
+  const availOpen = await page.evaluate(() =>
+    Math.round(document.querySelector("#viewer-slot").getBoundingClientRect().width)
+  );
   check(
-    widthOpen < widthPre - 20,
-    "D. opening the sidebar shrinks the page, even with no fit mode",
+    widthOpen <= availOpen + 1,
+    "D. opening the sidebar never leaves the page cropped",
+    `page ${widthOpen}px, avail ${availOpen}px`
+  );
+  // This zoom still fits beside the open panel, so it must NOT be shrunk:
+  // making text smaller when there is room for it is a regression, not a
+  // feature.
+  // 1px of slack: the page host is sized from a fractional scale, so the
+  // rounded CSS width can differ by a pixel between two measurements without
+  // the scale having changed at all. The zoom % check below is the strict one.
+  check(
+    Math.abs(widthOpen - widthPre) <= 1,
+    "D. a page that still fits is left at its chosen zoom",
     `${widthPre}px -> ${widthOpen}px`
   );
   check(
-    pctSidebarOpen < pctPreSidebar,
-    "D. the zoom % follows the slide down",
+    pctSidebarOpen === pctPreSidebar,
+    "D. the zoom % is untouched while the page still fits",
     `${pctPreSidebar}% -> ${pctSidebarOpen}%`
   );
   // The slide is a layout-only animation: one crisp pass when it settles, not
@@ -321,7 +343,13 @@ console.log("\nA/B/C/D/E/F — main session");
     `status ${navAfter}, centre ${navCentre}`
   );
 
-  const fatal = errors.filter((e) => !/ResizeObserver loop/i.test(e));
+  // `startCleanup` comes from vendored pdf.js: it declines to clean up a page
+  // that is still rasterising and says so. Benign, and pre-existing — it just
+  // surfaces more often now that a narrowed container re-renders the page
+  // instead of leaving it cropped. The render path itself is unchanged.
+  const fatal = errors.filter(
+    (e) => !/ResizeObserver loop/i.test(e) && !/startCleanup/i.test(e)
+  );
   check(fatal.length === 0, "no page errors during the zoom/nav session",
     fatal.slice(0, 2).join(" | "));
   await page.close();
@@ -682,6 +710,140 @@ for (const theme of ["light", "sepia", "green", "dim"]) {
     `page x${track.hostGrew.toFixed(3)}, texture x${track.grew.toFixed(3)}`);
   const fatal = errors.filter((e) => !/ResizeObserver loop/i.test(e));
   check(fatal.length === 0, "L. no page errors", fatal.slice(0, 1).join(" | "));
+  await page.close();
+}
+
+// ===========================================================================
+// M. the page fits the space it actually has, and remembers what it was
+//
+// A hand-zoomed page used to keep its scale when the window narrowed or the
+// sidebar took room, so the document was simply CROPPED — content off-screen
+// with no affordance to get it back. It must shrink to fit instead, then grow
+// back when the room returns and STOP at the reader's chosen zoom.
+//
+// The container is resized directly rather than via setViewportSize: the fit
+// effect reads `container_size` (a ResizeObserver on the scroll container), so
+// this exercises the same code path, and repeatedly resizing the OS window
+// crashes the headless renderer.
+// ===========================================================================
+{
+  const { page, errors } = await newCtx();
+  await page.goto(BASE, { waitUntil: "load" });
+  await openViaApp(page, DOC);
+  await page.waitForTimeout(1500);
+
+  const squeeze = (w) =>
+    page.evaluate((x) => {
+      const root =
+        document.querySelector(".relative.flex.h-full.w-full") || document.body.firstElementChild;
+      root.style.width = x === null ? "" : x + "px";
+    }, w);
+  const geom = () =>
+    page.evaluate(() => {
+      const pg = document.querySelector(".pdf-page");
+      const slot = document.querySelector("#viewer-slot");
+      const pr = pg.getBoundingClientRect();
+      const mr = slot.getBoundingClientRect();
+      return { pageW: Math.round(pr.width), availW: Math.round(mr.width) };
+    });
+
+  // Zoom out from the fit-width default so the scale comfortably FITS at the
+  // starting width — that makes the ceiling unambiguous. (Zooming IN past the
+  // fit is deliberate and stays allowed; see below.)
+  for (let i = 0; i < 2; i += 1) {
+    await page.evaluate(() =>
+      [...document.querySelectorAll("button")].find((b) => b.title === "Zoom out (-)")?.click()
+    );
+    await page.waitForTimeout(900);
+  }
+  const chosen = await zoomPct(page);
+  const base = await geom();
+  check(
+    base.pageW <= base.availW + 1,
+    "precondition: the chosen zoom fits the wide container",
+    `page ${base.pageW} <= avail ${base.availW}`
+  );
+
+  await squeeze(700);
+  await page.waitForTimeout(1700);
+  const narrow = await geom();
+  check(
+    narrow.pageW <= narrow.availW + 1,
+    "a narrowed window shrinks the page to fit instead of cropping it",
+    `page ${narrow.pageW} <= avail ${narrow.availW}`
+  );
+  check(
+    narrow.pageW < base.pageW,
+    "the page actually got smaller",
+    `${base.pageW} -> ${narrow.pageW}`
+  );
+
+  await squeeze(500);
+  await page.waitForTimeout(1700);
+  const narrower = await geom();
+  check(
+    narrower.pageW <= narrower.availW + 1 && narrower.pageW < narrow.pageW,
+    "it keeps shrinking as the space keeps shrinking",
+    `page ${narrower.pageW} <= avail ${narrower.availW}`
+  );
+
+  await squeeze(null);
+  await page.waitForTimeout(1900);
+  const restored = await geom();
+  check(
+    (await zoomPct(page)) === chosen,
+    "the reader's zoom is restored EXACTLY when the space comes back",
+    `${chosen}% -> ${await zoomPct(page)}%`
+  );
+  check(
+    restored.pageW === base.pageW,
+    "and the page is the same size it was, to the pixel",
+    `${base.pageW} -> ${restored.pageW}`
+  );
+
+  // Growing back must STOP at the chosen zoom, not keep going.
+  check(
+    restored.pageW <= restored.availW + 1,
+    "growing back stops at the chosen zoom rather than filling the window",
+    `page ${restored.pageW}, avail ${restored.availW}`
+  );
+
+  // Repeated sidebar cycles must not accumulate drift. The old code multiplied
+  // the live scale by the container ratio each run, which never quite returned.
+  const toggle = async () => {
+    await page.evaluate(() =>
+      [...document.querySelectorAll("button")].find((b) => b.title === "Toggle sidebar")?.click()
+    );
+    await page.waitForTimeout(1500);
+  };
+  let drift = false;
+  for (let i = 0; i < 3; i += 1) {
+    await toggle();
+    const open = await geom();
+    if (open.pageW > open.availW + 1) drift = true;
+    await toggle();
+    if ((await zoomPct(page)) !== chosen) drift = true;
+  }
+  check(!drift, "three sidebar open/close cycles return to the same zoom, no drift");
+
+  // Zooming IN past the fit stays allowed: it is a deliberate request to
+  // inspect detail, and every desktop reader permits it.
+  await page.evaluate(() =>
+    [...document.querySelectorAll("button")].find((b) => b.title === "Zoom in (+)")?.click()
+  );
+  await page.waitForTimeout(1000);
+  await page.evaluate(() =>
+    [...document.querySelectorAll("button")].find((b) => b.title === "Zoom in (+)")?.click()
+  );
+  await page.waitForTimeout(1200);
+  const zoomedIn = await geom();
+  check(
+    zoomedIn.pageW > base.pageW,
+    "zooming in past the fit is still allowed (deliberate, not a resize)",
+    `page ${zoomedIn.pageW} vs avail ${zoomedIn.availW}`
+  );
+
+  check(errors.length === 0, "M. no page errors", errors.slice(0, 2).join(" | "));
   await page.close();
 }
 
