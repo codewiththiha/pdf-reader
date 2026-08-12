@@ -882,3 +882,45 @@ arms the timer on a settled layout.
 counts `renderPage` calls for 2.5s after everything settles and requires ≤ 2.
 Measured 100 before the fix, 0 after. Any effect that both reads and writes a
 signal needs a check of this shape; a width/geometry assertion cannot see it.
+
+### Appendix 18 — WKWebView does not free a canvas you merely forget
+
+Scrolling a continuous document grew RAM with every page that had ever been
+on screen: 400MB, then 800MB, then 1GB. The virtualization window itself is
+small (`SCROLL_BUFFER` + what's visible). The leak was the pages that had
+already left it.
+
+**Removing a `<canvas>` from the DOM does not release its backing store in
+WKWebView** (Tauri's webview). The IOSurface stays allocated until a later
+GC that, under scroll pressure, never quite runs. The same is true of a
+detached canvas sitting in a JS `Map`. The only synchronous release is
+assigning `canvas.width = 0; canvas.height = 0`, or `ImageBitmap.close()`.
+
+So:
+
+- `unregisterPage` (page scrolled out of the continuous window) now zeros
+  the live canvas, every `.page-snapshot`, and the text/link layers, then
+  calls `pdf.cleanup()`. A `dead` flag stops an in-flight render from
+  reallocating a backing store on a host that is going away.
+- `cancelThumb` still does **not** evict the cache (a remount must blit
+  synchronously) but zeros the *live* cell canvas.
+- Thumbnail cache entries are `ImageBitmap`s (with a canvas fallback) and
+  are `close()`d / zeroed on LRU eviction and on `destroy()`. The bound is
+  64, not 256: ~6 screens of the 2-column grid, enough that normal browsing
+  is still a sync blit, not enough to pin a whole book. Thumbs rasterise at
+  1× device pixels — they are painted into a 120px card, so 2× was 4× the
+  memory for no visible gain.
+- One page's RGBA buffer is capped at 8MP (~32MB). An uncapped 5× letter
+  page on a retina display is ~192MB *per page*; the CSS box still stretches
+  the smaller bitmap.
+- `remove_snapshots` zeros the overlay before dropping it, so a zoom does
+  not leak a full-page copy.
+
+`PDFReader.stats()` (`{pages, thumbs, thumbLimit, thumbTasks}`) is additive
+and exists so the verify harness can assert the Map *and* the backing store
+went away, not just the key. `cancelThumb` / `hasThumb` / `cached:true`
+contracts are unchanged.
+
+**Gate:** verify.mjs section 5 — after `unregisterPage` the page canvas is
+0×0 and `stats().pages === 0`; after `cancelThumb` the live thumb is 0×0
+and `hasThumb` is still true; `stats().thumbLimit === 64`.
