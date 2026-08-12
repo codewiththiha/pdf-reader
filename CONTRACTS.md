@@ -924,3 +924,40 @@ contracts are unchanged.
 **Gate:** verify.mjs section 5 — after `unregisterPage` the page canvas is
 0×0 and `stats().pages === 0`; after `cancelThumb` the live thumb is 0×0
 and `hasThumb` is still true; `stats().thumbLimit === 64`.
+
+### Appendix 19 — a colour slider must not re-allocate every page filter
+
+Dragging Colour / Tint strength pushed RAM to 1.2GB. The look is a CSS
+`filter` + `mix-blend-mode` on every visible page canvas (and every thumb).
+That is the right look — `sepia/saturate/hue-rotate` tints paper without
+washing out black text, and it must stay. The cost was HOW OFTEN it was
+rewritten.
+
+Every `input` event wrote the whole `settings` signal. That:
+
+1. rebuilt `--canvas-filter` on `<html>` (a new filter string every degree),
+   so WKWebView allocated a fresh filter intermediate per page, per tick;
+2. notified every subscriber (PageCanvas host class, presets, persist);
+3. wrote localStorage on every tick;
+4. kept the animated grain overlay (a 3×-viewport compositor layer) blending
+   on top of all of that.
+
+The filter MATH is unchanged (`Appearance::canvas_filter`). What changed is
+the write path:
+
+- Sliders call `preview_appearance` which paints CSS at most once per
+  animation frame and does NOT touch `settings` until 180ms after the last
+  tick. One Settings write, one persist, per gesture.
+- `body.appearance-scrubbing` hides the grain overlay for the duration of
+  the drag so filter + full-viewport blend are not stacked on every frame.
+- Animated grain overhang is `-24px` (the crawl travels ≤14px), not
+  `-100%`.
+- localStorage is debounced 350ms.
+- `PageCanvas` memos the texture mode so a hue write cannot rebuild every
+  page host's class.
+
+Structural clicks (preset / base / texture mode / grain mode) either
+`flush_appearance_commit` (keep the hue just dialled) or
+`cancel_appearance_commit` (a preset is an explicit look). The filter
+string a settled layout produces is identical to before, so
+`verify-appearance` pixel gates still hold.
