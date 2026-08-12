@@ -961,3 +961,33 @@ Structural clicks (preset / base / texture mode / grain mode) either
 `cancel_appearance_commit` (a preset is an explicit look). The filter
 string a settled layout produces is identical to before, so
 `verify-appearance` pixel gates still hold.
+
+### Appendix 20 — arrow keys own the scroller; fit uses the page on screen
+
+**Arrow Up/Down in continuous mode must scroll `#page-list` themselves.**
+They used to be left to the browser, which scrolls whatever currently has
+focus. Focus was almost always a text-layer span on the page the reader
+had clicked. Virtualization unmounts that page a few screens later, the
+focused node is removed, key-repeat dies, and the next press lands on
+`<body>` — which is not the scroll container. The arrows then did nothing
+until the reader clicked the page again.
+
+`shortcuts` now `preventDefault`s ArrowUp/Down/PageUp/PageDown/Space in
+continuous mode and writes `#page-list.scrollTop` directly, unless the
+event landed in chrome (`#thumb-scroll`, `aside`, a popover, or a
+focused button for Space). `#page-list` is `tabindex=0` and reclaiming
+focus on a descendant's removal keeps hold-to-repeat aimed at a node
+that outlives any one page.
+
+**Fit / shrink-to-fit must use the page under the eyes, not page 1.**
+`engine.open()` now also returns `pageWidths` (additive). `fit_effect`
+reads `viewer.page` and `doc.page_widths` and computes the ceiling from
+that sheet's intrinsic size. A landscape plate in an otherwise-A4 book
+is no longer cropped; scrolling back onto a portrait page grows the
+scale back (to `desired`, or to fit-width if a fit mode is on).
+
+A page-only change does NOT follow the layout on the same frame — that
+would zoom on every row boundary while scrolling. It waits for the
+existing 120ms debounce, then relayouts and commits once the reader
+pauses. Sidebar / window changes still follow every frame so the page
+does not squish.
