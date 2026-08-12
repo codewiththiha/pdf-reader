@@ -673,6 +673,348 @@ const statusPage = (page) =>
   await ctx.close();
 }
 
+// ===========================================================================
+// H. tint keeps the UI hierarchy (light mode, high strength)
+//
+// REGRESSION: the tint mixed every token TOWARD the tint colour, which dragged
+// paper (L=1.00), surface (0.97) and line (0.93) to a common lightness. At 90%
+// green the page, sidebar, toolbar and thumbnail cards became one flat slab
+// with no edges, and the accent stayed BLUE because mixing a saturated blue
+// 31% toward green barely moves its hue. Dark mode hid it: its bases start low,
+// so being pulled up still left them dark enough to read as chrome.
+// ===========================================================================
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 820 } });
+  const page = await newPage(ctx);
+  await openViaApp(page, DOC, {
+    appearance: {
+      base: "light", tint_hue: 104, tint_strength: 90, texture: "none",
+      texture_opacity: 90, texture_scale: 100, noise: "off", noise_intensity: 25,
+    },
+  });
+
+  const lch = async (name) =>
+    page.evaluate((n) => {
+      const el = document.createElement("div");
+      el.style.color = getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+      document.body.appendChild(el);
+      const v = getComputedStyle(el).color;
+      el.remove();
+      const m = /oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)/.exec(v);
+      return m ? { l: +m[1], c: +m[2], h: +m[3] } : null;
+    }, name);
+
+  const paper = await lch("--color-paper");
+  const surface = await lch("--color-surface");
+  const line = await lch("--color-line");
+  const accent = await lch("--color-accent");
+
+  check(
+    paper && surface && paper.l > surface.l + 0.01,
+    "light+90% tint: the page stays brighter than the chrome",
+    paper && surface ? `paper L=${paper.l.toFixed(3)} vs surface L=${surface.l.toFixed(3)}` : "n/a"
+  );
+  check(
+    surface && line && surface.l > line.l + 0.01,
+    "light+90% tint: the chrome stays brighter than its borders",
+    surface && line ? `surface L=${surface.l.toFixed(3)} vs line L=${line.l.toFixed(3)}` : "n/a"
+  );
+  check(
+    paper && Math.abs(paper.l - 1.0) < 0.01,
+    "light+90% tint: paper keeps its own lightness (does not darken)",
+    paper ? `L=${paper.l.toFixed(3)}` : "n/a"
+  );
+  // The accent must follow the tint, not stay blue on a green page.
+  const hueDist = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+  check(
+    accent && paper && hueDist(accent.h, paper.h) < 25,
+    "light+90% tint: the accent follows the tint hue (no stranded blue)",
+    accent && paper ? `accent h=${accent.h.toFixed(0)} vs paper h=${paper.h.toFixed(0)}` : "n/a"
+  );
+
+  // The panels must be visually distinguishable from the page, not merged.
+  const bgs = await page.evaluate(() => {
+    const rgb = (s) => {
+      const el = document.querySelector(s);
+      return el ? getComputedStyle(el).backgroundColor : null;
+    };
+    return { aside: rgb("aside"), page: rgb(".pdf-page"), card: rgb(".thumb-card") };
+  });
+  check(
+    bgs.aside && bgs.page && bgs.aside !== bgs.page,
+    "light+90% tint: the sidebar does not merge into the page",
+    `${bgs.aside} vs ${bgs.page}`
+  );
+
+  await ctx.close();
+}
+
+// ===========================================================================
+// I. toolbar readouts stay legible
+//
+// REGRESSION: every toolbar span was white + mix-blend-difference. That works
+// for near-black/near-white ink but fails for mid-grey: `--color-muted`
+// differenced against the light glass resolved to near-white, and the "/ 12"
+// total rendered at a measured luminance spread of 7/255 — invisible.
+// ===========================================================================
+for (const base of ["light", "dark"]) {
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 820 } });
+  const page = await newPage(ctx);
+  await openViaApp(page, DOC, {
+    appearance: {
+      base, tint_hue: 34, tint_strength: 0, texture: "none",
+      texture_opacity: 90, texture_scale: 100, noise: "off", noise_intensity: 25,
+    },
+  });
+  // Single-page mode is where the x/y navigator lives.
+  await page.evaluate(() =>
+    [...document.querySelectorAll("button")].find((b) => b.title === "Single page view")?.click()
+  );
+  await page.waitForTimeout(1200);
+
+  // Measure the PAINTED pixels of each readout: the glyphs must actually
+  // contrast with what is behind them.
+  const spread = async (text) => {
+    const clip = await page.evaluate((t) => {
+      const s = [...document.querySelectorAll("header span")].find(
+        (x) => x.textContent.trim() === t
+      );
+      if (!s) return null;
+      const r = s.getBoundingClientRect();
+      return { x: Math.round(r.x), y: Math.round(r.y), width: Math.max(4, Math.round(r.width)), height: Math.max(4, Math.round(r.height)) };
+    }, text);
+    if (!clip) return null;
+    const buf = await page.screenshot({ clip });
+    return page.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = "data:image/png;base64," + b64;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext("2d");
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let min = 999, max = -1;
+      for (let i = 0; i < d.length; i += 4) {
+        const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        if (lum < min) min = lum;
+        if (lum > max) max = lum;
+      }
+      return Math.round(max - min);
+    }, buf.toString("base64"));
+  };
+
+  const total = await spread("12");
+  check(
+    total !== null && total > 60,
+    `${base}: the page-total readout is legible (not white-on-white)`,
+    `luminance spread ${total}`
+  );
+
+  await ctx.close();
+}
+
+// ===========================================================================
+// J. the sidebar follows the reader
+//
+// The panels always rendered from the top, so on a long document the reader
+// had to hunt for their position — the outline highlight was useless until you
+// scrolled to it. Uses a 40-chapter fixture whose outline is taller than the
+// panel; `Outlined Book.pdf` fits entirely on screen and cannot show this.
+// ===========================================================================
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 820 } });
+  const page = await newPage(ctx);
+  await openViaApp(page, "/samples/Deep Outline.pdf");
+
+  await page.evaluate(() => {
+    const a = document.querySelector("aside");
+    if (!a || a.getBoundingClientRect().width < 50)
+      [...document.querySelectorAll("button")].find((b) => b.title === "Toggle sidebar")?.click();
+  });
+  await page.waitForTimeout(800);
+
+  // The rail buttons are TOGGLES and their active state is not a stable class
+  // token, so drive them and then VERIFY — guessing from className is what made
+  // an earlier harness click twice and silently close the panel again.
+  // Both panels stay MOUNTED (the inactive one is `visibility:hidden`), so
+  // "are there outline rows in the DOM" is true even when Thumbs is showing.
+  // Ask whether the outline panel is actually VISIBLE instead — checking the
+  // wrong thing here is what made an earlier harness click the tab twice and
+  // silently toggle straight back to Thumbs.
+  const outlineShowing = () =>
+    page.evaluate(() => {
+      const row = document.querySelector("aside button[data-outline-index]");
+      if (!row) return false;
+      let el = row;
+      while (el && el !== document.body) {
+        if (getComputedStyle(el).visibility === "hidden") return false;
+        el = el.parentElement;
+      }
+      return true;
+    });
+  const showOutline = async () => {
+    if (await outlineShowing()) return true;
+    await page.evaluate(() =>
+      [...document.querySelectorAll("aside button")]
+        .find((x) => x.textContent.trim() === "Outline")
+        ?.click()
+    );
+    await page.waitForTimeout(1300);
+    return outlineShowing();
+  };
+  check(await showOutline(), "the outline panel is showing (precondition)");
+
+  const outlineState = () =>
+    page.evaluate(() => {
+      const sc = document.querySelector("aside .overflow-y-auto");
+      const act = document.querySelector('aside button[aria-current="true"]');
+      if (!sc) return null;
+      const sr = sc.getBoundingClientRect();
+      const ar = act ? act.getBoundingClientRect() : null;
+      return {
+        scrollTop: Math.round(sc.scrollTop),
+        overflows: sc.scrollHeight > sc.clientHeight + 5,
+        activeVisible: ar ? ar.top >= sr.top - 1 && ar.bottom <= sr.bottom + 1 : null,
+        active: act ? act.textContent.trim().slice(0, 20) : null,
+      };
+    });
+
+  const s0 = await outlineState();
+  check(s0 && s0.overflows, "the fixture's outline is taller than the panel (precondition)");
+
+  // Jump deep into the document; the active entry must be brought into view.
+  await page.evaluate(() => {
+    const l = document.getElementById("page-list");
+    l.scrollTop = l.scrollHeight * 0.9;
+  });
+  await page.waitForTimeout(2500);
+  const s1 = await outlineState();
+  check(
+    s1 && s1.scrollTop > 0,
+    "the outline scrolls to follow the reader",
+    s1 ? `scrollTop ${s0.scrollTop} -> ${s1.scrollTop} (${s1.active})` : "n/a"
+  );
+  check(s1 && s1.activeVisible === true, "the active outline entry is on screen");
+
+  // Scroll the panel away by hand, then re-click the ACTIVE tab: that is the
+  // explicit "take me back to where I am" gesture, and it must not close the
+  // panel.
+  await page.evaluate(() => {
+    document.querySelector("aside .overflow-y-auto").scrollTop = 0;
+  });
+  await page.waitForTimeout(400);
+  await page.evaluate(() =>
+    [...document.querySelectorAll("aside button")]
+      .find((x) => x.textContent.trim() === "Outline")
+      ?.click()
+  );
+  await page.waitForTimeout(1000);
+  const s2 = await outlineState();
+  check(
+    s2 && s2.scrollTop > 0 && s2.activeVisible === true,
+    "re-clicking the active Outline tab jumps back to the reader's position",
+    s2 ? `scrollTop 0 -> ${s2.scrollTop}` : "n/a"
+  );
+  check(
+    await page.evaluate(() => document.querySelector("aside").getBoundingClientRect().width > 50),
+    "re-clicking the active tab does NOT close the sidebar"
+  );
+
+  // Same gesture for thumbnails.
+  await page.evaluate(() =>
+    [...document.querySelectorAll("aside button")]
+      .find((x) => x.textContent.trim() === "Thumbs")
+      ?.click()
+  );
+  await page.waitForTimeout(2200);
+  // The aside contains TWO scrollers (the outline list and the thumb grid,
+  // both mounted). Identify the grid by its content, not by being the first
+  // overflowing div.
+  const thumbScroller = () =>
+    page.evaluate(() => {
+      const sc = [...document.querySelectorAll("aside div")].find(
+        (d) =>
+          d.scrollHeight > d.clientHeight + 20 &&
+          d.clientHeight > 100 &&
+          d.querySelector("canvas")
+      );
+      return sc ? Math.round(sc.scrollTop) : null;
+    });
+  const t1 = await thumbScroller();
+  check(t1 !== null && t1 > 0, "the thumbnail grid follows the reader too", `scrollTop ${t1}`);
+
+  await page.evaluate(() => {
+    const sc = [...document.querySelectorAll("aside div")].find(
+      (d) =>
+        d.scrollHeight > d.clientHeight + 20 &&
+        d.clientHeight > 100 &&
+        d.querySelector("canvas")
+    );
+    if (sc) sc.scrollTop = 0;
+  });
+  await page.waitForTimeout(400);
+  await page.evaluate(() =>
+    [...document.querySelectorAll("aside button")]
+      .find((x) => x.textContent.trim() === "Thumbs")
+      ?.click()
+  );
+  await page.waitForTimeout(1500);
+  const t2 = await thumbScroller();
+  check(
+    t2 !== null && t2 > 0,
+    "re-clicking the active Thumbs tab jumps back to the current page",
+    `scrollTop 0 -> ${t2}`
+  );
+
+  await ctx.close();
+}
+
+// ===========================================================================
+// K. the animated-grain thumbnail is not a mess
+//
+// `noise-crawl` translates by up to 14px; the swatch is ~49x65px. At `inset: 0`
+// the tile's own EDGE was dragged into frame, giving the Cinema thumbnail a
+// hard vertical seam and a bare corner.
+// ===========================================================================
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 880 } });
+  const page = await newPage(ctx);
+  await openViaApp(page, DOC);
+  await openMenu(page);
+
+  const geom = await page.evaluate(() => {
+    const sw = document.querySelector('button[title="Cinema"] .preset-swatch');
+    if (!sw) return null;
+    const pg = sw.querySelector(".preset-page");
+    const af = getComputedStyle(pg, "::after");
+    const r = pg.getBoundingClientRect();
+    return {
+      clipped: getComputedStyle(sw).overflow === "hidden",
+      overhangX: (parseFloat(af.width) - r.width) / 2,
+      overhangY: (parseFloat(af.height) - r.height) / 2,
+      anim: af.animationName,
+    };
+  });
+  check(geom !== null, "the Cinema swatch exists");
+  check(
+    geom && geom.anim === "noise-crawl",
+    "the animated preset's thumbnail is animated",
+    geom ? geom.anim : "n/a"
+  );
+  // The crawl peaks at 14px, so the tile must overhang by more than that on
+  // both axes or an edge shows.
+  check(
+    geom && geom.overhangX > 14 && geom.overhangY > 14,
+    "the grain tile overhangs the swatch, so no tile edge can slide into view",
+    geom ? `overhang ${geom.overhangX.toFixed(0)}x${geom.overhangY.toFixed(0)}px` : "n/a"
+  );
+  check(geom && geom.clipped, "the swatch clips the oversized tile");
+
+  await ctx.close();
+}
+
 await browser.close();
 
 const failed = results.filter((r) => !r.ok);

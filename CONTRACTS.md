@@ -614,3 +614,79 @@ stale target must not scroll into the void.
 text layer's transparent spans cover the whole page and would otherwise eat
 every click. Only the anchors take `pointer-events`, so text selection still
 works everywhere except the few pixels that are a link.
+
+### Appendix 12 — tinting the UI without destroying it
+
+**Preserve lightness; move only hue and chroma.** The first tint used
+`color-mix(in oklch, <base>, <tint> N%)`. Mixing *toward* a mid-lightness
+colour drags every token toward THAT lightness, so at 90% strength in light
+mode paper (L=1.00), surface (0.97) and line (0.93) all landed near 0.88 — they
+converged, and the page, sidebar, toolbar and thumbnail cards became one flat
+slab with no edges. The accent also stayed blue on a green tint, because mixing
+a saturated blue 31% toward green barely moves its hue. Dark mode hid both
+problems: its bases start low, so being pulled up still left them dark enough
+to read as chrome, which is why it "looked fine in dark, wrong in light".
+
+`ui_overrides` now converts each base to OKLCH (`core/oklch.rs`), keeps L
+exactly, rotates H toward the tint by `strength` (the SHORT way round the
+circle, so 350° -> 10° does not sweep the spectrum), and raises C toward a
+per-token ceiling. Because L never moves, contrast ratios are preserved by
+construction at any strength and the ladder survives 100%. Per-token ceilings
+keep large flat areas restrained and let accents saturate; ink is capped near
+zero because coloured ink on coloured paper is what makes tinted themes murky.
+
+**sRGB vs OKLCH hue.** `tint_hue` is an sRGB angle (the page tint is applied
+with `hue-rotate()`, which works in sRGB). OKLCH's circle is rotated relative
+to it and not by a constant — sRGB 34° is a warm tan, OKLCH 34° is pink.
+`ui_hue_oklch` converts a fully saturated sRGB colour at the requested angle
+and reads back its OKLCH hue, so one slider drives page and chrome to the same
+colour.
+
+**Toolbar glyph auto-inversion is opt-in.** Every toolbar span used to be
+white + `mix-blend-difference` so it would invert against whatever scrolled
+under the glass. That works for near-black or near-white ink but FAILS for
+mid-grey: `--color-muted` differenced against the light glass resolves to
+near-white, and the "/ 12" page total rendered at a measured luminance spread
+of 7/255 — invisible — while the input beside it (opaque background, never
+blended) stayed dark. Only `.glass-invert` blends now; everything else keeps
+its themed colour, which is safe because the header is `bg-surface/60` and
+every token is already chosen for contrast against surface. The status bar is
+unaffected: its blend lives on the footer, over the page itself.
+
+**Animated grain in a thumbnail must overhang.** `noise-crawl` translates by up
+to 14px and a swatch is ~49x65px, so at `inset: 0` the tile's own edge was
+dragged into frame — the Cinema thumbnail showed a hard vertical seam and a
+bare corner. The swatch grain uses `inset: -100%` (as the full-page overlay
+already did) plus a 40px tile, since the 160px tile scaled into a 49px swatch
+shows only a few blobs and reads as smudges.
+
+### Appendix 13 — the sidebar follows the reader
+
+Both panels rendered from the top, so on a long document the reader had to hunt
+for their position and the outline highlight was useless until you scrolled to
+it.
+
+**Passive follow is conditional.** `reveal_in_scroll_parent` scrolls ONLY when
+the target is off screen. Unconditional centring on every page change would
+yank the list out from under someone reading down it — the row they were about
+to click slides away.
+
+**The explicit gesture centres unconditionally.** Re-clicking the ACTIVE rail
+tab dispatches `pdfreader:reveal-active`; both panels listen and centre on the
+reader's position. Re-click no longer closes the panel — the toolbar's Toggle
+sidebar button is for closing, and a reader who has scrolled the panel away has
+no other way back. The thumbnail panel clears its user-drive grace when
+honouring this, since being mid-scroll is exactly how you get lost.
+
+**Retry across frames.** The reveal effect and the row list are driven by the
+same signals, so the effect can run before the rows for the new page exist, and
+one `requestAnimationFrame` is not always enough (rows are re-keyed, so the
+node for an index may still be the old one). The effect retries up to 4 frames
+and stops at the first laid-out row.
+
+**Harness note.** Both panels stay MOUNTED (the inactive one is
+`visibility:hidden`), so "are there outline rows in the DOM" is TRUE even while
+Thumbs is showing. A test that uses that as its "is Outline open?" check will
+click the tab twice and toggle straight back. Check computed `visibility`
+instead. The rail buttons are toggles and their active state is not a stable
+class token.
