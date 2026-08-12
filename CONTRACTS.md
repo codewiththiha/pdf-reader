@@ -1032,3 +1032,35 @@ picking apply live. `paint_appearance_now` also:
 
 Slider ticks do not take that last path — rebuilding the glass layer
 every hue degree is the RAM cost appendix 19 closed.
+
+### Appendix 22 — thumbs outro with the sidebar; no close/reopen RAM spike
+
+**Do not `visibility:hidden` the thumbnail grid on the first frame of a
+close.** The aside width-tweens 288→0 over 300ms (`duration-300
+ease-in-out`). The rail labels (Thumbs / Outline) outro by being
+clipped as that happens. The panels used to go `invisible` the instant
+`sidebar` became `None`, so the grid popped off while the labels slid
+away.
+
+The last-open panel now stays painted for the whole slide. It fades
+with `.sidebar-panel.is-outro` (`opacity` 300ms ease-in-out, same
+curve as the width tween) and clips with the aside. After 300ms the
+`<For>` emits no rows, every `ThumbCell` unmounts, and `cancelThumb`
+zeros the live canvases. The cache is untouched, so the next open is a
+sync blit.
+
+**A close-and-reopen inside that 300ms window must not remount.**
+Toggling `visibility` on a stack of `filter` + `mix-blend-mode` thumb
+canvases makes WKWebView allocate a fresh compositor layer per thumb;
+doing that on every quick toggle was the RAM spike. Reopening before
+the slide ends cancels the deferred unmount, so the live canvases
+never leave and nothing is re-rasterised.
+
+Tab switches (Thumbs ↔ Outline) still use `invisible` on the inactive
+panel so the virtualization window stays engine-bound and a switch
+back is instant. `hidden` (`display:none`) is still forbidden: its
+height collapse would re-evict the window and re-render every thumb.
+
+`ThumbnailsPanel` now takes `live: Signal<bool>` (additive). Pure
+helpers `panel_is_shown` / `thumbs_should_stay_mounted` own the
+mount/paint rules so they can be unit-tested without a browser.
