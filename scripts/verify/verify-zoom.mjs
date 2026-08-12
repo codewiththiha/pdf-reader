@@ -616,7 +616,11 @@ for (const theme of ["light", "sepia", "green", "dim"]) {
     const K = "pdfreader.settings.v1";
     let s = {};
     try { s = JSON.parse(localStorage.getItem(K) || "{}"); } catch {}
-    s.texture = "lined";      // a pitch that is trivial to read back
+    // The texture moved under `appearance` when the six fixed themes were
+    // replaced by base + tint + presets; the legacy top-level `texture` is
+    // still READ (it migrates), but writing it here would also trigger the
+    // migration path and reset the rest of the look.
+    s.appearance = { ...(s.appearance || {}), texture: "lined" }; // trivial pitch to read back
     s.last_path = doc;
     localStorage.setItem(K, JSON.stringify(s));
   }, DOC);

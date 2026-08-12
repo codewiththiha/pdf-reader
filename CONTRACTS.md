@@ -504,3 +504,113 @@ The row carries the accent on its already-reserved `border-l-2` (so nothing
 shifts when it lights up), plus a tinted ground, full-strength ink and
 `aria-current` for screen readers. It is derived from `viewer.page`, so it
 tracks scrolling, not just clicks.
+
+### Appendix 10 — the appearance model: base + computed tint + presets
+
+**Six fixed themes became three bases and a continuous tint.** Sepia and Green
+were only ever "light, tinted brown" and "light, tinted green" — the same
+structure with a different hue, hand-written twice. That does not generalise: a
+reader who wants slightly cooler paper had no way to ask, and every new tint
+meant another CSS block. There are now three BASE modes (Light / Dark / Dim)
+that decide the structural family — does the canvas invert, do textures
+multiply or screen — plus a `{hue, strength}` tint applied by the same maths on
+any base.
+
+**Sepia, Green and Night still exist, as presets.** `{Light, 34°, 45}`,
+`{Light, 104°, 40}` and `{Dark, 110°, 35}` reproduce them. That is the
+compatibility guarantee that allowed those CSS blocks to be deleted, and
+`the_retired_themes_survive_as_presets` guards it. A persisted `theme_id` from
+before the change is migrated on load (`core/settings.rs`), so an install
+reading in Sepia stays in Sepia; the legacy fields are dropped on the next
+write, so the migration runs once.
+
+**Why the tint is a filter chain, not a coloured overlay.** Painting a
+translucent colour over the page washes out the black text along with the
+paper — the muddy look that makes tinted reading modes unpleasant. The chain is
+`sepia(t) saturate(1+t·k) hue-rotate(H−34°)`: `sepia()` collapses to a single
+warm band FIRST, so near-black glyphs (almost no luminance to tint) stay black
+while light paper takes the colour. This generalises the trick the two
+hand-written themes already used rather than inventing a mechanism. The 34°
+offset is `sepia()`'s own output hue, which makes `tint_hue` an absolute angle
+that means the same thing on every base. `sepia()` is capped at 0.55: past that
+photographs read as duotone. On Dark the invert runs BEFORE the tint so the
+colour lands on the visible paper, not the pre-inversion white.
+
+**COLOUR-SPACE TRAP.** The UI-token anchor must be sRGB-hued (`hsl(H 60% 55%)`)
+because `hue-rotate()` works in sRGB. An oklch anchor at the same angle
+disagrees badly — oklch 34 is pink where sRGB 34 is warm tan — so the page went
+brown while the chrome went pink. The MIX stays `in oklch`, which holds
+perceived lightness (and therefore text contrast) steady as strength rises. UI
+mixing is deliberately gentler than the page (≈half), and ink moves least of
+all, because chrome is a large flat area where the strength that looks right on
+paper is overwhelming.
+
+**Grain blend direction.** The overlay used `mix-blend-mode: overlay`, which is
+nearly a NO-OP at both ends of the range: it preserves highlights and shadows,
+so mid-gray noise over white paper stayed white and over a near-black theme
+stayed black. Measured, 80% grain on `#fff` and on `#131316` were both
+indistinguishable from no grain — the control did nothing on exactly the two
+backgrounds people read on. It now follows the same family rule as the paper
+textures: `multiply` on light, `screen` on dark. `verify-appearance.mjs` proves
+it by diffing real screenshots, not by asserting a class name.
+
+**Animated grain is a transform, not a re-seed.** Re-randomising `feTurbulence`
+per frame re-rasterises a full-viewport SVG filter 60×/s and drops frames while
+scrolling. Instead an oversized tile is MOVED with `steps(1)` sampling: smooth
+sliding reads as a texture panning across the screen, while discrete jumps read
+as real frame-to-frame grain, and a pure transform stays on the compositor.
+Disabled under `prefers-reduced-motion` — constant peripheral motion is exactly
+the vestibular-discomfort case — while the grain itself remains.
+
+**Preset thumbnails are real miniature pages.** The swatch root carries that
+preset's appearance as inline custom properties (`Appearance::preview_style`);
+because custom properties inherit, everything inside resolves against THAT look
+while a different one is applied to the document. The swatch mirrors the real
+DOM — unfiltered themed backdrop, filtered stand-in canvas on top — because the
+filter belongs to the canvas alone. Filtering the whole swatch inverted the
+backdrop too, so every dark preset rendered as a light rectangle.
+
+**Toolbar glyph blend must not leak into popovers.** `.toolbar-glass span`
+applies `mix-blend-mode: difference` so glyphs auto-invert against the glass.
+The old opt-out (`.menu-popover span { mix-blend-mode: revert }`) had lower
+specificity than the rule it tried to override, so it never won — dropdown
+glyphs were difference-blended all along. Harmless for text, but it inverted
+the thumbnails: a white "Light" swatch differenced against a light popover
+renders BLACK. Popover contents are now excluded at the source with `:not(:is(
+.menu-popover, .menu-popover *))`.
+
+### Appendix 11 — clickable links
+
+Link targets live in a page's ANNOTATIONS, a separate stream from both the
+content and the text layer. The reader only ever built a canvas and a text
+layer, so a URL was rendered as pixels with selectable text over it and nothing
+else: it looked like a link and did nothing. Regex-scanning the text layer is
+not a substitute — it would miss real links whose anchor text is not a URL, and
+invent links the document never declared.
+
+`buildLinkLayer` (public/pdfEngine.js) is built detached and swapped in, for the
+same reason the text layer is: a superseded render must never drop half a set of
+anchors on top of the live ones. Rects are mapped with
+`viewport.convertToViewportPoint` on BOTH corners and then normalised — the
+older `convertToViewportRectangle` helper is absent from the vendored build, and
+after a rotation the PDF's bottom-left corner may not be the min corner on
+screen.
+
+**Security.** External URLs are allow-listed to `http/https/mailto` and opened
+with `target=_blank rel="noopener noreferrer"`. A PDF is untrusted input and can
+carry any URI, including `javascript:` (script execution in our origin) and
+`file:` (local filesystem probing); an allow-list makes a new exotic scheme
+inert by default. Without `noopener` the opened page gets a handle on this
+window via `window.opener`.
+
+**Internal jumps go through Rust.** The anchor dispatches a
+`pdfreader:navigate` CustomEvent that `effects/link_nav.rs` turns into a
+`viewer.page` write — the same entry point the outline and thumbnails use — so
+there is one source of truth for the current page and the existing jump/settle
+logic is reused. The destination is clamped to the document: a malformed or
+stale target must not scroll into the void.
+
+**Stacking.** The link layer is z-index 3, above the text layer's 2, because the
+text layer's transparent spans cover the whole page and would otherwise eat
+every click. Only the anchors take `pointer-events`, so text selection still
+works everywhere except the few pixels that are a link.
