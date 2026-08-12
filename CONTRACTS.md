@@ -16,7 +16,7 @@ Success shape: `{ok:true, ...}`. Rust reads `ok` first, then deserializes via
 
 | fn | signature | notes |
 |---|---|---|
-| `version()` | `() -> string` | "0.1.0" (selftest) |
+| `version()` | `() -> string` | "0.1.0" (engine handshake) |
 | `storageGet(key)` / `storageSet(key, val)` | `() -> string\|null` / `() -> void` | localStorage wrappers |
 | `open(path)` | `async () -> {ok, numPages, title, author, outline, page1Size}` | fetches bytes itself (convertFileSrc in Tauri), destroys prior doc. outline = flattened `[{title, page, depth}]` |
 | `destroy()` | `async () -> void` | `loadingTask.destroy()`, clears state |
@@ -430,3 +430,41 @@ shape when the real 153x198 bitmap arrived. `.thumb-canvas-blank
 cover begins to fade. Same invariant as appendix entry 5: never blend a layer
 with no real pixels in it. Measured: the sepia reveal's downward hook fell from
 10 luminance units to 1.
+
+### Appendix 8 — a zoom round-trip must land on the page it started from
+
+Zooming out below 100% and back in moved the reader tens of pages backwards
+(reported: 256 → 232). Two independent defects compounded, both in the
+continuous viewer's height bookkeeping.
+
+**1. Every page was seeded with page 1's height.** `PageList` filled
+`doc.page_heights` with `page1_size.height * scale` for the whole document and
+relied on `on_geometry` to correct each entry — but `on_geometry` only fires for
+pages that have actually rendered, i.e. the visible window. In a mixed-size PDF
+(plates, legal inserts, a landscape map) every off-screen page therefore carried
+the wrong height, so the document's total height and every page offset below the
+viewport shifted as pages were measured for the first time. Zooming out pulls a
+batch of never-measured pages into view at once, so a whole block of corrections
+lands in one frame and drags the content out from under the scroll anchor.
+
+`engine.open()` now returns `pageHeights` — the intrinsic (scale-1) height of
+every page, read from each page's viewport. `getPage` only parses the page
+dictionary, not its content stream, so this is cheap even for 300+ pages.
+`doc.page_sizes` holds it and `PageList` seeds each page from its OWN height.
+The seed runs once per document, NOT per scale change: the zoom coordinator
+rescales that same vector frame by frame and re-anchors scroll against it, so a
+competing write mid-gesture fights the anchor and reintroduces the drift.
+
+**2. The scroll write was clamped by a stale scrollHeight.** `relayout_to`
+rescales the heights and then writes `scrollTop` synchronously, but Leptos
+applies the spacer div's new height in a *later* effect pass. When zooming IN
+the container is still its old, shorter self at the moment of the write, so the
+browser clamps `scrollTop` to the old `scrollHeight - clientHeight`. The scroll
+listener then reads that truncated value straight back into `viewer.scroll_top`,
+so every frame of the gesture loses a little more distance — always toward the
+end of the document, where the clamp bites hardest. `relayout_to` now writes the
+spacer's height directly before moving the scrollbar; Leptos writes the same
+value moments later, so it is idempotent rather than a competing source of truth.
+
+Guarded by `zoom_round_trip_keeps_the_same_page_in_a_mixed_size_document` and
+`page_offsets_follow_each_pages_own_height` in `core::layout`.
