@@ -492,6 +492,141 @@ check(errors.length === 0, "no console/page errors during the run",
     r ? `${r.stuck} stuck` : "n/a");
 }
 
+// ---------------------------------------------------------------------------
+// Sidebar navigation: jumping from a panel must not close it, and the outline
+// must show WHERE the reader is.
+//
+// Both panels used to call `sidebar.set(SidebarMode::None)` on click, so every
+// jump slammed the panel shut — which makes browsing (jump, look, jump again)
+// impossible and leaves the outline highlight with nowhere to show. The
+// highlight itself is the "no clue which section I'm in" fix: the active entry
+// is the last one at or before the current page, and it must track the reader
+// as they scroll, not only when they click.
+// ---------------------------------------------------------------------------
+{
+  await openViaApp("/samples/Outlined Book.pdf");
+  await page.waitForTimeout(1500);
+
+  const sidebarOpen = () =>
+    page.evaluate(() => {
+      const a = document.querySelector("aside");
+      return a ? a.getBoundingClientRect().width > 50 : false;
+    });
+  const statusPage = () =>
+    page.evaluate(() => {
+      const m = document.body.innerText.match(/(\d+)\s*\/\s*(\d+)/);
+      return m ? +m[1] : NaN;
+    });
+  const clickTitle = (t) =>
+    page.evaluate((t) => {
+      const b = [...document.querySelectorAll("button")].find((x) => x.title === t);
+      b && b.click();
+    }, t);
+  // The rail buttons are TOGGLES: clicking the already-open panel's tab closes
+  // it, so only click when it is not already showing.
+  const showPanel = async (name) => {
+    const showing = await page.evaluate((n) => {
+      const rows = [...document.querySelectorAll("aside button")];
+      const b = rows.find((x) => x.textContent.trim() === n);
+      return b ? /bg-line|text-ink/.test(b.className) : null;
+    }, name);
+    if (showing === true) return;
+    await page.evaluate((n) => {
+      const b = [...document.querySelectorAll("aside button")].find(
+        (x) => x.textContent.trim() === n
+      );
+      b && b.click();
+    }, name);
+  };
+
+  if (!(await sidebarOpen())) {
+    await clickTitle("Toggle sidebar");
+    await page.waitForTimeout(800);
+  }
+
+  // --- thumbnails ---------------------------------------------------------
+  await showPanel("Thumbs");
+  await page.waitForTimeout(1500);
+  const thumbsBefore = await statusPage();
+  const clickedThumb = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll("aside button")].filter((b) =>
+      b.querySelector("canvas")
+    );
+    if (cells.length < 4) return false;
+    cells[3].click();
+    return true;
+  });
+  await page.waitForTimeout(1400);
+  check(clickedThumb, "found thumbnails to click");
+  check(await sidebarOpen(), "clicking a thumbnail keeps the sidebar open");
+  check(
+    (await statusPage()) !== thumbsBefore,
+    "clicking a thumbnail still navigates",
+    `page ${thumbsBefore} -> ${await statusPage()}`
+  );
+
+  // --- outline ------------------------------------------------------------
+  await showPanel("Outline");
+  await page.waitForTimeout(1000);
+  const rows = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("aside button[aria-current]")].map((b) => ({
+        title: b.textContent.trim().slice(0, 30),
+        active: b.getAttribute("aria-current") === "true",
+      }))
+    );
+
+  const r0 = await rows();
+  check(r0.length > 0, "outline rows render", `${r0.length} rows`);
+  check(
+    r0.filter((r) => r.active).length === 1,
+    "exactly one outline entry is highlighted",
+    `${r0.filter((r) => r.active).length} active`
+  );
+
+  await page.evaluate(() => {
+    const bs = [...document.querySelectorAll("aside button[aria-current]")];
+    bs[2] && bs[2].click();
+  });
+  await page.waitForTimeout(1400);
+  check(await sidebarOpen(), "clicking an outline entry keeps the sidebar open");
+  const r1 = await rows();
+  check(
+    r1.findIndex((r) => r.active) === 2,
+    "the clicked outline entry becomes the highlighted one",
+    `active index ${r1.findIndex((r) => r.active)}`
+  );
+
+  // The highlight must be VISIBLE, not just an aria attribute.
+  const style = await page.evaluate(() => {
+    const on = document.querySelector("aside button[aria-current='true']");
+    const off = document.querySelector("aside button[aria-current='false']");
+    if (!on || !off) return null;
+    const a = getComputedStyle(on);
+    const b = getComputedStyle(off);
+    return {
+      accent: a.borderLeftColor !== b.borderLeftColor,
+      ground: a.backgroundColor !== b.backgroundColor || a.fontWeight !== b.fontWeight,
+    };
+  });
+  check(style !== null && style.accent, "the active outline row has a distinct left accent");
+  check(style !== null && style.ground, "the active outline row is distinct in ground/weight");
+
+  // ...and it follows the reader, not just clicks.
+  const activeBefore = (await rows()).findIndex((r) => r.active);
+  await page.evaluate(() => {
+    const l = document.getElementById("page-list");
+    l.scrollTop = l.scrollHeight * 0.75;
+  });
+  await page.waitForTimeout(1600);
+  const activeAfter = (await rows()).findIndex((r) => r.active);
+  check(
+    activeAfter >= 0 && activeAfter !== activeBefore,
+    "the outline highlight follows the reader while scrolling",
+    `index ${activeBefore} -> ${activeAfter}`
+  );
+}
+
 await browser.close();
 
 const failed = results.filter((r) => !r.ok);

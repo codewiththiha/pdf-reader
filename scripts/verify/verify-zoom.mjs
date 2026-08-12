@@ -7,7 +7,8 @@
 //   A. anchoring    — the page/point under the viewport centre survives a zoom
 //   B. retargeting  — mashing +/- accelerates instead of queueing or restarting
 //   C. clamping     — zooming at the end of the document stays in bounds
-//   D. sidebar      — toggling the sidebar changes neither zoom nor renders
+//   D. sidebar      — toggling the sidebar rescales the page (fit mode or not),
+//                     restores it exactly, and costs one render pass each way
 //   E. render count — one gesture costs exactly one render pass
 //   F. navigation   — ArrowRight lands on the right page, counter agrees
 //   G. reduced motion — instant, but still anchored
@@ -42,6 +43,14 @@ async function newCtx({ reducedMotion } = {}) {
 
 /** Open a document through the app's own "Open last" flow (see verify-ui.mjs
  *  for why this is the only non-Tauri entry point). */
+/** Rendered CSS width of the first page host, in px. */
+async function pageWidth(page) {
+  return page.evaluate(() => {
+    const el = document.querySelector(".pdf-page");
+    return el ? Math.round(el.getBoundingClientRect().width) : NaN;
+  });
+}
+
 async function openViaApp(page, path) {
   await page.evaluate((p) => {
     const KEY = "pdfreader.settings.v1";
@@ -221,6 +230,13 @@ console.log("\nA/B/C/D/E/F — main session");
   );
 
   // --- D. sidebar toggle --------------------------------------------------
+  // The sidebar must PUSH THE PAGE AROUND, and it must do so whether or not a
+  // fit mode is active. By this point in the run the reader has zoomed by hand,
+  // so `fit` is `FitMode::None`; the panel still has to shrink the page on the
+  // way in and restore it exactly on the way out (the zoom is carried across
+  // the slide proportionally). This used to assert the opposite — that a toggle
+  // never touched the zoom — which left the page frozen at its old width with
+  // the sidebar overlapping it once the reader had zoomed even once.
   await page.evaluate(() => {
     const l = document.getElementById("page-list");
     l.scrollTop = l.scrollHeight * 0.3;
@@ -228,27 +244,59 @@ console.log("\nA/B/C/D/E/F — main session");
   await page.waitForTimeout(800);
   await resetRenders(page);
   const pctPreSidebar = await zoomPct(page);
-  // Toggle the sidebar open and closed again.
-  await page.evaluate(() => {
-    const b = [...document.querySelectorAll("button")]
-      .find((x) => /thumbnail|sidebar|contents/i.test(x.title || ""));
-    b && b.click();
-  });
-  await page.waitForTimeout(900);
+  const widthPre = await pageWidth(page);
+  const toggleSidebar = () =>
+    page.evaluate(() => {
+      const b = [...document.querySelectorAll("button")]
+        .find((x) => /thumbnail|sidebar|contents/i.test(x.title || ""));
+      b && b.click();
+    });
+
+  await toggleSidebar();
+  await page.waitForTimeout(1100);
   const pctSidebarOpen = await zoomPct(page);
-  const sidebarRenders = await renders(page);
+  const widthOpen = await pageWidth(page);
+  const rendersOpen = await renders(page);
 
   check(
-    pctSidebarOpen === pctPreSidebar,
-    "D. sidebar toggle does not change the zoom %",
+    widthOpen < widthPre - 20,
+    "D. opening the sidebar shrinks the page, even with no fit mode",
+    `${widthPre}px -> ${widthOpen}px`
+  );
+  check(
+    pctSidebarOpen < pctPreSidebar,
+    "D. the zoom % follows the slide down",
     `${pctPreSidebar}% -> ${pctSidebarOpen}%`
   );
-  // Opening the sidebar mounts thumbnails (renderThumb, a different lane) but
-  // must not re-render the main pages.
+  // The slide is a layout-only animation: one crisp pass when it settles, not
+  // a render per frame. The visible window is ~7 pages.
   check(
-    sidebarRenders === 0,
-    "D. sidebar toggle causes zero page re-renders",
-    `${sidebarRenders} renderPage calls`
+    rendersOpen > 0 && rendersOpen <= 16,
+    "D. opening the sidebar costs exactly one render pass",
+    `${rendersOpen} renderPage calls`
+  );
+
+  await resetRenders(page);
+  await toggleSidebar();
+  await page.waitForTimeout(1100);
+  const pctSidebarClosed = await zoomPct(page);
+  const widthClosed = await pageWidth(page);
+  const rendersClosed = await renders(page);
+
+  check(
+    Math.abs(widthClosed - widthPre) <= 2,
+    "D. closing the sidebar restores the original page width",
+    `${widthClosed}px vs ${widthPre}px`
+  );
+  check(
+    pctSidebarClosed === pctPreSidebar,
+    "D. closing the sidebar restores the original zoom %",
+    `${pctPreSidebar}% -> ${pctSidebarOpen}% -> ${pctSidebarClosed}%`
+  );
+  check(
+    rendersClosed > 0 && rendersClosed <= 16,
+    "D. closing the sidebar costs exactly one render pass",
+    `${rendersClosed} renderPage calls`
   );
 
   // --- F. navigation ------------------------------------------------------

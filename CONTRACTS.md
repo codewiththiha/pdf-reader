@@ -468,3 +468,39 @@ value moments later, so it is idempotent rather than a competing source of truth
 
 Guarded by `zoom_round_trip_keeps_the_same_page_in_a_mixed_size_document` and
 `page_offsets_follow_each_pages_own_height` in `core::layout`.
+
+### Appendix 9 — the sidebar resizes the page; panels do not close on navigation
+
+**A sidebar slide must rescale the page whether or not a fit mode is active.**
+`fit_effect` returned early on `FitMode::None`, and every manual zoom sets
+exactly that (`zoom_controls.rs`, `shortcuts.rs`). So the behaviour worked
+until the reader touched the zoom, and from then on opening the panel slid it
+over a page that kept its old width instead of making room — "it works first,
+then once I zoom it stops". With a fit mode the target is still recomputed from
+the container. Without one, the slide is followed PROPORTIONALLY: the page keeps
+the same fraction of the container width it had, so opening shrinks it and
+closing restores it to the pixel.
+
+This is deliberately scoped to a sidebar toggle, tracked by watching
+`state.sidebar` directly rather than inferring intent from `container_size`. A
+window resize with no fit mode leaves the scale alone — growing the window must
+not silently re-zoom the document — and `following_slide` is cleared by the same
+120ms debounce that commits the render, so only the frames belonging to the
+slide are treated proportionally.
+
+**Navigating from a panel keeps it open.** Both `thumbnails/cell.rs` and
+`outline_panel.rs` called `sidebar.set(SidebarMode::None)` on click. Browsing is
+a loop — jump, look, jump again — and closing the panel on every jump forces the
+reader to reopen it each time. It also left the outline highlight with nowhere
+to show. The rail buttons remain toggles, so the panel is still one click from
+closed.
+
+**The outline shows where the reader is.** `active_outline_index` picks the last
+entry at or before the current page: a TOC entry owns every page from its own up
+to the next entry's. Ties go to the LATER (deeper) entry, since a section is a
+more specific answer than the chapter that starts on the same page, and nothing
+is highlighted before the first entry's page — a cover belongs to no section.
+The row carries the accent on its already-reserved `border-l-2` (so nothing
+shifts when it lights up), plus a tinted ground, full-strength ink and
+`aria-current` for screen readers. It is derived from `viewer.page`, so it
+tracks scrolling, not just clicks.
