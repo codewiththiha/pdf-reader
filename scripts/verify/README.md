@@ -14,7 +14,7 @@ trunk serve --port 1420 &             # app-level needs the app running
 node scripts/verify/verify-ui.mjs
 ```
 
-## `verify.mjs` — engine (23 checks)
+## `verify.mjs` — engine (29 checks)
 
 Serves the repo and drives `public/pdfEngine.js` + real pdf.js against
 `samples/sample.pdf`, in a DOM that mirrors `PageCanvas` / `ThumbCell`.
@@ -25,6 +25,7 @@ Serves the repo and drives `public/pdfEngine.js` + real pdf.js against
 | selection | text layer is transparent; `::selection` paints no glyph color over a translucent background; **selecting adds zero new dark pixels** (a second copy of the text would add many) |
 | highlights | no duplicate boxes; every box within 1.5px of its span; boxes not re-transformed by the vendored span rule |
 | thumbnails | cold probe misses, first render is real, remount is served `cached:true`, the remounted canvas is **painted synchronously**, cache is scale-keyed, `cancelThumb` preserves it, `destroy()` clears it |
+| memory | `unregisterPage` zeros the page canvas and drops the registration; `cancelThumb` zeros the live thumb but keeps the cache; LRU bound is 64; `destroy()` leaves `stats()` at 0 |
 
 ## `verify-ui.mjs` — full app (19 checks)
 

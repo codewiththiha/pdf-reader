@@ -11,6 +11,8 @@
 //   3. highlights: no duplicates, and each box lands on its span's rect
 //   4. thumbnails: a re-render of a cached page is served from the cache
 //      (cached:true) and paints synchronously — no skeleton, no flicker
+//   5. memory: unregisterPage / cancelThumb / destroy actually release
+//      canvas backing stores (width=0), not just the JS Map key
 //
 // Run:  node scripts/verify/verify.mjs
 import { chromium } from "playwright";
@@ -352,16 +354,55 @@ check(thumb.otherScale === false, "cache is keyed on scale (a new scale misses)"
 // A cancelled thumbnail must keep its cached bitmap (scroll out and back).
 const afterCancel = await page.evaluate(() => {
   PDFReader.cancelThumb("thumb-1");
-  return PDFReader.hasThumb(1, 0.25);
+  const live = document.getElementById("thumb-1");
+  return {
+    cached: PDFReader.hasThumb(1, 0.25),
+    liveW: live ? live.width : -1,
+    liveH: live ? live.height : -1,
+    thumbs: PDFReader.stats().thumbs,
+    thumbLimit: PDFReader.stats().thumbLimit,
+  };
 });
-check(afterCancel === true, "cancelThumb (cell unmount) does NOT evict the cache");
+check(afterCancel.cached === true, "cancelThumb (cell unmount) does NOT evict the cache");
+check(afterCancel.liveW === 0 && afterCancel.liveH === 0,
+  "cancelThumb zeros the live canvas backing store (WKWebView release)",
+  `${afterCancel.liveW}x${afterCancel.liveH}`);
+check(afterCancel.thumbLimit === 64, "thumbnail LRU is bounded at 64",
+  `limit=${afterCancel.thumbLimit}`);
+
+// ---------------------------------------------------------------- 5. memory
+console.log("\n5. memory — unmount releases the backing store, not just the Map key");
+
+const mem = await page.evaluate(async () => {
+  // cv1 is still registered from the page-render checks above.
+  const cv = document.getElementById("cv1");
+  const before = { w: cv.width, h: cv.height, pages: PDFReader.stats().pages };
+  PDFReader.unregisterPage("cv1");
+  const after = { w: cv.width, h: cv.height, pages: PDFReader.stats().pages };
+  return { before, after };
+});
+check(mem.before.w > 0 && mem.before.h > 0 && mem.before.pages >= 1,
+  "a rendered page owns a real backing store",
+  `${mem.before.w}x${mem.before.h}, pages=${mem.before.pages}`);
+check(mem.after.w === 0 && mem.after.h === 0,
+  "unregisterPage zeros the page canvas (WKWebView release)",
+  `${mem.after.w}x${mem.after.h}`);
+check(mem.after.pages === 0, "unregisterPage drops the engine registration",
+  `pages=${mem.after.pages}`);
 
 // Opening a new document must drop everything.
 const afterDestroy = await page.evaluate(async () => {
   await PDFReader.destroy();
-  return PDFReader.hasThumb(1, 0.25);
+  return {
+    cached: PDFReader.hasThumb(1, 0.25),
+    thumbs: PDFReader.stats().thumbs,
+    pages: PDFReader.stats().pages,
+  };
 });
-check(afterDestroy === false, "destroy() clears the thumbnail cache (no cross-document bleed)");
+check(afterDestroy.cached === false, "destroy() clears the thumbnail cache (no cross-document bleed)");
+check(afterDestroy.thumbs === 0 && afterDestroy.pages === 0,
+  "destroy() leaves no page or thumb entries",
+  `thumbs=${afterDestroy.thumbs} pages=${afterDestroy.pages}`);
 
 await browser.close();
 server.close();
