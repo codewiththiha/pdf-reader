@@ -991,3 +991,44 @@ would zoom on every row boundary while scrolling. It waits for the
 existing 120ms debounce, then relayouts and commits once the reader
 pauses. Sidebar / window changes still follow every frame so the page
 does not squish.
+
+### Appendix 21 — arrow keys glide; the glass toolbar follows the theme live
+
+**Arrow Up/Down must feel like native line-scroll, not a page jump.**
+Appendix 20 correctly took the keys away from a text-layer span that
+virtualization unmounts. The first implementation wrote `scrollTop` by
+15% of the viewport (48–140px) on every keydown, including the
+browser's discrete key-repeat — a sixth of the screen with no glide,
+which is what read as "the arrows work but they are no longer smooth".
+
+A tap now `scrollTo`s one native-sized line (`8%` of the viewport,
+clamped 40–80px) with `ScrollBehavior::Smooth`, the same nearby-glide
+page jumps already use. A hold starts a rAF loop after a native-ish
+350ms delay and glides at 1000 px/s until keyup (or window blur).
+`repeat` keydowns are ignored so the browser's chunky repeat cannot
+fight the glide. Focus still lands on `#page-list` (`preventScroll`)
+so a later virtualization pass cannot kill the next press. PageUp /
+PageDown / Space stay a 90% page and use Smooth on the first press,
+Instant on repeat.
+
+**The frosted toolbar must not sit at a mid-mix while the appearance
+menu is open.** The header is `bg-surface/60 backdrop-blur-xl`.
+WKWebView caches that backdrop against the page that was behind the
+bar. Switching Dark → Light updates the PAGE (and `--color-*`)
+immediately, but the glass layer keeps compositing the old dark
+snapshot under the new light surface — the toolbar looks mid-dark
+until the popover unmounts and the layer is torn down.
+
+While a `.menu-popover` is open the header drops `backdrop-filter` and
+paints an opaque `--color-surface`, so the tokens the reader is
+picking apply live. `paint_appearance_now` also:
+
+- writes `color-scheme` on `<html>` so UA chrome follows the base;
+- adds `html.theme-switching` for one frame (`transition: none`) so
+  `transition-colors` on toolbar buttons cannot interpolate through
+  the mid-mix;
+- on a Light/Dark/Dim swap, forces `backdrop-filter: none` through a
+  reflow on `.toolbar-glass` so a closed menu still re-samples.
+
+Slider ticks do not take that last path — rebuilding the glass layer
+every hue degree is the RAM cost appendix 19 closed.
