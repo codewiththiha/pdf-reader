@@ -1015,6 +1015,119 @@ for (const base of ["light", "dark"]) {
   await ctx.close();
 }
 
+// ===========================================================================
+// L. a thumbnail depicts the page, so it must be the SAME colour as the page
+//
+// REGRESSION: `--thumb-bg` was `--color-surface` while the real page host is
+// `--color-paper`. A thumbnail canvas is `multiply`-blended over that backdrop,
+// and multiplying a white page pixel by the backdrop yields THE BACKDROP — so
+// the backdrop IS the paper the reader sees. The two variables were close
+// enough in the old fixed themes to hide it, but the computed tint moves them
+// apart (paper keeps L=1.00, surface sits at 0.967 with more chroma), so every
+// thumbnail rendered darker and more saturated than the page it depicts.
+//
+// Diagnostic worth keeping: the CORRECT colour flashed for one frame during a
+// re-render, because the skeleton cover is unblended. A one-frame flash of the
+// right colour means the final composite is wrong, not the render.
+// ===========================================================================
+{
+  // ONE context for every combination: each newContext is a fresh browser
+  // process, and this gate already runs a dozen of them — spawning five more
+  // was enough to exhaust the sandbox and crash the run mid-suite.
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 820 } });
+  const page = await newPage(ctx);
+  for (const [base, hue, strength] of [
+  ["light", 34, 0],
+  ["light", 104, 90],
+  ["dark", 104, 90],
+  ["dim", 220, 40],
+]) {
+  await openViaApp(page, DOC, {
+    appearance: {
+      base, tint_hue: hue, tint_strength: strength, texture: "none",
+      texture_opacity: 90, texture_scale: 100, noise: "off", noise_intensity: 25,
+    },
+  });
+  await page.evaluate(() => {
+    const a = document.querySelector("aside");
+    if (!a || a.getBoundingClientRect().width < 50)
+      [...document.querySelectorAll("button")].find((b) => b.title === "Toggle sidebar")?.click();
+  });
+  await page.waitForTimeout(2500);
+
+  // Sample REAL PIXELS from a blank region of the page and the same relative
+  // region of a thumbnail. Comparing CSS variables would not catch this: the
+  // filter and blend were already identical, only the backdrop differed.
+  const sample = async (sel, fx, fy) => {
+    const clip = await page.evaluate(
+      ([s, x, y]) => {
+        const el = document.querySelector(s);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x + r.width * x), y: Math.round(r.y + r.height * y), width: 6, height: 6 };
+      },
+      [sel, fx, fy]
+    );
+    if (!clip) return null;
+    const buf = await page.screenshot({ clip });
+    return page.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = "data:image/png;base64," + b64;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext("2d");
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      return [d[0], d[1], d[2]];
+    }, buf.toString("base64"));
+  };
+
+  const pagePx = await sample(".pdf-page", 0.5, 0.6);
+  const thumbPx = await sample(".thumb-card", 0.5, 0.6);
+  const dist =
+    pagePx && thumbPx ? Math.max(...pagePx.map((v, i) => Math.abs(v - thumbPx[i]))) : 999;
+  check(
+    dist <= 6,
+    `${base}/${strength}%: thumbnails are the same colour as the page`,
+    `page rgb(${pagePx}) vs thumb rgb(${thumbPx}), max channel delta ${dist}`
+  );
+  }
+  await ctx.close();
+}
+
+// The backdrop must track the PAGE, not the chrome — asserted directly so the
+// intent survives a future refactor of the variables.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 820 } });
+  const page = await newPage(ctx);
+  await openViaApp(page, DOC, {
+    appearance: {
+      base: "light", tint_hue: 104, tint_strength: 90, texture: "none",
+      texture_opacity: 90, texture_scale: 100, noise: "off", noise_intensity: 25,
+    },
+  });
+  const vars = await page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    const resolve = (v) => {
+      const el = document.createElement("div");
+      el.style.color = cs.getPropertyValue(v).trim();
+      document.body.appendChild(el);
+      const out = getComputedStyle(el).color;
+      el.remove();
+      return out;
+    };
+    return { thumb: resolve("--thumb-bg"), paper: resolve("--color-paper"), surface: resolve("--color-surface") };
+  });
+  check(
+    vars.thumb === vars.paper,
+    "--thumb-bg resolves to the page's paper, not the chrome's surface",
+    `thumb=${vars.thumb} paper=${vars.paper} surface=${vars.surface}`
+  );
+  await ctx.close();
+}
+
 await browser.close();
 
 const failed = results.filter((r) => !r.ok);

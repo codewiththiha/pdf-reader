@@ -690,3 +690,41 @@ Thumbs is showing. A test that uses that as its "is Outline open?" check will
 click the tab twice and toggle straight back. Check computed `visibility`
 instead. The rail buttons are toggles and their active state is not a stable
 class token.
+
+### Appendix 14 — a thumbnail's backdrop IS its paper
+
+`--thumb-bg` must resolve to `--color-paper`, the same backdrop the real page
+host uses. Not `--color-surface`, and not a mix with `--color-line`.
+
+**Why.** A thumbnail canvas has no `.pdf-page` host, so it re-implements the
+theme's canvas pipeline: `filter: var(--canvas-filter)` +
+`mix-blend-mode: var(--canvas-blend)` over `.thumb-card`'s background. In the
+light bases that blend is `multiply`, and multiplying a white page pixel by the
+backdrop returns THE BACKDROP. So whatever `--thumb-bg` is, that is literally
+the paper colour the reader sees in every thumbnail — and the page's paper is
+`--color-paper`.
+
+While the themes were fixed palettes, surface and paper were close enough that
+the mismatch was invisible. The computed tint (appendix 12) pulls them apart on
+purpose — paper keeps L=1.00 while surface sits at 0.967 with more chroma — so
+at high tint every thumbnail rendered darker and more saturated than the page
+it depicts: measured rgb(204,255,219) against the page's rgb(230,255,225).
+
+Card separation does NOT depend on this variable: `.thumb-card` carries a ring
+and the panel behind it is `--color-surface`, so a paper-coloured card still
+reads as a distinct sheet in every base (verified in dark, where the card is
+darker than the panel).
+
+**Diagnostic to remember.** The user reported that the CORRECT colour flashed
+for a single frame while a cell re-rendered. That is diagnostic, not
+incidental: the skeleton cover is deliberately unblended and unfiltered, so it
+shows the honest themed tint, and the wrong colour only appeared once the
+blended canvas composited over the wrong backdrop. **A one-frame flash of the
+right colour means the final composite is wrong, not the render** — look at
+blend backdrops before suspecting the render path.
+
+**Testing note.** Comparing CSS variables cannot catch this class of bug: the
+filter and blend on `.thumb-canvas` and `.pdf-page canvas` were already
+byte-identical, and only the backdrop underneath differed. Gate L samples real
+pixels from a blank region of the page and the same relative region of a
+thumbnail and requires a max channel delta <= 6.
