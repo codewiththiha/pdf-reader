@@ -9,19 +9,24 @@ target = "./index.html"
 #
 # IMPORTANT: every path in this list MUST exist on disk when `trunk serve`
 # starts. Trunk canonicalizes each entry at startup, and a missing path is
-# a hard error (https://github.com/trunk-rs/trunk). `./styles.css` works
-# because a previous `trunk serve` already created it via the tailwind
-# pre_build hook below.
+# a hard error (https://github.com/trunk-rs/trunk). To guarantee the
+# tsc-emitted .js files exist before Trunk starts, tauri.conf.json's
+# `beforeDevCommand` chains `npm run build:ts` ahead of `trunk serve` —
+# so by the time Trunk's watcher runs, `public/pdfEngine.js` and
+# `scripts/*.js` are already on disk and canonicalization succeeds.
 #
-# The TypeScript outputs (public/pdfEngine.js, scripts/*.js) are NOT
-# listed here, even though they are also generated — on a fresh clone
-# they don't exist yet, so including them would crash Trunk on the first
-# run. Trunk's built-in debounce + tsc's idempotent output make this
-# safe: the hook writes the same bytes every time, so the watcher never
-# fires a rebuild from the .js files. If you ever see a rebuild loop,
-# run `npm run build:ts` once to materialise the files and add them
-# back here.
-ignore = ["./src-tauri", "./styles.css"]
+# Trunk's watcher uses mtime to decide whether to fire a rebuild — NOT
+# file content — so even though tsc's output is byte-identical across
+# runs, each pre_build emission touches the .js files' mtime and would
+# retrigger a rebuild without these ignore entries. Keeping them in the
+# list is load-bearing.
+ignore = [
+    "./src-tauri",
+    "./styles.css",
+    "./public/pdfEngine.js",
+    "./scripts/check-versions.js",
+    "./scripts/test-engine-smoke.js",
+]
 
 # Compile TypeScript sources to JavaScript BEFORE every trunk build (dev +
 # prod). The browser-loaded engine lives at public/pdfEngine.ts and is
