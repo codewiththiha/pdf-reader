@@ -661,9 +661,63 @@ async function setScrubMode(on: boolean): Promise<void> {
 async function setScrubModeInternal(on: boolean): Promise<void> {
   if (scrubbing === on) return;
   scrubbing = on;
-  if (!scrubbing) {
-    await refreshThemeInternal();
+
+  if (on) {
+    // ENTERING scrub: swap every live page canvas and every mounted thumb
+    // canvas to its RAW (un-themed) raster, and add the `appearance-scrubbing`
+    // class to <html> in the SAME synchronous task. The class is what gates
+    // `html.appearance-scrubbing .pdf-page canvas` / `.thumb-canvas` in CSS —
+    // those rules apply the live `--canvas-filter` / `--canvas-blend` to the
+    // canvas elements so the page re-colours per frame under the user's drag.
+    // Doing the swap and the class toggle together is what makes the
+    // compositor see one consistent frame: raw raster + live CSS filter.
+    for (const st of stateByCanvasId.values()) {
+      if (st.dead || !st.canvas) continue;
+      const raw = st.rawCanvas;
+      if (raw && raw !== st.canvas) blitInto(st.canvas, raw);
+    }
+    for (const [canvasId, { page }] of thumbLive) {
+      const entry = thumbCache.get(page);
+      const live = el(canvasId) as HTMLCanvasElement | null;
+      const raw = entry ? thumbRaw(entry) : null;
+      if (live && raw) blitInto(live, raw);
+    }
+    document.documentElement.classList.add("appearance-scrubbing");
+    return;
   }
+
+  // LEAVING scrub: two-phase settle so no composited frame is ever
+  // double-filtered (baked raster under the still-on live CSS filter) or
+  // unfiltered (raw raster with the class already gone).
+  //
+  // Phase 1 (awaits): re-bake the mounted thumb cells' cache entries. Their
+  // live canvases still hold RAW rasters and the scrub CSS class is still
+  // on, so the screen stays consistent while this runs.
+  const pipeline = readPipeline();
+  for (const [canvasId, { page }] of thumbLive) {
+    const entry = thumbCache.get(page);
+    if (!entry) continue;
+    if (!(await ensureEntryCurrent(entry))) continue;
+    if (scrubbing) return; // a new scrub started mid-rebake; it owns the canvases
+  }
+  // Phase 2 (synchronous settle): bake the pages, repaint the thumb cells
+  // and drop the scrub CSS class in ONE task.
+  for (const st of stateByCanvasId.values()) {
+    if (st.dead || !st.canvas) continue;
+    const raw = st.rawCanvas;
+    if (!raw) continue;
+    const baked = bakeRaster(raw, pipeline);
+    if (baked !== st.canvas) {
+      blitInto(st.canvas, baked);
+      if (baked !== raw) releaseCanvas(baked);
+    }
+  }
+  for (const [canvasId, { page }] of thumbLive) {
+    const entry = thumbCache.get(page);
+    const live = el(canvasId) as HTMLCanvasElement | null;
+    if (entry && live) paintCached(live, entry);
+  }
+  document.documentElement.classList.remove("appearance-scrubbing");
 }
 
 function pageOutputScale(cssW: number, cssH: number): number {

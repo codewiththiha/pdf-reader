@@ -152,6 +152,18 @@ pub fn PageCanvas(
             }
             return;
         }
+        // NO-OP FAST PATH. If the page has already been rendered at THIS scale
+        // (i.e. `render_scale` did not change, only `zoom_animating` flipped
+        // back to false — e.g. a sidebar slide that returned the layout to its
+        // starting width), re-rendering would only WIPE the live canvas (pdf.js
+        // reassigns `canvas.width/height` on render start) without producing a
+        // different bitmap. Because `(gs - s).abs() <= 1e-9`, the
+        // `stretch_host(..., mask=true)` guard below is skipped too — so no
+        // `.page-snapshot` overlay is created to mask the wipe — and the user
+        // sees the canvas disappear until a scroll re-renders it. Bail out.
+        if has_geo && (gs - s).abs() <= 1e-9 {
+            return;
+        }
         let page_no = page;
         let cid = cid_effect.clone();
         let hid = hid_effect.clone();
