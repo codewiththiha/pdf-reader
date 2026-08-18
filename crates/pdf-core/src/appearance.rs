@@ -446,6 +446,32 @@ impl Appearance {
             "--noise-blend:{};",
             if self.base.is_dark() { "screen" } else { "multiply" }
         ));
+        // CRITICAL: the texture stroke colours and blend direction are keyed
+        // off `:root.dark` in input.css. Without the `.dark` class on the
+        // preset-swatch itself (we don't add it — the swatch's `data-base`
+        // is not set), these variables INHERIT from <html>. So when the live
+        // theme and the preset's base disagree (e.g. reader is on a dark live
+        // theme, browsing a LIGHT preset swatch), the light preset's texture
+        // strokes would inherit the DARK values (white strokes, screen blend)
+        // — and on a light canvas those are near-invisible. The preset-line
+        // "text" bars inside the .preset-canvas then DISAPPEAR under the
+        // texture overlay during a tint drag (when the live theme's
+        // --canvas-filter changes but the preset should be immune).
+        //
+        // Setting them inline here makes the preset self-contained: its
+        // texture always uses the stroke/blend of ITS OWN base, matching what
+        // the page would look like if that preset were applied.
+        if self.base.is_dark() {
+            out.push_str("--texture-line:rgba(255,255,255,0.22);");
+            out.push_str("--texture-strong:rgba(255,255,255,0.36);");
+            out.push_str("--texture-paper:rgba(255,255,255,0.08);");
+            out.push_str("--texture-blend:screen;");
+        } else {
+            out.push_str("--texture-line:rgba(15,23,42,0.16);");
+            out.push_str("--texture-strong:rgba(15,23,42,0.26);");
+            out.push_str("--texture-paper:rgba(15,23,42,0.05);");
+            out.push_str("--texture-blend:multiply;");
+        }
         out
     }
 

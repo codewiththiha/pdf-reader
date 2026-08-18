@@ -1759,7 +1759,26 @@ function releaseAllSurfaces(): void {
 
 globalThis.addEventListener("pagehide", releaseAllSurfaces);
 
-// --- selection clamp: a drag only ever touches glyph spans -------------
+// --- selection clamp: a drag only ever touches the text layer -------------
+// While the pointer crosses a surface OUTSIDE the .textLayer (page chrome,
+// inter-page gutter, margins) WebKit resolves the focus against the nearest
+// selectable ancestor and the range re-anchors to a content extreme — the
+// "selection spread" when dragging from a header into the body. Hold the last
+// range whose both ends sat inside the text layer and restore it whenever a
+// range appears with an endpoint outside, so the selection only changes while
+// the pointer is actually on text.
+//
+// RELAXED from the original strict `inSpan` clamp: the focus is now allowed
+// ANYWHERE inside .textLayer (container, .markedContent wrappers, and spans
+// alike). The original strict clamp restored the last good range whenever the
+// focus landed on a gap between glyph spans — which is what made selection
+// across paragraph breaks, list gutters, code-block line breaks, and right
+// margin whitespace feel "glitchy": the selection snapped back to the last
+// span pair on every gap crossing, so the reader could not extend a selection
+// smoothly across the page. The relaxed version only restores when the focus
+// leaves .textLayer ENTIRELY (e.g. onto page chrome or another page's gap),
+// which is the actual "selection spread" case the clamp was written to
+// prevent. Dragging across gaps WITHIN a page now extends naturally.
 let selDragging = false;
 let lastGoodRange: Range | null = null;
 
@@ -1770,17 +1789,83 @@ document.addEventListener("mousedown", (e) => {
 window.addEventListener("mouseup", () => {
   selDragging = false;
   lastGoodRange = null;
+  // One final dispatch in case the selection changed on the last mousemove
+  // but the selectionchange event hasn't fired yet (so the Rust side has
+  // the final selection range for virtualization pinning).
+  dispatchSelectionPages();
 });
+
+// --- selection page-range tracking (for virtualization pinning) -------------
+// While the reader drags across pages, the selection's anchor and focus land
+// on different .pdf-page hosts. We walk up from each endpoint to find its
+// page index, compute the inclusive range, and dispatch a CustomEvent so the
+// Rust side can pin those pages in the virtualization window — otherwise
+// scrolling would evict the page the selection started on, orphaning its DOM
+// nodes and breaking copy of multi-page selections.
+let lastSelectionRangeKey: string | null = null;
+
+function findPageNumber(node: Node | null): number | null {
+  if (!node) return null;
+  const el = node.nodeType === Node.TEXT_NODE
+    ? node.parentElement
+    : (node as HTMLElement | null);
+  if (!el) return null;
+  const pageEl = el.closest(".pdf-page");
+  if (!(pageEl && pageEl.id)) return null;
+  const m = /^cont-(\d+)-pg$/.exec(pageEl.id);
+  if (!m || !m[1]) return null;
+  // Host id is "cont-{i}-pg" where i is 0-based; page number is 1-based.
+  return parseInt(m[1], 10) + 1;
+}
+
+function dispatchSelectionPages(): void {
+  const sel = document.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+    if (lastSelectionRangeKey !== null) {
+      lastSelectionRangeKey = null;
+      globalThis.dispatchEvent(
+        new CustomEvent("pdfreader:selection-pages", { detail: null })
+      );
+    }
+    return;
+  }
+  const anchorPage = findPageNumber(sel.anchorNode);
+  const focusPage = findPageNumber(sel.focusNode);
+  if (anchorPage === null || focusPage === null) {
+    if (lastSelectionRangeKey !== null) {
+      lastSelectionRangeKey = null;
+      globalThis.dispatchEvent(
+        new CustomEvent("pdfreader:selection-pages", { detail: null })
+      );
+    }
+    return;
+  }
+  const first = Math.min(anchorPage, focusPage);
+  const last = Math.max(anchorPage, focusPage);
+  const key = `${first}-${last}`;
+  if (key === lastSelectionRangeKey) return;
+  lastSelectionRangeKey = key;
+  globalThis.dispatchEvent(
+    new CustomEvent("pdfreader:selection-pages", {
+      detail: { first, last },
+    })
+  );
+}
+
 document.addEventListener("selectionchange", () => {
+  // Always dispatch the selection's page range so the Rust side can pin
+  // those pages in the virtualization window (otherwise scrolling evicts
+  // them and breaks copy of multi-page selections).
+  dispatchSelectionPages();
+
   if (!selDragging) return;
   const sel = document.getSelection();
   if (!sel || sel.rangeCount === 0) return;
-  const inSpan = (n: Node | null): boolean => {
+  const inTextLayer = (n: Node | null): boolean => {
     const el = n && (n.nodeType === Node.TEXT_NODE ? n.parentElement : (n as HTMLElement | null));
-    return !!(el && el.closest &&
-      el.closest(".textLayer > span, .textLayer .markedContent > span"));
+    return !!(el && el.closest && el.closest(".textLayer"));
   };
-  if (inSpan(sel.anchorNode) && inSpan(sel.focusNode)) {
+  if (inTextLayer(sel.anchorNode) && inTextLayer(sel.focusNode)) {
     lastGoodRange = sel.getRangeAt(0).cloneRange();
   } else if (lastGoodRange) {
     sel.removeAllRanges();

@@ -68,15 +68,47 @@ pub fn PageList(state: ViewerState) -> impl IntoView {
     // so it means the same thing at 50% and at 500%. That is what keeps a
     // zoomed-in reader from holding six multi-megabyte off-screen rasters
     // they cannot reach for many seconds of scrolling.
+    //
+    // SELECTION PINNING. The window is extended to include every page the
+    // reader currently has selected text on. Without this, scrolling would
+    // evict the page the selection started on — orphaning the selection's DOM
+    // nodes (the `<For>` unmounts `PageCanvas`, whose `on_cleanup` calls
+    // `unregisterPage`, which zeros the canvas and removes the `.textLayer`
+    // the selection was anchored to). The browser's copy command then reads a
+    // stale/empty selection. Pinning the selected pages keeps them — and
+    // their text layers — mounted so the selection's DOM nodes stay valid
+    // and copy of multi-page selections works through any scroll.
     let visible = Memo::new(move |_| {
         let heights = state.doc.page_heights.get();
-        render_range(
+        let mut range = render_range(
             state.viewer.scroll_top.get(),
             state.viewer.container_size.get().1,
             &heights,
             PAGE_GAP,
             RENDER_BUDGET,
-        )
+        );
+        // Extend to include the reader's current text-selection page range.
+        if let Some((sel_first, sel_last)) = state.viewer.selected_pages.get() {
+            // 1-based → 0-based.
+            let sel_first = (sel_first.saturating_sub(1)) as usize;
+            let sel_last = (sel_last.saturating_sub(1)) as usize;
+            match &mut range {
+                Some((first, last)) => {
+                    if sel_first < *first {
+                        *first = sel_first;
+                    }
+                    if sel_last > *last {
+                        *last = sel_last;
+                    }
+                }
+                None => {
+                    // No visible pages yet, but the selection needs pages
+                    // mounted — open a window just for them.
+                    range = Some((sel_first, sel_last));
+                }
+            }
+        }
+        range
     });
 
     // The scale the layout is DRAWN at. During a zoom this moves every frame
