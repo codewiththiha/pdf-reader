@@ -128,35 +128,6 @@ fn body_el() -> Option<web_sys::HtmlElement> {
         .and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
 }
 
-/// Drop the frosted-header backdrop snapshot for one reflow.
-///
-/// WKWebView caches `backdrop-filter` against the pixels that were
-/// behind the toolbar. Changing `--color-surface` / `data-base` updates
-/// the PAGE immediately, but the glass layer keeps compositing the OLD
-/// dark page under the NEW light surface — the toolbar sits at a mid-mix
-/// until something (unmounting the appearance popover) rebuilds the
-/// layer. Forcing `backdrop-filter: none` through a reflow makes it
-/// re-sample the page that is actually on screen.
-fn kick_backdrop_surfaces() {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    for sel in [".toolbar-glass", ".floating-search-enter"] {
-        let Some(el) = doc.query_selector(sel).ok().flatten() else {
-            continue;
-        };
-        let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() else {
-            continue;
-        };
-        let style = html.style();
-        _ = style.set_property("-webkit-backdrop-filter", "none");
-        _ = style.set_property("backdrop-filter", "none");
-        _ = html.offset_height();
-        _ = style.remove_property("-webkit-backdrop-filter");
-        _ = style.remove_property("backdrop-filter");
-    }
-}
-
 /// Write every appearance CSS custom property / class from `a`. Synchronous.
 /// The filter string is the same one `Appearance::canvas_filter` already
 /// produces — this does not invent a second pipeline.
@@ -207,7 +178,6 @@ pub fn paint_appearance_now(a: Appearance) {
     }
 
     if kick {
-        kick_backdrop_surfaces();
         request_animation_frame(move || {
             if let Some(el) = document_element() {
                 _ = el.class_list().remove_1("theme-switching");

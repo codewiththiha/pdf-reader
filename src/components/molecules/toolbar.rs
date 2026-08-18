@@ -29,7 +29,7 @@ use super::zoom_controls::ZoomControls;
 #[component]
 pub fn Toolbar(state: AppState) -> impl IntoView {
     let mode = state.viewer.mode;
-    let viewer_state = pdf_viewer::state::ViewerState::new(state.doc, state.viewer, state.search, state.sidebar);
+    let viewer_state = state.viewer_state();
 
     let open_state = state;
     let menu_state = state;

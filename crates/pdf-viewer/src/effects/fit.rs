@@ -14,6 +14,8 @@
 
 use std::cell::{Cell, RefCell};
 
+/// rAF step that can re-arm itself. StoredValue already wraps a RefCell, so
+/// we only need one extra Rc for the Weak self-reference the loop upgrades.
 type StepSlot = std::rc::Rc<std::cell::RefCell<Option<std::rc::Rc<dyn Fn()>>>>;
 use std::rc::Rc;
 use std::time::Duration;
