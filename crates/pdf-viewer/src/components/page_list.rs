@@ -80,13 +80,35 @@ pub fn PageList(state: ViewerState) -> impl IntoView {
     // and copy of multi-page selections works through any scroll.
     let visible = Memo::new(move |_| {
         let heights = state.doc.page_heights.get();
+        let scroll_top = state.viewer.scroll_top.get();
+        let vh = state.viewer.container_size.get().1;
         let mut range = render_range(
-            state.viewer.scroll_top.get(),
-            state.viewer.container_size.get().1,
+            scroll_top,
+            vh,
             &heights,
             PAGE_GAP,
             RENDER_BUDGET,
         );
+        // FIX B — pin the dominant page during a layout animation. During a
+        // sidebar slide, `scroll_top` is re-anchored by `relayout_to()` AND
+        // clamped back by the browser's own scroll clamp (the spacer height
+        // is applied one Leptos pass later), so for one or two frames
+        // `scroll_top + viewport` can fall inside a gap or past the shrunken
+        // extent, `render_range` returns a window that no longer contains
+        // the dominant page, and `<For>` unmounts it — the page under the
+        // reader's eyes vanishes mid-slide, killing the stretch animation
+        // (the node that was supposed to stretch no longer exists, and its
+        // replacement has no bitmap). Pinning the dominant page for the
+        // duration of any layout animation keeps the SAME DOM node alive
+        // through the whole slide so the stretch effect visibly rescales it.
+        if state.viewer.zoom_animating.get() && !heights.is_empty() {
+            let dom = pdf_core::layout::dominant_page(scroll_top, vh, &heights, PAGE_GAP) as usize;
+            let dom = dom.saturating_sub(1); // 1-based → 0-based
+            range = match range {
+                Some((f, l)) => Some((f.min(dom), l.max(dom))),
+                None => Some((dom, dom)),
+            };
+        }
         // Extend to include the reader's current text-selection page range.
         if let Some((sel_first, sel_last)) = state.viewer.selected_pages.get() {
             // 1-based → 0-based.

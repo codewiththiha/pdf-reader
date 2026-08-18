@@ -21,6 +21,19 @@ fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
     let id_for_click = id.clone();
     let name = preset.name.clone();
     let appearance = preset.appearance;
+    // INLINE the two layer-creating properties (filter + mix-blend-mode)
+    // directly on the .preset-canvas span so it has NO var() dependency at
+    // all for them — not even the --ps-* namespace. This is the most direct
+    // fix for the "text bars vanish during a tint drag" bug: even though the
+    // --ps-* namespace already makes the swatch immune to name-based
+    // invalidation, inlining the literal filter/blend values here is
+    // belt-and-braces that eliminates any possibility of a repaint reading
+    // a stale/wrong value from a CSS variable.
+    let canvas_style = format!(
+        "filter:{};mix-blend-mode:{}",
+        appearance.canvas_filter(),
+        appearance.canvas_blend()
+    );
     let active = {
         let id = id.clone();
         move || state.settings.get().active_preset.as_deref() == Some(id.as_str())
@@ -65,7 +78,10 @@ fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
                     <span class=appearance.preview_class()>
                         // Mirrors the real page structure: an unfiltered
                         // themed backdrop with a filtered "canvas" on top.
-                        <span class="preset-canvas">
+                        // The inline `style` carries the literal filter + blend
+                        // values (no var()), eliminating any name-based
+                        // invalidation during a tint drag.
+                        <span class="preset-canvas" style=canvas_style.clone()>
                             <span class="preset-line preset-line-a"></span>
                             <span class="preset-line preset-line-b"></span>
                             <span class="preset-line preset-line-c"></span>
