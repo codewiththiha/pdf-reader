@@ -827,9 +827,23 @@ fn _use_fmax() {
     let _ = fmax(0.0, 1.0);
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tolerance used everywhere we compare an `i64`-derived `f64` (returned
+    /// by [`Strip::offset`] / [`Strip::size`] / [`Strip::total`]) against an
+    /// independently-computed `f64` (e.g. a `sizes[i]` literal or an `expect`
+    /// accumulator).
+    ///
+    /// The internal prefix-sum is held as `i64` in 1/65536 sub-pixel units, so
+    /// a value with a non-power-of-2 denominator (e.g. `0.1`, `0.333`) is
+    /// rounded to the nearest `1/65536` on the way in and back out. That
+    /// introduces a worst-case round-trip error of `1/SUBPIXEL_FACTOR ≈
+    /// 1.53e-5`. `1e-3` is well above the precision floor and well below any
+    /// real arithmetic bug (e.g. a missing `+ gap` term would be off by ~24).
+    const APPROX_TOL: f64 = 1e-3;
 
     /// Three items, sizes 100 / 200 / 100, gap 24 => starts 0 / 124 / 348.
     fn fixture() -> Strip {
@@ -946,6 +960,13 @@ mod tests {
         // Viewport shows ~2 items; read-ahead would pull in many more.
         let win = s.window(1_000.0, 200.0, Budget { look_frac: 5.0, max_items: 4 }).unwrap();
         assert_eq!(win.len(), 4);
+
+        // `max_items: 0` is documented to behave as `1` — a budget of zero
+        // would otherwise blank out the entire list, which can never be
+        // correct (the reader always sees something).
+        let s0 = Strip::uniform(10, 1_000.0, 24.0);
+        let win0 = s0.window(0.0, 100.0, Budget { look_frac: 0.0, max_items: 0 }).unwrap();
+        assert_eq!(win0.len(), 1);
     }
 
     #[test]
@@ -955,13 +976,6 @@ mod tests {
         let win = s.window(0.0, 500.0, Budget { look_frac: 0.0, max_items: 1 }).unwrap();
         let vis = s.visible(0.0, 500.0).unwrap();
         assert_eq!(win, vis, "visibility must win over the ceiling");
-    }
-
-    #[test]
-    fn window_max_items_zero_behaves_as_one() {
-        let s = Strip::uniform(10, 1_000.0, 24.0);
-        let win = s.window(0.0, 100.0, Budget { look_frac: 0.0, max_items: 0 }).unwrap();
-        assert_eq!(win.len(), 1);
     }
 
     #[test]
@@ -990,13 +1004,14 @@ mod tests {
         assert_eq!(s.dominant(90.0, 100.0), 1);
         // Viewport 40..140 => 60px of item 0, 40px of item 1.
         assert_eq!(s.dominant(40.0, 100.0), 0);
-    }
-
-    #[test]
-    fn dominant_ties_go_to_the_lower_index() {
-        let s = Strip::uniform(10, 100.0, 0.0);
-        // Exactly 50/50 between items 0 and 1.
+        // Exactly 50/50 between items 0 and 1: ties go to the lower index.
         assert_eq!(s.dominant(50.0, 100.0), 0);
+
+        // A viewport with zero extent cannot compute area-of-coverage, so it
+        // falls back to the top edge — same answer as `index_at(scroll_top)`.
+        let s2 = Strip::new([100.0, 200.0, 100.0], 24.0);
+        assert_eq!(s2.dominant(130.0, 0.0), s2.index_at(130.0));
+        assert_eq!(s2.dominant(130.0, 0.0), 1);
     }
 
     #[test]
@@ -1006,12 +1021,6 @@ mod tests {
             let top = s.offset(i);
             assert_eq!(s.dominant(top, 900.0), i, "jump to {i} should report {i}");
         }
-    }
-
-    #[test]
-    fn dominant_without_a_viewport_falls_back_to_the_top_edge() {
-        let s = fixture();
-        assert_eq!(s.dominant(130.0, 0.0), 1);
     }
 
     #[test]
@@ -1026,15 +1035,43 @@ mod tests {
 
     #[test]
     fn offsets_are_consistent_with_sizes_for_ragged_input() {
-        let sizes = [13.0, 400.0, 7.5, 999.25, 1.0];
+        // Power-of-2 denominators (7.5, 999.25, 0.25, 0.0625) round-trip
+        // EXACTLY through the i64 sub-pixel layer, so the tolerance could be
+        // 0.0. Non-power-of-2 denominators (0.1, 0.333, 0.999, 123.456) round
+        // to the nearest 1/65536 and lose ~1.5e-5 — that is the documented
+        // trade-off for the i64 sub-pixel storage.
+        let sizes = [13.0, 400.0, 7.5, 999.25, 1.0, 0.1, 0.333, 0.999, 123.456, 0.25, 0.0625];
         let s = Strip::new(sizes, 11.0);
         let mut expect = 0.0;
         for (i, &sz) in sizes.iter().enumerate() {
-            assert!((s.offset(i) - expect).abs() < 1e-9, "offset {i}");
-            assert!((s.size(i) - sz).abs() < 1e-9, "size {i}");
+            assert!((s.offset(i) - expect).abs() < APPROX_TOL, "offset {i}: {} vs {}", s.offset(i), expect);
+            assert!((s.size(i) - sz).abs() < APPROX_TOL, "size {i}: {} vs {}", s.size(i), sz);
             expect += sz + 11.0;
         }
-        assert!((s.total() - (expect - 11.0)).abs() < 1e-9);
+        assert!((s.total() - (expect - 11.0)).abs() < APPROX_TOL);
+    }
+
+    /// Demonstrates the i64 sub-pixel precision trade-off explicitly.
+    /// Power-of-2 denominators are exact (round-trip error 0); anything else
+    /// lands within `1 / SUBPIXEL_FACTOR` of the original value. This is what
+    /// makes `APPROX_TOL = 1e-3` the right tolerance everywhere else.
+    #[test]
+    fn subpixel_precision_for_non_binary_fractions() {
+        // Exact: denominators are powers of 2.
+        for &x in &[0.0, 1.0, 0.5, 0.25, 0.125, 7.5, 999.25, 13.0, 1_234_567.0] {
+            assert!((from_sub(to_sub(x)) - x).abs() < 1e-12, "exact round-trip {x}");
+        }
+        // Approximate: non-power-of-2 denominators lose up to 1/SUBPIXEL_FACTOR.
+        // The bound is symmetric and tight (rounding to nearest, not truncating).
+        let bound = 1.0 / (SUBPIXEL_FACTOR as f64);
+        for &x in &[0.1, 0.333, 0.999, 123.456, 0.001, 0.789, 42.195] {
+            let err = (from_sub(to_sub(x)) - x).abs();
+            assert!(err < bound, "round-trip {x}: error {err} exceeds {bound}");
+        }
+        // NaN / inf / negative clamps to zero, never panics.
+        assert_eq!(to_sub(f64::NAN), 0);
+        assert_eq!(to_sub(f64::INFINITY), i64::MAX);
+        assert_eq!(to_sub(-1.0), 0);
     }
 
     // ---- new tests for the upgrades --------------------------------------
@@ -1091,20 +1128,15 @@ mod tests {
         assert_eq!(s.offset(1), 124.0);
         assert_eq!(s.offset(2), 124.0 + 300.0 + 24.0);
         assert_eq!(s.total(), 100.0 + 24.0 + 300.0 + 24.0 + 100.0);
-    }
 
-    #[test]
-    fn set_size_is_noop_for_out_of_range() {
-        let mut s = Strip::new([100.0], 24.0);
-        assert_eq!(s.set_size(5, 200.0), 0.0);
-        assert_eq!(s.size(0), 100.0);
-    }
-
-    #[test]
-    fn set_size_noop_when_unchanged() {
-        let mut s = Strip::new([100.0, 200.0], 24.0);
-        assert_eq!(s.set_size(0, 100.0), 0.0);
-        assert_eq!(s.total(), 324.0);
+        // Out-of-range index is a no-op (returns 0.0, no panic, no mutation).
+        // Same for a size that equals the current size — early return, no work.
+        let mut s2 = Strip::new([100.0, 200.0], 24.0);
+        assert_eq!(s2.set_size(5, 200.0), 0.0);  // out of range
+        assert_eq!(s2.set_size(0, 100.0), 0.0); // unchanged
+        assert_eq!(s2.size(0), 100.0);
+        assert_eq!(s2.size(1), 200.0);
+        assert_eq!(s2.total(), 100.0 + 24.0 + 200.0);
     }
 
     #[test]
@@ -1173,7 +1205,12 @@ mod tests {
 
     #[test]
     fn fenwick_matches_strip_for_static_layout() {
-        let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0];
+        // Inputs span both power-of-2 denominators (75.5, 300.25) and non-
+        // power-of-2 ones (0.1, 0.333). Both backends use the same i64 sub-pixel
+        // storage, so the two paths produce IDENTICAL f64 outputs — the
+        // tolerance could be 0.0; 1e-9 is defence-in-depth against any future
+        // divergence in the conversion paths.
+        let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0, 0.1, 0.333];
         let s = Strip::new(sizes, 11.0);
         let f = FenwickStrip::new(sizes, 11.0);
         assert_eq!(s.len(), f.len());
@@ -1191,7 +1228,14 @@ mod tests {
     }
 
     #[test]
-    fn fenwick_set_size_is_o_log_n_in_practice() {
+    fn fenwick_set_size_propagates_to_later_items() {
+        // Verifies that FenwickStrip::set_size updates the prefix-sum so that
+        // `offset(i)` for items strictly AFTER the changed item shift by
+        // exactly `delta`, while `size(i)` for the changed item reflects the
+        // new value. (The test name used to claim "O(log n) in practice";
+        // correctness, not complexity, is what's being checked here — the
+        // complexity is established by the algorithm, not measured by the
+        // test.)
         let sizes = [100.0; 1000];
         let mut f = FenwickStrip::new(sizes, 24.0);
         let delta = f.set_size(500, 200.0);
@@ -1199,14 +1243,14 @@ mod tests {
         assert_eq!(f.size(500), 200.0);
         assert_eq!(f.size(0), 100.0);
         // Total must reflect the +100 from item 500.
-        assert!((f.total() - (100.0 * 1000.0 + 24.0 * 999.0 + 100.0)).abs() < 1e-6);
+        assert!((f.total() - (100.0 * 1000.0 + 24.0 * 999.0 + 100.0)).abs() < APPROX_TOL);
         // Offset of item 501 must have shifted by +100.
-        assert!((f.offset(501) - (Strip::new(sizes, 24.0).offset(501) + 100.0)).abs() < 1e-6);
+        assert!((f.offset(501) - (Strip::new(sizes, 24.0).offset(501) + 100.0)).abs() < APPROX_TOL);
     }
 
     #[test]
     fn chunked_matches_strip_for_static_layout() {
-        let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0];
+        let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0, 0.1, 0.333];
         let s = Strip::new(sizes, 11.0);
         let c = ChunkedStrip::new_with_chunk(sizes, 11.0, 4); // chunk size 4
         assert_eq!(s.len(), c.len());
@@ -1224,17 +1268,6 @@ mod tests {
         assert_eq!(delta, 100.0);
         assert_eq!(c.size(50), 200.0);
         // Offset of item 51 must have shifted by +100.
-        assert!((c.offset(51) - (Strip::new(sizes, 24.0).offset(51) + 100.0)).abs() < 1e-6);
-    }
-
-    #[test]
-    fn subpixel_helpers_round_trip() {
-        for x in [0.0, 1.0, 0.5, 0.25, 7.5, 999.25, 13.0, 1_234_567.0] {
-            assert!((from_sub(to_sub(x)) - x).abs() < 1e-9, "round-trip {x}");
-        }
-        // NaN / inf / negative clamps to zero, never panics.
-        assert_eq!(to_sub(f64::NAN), 0);
-        assert_eq!(to_sub(f64::INFINITY), i64::MAX);
-        assert_eq!(to_sub(-1.0), 0);
+        assert!((c.offset(51) - (Strip::new(sizes, 24.0).offset(51) + 100.0)).abs() < APPROX_TOL);
     }
 }
