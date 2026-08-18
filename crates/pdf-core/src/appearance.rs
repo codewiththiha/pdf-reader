@@ -444,13 +444,14 @@ impl Appearance {
             out.push_str(&format!("{ps_name}:{v};"));
         }
 
-        // 4. Filter, blend, texture, noise — all in --ps-* namespace.
-        //    NOTE: the .preset-canvas span ALSO gets inline `filter` and
-        //    `mix-blend-mode` from preset_section.rs, so these --ps-filter /
-        //    --ps-blend variables are belt-and-braces for any OTHER element
-        //    that might reference them.
-        out.push_str(&format!("--ps-filter:{};", self.canvas_filter()));
-        out.push_str(&format!("--ps-blend:{};", self.canvas_blend()));
+        // 4. Texture and noise scale/opacity. No --ps-filter / --ps-blend
+        //    are emitted — the .preset-canvas no longer uses CSS filter or
+        //    mix-blend-mode (those caused GPU compositor bugs on Dark/Dim/
+        //    Sepia/Green themes without Noise during slider drags). Instead,
+        //    the swatch uses solid colours: --ps-color-paper for the page
+        //    backdrop and --ps-color-ink for the "text" bars. This makes the
+        //    swatch immune to compositor layer-loss bugs because it has no
+        //    GPU compositing layers to lose.
         out.push_str(&format!(
             "--ps-tex-opacity:{:.3};",
             self.texture_opacity as f64 / 100.0
@@ -738,20 +739,20 @@ mod tests {
         // while a different one is applied to the document.
         let p = tinted(BaseMode::Dark, 110, 40).preview_style();
         assert!(p.contains("--ps-paper:#131316"), "{p}");
-        assert!(p.contains("--ps-filter:invert"), "{p}");
         assert!(p.contains("--ps-color-paper:oklch("), "tint must reach the swatch");
 
         // An untinted preview still pins the palette, or it would inherit the
         // live (possibly tinted) tokens and show the wrong colour.
         let plain = tinted(BaseMode::Light, 34, 0).preview_style();
         assert!(plain.contains("--ps-color-paper:var(--ps-paper)"), "{plain}");
-        assert!(plain.contains("--ps-filter:none"), "{plain}");
 
         // The swatch must consume ONLY --ps-* names — no root-mutated names
         // (--canvas-filter, --color-*, --texture-*, --noise-*) — or WKWebView's
         // name-based custom-property invalidation would repaint the swatch
         // every frame during a slider drag, against a mid-rebuild backdrop,
-        // making the "text" bars vanish.
+        // making the "text" bars vanish. Also, --ps-filter / --ps-blend are
+        // no longer emitted (the .preset-canvas uses solid colours, not CSS
+        // filter/blend) so the swatch has zero GPU compositing layers.
         for root_mutated in [
             "--canvas-filter:", "--canvas-blend:",
             "--color-paper:", "--color-ink:", "--color-line:",
