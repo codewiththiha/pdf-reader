@@ -136,12 +136,13 @@ export async function openDocument(path: string): Promise<PDFDocumentProxy> {
     ...CMAP,
     disableAutoFetch: true,
     disableStream: true,
+    isEvalSupported: false,
   });
   setLoadingTask(task);
   return await withTimeout(
     task.promise,
-    20000,
-    "Timed out opening this PDF (pdf.js worker did not start)",
+    8000,
+    "Timed out opening this PDF (pdf.js worker failed to initialize)",
   );
 }
 

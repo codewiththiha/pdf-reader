@@ -24,42 +24,21 @@ ignore = [
     "./src-tauri",
     "./styles.css",
     "./public/pdfEngine.js",
-    "./public/engine/types.js",
-    "./public/engine/state.js",
-    "./public/engine/canvas.js",
-    "./public/engine/theme.js",
-    "./public/engine/loader.js",
-    "./public/engine/renderer.js",
-    "./public/engine/thumbnails.js",
-    "./public/engine/search.js",
-    "./public/engine/selection.js",
     "./scripts/check-versions.js",
     "./scripts/test-engine-smoke.js",
 ]
 
-# Compile TypeScript sources to JavaScript BEFORE every trunk build (dev +
-# prod). The browser-loaded engine lives at public/pdfEngine.ts and is
-# emitted to public/pdfEngine.js next to it; the Node scripts in scripts/
-# are emitted alongside their .ts sources too.
-#
-# Uses `node` directly (not `npx`) for cross-platform safety — see the
-# tailwindcss hook below for the same reasoning.
+# Bundle the engine with esbuild (IIFE, no import graph). `node` runs the
+# JS API so Windows Trunk can spawn it (no npx / .cmd).
 [[hooks]]
 stage = "pre_build"
 command = "node"
-command_arguments = ["./node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]
+command_arguments = ["./scripts/bundle-engine.mjs"]
 
 [[hooks]]
 stage = "pre_build"
 command = "node"
 command_arguments = ["./node_modules/typescript/bin/tsc", "-p", "tsconfig.scripts.json"]
-
-# Flatten engine modules into a single public/pdfEngine.js. Tauri cannot
-# load the tsc-emitted import graph over the asset protocol.
-[[hooks]]
-stage = "pre_build"
-command = "node"
-command_arguments = ["./scripts/bundle-engine.mjs"]
 
 # Compile Tailwind v4 (CSS-first) before every trunk build (dev + prod).
 # Invoke the CLI's JS entry point through `node` directly rather than `npx`.

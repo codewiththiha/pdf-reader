@@ -56,17 +56,24 @@ async fn resolve<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, E
 /// Native open-file dialog (Tauri dialog plugin). Returns the chosen path, or
 /// `Err` on cancel / no plugin.
 pub async fn pick_pdf() -> Result<String, String> {
+    if !bridge::has_tauri() {
+        return Err(
+            "Open dialog only available in the desktop app. Drag and drop a PDF instead."
+                .to_string(),
+        );
+    }
+
     let opts = js_sys::Object::new();
-    js_sys::Reflect::set(&opts, &JsValue::from_str("multiple"), &JsValue::FALSE).unwrap();
-    js_sys::Reflect::set(&opts, &JsValue::from_str("directory"), &JsValue::FALSE).unwrap();
+    _ = js_sys::Reflect::set(&opts, &JsValue::from_str("multiple"), &JsValue::FALSE);
+    _ = js_sys::Reflect::set(&opts, &JsValue::from_str("directory"), &JsValue::FALSE);
     let filters = js_sys::Array::new();
     let filter = js_sys::Object::new();
-    js_sys::Reflect::set(&filter, &JsValue::from_str("name"), &JsValue::from_str("PDF")).unwrap();
+    _ = js_sys::Reflect::set(&filter, &JsValue::from_str("name"), &JsValue::from_str("PDF"));
     let exts = js_sys::Array::new();
     exts.push(&JsValue::from_str("pdf"));
-    js_sys::Reflect::set(&filter, &JsValue::from_str("extensions"), &exts).unwrap();
+    _ = js_sys::Reflect::set(&filter, &JsValue::from_str("extensions"), &exts);
     filters.push(&filter);
-    js_sys::Reflect::set(&opts, &JsValue::from_str("filters"), &filters).unwrap();
+    _ = js_sys::Reflect::set(&opts, &JsValue::from_str("filters"), &filters);
 
     let value = bridge::pick_file(opts.into()).await;
     match value.as_string() {
@@ -76,6 +83,12 @@ pub async fn pick_pdf() -> Result<String, String> {
 }
 
 pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
+    if !bridge::has_pdf_reader() {
+        return Err(EngineError {
+            name: "no_engine".to_string(),
+            message: "PDF engine is not loaded yet. Restart the app and try again.".to_string(),
+        });
+    }
     let value = bridge::open(path).await;
     resolve::<OpenResult>(value, "open").await
 }

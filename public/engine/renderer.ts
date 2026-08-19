@@ -29,23 +29,40 @@ import {
 } from "./state";
 import { TextLayer } from "./loader";
 
-export function registerPage(payload: { canvasId: string; hostId: string; page: number }): void {
-  const canvas = el(payload.canvasId) as HTMLCanvasElement | null;
-  if (!canvas) return;
-  const existing = stateByCanvasId.get(payload.canvasId);
-  if (existing) {
-    existing.dead = true;
-    try { existing.renderTask && existing.renderTask.cancel(); } catch (_) { /* ignore */ }
-    try { existing.textLayer && existing.textLayer.cancel(); } catch (_) { /* ignore */ }
-    if (existing.queueHandle) {
-      cancelAnimationFrame(existing.queueHandle);
-      existing.queueHandle = 0;
-    }
+function pageFromCanvasId(canvasId: string): number {
+  const sp = /^sp-(\d+)-cv$/.exec(canvasId);
+  if (sp && sp[1]) return parseInt(sp[1], 10);
+  const cont = /^cont-(\d+)-cv$/.exec(canvasId);
+  if (cont && cont[1]) return parseInt(cont[1], 10) + 1;
+  return 1;
+}
+
+/** Look up or create PageState. Recovers when registerPage ran before the
+ *  <canvas> was in the DOM (Leptos mounts the effect one tick early). */
+function ensurePage(
+  canvasId: string,
+  pageHint?: number,
+  hostIdHint?: string
+): PageState | null {
+  const existing = stateByCanvasId.get(canvasId);
+  const canvas = el(canvasId) as HTMLCanvasElement | null;
+  if (existing && existing.canvas && !existing.dead) {
+    if (canvas && existing.canvas !== canvas) existing.canvas = canvas;
+    return existing;
   }
-  const host = payload.hostId ? el(payload.hostId) : null;
-  const textLayerEl = host ? host.querySelector(".textLayer") as HTMLElement | null : null;
-  stateByCanvasId.set(payload.canvasId, {
-    page: payload.page,
+  if (!canvas) return null;
+  const hostId = hostIdHint || canvasId.replace(/-cv$/, "-pg");
+  const host = el(hostId);
+  const textLayerEl = host ? (host.querySelector(".textLayer") as HTMLElement | null) : null;
+  if (existing) {
+    existing.dead = false;
+    existing.canvas = canvas;
+    existing.host = host;
+    existing.textLayerEl = textLayerEl;
+    return existing;
+  }
+  const st: PageState = {
+    page: pageHint && pageHint > 0 ? pageHint : pageFromCanvasId(canvasId),
     canvas,
     host,
     textLayerEl,
@@ -57,7 +74,41 @@ export function registerPage(payload: { canvasId: string; hostId: string; page: 
     rawCanvas: null,
     queueGen: 0,
     queueHandle: 0,
-  });
+  };
+  stateByCanvasId.set(canvasId, st);
+  return st;
+}
+
+export function registerPage(payload: { canvasId: string; hostId: string; page: number }): void {
+  const existing = stateByCanvasId.get(payload.canvasId);
+  if (existing) {
+    existing.dead = true;
+    try { existing.renderTask && existing.renderTask.cancel(); } catch (_) { /* ignore */ }
+    try { existing.textLayer && existing.textLayer.cancel(); } catch (_) { /* ignore */ }
+    if (existing.queueHandle) {
+      cancelAnimationFrame(existing.queueHandle);
+      existing.queueHandle = 0;
+    }
+  }
+  const st = ensurePage(payload.canvasId, payload.page, payload.hostId);
+  if (!st) {
+    // Canvas not in the DOM yet. Remember the page/host so renderPage can
+    // finish registration on the next tick.
+    stateByCanvasId.set(payload.canvasId, {
+      page: payload.page,
+      canvas: null,
+      host: payload.hostId ? el(payload.hostId) : null,
+      textLayerEl: null,
+      renderTask: null,
+      textLayer: null,
+      viewport: null,
+      scale: 1,
+      dead: false,
+      rawCanvas: null,
+      queueGen: 0,
+      queueHandle: 0,
+    });
+  }
 }
 
 export function unregisterPage(canvasId: string): void {
@@ -265,8 +316,8 @@ export async function renderPageInternal(
   scale: number,
   renderText: boolean
 ): Promise<RenderResult> {
-  const st = stateByCanvasId.get(canvasId);
-  if (!st) return fail("not_registered", "Page not registered: " + canvasId);
+  const st = ensurePage(canvasId);
+  if (!st || !st.canvas) return fail("no_canvas", "Canvas element not found in DOM: " + canvasId);
   if (!pdf) return fail("no_document", "No document open");
 
   try { st.renderTask && st.renderTask.cancel(); } catch (_) { /* ignore */ }
@@ -399,8 +450,14 @@ export async function renderPage(
   scale: number,
   renderText: boolean
 ): Promise<RenderResult> {
-  const st = stateByCanvasId.get(canvasId);
-  if (!st) return fail("not_registered", "Page not registered: " + canvasId);
+  let st = ensurePage(canvasId);
+  if (!st || !st.canvas) {
+    await new Promise<void>((r) => {
+      requestAnimationFrame(() => r());
+    });
+    st = ensurePage(canvasId);
+  }
+  if (!st) return fail("no_canvas", "Canvas element not found in DOM: " + canvasId);
   if (!pdf) return fail("no_document", "No document open");
 
   const gen = (st.queueGen || 0) + 1;
