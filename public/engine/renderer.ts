@@ -7,7 +7,7 @@ import type {
   RenderResult,
   Viewport,
 } from "./types";
-import { blitInto, el, errorInfo, fail, releaseCanvas } from "./canvas";
+import { blitInto, el, errorInfo, fail, releaseCanvas, releasePooledCanvas } from "./canvas";
 import {
   bakeRaster,
   pipelineIsIdentity,
@@ -378,7 +378,7 @@ export async function renderPageInternal(
     const baked = bakeRaster(target, pipeline);
     if (baked !== st.canvas) {
       blitInto(st.canvas, baked);
-      if (baked !== target) releaseCanvas(baked);
+      if (baked !== target) releasePooledCanvas(baked);
     }
     if (scrubbing) {
       st.rawCanvas = target;

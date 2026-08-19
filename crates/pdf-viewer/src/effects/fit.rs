@@ -540,7 +540,7 @@ pub fn fit_effect(state: ViewerState) {
                     state.viewer.zoom_animating.set(false);
                 }
             },
-            Duration::from_millis(120),
+            Duration::from_millis(180),
         )
         .ok();
         on_cleanup(move || {

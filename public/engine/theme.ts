@@ -6,7 +6,15 @@
 // canvas so a bake never pins a second full-page buffer after it returns.
 
 import type { FilterMatrix, PaperInfo, PipelineCache, ThumbEntry, MaybeCanvas } from "./types";
-import { acquireScratch, blitInto, el, isSharedScratch, releaseCanvas, releaseScratch } from "./canvas";
+import {
+  acquirePooledCanvas,
+  acquireScratch,
+  blitInto,
+  el,
+  isSharedScratch,
+  releasePooledCanvas,
+  releaseScratch,
+} from "./canvas";
 import {
   dropRawIfIdle,
   setScrubbing,
@@ -26,6 +34,7 @@ export const pipelineCache: PipelineCache = {
 
 export function invalidatePipeline(): void {
   pipelineCache.token = null;
+  pipelineCache.gen += 1;
 }
 
 export function readPipeline(): PipelineCache {
@@ -60,9 +69,7 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
     probe.remove();
     if (resolved && resolved !== "rgba(0, 0, 0, 0)") {
       info.color = resolved;
-      const c = document.createElement("canvas");
-      c.width = 1;
-      c.height = 1;
+      const c = acquireScratch(1, 1);
       const ctx = c.getContext("2d");
       if (ctx) {
         ctx.fillStyle = resolved;
@@ -70,6 +77,7 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
         const d = ctx.getImageData(0, 0, 1, 1).data;
         info.rgb = [d[0] ?? 255, d[1] ?? 255, d[2] ?? 255];
       }
+      releaseScratch(c);
     }
   } catch (_) {
     /* white paper */
@@ -173,6 +181,8 @@ function composeFilter(filterString: string): FilterMatrix {
   return { m, o };
 }
 
+let filterLuts: Int32Array[] | null = null;
+
 function applyFilterPixels(
   src: HTMLCanvasElement,
   filterString: string
@@ -227,6 +237,22 @@ function applyFilterPixels(
   return out;
 }
 
+function rasterToCanvas(src: HTMLCanvasElement | ImageBitmap): {
+  canvas: HTMLCanvasElement;
+  borrowed: boolean;
+} {
+  if (typeof (src as HTMLCanvasElement).getContext === "function") {
+    return { canvas: src as HTMLCanvasElement, borrowed: false };
+  }
+  const c = acquirePooledCanvas(
+    (src as ImageBitmap).width,
+    (src as ImageBitmap).height,
+  );
+  const ctx = c.getContext("2d", { alpha: false });
+  if (ctx) ctx.drawImage(src as CanvasImageSource, 0, 0);
+  return { canvas: c, borrowed: true };
+}
+
 export function bakeRaster(
   src: HTMLCanvasElement,
   pipeline: PipelineCache
@@ -239,21 +265,21 @@ export function bakeRaster(
   }
   if (pipeline.blend === "normal") return filtered;
 
-  const out = document.createElement("canvas");
-  out.width = src.width;
-  out.height = src.height;
+  const out = acquirePooledCanvas(src.width, src.height);
   const octx = out.getContext("2d", { alpha: false });
   if (!octx) {
     return filtered;
   }
+  octx.globalCompositeOperation = "source-over";
   octx.fillStyle = paperInfo(pipeline).color;
   octx.fillRect(0, 0, out.width, out.height);
   octx.globalCompositeOperation = pipeline.blend as GlobalCompositeOperation;
   octx.drawImage(filtered, 0, 0);
+  octx.globalCompositeOperation = "source-over";
   if (filtered !== src && isSharedScratch(filtered)) {
     releaseScratch(filtered);
   } else if (filtered !== src) {
-    releaseCanvas(filtered);
+    releasePooledCanvas(filtered);
   }
   return out;
 }
@@ -269,7 +295,7 @@ export function bakeInto(
     blitInto(dst, baked);
     if (baked !== src) {
       if (isSharedScratch(baked)) releaseScratch(baked);
-      else releaseCanvas(baked);
+      else releasePooledCanvas(baked);
     }
   }
 }
@@ -283,7 +309,9 @@ export function releaseDisplayOnly(entry: ThumbEntry | null): void {
   } catch (_) {
     /* already closed */
   }
-  if (entry.display && entry.display !== entry.raw) releaseCanvas(entry.display);
+  if (entry.display && entry.display !== entry.raw) {
+    releasePooledCanvas(entry.display as HTMLCanvasElement);
+  }
   entry.display = null;
 }
 
@@ -292,7 +320,8 @@ export async function cacheDisplay(entry: Pick<ThumbEntry, "display">): Promise<
   if (!off || typeof createImageBitmap !== "function") return off;
   try {
     const bitmap = await createImageBitmap(off as ImageBitmap);
-    releaseCanvas(off);
+    if (isSharedScratch(off as HTMLCanvasElement)) releaseScratch(off as HTMLCanvasElement);
+    else releasePooledCanvas(off as HTMLCanvasElement);
     return bitmap;
   } catch (_) {
     return off;
@@ -302,6 +331,7 @@ export async function cacheDisplay(entry: Pick<ThumbEntry, "display">): Promise<
 export function thumbSource(entry: ThumbEntry | null | undefined): MaybeCanvas {
   if (!entry) return null;
   if (entry.display && (entry.display as ImageBitmap).width > 0) return entry.display;
+  if (entry.raw && (entry.raw as ImageBitmap).width > 0) return entry.raw;
   return null;
 }
 
@@ -319,12 +349,18 @@ export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas
   entry.pending = (async () => {
     const raw = thumbRaw(entry);
     if (!raw) return null;
-    if (entry.display !== entry.raw) releaseDisplayOnly(entry);
     const pipeline = readPipeline();
-    const baked = bakeRaster(raw as HTMLCanvasElement, pipeline);
-    entry.display = await cacheDisplay({ display: baked });
+    const { canvas: rawCanvas, borrowed } = rasterToCanvas(
+      raw as HTMLCanvasElement | ImageBitmap,
+    );
+    const baked = bakeRaster(rawCanvas, pipeline);
+    if (borrowed && baked !== rawCanvas) releasePooledCanvas(rawCanvas);
+    const newDisplay = await cacheDisplay({ display: baked });
+    if (entry.display && entry.display !== entry.raw && entry.display !== newDisplay) {
+      releaseDisplayOnly(entry);
+    }
+    entry.display = newDisplay;
     if (baked === raw) entry.raw = entry.display;
-    else if (isSharedScratch(baked as HTMLCanvasElement)) releaseScratch(baked as HTMLCanvasElement);
     entry.gen = pipelineCache.gen;
     return entry.display;
   })();
@@ -344,24 +380,25 @@ export async function rebakeTheme(): Promise<void> {
 
 async function refreshThemeInternal(): Promise<void> {
   if (scrubbing) return;
-  pipelineCache.token = null;
   const pipeline = readPipeline();
 
   for (const st of stateByCanvasId.values()) {
-    if (st.dead || !st.canvas) continue;
-    const raw = st.rawCanvas;
-    if (!raw) continue;
-    bakeInto(st.canvas, raw, pipeline);
+    // Only re-bake from a DISTINCT raw raster. If raw === live canvas the
+    // pixels may already be themed; baking again double-filters.
+    if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
+    bakeInto(st.canvas, st.rawCanvas, pipeline);
     dropRawIfIdle(st);
+  }
+
+  for (const entry of thumbCache.values()) {
+    await ensureEntryCurrent(entry);
+    if (scrubbing) return;
   }
 
   for (const [canvasId, { page }] of thumbLive) {
     const entry = thumbCache.get(page);
     const live = el(canvasId) as HTMLCanvasElement | null;
-    if (!entry || !live) continue;
-    if (!(await ensureEntryCurrent(entry))) continue;
-    if (scrubbing) return;
-    paintCached(live, entry);
+    if (entry && live) paintCached(live, entry);
   }
 }
 

@@ -44,16 +44,16 @@ export function hasThumb(page: number, scale: number): boolean {
   return (
     !!hit &&
     Math.abs(hit.scale - scale) < 1e-9 &&
-    (scrubbing || hit.gen === pipelineCache.gen)
+    (scrubbing || hit.gen === pipelineCache.gen || !!hit.raw)
   );
 }
 
 export function blitThumb(canvasId: string, page: number): boolean {
   const dst = el(canvasId) as HTMLCanvasElement | null;
   const entry = thumbCache.get(page);
-  const src = scrubbing ? thumbRaw(entry ?? null) : thumbSource(entry ?? null);
-  if (!dst || !src) return false;
-  if (!scrubbing && entry && entry.gen !== pipelineCache.gen) return false;
+  if (!dst || !entry) return false;
+  const src = scrubbing ? thumbRaw(entry) : thumbSource(entry);
+  if (!src) return false;
   if (dst.width <= 0 || dst.height <= 0) {
     dst.width = (src as ImageBitmap).width;
     dst.height = (src as ImageBitmap).height;

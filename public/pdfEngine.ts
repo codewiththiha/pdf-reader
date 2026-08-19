@@ -115,19 +115,18 @@ async function destroy(): Promise<void> {
 (globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy = destroy;
 
 async function refreshTheme(): Promise<void> {
-  // A distinct raw raster (raw !== live canvas) can be re-baked in place.
-  // Otherwise the live pixels may already be themed, so we re-render from
-  // pdf.js instead of double-filtering.
-  let canBake = false;
+  invalidatePipeline();
+  await rebakeTheme();
+  // Pages without a distinct raw must re-render from pdf.js (never
+  // double-filter). Thumbs were already refreshed in rebakeTheme.
+  let needsRerender = false;
   for (const st of stateByCanvasId.values()) {
-    if (!st.dead && st.rawCanvas && st.rawCanvas !== st.canvas) {
-      canBake = true;
+    if (!st.dead && st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas)) {
+      needsRerender = true;
       break;
     }
   }
-  invalidatePipeline();
-  if (canBake) await rebakeTheme();
-  else await rerenderLivePages();
+  if (needsRerender) await rerenderLivePages();
 }
 
 function stats(): Stats {

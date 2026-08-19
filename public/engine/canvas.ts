@@ -1,5 +1,6 @@
-// Canvas backing-store helpers. A single shared scratch pad is recycled for
-// theme-bake intermediates so we never hold 3–4 full-page RGBA buffers.
+// Canvas backing-store helpers. A small pool + one scratch pad recycle
+// bake intermediates so theme changes do not allocate a new full-page
+// RGBA buffer on every page/thumb.
 
 import type { MaybeCanvas, Raster } from "./types";
 
@@ -15,27 +16,46 @@ export function releaseCanvas(canvas: MaybeCanvas): void {
   }
 }
 
+const canvasPool: HTMLCanvasElement[] = [];
+const POOL_MAX = 6;
+
+export function acquirePooledCanvas(w: number, h: number): HTMLCanvasElement {
+  let c = canvasPool.pop();
+  if (!c) c = document.createElement("canvas");
+  c.width = Math.max(1, Math.floor(w));
+  c.height = Math.max(1, Math.floor(h));
+  return c;
+}
+
+export function releasePooledCanvas(c: HTMLCanvasElement | null | undefined): void {
+  if (!c || typeof c.getContext !== "function") return;
+  if (canvasPool.length < POOL_MAX) {
+    c.width = 1;
+    c.height = 1;
+    canvasPool.push(c);
+    return;
+  }
+  releaseCanvas(c);
+}
+
 let scratch: HTMLCanvasElement | null = null;
 let scratchInUse = false;
 
-/** Borrow the shared bake scratchpad. Concurrent callers get a throwaway canvas. */
+/** Borrow the shared bake scratchpad. Concurrent callers get a pooled canvas. */
 export function acquireScratch(w: number, h: number): HTMLCanvasElement {
   if (scratchInUse) {
-    const tmp = document.createElement("canvas");
-    tmp.width = Math.max(1, w);
-    tmp.height = Math.max(1, h);
-    return tmp;
+    return acquirePooledCanvas(w, h);
   }
   if (!scratch) scratch = document.createElement("canvas");
-  scratch.width = Math.max(1, w);
-  scratch.height = Math.max(1, h);
+  scratch.width = Math.max(1, Math.floor(w));
+  scratch.height = Math.max(1, Math.floor(h));
   scratchInUse = true;
   return scratch;
 }
 
 export function releaseScratch(owned?: HTMLCanvasElement | null): void {
   if (owned && owned !== scratch) {
-    releaseCanvas(owned);
+    releasePooledCanvas(owned);
     return;
   }
   scratchInUse = false;
@@ -51,6 +71,9 @@ export function disposeScratch(): void {
     releaseCanvas(scratch);
     scratch = null;
   }
+  while (canvasPool.length > 0) {
+    releaseCanvas(canvasPool.pop() ?? null);
+  }
 }
 
 export function blitInto(
@@ -60,8 +83,11 @@ export function blitInto(
   if (!dst || !src) return false;
   const srcW = (src as ImageBitmap).width ?? (src as HTMLCanvasElement).width;
   const srcH = (src as ImageBitmap).height ?? (src as HTMLCanvasElement).height;
-  dst.width = srcW;
-  dst.height = srcH;
+  if (!(srcW > 0) || !(srcH > 0)) return false;
+  if (dst.width !== srcW || dst.height !== srcH) {
+    dst.width = srcW;
+    dst.height = srcH;
+  }
   const ctx = dst.getContext("2d", { alpha: false });
   if (!ctx) return false;
   ctx.drawImage(src as CanvasImageSource, 0, 0);
