@@ -230,15 +230,9 @@ function applyFilterPixels(
     d[i + 2] = (L6[r] + L7[g] + L8[b] + o2) >> 16;
   }
 
-  // Mutate throwaway/offscreen rasters in place so a bake does not pin a
-  // second full-page buffer. Live DOM canvases stay untouched (theme change
-  // must not destroy the only copy of a page).
-  const inDom = typeof (src as HTMLCanvasElement).isConnected === "boolean"
-    && (src as HTMLCanvasElement).isConnected;
-  if (!inDom && sctx) {
-    sctx.putImageData(img, 0, 0);
-    return src;
-  }
+  // Always write to a scratch copy. Mutating `src` in place destroyed the
+  // unbaked thumbnail raw, so the next theme change double-filtered and
+  // live thumbs could not be rebaked without a pdf.js re-render.
   const out = acquireScratch(w, h);
   const octx = out.getContext("2d", { alpha: false });
   if (!octx) return src;
@@ -344,10 +338,16 @@ export function thumbSource(entry: ThumbEntry | null | undefined): MaybeCanvas {
   return null;
 }
 
+function rasterWidth(src: MaybeCanvas): number {
+  return src ? ((src as ImageBitmap).width || 0) : 0;
+}
+
 export function thumbRaw(entry: ThumbEntry | null | undefined): MaybeCanvas {
+  // Never fall back to `display`: that raster is already themed, and baking
+  // it again double-applies invert/blend.
   if (!entry) return null;
-  if (entry.raw && (entry.raw as ImageBitmap).width > 0) return entry.raw;
-  return thumbSource(entry);
+  if (entry.raw && rasterWidth(entry.raw) > 0) return entry.raw;
+  return null;
 }
 
 export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas> {
@@ -387,6 +387,33 @@ export async function rebakeTheme(): Promise<void> {
   }
 }
 
+/** Blit every cached thumb onto its live DOM canvas (and any stray `.thumb-canvas`). */
+export function paintAllVisibleThumbs(): void {
+  const seen = new Set<string>();
+  for (const [canvasId, { page }] of thumbLive) {
+    seen.add(canvasId);
+    const entry = thumbCache.get(page);
+    const live = el(canvasId) as HTMLCanvasElement | null;
+    if (entry && live) paintCached(live, entry);
+  }
+  try {
+    const nodes = document.querySelectorAll("canvas.thumb-canvas");
+    for (let i = 0; i < nodes.length; i += 1) {
+      const live = nodes[i] as HTMLCanvasElement;
+      if (!live.id || seen.has(live.id)) continue;
+      const m = /^thumb-(\d+)$/.exec(live.id);
+      if (!m || !m[1]) continue;
+      const page = parseInt(m[1], 10);
+      const entry = thumbCache.get(page);
+      if (!entry) continue;
+      paintCached(live, entry);
+      thumbLive.set(live.id, { page });
+    }
+  } catch (_) {
+    /* no document */
+  }
+}
+
 async function refreshThemeInternal(): Promise<void> {
   if (scrubbing) return;
   const pipeline = readPipeline();
@@ -404,11 +431,7 @@ async function refreshThemeInternal(): Promise<void> {
     if (scrubbing) return;
   }
 
-  for (const [canvasId, { page }] of thumbLive) {
-    const entry = thumbCache.get(page);
-    const live = el(canvasId) as HTMLCanvasElement | null;
-    if (entry && live) paintCached(live, entry);
-  }
+  paintAllVisibleThumbs();
 }
 
 export function paintCached(
@@ -470,10 +493,6 @@ async function setScrubModeInternal(on: boolean): Promise<void> {
     bakeInto(st.canvas, raw, pipeline);
     dropRawIfIdle(st);
   }
-  for (const [canvasId, { page }] of thumbLive) {
-    const entry = thumbCache.get(page);
-    const live = el(canvasId) as HTMLCanvasElement | null;
-    if (entry && live) paintCached(live, entry);
-  }
+  paintAllVisibleThumbs();
   document.documentElement.classList.remove("appearance-scrubbing");
 }

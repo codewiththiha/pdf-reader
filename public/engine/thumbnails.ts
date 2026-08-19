@@ -150,21 +150,25 @@ async function renderThumbInternal(
     thumbTasks.delete(canvasId);
     pg.cleanup();
 
+    // Keep `off` as the unbaked raw for every later theme rebake. Never
+    // alias raw === display and never release `off` here — cacheDisplay /
+    // createImageBitmap used to zero the only unthemed copy, so a theme
+    // change could not update visible thumbs until a full pdf.js re-render.
     const raw = off;
-    let rawRaster: MaybeCanvas = raw;
     let display: MaybeCanvas = scrubbing ? raw : bakeRaster(raw, readPipeline());
-    if (display === raw && typeof createImageBitmap === "function") {
-      try {
-        const bitmap = await createImageBitmap(raw);
-        releaseCanvas(raw);
-        display = bitmap;
-        rawRaster = bitmap;
-      } catch (_) { /* keep the canvas */ }
-    } else if (display !== raw) {
+    if (display === raw) {
+      if (typeof createImageBitmap === "function") {
+        try {
+          display = await createImageBitmap(raw);
+        } catch (_) {
+          display = raw;
+        }
+      }
+    } else {
       display = await cacheDisplay({ display } as ThumbEntry);
     }
     const entry: ThumbEntry = {
-      raw: rawRaster,
+      raw,
       display,
       cssW,
       cssH,

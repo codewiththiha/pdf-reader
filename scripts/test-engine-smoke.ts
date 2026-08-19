@@ -261,7 +261,12 @@ const fakeDocument = {
   addEventListener() {},
   getSelection: () => null,
   createRange: () => ({ setStart() {}, setEnd() {}, getClientRects: () => [], detach() {} }),
-  querySelectorAll: () => [],
+  querySelectorAll: (sel?: string) => {
+    if (sel === "canvas.thumb-canvas" || sel === "canvas") {
+      return [...elements.values()].filter((e) => String(e.id).startsWith("thumb-") || String(e.id).includes("-cv"));
+    }
+    return [];
+  },
 };
 
 interface FakeWindow {
@@ -375,11 +380,16 @@ const sandbox: Record<string, unknown> = {
   },
   URL,
   fetch: async () => { throw new Error("fetch disabled in harness"); },
-  createImageBitmap: async (c: FakeCanvas) => ({
-    width: c.width,
-    height: c.height,
-    close() { /* stub */ },
-  }),
+  createImageBitmap: async (c: FakeCanvas) => {
+    const ctx = (c as FakeCanvas & { _ctx?: FakeCtx })._ctx;
+    const data = ctx ? ctx._ensure().slice() : new Uint8ClampedArray(0);
+    return {
+      width: c.width,
+      height: c.height,
+      data,
+      close() { /* stub */ },
+    };
+  },
   pdfjsLib: {
     getDocument: () => fakeLoadingTask,
     GlobalWorkerOptions: {},
@@ -585,6 +595,25 @@ void sleep;
   const t2 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
   if (!t2.ok || t2.cached !== true) throw new Error("thumb cache hit failed");
   console.log("thumb cache hit ok");
+
+  // 6b. Theme change must blit the NEW bake onto the LIVE thumb canvas
+  // without a remount / scroll (the user-visible sidebar bug).
+  fakeComputed = {
+    "--canvas-filter": "invert(0.92) hue-rotate(180deg) saturate(0.85) brightness(1.02)",
+    "--canvas-blend": "screen",
+    paper: "#131316",
+  };
+  await PDFReader.refreshTheme();
+  const liveThumb = getEl("thumb-1") as unknown as { _ctx: FakeCtx };
+  const liveThumbPx = liveThumb._ctx.getImageData(0, 0, 1, 1).data;
+  const liveThumbExpect = expectedBakePixel(
+    [255, 255, 255],
+    fakeComputed["--canvas-filter"],
+    "screen",
+    [19, 19, 22],
+  );
+  assertClose(liveThumbPx, liveThumbExpect, "live thumb after refreshTheme");
+  console.log("live thumb refreshTheme ok:", Array.from(liveThumbPx).slice(0, 3));
 
   // 7. theme change marks cached thumbs STALE.
   PDFReader.cancelThumb("thumb-1");

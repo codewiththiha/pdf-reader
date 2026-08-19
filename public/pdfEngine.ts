@@ -35,6 +35,7 @@ import {
   rebakeTheme,
   applyScrubMode,
   invalidatePipeline,
+  paintAllVisibleThumbs,
 } from "./engine/theme";
 import { installSelectionTracker } from "./engine/selection";
 import {
@@ -127,6 +128,18 @@ async function refreshTheme(): Promise<void> {
     }
   }
   if (needsRerender) await rerenderLivePages();
+  // Rebake already updated thumbCache; blit onto every visible sidebar
+  // canvas. If a cache entry lost its unbaked raw, re-render that thumb
+  // from pdf.js the same way live pages do.
+  const thumbJobs: Promise<unknown>[] = [];
+  for (const [canvasId, { page }] of thumbLive) {
+    const entry = thumbCache.get(page);
+    if (!entry || !entry.display || (entry.display as ImageBitmap).width <= 0) {
+      thumbJobs.push(renderThumb(canvasId, page, entry?.scale || 0.25));
+    }
+  }
+  if (thumbJobs.length) await Promise.all(thumbJobs);
+  paintAllVisibleThumbs();
 }
 
 function stats(): Stats {
