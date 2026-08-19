@@ -130,7 +130,10 @@ async function renderThumbInternal(
     off.width = Math.max(1, Math.floor(viewport.width * out));
     off.height = Math.max(1, Math.floor(viewport.height * out));
     const ctx = off.getContext("2d", { alpha: false });
-    if (!ctx) return fail("no_context", "No 2d context");
+    if (!ctx) {
+      releaseCanvas(off);
+      return fail("no_context", "No 2d context");
+    }
     const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
     const task = pg.render({ canvasContext: ctx, viewport, transform });

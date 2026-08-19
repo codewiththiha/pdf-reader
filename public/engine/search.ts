@@ -102,6 +102,11 @@ export async function search(query: string): Promise<SearchResult> {
 
   setActiveMatchValue(null);
   refreshHighlights();
+  try {
+    if (pdf) await pdf.cleanup();
+  } catch (_) {
+    /* advisory */
+  }
   return { ok: true, query, total: matches.length, matches };
 }
 

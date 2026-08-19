@@ -171,8 +171,9 @@ async function openFromUrl(url: string): Promise<PDFDocumentProxy> {
   const task = getDocument({
     url,
     ...CMAP,
-    disableAutoFetch: false,
-    disableStream: false,
+    disableRange: false,
+    disableStream: true,
+    disableAutoFetch: true,
     rangeChunkSize: 65536,
     isEvalSupported: false,
   });

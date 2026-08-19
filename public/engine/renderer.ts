@@ -23,6 +23,8 @@ import {
   searchQuery,
   scrubbing,
   stateByCanvasId,
+  dropRawIfIdle,
+  noteActivity,
   sweepPdf,
   PAGE_MAX_PIXELS,
   CANVAS_AREA_FACTOR,
@@ -176,12 +178,17 @@ export function applyHighlights(st: PageState): void {
       for (const r of rects) {
         if (r.width <= 0 || r.height <= 0) continue;
         boxes.push({ r, ord: mine });
+        if (boxes.length >= 200) break;
       }
+      if (boxes.length >= 200) break;
     }
+    if (boxes.length >= 200) break;
   }
   const activeOrd =
     activeMatch && activeMatch.page === st.page ? activeMatch.index : -1;
-  for (const { r, ord: n } of boxes) {
+  const MAX_HIGHLIGHTS_PER_PAGE = 200;
+  const painted = boxes.slice(0, MAX_HIGHLIGHTS_PER_PAGE);
+  for (const { r, ord: n } of painted) {
     const d = document.createElement("div");
     d.className = n === activeOrd ? "highlight is-active" : "highlight";
     d.dataset.match = String(n);
@@ -200,9 +207,9 @@ export function refreshHighlights(): void {
 }
 
 function pageOutputScale(cssW: number, cssH: number): number {
-  // Cap at 1.5: 2× Retina/4K backing stores were ~17 MB each and stacked
+  // Cap at 1.25: vectors stay sharp at reading distance; 1.5× cost ~30% more.
   // across mounted pages + bake intermediates. Text stays sharp enough.
-  const dpr = Math.min(globalThis.devicePixelRatio || 1, 1.5);
+  const dpr = Math.min(globalThis.devicePixelRatio || 1, 1.25);
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
 
   const vw = globalThis.innerWidth || 0;
@@ -387,6 +394,7 @@ export async function renderPageInternal(
       releaseCanvas(st.rawCanvas);
     }
     st.rawCanvas = target;
+    dropRawIfIdle(st);
   } else {
     // Identity / already-scrubbing: the live canvas IS the raw.
     st.rawCanvas = st.canvas;
@@ -442,8 +450,27 @@ export async function renderPageInternal(
   page.cleanup();
 
   if (bumpRenderCount() % CLEANUP_EVERY === 0) sweepPdf();
+  noteActivity();
 
   return { ok: true, width: cssW, height: cssH, scale };
+}
+
+async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
+  const out: T[] = [];
+  let i = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(limit, 1), Math.max(jobs.length, 1)) },
+    async () => {
+      while (i < jobs.length) {
+        const idx = i;
+        i += 1;
+        const job = jobs[idx];
+        if (job) out[idx] = await job();
+      }
+    },
+  );
+  await Promise.all(workers);
+  return out;
 }
 
 export async function renderPage(
@@ -487,24 +514,24 @@ export async function renderPage(
 /** Re-render pages that have no unbaked raw so slider scrub can start
  *  without applying CSS filters on already-baked pixels. */
 export async function preparePagesForScrub(): Promise<void> {
-  const jobs: Promise<unknown>[] = [];
+  const jobs: Array<() => Promise<unknown>> = [];
   for (const [id, st] of stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
     if (st.rawCanvas && st.rawCanvas !== st.canvas) continue;
     if (!st.rawCanvas) {
-      jobs.push(renderPageInternal(id, st.scale || 1, false));
+      jobs.push(() => renderPageInternal(id, st.scale || 1, false));
     }
   }
-  if (jobs.length) await Promise.all(jobs);
+  if (jobs.length) await runLimited(jobs, 2);
 }
 
 /** Re-render every live page from pdf.js. Used when a theme change arrives
  *  after we have already dropped the raw raster. */
 export async function rerenderLivePages(): Promise<void> {
-  const jobs: Promise<unknown>[] = [];
+  const jobs: Array<() => Promise<unknown>> = [];
   for (const [id, st] of stateByCanvasId) {
     if (st.dead || !st.canvas) continue;
-    jobs.push(renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
+    jobs.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
   }
-  await Promise.all(jobs);
+  await runLimited(jobs, 2);
 }

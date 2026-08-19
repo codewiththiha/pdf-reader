@@ -10,7 +10,7 @@ import type {
   ThumbEntry,
   ActiveMatch,
 } from "./types";
-import { releaseCanvas } from "./canvas";
+import { disposeScratch, releaseCanvas } from "./canvas";
 
 export const ENGINE_VERSION = "0.2.0";
 
@@ -69,8 +69,22 @@ export function setScrubbing(on: boolean): void {
   scrubbing = on;
 }
 
-export const PAGE_MAX_PIXELS = 8 * 1024 * 1024;
-export const CANVAS_AREA_FACTOR = 2.0;
+export const PAGE_MAX_PIXELS = 4 * 1024 * 1024;
+export const CANVAS_AREA_FACTOR = 1.0;
+
+const RAW_IDLE_MS = 10_000;
+const rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();
+
+let idleTimer: ReturnType<typeof setTimeout> | 0 = 0;
+
+/** Reset the 30s idle sweeper (pdf.cleanup + scratch/pool drain). */
+export function noteActivity(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    sweepPdf();
+    disposeScratch();
+  }, 30_000);
+}
 
 export function releaseThumbEntry(entry: ThumbEntry | null | undefined): void {
   if (!entry) return;
@@ -104,6 +118,8 @@ export function releasePageSurfaces(st: PageState | null): void {
       /* host already detached */
     }
   }
+  const rawTimer = rawTimers.get(st);
+  if (rawTimer) clearTimeout(rawTimer);
   if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
   st.rawCanvas = null;
   releaseCanvas(st.canvas);
@@ -124,10 +140,17 @@ export function sweepPdf(): void {
   }
 }
 
-export function dropRawIfIdle(_st: PageState): void {
-  // Intentionally keep a distinct unbaked raw on mounted pages. Appearance
-  // sliders restore it before applying live CSS; releasing it here was the
-  // Dark-mode "flash to light" / Dim "goes darker" scrub bug. The extra
-  // buffer dies with the page on unregister (virtualization already caps
-  // how many pages are mounted).
+/** Keep the unbaked raw briefly so a tint slider can restore it, then free it.
+ *  The next theme change / scrub without a raw re-renders from pdf.js. */
+export function dropRawIfIdle(st: PageState): void {
+  const prev = rawTimers.get(st);
+  if (prev) clearTimeout(prev);
+  rawTimers.set(
+    st,
+    setTimeout(() => {
+      if (st.dead || scrubbing) return;
+      if (st.rawCanvas && st.rawCanvas !== st.canvas) releaseCanvas(st.rawCanvas);
+      st.rawCanvas = null;
+    }, RAW_IDLE_MS),
+  );
 }

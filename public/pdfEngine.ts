@@ -182,6 +182,22 @@ function releaseAllSurfaces(): void {
 }
 
 globalThis.addEventListener("pagehide", releaseAllSurfaces);
+try {
+  globalThis.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") return;
+    // Keep the live baked canvases (so coming back isn't a blank page)
+    // but drop idle raws, scratch, and worker caches.
+    for (const st of stateByCanvasId.values()) {
+      if (st.rawCanvas && st.rawCanvas !== st.canvas) {
+        releaseCanvas(st.rawCanvas);
+        st.rawCanvas = null;
+      }
+    }
+    disposeScratch();
+  });
+} catch (_) {
+  /* no document */
+}
 installSelectionTracker();
 
 globalThis.PDFReader = {
@@ -205,6 +221,6 @@ globalThis.PDFReader = {
   setHighlightMode,
   clearHighlights,
   refreshTheme,
-  setScrubMode: applyScrubMode,
+  setScrubMode,
   takePendingFile,
 } satisfies PDFReaderApi;
