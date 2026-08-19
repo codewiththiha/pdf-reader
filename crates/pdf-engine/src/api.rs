@@ -177,6 +177,9 @@ pub fn set_highlight_mode(stale: bool) {
 }
 
 pub fn clear_highlights() {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::clear_highlights();
 }
 
@@ -187,7 +190,7 @@ pub fn clear_highlights() {
 /// wake-up can never open the same file twice. Resolves None (never errors)
 /// outside Tauri and whenever the backend has nothing queued.
 pub async fn take_pending_file() -> Option<String> {
-    if !bridge::has_tauri() {
+    if !bridge::has_tauri() || !bridge::has_pdf_reader() {
         return None;
     }
     let value = bridge::take_pending_file().await;
@@ -199,6 +202,9 @@ pub async fn take_pending_file() -> Option<String> {
 /// writes the new CSS variables; pages render with the new look without a
 /// pdf.js re-render.
 pub fn refresh_theme() {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::refresh_theme();
 }
 
@@ -209,5 +215,8 @@ pub fn refresh_theme() {
 /// and the CSS class in the same task, so no frame is ever double-filtered
 /// or unfiltered.
 pub fn set_scrub_mode(on: bool) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::set_scrub_mode(on);
 }

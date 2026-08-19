@@ -70,7 +70,15 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                 // Back to the library shelf. Only while a document is open —
                 // the shelf IS the empty state, so the button would be a no-op
                 // (and confusing) there.
-                <Show when=move || menu_state.doc.status.get() == DocStatus::Ready>
+                // Visible while a book is open OR while one is opening — otherwise
+                // a hung open leaves the reader stranded on "Opening…" with no
+                // way back to the shelf.
+                <Show when=move || {
+                    matches!(
+                        menu_state.doc.status.get(),
+                        DocStatus::Ready | DocStatus::Opening
+                    )
+                }>
                     <Tooltip text="Library".to_string()>
                         <Button
                             on_click=move |_| close_document(menu_state)

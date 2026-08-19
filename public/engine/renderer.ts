@@ -349,7 +349,7 @@ export async function renderPageInternal(
 
     const textContent = await page.getTextContent();
 
-    const tl = new TextLayer({
+    const tl = TextLayer({
       textContentSource: textContent,
       container: layer,
       viewport,

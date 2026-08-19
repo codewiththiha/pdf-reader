@@ -1,7 +1,6 @@
-// Document loading. Prefer a streaming URL (pdf.js range requests) so a
-// 50 MB file is not cloned through Rust Vec → IPC → JS ArrayBuffer → worker.
-// Falls back to `read_file_bytes` because the Tauri asset protocol is
-// intermittently broken on Windows (`https://asset.localhost`).
+// Document loading. Local files are read via Tauri IPC (bytes). Web-served
+// samples use fetch. Open returns as soon as page 1 is known so the reader
+// is never stuck on "Opening…".
 
 import type {
   CoverResult,
@@ -30,9 +29,7 @@ type PdfjsLib = {
   TextLayer: unknown;
 };
 
-export const pdfjsLib = globalThis.pdfjsLib as unknown as PdfjsLib;
-export const { getDocument, GlobalWorkerOptions } = pdfjsLib;
-export const TextLayer = pdfjsLib.TextLayer as {
+export type TextLayerCtor = {
   new (opts: {
     textContentSource: { items: unknown[] };
     container: HTMLElement;
@@ -40,7 +37,59 @@ export const TextLayer = pdfjsLib.TextLayer as {
   }): { render: () => Promise<void>; cancel: () => void };
 };
 
-GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
+function isWebServedPath(path: string): boolean {
+  if (/^https?:\/\//i.test(path) || /^blob:/i.test(path)) return true;
+  if (path.startsWith("/samples/") || path.startsWith("samples/")) return true;
+  return false;
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(Object.assign(new Error(message), { name: "TimeoutError" }));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** Resolve pdf.js off globalThis at call time — never at module evaluate. */
+export function getPdfjs(): PdfjsLib {
+  const l = globalThis.pdfjsLib as PdfjsLib | undefined;
+  if (!l || typeof l.getDocument !== "function") {
+    throw new Error("pdf.js is not loaded");
+  }
+  // Absolute worker URL so Tauri's Worker constructor resolves against the
+  // webview origin, not a broken custom-protocol base.
+  if (l.GlobalWorkerOptions) {
+    try {
+      l.GlobalWorkerOptions.workerSrc = new URL(
+        "/vendor/pdfjs/pdf.worker.min.mjs",
+        globalThis.location?.href || "http://localhost/",
+      ).href;
+    } catch (_) {
+      l.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs/pdf.worker.min.mjs";
+    }
+  }
+  return l;
+}
+
+export function getDocument(params: Record<string, unknown>) {
+  return getPdfjs().getDocument(params);
+}
+
+export function TextLayer(opts: ConstructorParameters<TextLayerCtor>[0]) {
+  const Ctor = getPdfjs().TextLayer as TextLayerCtor;
+  return new Ctor(opts);
+}
 
 const CMAP = { cMapUrl: "/vendor/pdfjs/cmaps/", cMapPacked: true };
 
@@ -54,52 +103,33 @@ async function doFetch(src: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+function toUint8(bytes: unknown): Uint8Array {
+  if (bytes instanceof Uint8Array) return bytes;
+  if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
+  if (ArrayBuffer.isView(bytes)) {
+    const v = bytes as ArrayBufferView;
+    return new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+  }
+  if (Array.isArray(bytes)) return Uint8Array.from(bytes as number[]);
+  throw Object.assign(new Error("read_file_bytes returned an unexpected type"), {
+    name: "UnexpectedResponseException",
+  });
+}
+
 export async function fetchBytes(path: string): Promise<Uint8Array> {
-  if (/^https?:\/\//i.test(path)) return doFetch(path);
+  if (isWebServedPath(path)) {
+    const url = path.startsWith("samples/") ? "/" + path : path;
+    return doFetch(url);
+  }
   const tauri = globalThis.__TAURI__;
   if (tauri && tauri.core && typeof tauri.core.invoke === "function") {
-    try {
-      const bytes = await tauri.core.invoke("read_file_bytes", { path });
-      return new Uint8Array(bytes as ArrayBufferLike);
-    } catch (_) {
-      /* fall through */
-    }
+    const bytes = await tauri.core.invoke("read_file_bytes", { path });
+    return toUint8(bytes);
   }
   return doFetch(path);
 }
 
-function fileUrlFor(path: string): string | null {
-  if (/^https?:\/\//i.test(path) || /^asset:/i.test(path) || path.startsWith("/")) {
-    return path;
-  }
-  const tauri = globalThis.__TAURI__;
-  if (tauri && tauri.core && typeof tauri.core.convertFileSrc === "function") {
-    try {
-      return tauri.core.convertFileSrc(path);
-    } catch (_) {
-      return null;
-    }
-  }
-  return null;
-}
-
 export async function openDocument(path: string): Promise<PDFDocumentProxy> {
-  const url = fileUrlFor(path);
-  if (url) {
-    try {
-      const task = getDocument({
-        url,
-        ...CMAP,
-        disableAutoFetch: false,
-        disableStream: false,
-        rangeChunkSize: 65536,
-      });
-      setLoadingTask(task);
-      return await task.promise;
-    } catch (_) {
-      /* Windows asset-protocol flake, or a relative path the worker cannot fetch. */
-    }
-  }
   const bytes = await fetchBytes(path);
   const task = getDocument({
     data: bytes,
@@ -108,7 +138,11 @@ export async function openDocument(path: string): Promise<PDFDocumentProxy> {
     disableStream: true,
   });
   setLoadingTask(task);
-  return await task.promise;
+  return await withTimeout(
+    task.promise,
+    20000,
+    "Timed out opening this PDF (pdf.js worker did not start)",
+  );
 }
 
 function outlineTitle(raw: string | null | undefined): string {
@@ -152,7 +186,6 @@ async function flattenOutline(
 
 export async function open(path: string): Promise<OpenResult> {
   try {
-    // destroy is wired from the facade so we don't import the whole engine here.
     const destroy = (globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy;
     if (destroy) await destroy();
     const doc = await openDocument(path);
@@ -172,31 +205,27 @@ export async function open(path: string): Promise<OpenResult> {
 
     let outline: { title: string; page: number; depth: number }[] = [];
     try {
-      outline = await flattenOutline(await doc.getOutline(), 0, []);
+      outline = await withTimeout(
+        flattenOutline(await doc.getOutline(), 0, []),
+        4000,
+        "outline timeout",
+      );
     } catch (_) {
-      /* ignore */
+      outline = [];
     }
 
     const page1 = await doc.getPage(1);
     const vp = page1.getViewport({ scale: 1 });
+    try { page1.cleanup(); } catch (_) { /* ignore */ }
 
+    // Seed every page with page-1's size so open returns immediately.
+    // A serial getPage(n) over a long book looked like a permanent hang.
     const pageHeights: number[] = new Array(numPages);
     const pageWidths: number[] = new Array(numPages);
-    pageHeights[0] = vp.height;
-    pageWidths[0] = vp.width;
-    for (let n = 2; n <= numPages; n += 1) {
-      try {
-        const pg = await doc.getPage(n);
-        const v = pg.getViewport({ scale: 1 });
-        pageHeights[n - 1] = v.height;
-        pageWidths[n - 1] = v.width;
-        pg.cleanup();
-      } catch (_) {
-        pageHeights[n - 1] = vp.height;
-        pageWidths[n - 1] = vp.width;
-      }
+    for (let i = 0; i < numPages; i += 1) {
+      pageHeights[i] = vp.height;
+      pageWidths[i] = vp.width;
     }
-    try { page1.cleanup(); } catch (_) { /* ignore */ }
 
     return {
       ok: true,
@@ -217,7 +246,8 @@ export async function open(path: string): Promise<OpenResult> {
       er &&
       (er.name === "InvalidPDFException" ||
         er.name === "MissingPDFException" ||
-        er.name === "UnexpectedResponseException")
+        er.name === "UnexpectedResponseException" ||
+        er.name === "TimeoutError")
     ) {
       const d = errorInfo(e);
       return fail("corrupt", `Could not read this PDF. (${d.name}: ${d.message})`);
@@ -259,33 +289,12 @@ export async function coverDataUrl(path: string, maxWidth = 240): Promise<CoverR
     if (pdf && currentPath === path) {
       result = await renderCoverFromPdf(pdf, maxWidth);
     } else {
-      let task: ReturnType<typeof getDocument>;
-      const url = fileUrlFor(path);
-      if (url) {
-        try {
-          task = getDocument({
-            url,
-            ...CMAP,
-            disableAutoFetch: true,
-            disableStream: false,
-            rangeChunkSize: 65536,
-          });
-        } catch {
-          task = getDocument({
-            data: await fetchBytes(path),
-            ...CMAP,
-            disableAutoFetch: true,
-            disableStream: true,
-          });
-        }
-      } else {
-        task = getDocument({
-          data: await fetchBytes(path),
-          ...CMAP,
-          disableAutoFetch: true,
-          disableStream: true,
-        });
-      }
+      const task = getDocument({
+        data: await fetchBytes(path),
+        ...CMAP,
+        disableAutoFetch: true,
+        disableStream: true,
+      });
       try {
         const doc = await task.promise;
         result = await renderCoverFromPdf(doc, maxWidth);

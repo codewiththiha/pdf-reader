@@ -54,6 +54,13 @@ stage = "pre_build"
 command = "node"
 command_arguments = ["./node_modules/typescript/bin/tsc", "-p", "tsconfig.scripts.json"]
 
+# Flatten engine modules into a single public/pdfEngine.js. Tauri cannot
+# load the tsc-emitted import graph over the asset protocol.
+[[hooks]]
+stage = "pre_build"
+command = "node"
+command_arguments = ["./scripts/bundle-engine.mjs"]
+
 # Compile Tailwind v4 (CSS-first) before every trunk build (dev + prod).
 # Invoke the CLI's JS entry point through `node` directly rather than `npx`.
 # On Windows, npm shims are `.cmd` batch files (npx.cmd / tailwindcss.cmd),

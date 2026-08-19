@@ -26,24 +26,10 @@ function stripModuleSyntax(src: string): string {
     .replace(/^\s*export\s+\{\s*\}\s*;?\s*$/gm, "");
 }
 
-const engineFiles = [
-  "engine/state.js",
-  "engine/canvas.js",
-  "engine/theme.js",
-  "engine/loader.js",
-  "engine/renderer.js",
-  "engine/thumbnails.js",
-  "engine/search.js",
-  "engine/selection.js",
-  "pdfEngine.js",
-];
-const engineSrc = engineFiles
-  .map((rel) =>
-    stripModuleSyntax(
-      readFileSync(new URL("../public/" + rel, import.meta.url), "utf8")
-    )
-  )
-  .join("\n;\n");
+const engineSrc = readFileSync(
+  new URL("../public/pdfEngine.js", import.meta.url),
+  "utf8"
+);
 
 // ---------- canvas stub (pixel-accurate) ----------
 class FakeCtx {
