@@ -205,11 +205,12 @@ export async function open(path: string): Promise<OpenResult> {
 
     let outline: { title: string; page: number; depth: number }[] = [];
     try {
-      outline = await withTimeout(
-        flattenOutline(await doc.getOutline(), 0, []),
-        4000,
-        "outline timeout",
+      // Race the timer against getOutline() AND flattenOutline(). Awaiting
+      // getOutline() first meant a hung outline never started the 4s timeout.
+      const outlinePromise = doc.getOutline().then((items) =>
+        flattenOutline(items, 0, []),
       );
+      outline = await withTimeout(outlinePromise, 4000, "outline timeout");
     } catch (_) {
       outline = [];
     }
