@@ -129,8 +129,62 @@ export async function fetchBytes(path: string): Promise<Uint8Array> {
   return doFetch(path);
 }
 
-export async function openDocument(path: string): Promise<PDFDocumentProxy> {
-  const bytes = await fetchBytes(path);
+export /** Tauri `convertFileSrc` URL only — never a raw `/Users/...` path (that
+ *  was treated as an HTTP URL and hung getDocument). */
+function localAssetUrl(path: string): string | null {
+  const tauri = globalThis.__TAURI__;
+  if (!tauri || !tauri.core || typeof tauri.core.convertFileSrc !== "function") {
+    return null;
+  }
+  let url = "";
+  try {
+    url = String(tauri.core.convertFileSrc(path) || "");
+  } catch (_) {
+    return null;
+  }
+  if (!url) return null;
+  if (url.startsWith("/") || /^[A-Za-z]:[\\/]/.test(url)) return null;
+  if (!/^(asset:|https?:|tauri:|http:\/\/asset\.localhost|https:\/\/asset\.localhost)/i.test(url)) {
+    return null;
+  }
+  return url;
+}
+
+async function probeAssetUrl(url: string): Promise<boolean> {
+  if (typeof fetch !== "function") return false;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1200);
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Range: "bytes=0-1" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    return res.ok || res.status === 206;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function openFromUrl(url: string): Promise<PDFDocumentProxy> {
+  const task = getDocument({
+    url,
+    ...CMAP,
+    disableAutoFetch: false,
+    disableStream: false,
+    rangeChunkSize: 65536,
+    isEvalSupported: false,
+  });
+  setLoadingTask(task);
+  return await withTimeout(
+    task.promise,
+    8000,
+    "Timed out opening this PDF (pdf.js worker failed to initialize)",
+  );
+}
+
+async function openFromBytes(bytes: Uint8Array): Promise<PDFDocumentProxy> {
   const task = getDocument({
     data: bytes,
     ...CMAP,
@@ -144,6 +198,28 @@ export async function openDocument(path: string): Promise<PDFDocumentProxy> {
     8000,
     "Timed out opening this PDF (pdf.js worker failed to initialize)",
   );
+}
+
+async function openDocument(path: string): Promise<PDFDocumentProxy> {
+  if (isWebServedPath(path)) {
+    const url = path.startsWith("samples/") ? "/" + path : path;
+    return await openFromUrl(url);
+  }
+
+  // Prefer the asset protocol so pdf.js can Range-request instead of holding
+  // the whole file in V8. Windows `https://asset.localhost` intermittently
+  // fails ("Failed to fetch") — probe first and fall back to binary IPC
+  // (`read_file_bytes` returns an ArrayBuffer, not JSON/Base64).
+  const asset = localAssetUrl(path);
+  if (asset && (await probeAssetUrl(asset))) {
+    try {
+      return await openFromUrl(asset);
+    } catch (_) {
+      /* bytes fallback */
+    }
+  }
+
+  return await openFromBytes(await fetchBytes(path));
 }
 
 function outlineTitle(raw: string | null | undefined): string {
