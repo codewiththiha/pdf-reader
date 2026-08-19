@@ -108,6 +108,9 @@ pub struct RegisterPagePayload {
 }
 
 pub fn register_page(page: u32, canvas_id: &str, host_id: Option<&str>) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     let payload = RegisterPagePayload {
         page,
         canvas_id: canvas_id.to_string(),
@@ -118,10 +121,19 @@ pub fn register_page(page: u32, canvas_id: &str, host_id: Option<&str>) {
 }
 
 pub fn unregister_page(canvas_id: &str) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::unregister_page(canvas_id);
 }
 
 pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Result<RenderResult, EngineError> {
+    if !bridge::has_pdf_reader() {
+        return Err(EngineError {
+            name: "no_engine".to_string(),
+            message: "PDF engine is not loaded yet. Restart the app and try again.".to_string(),
+        });
+    }
     let value = bridge::render_page(canvas_id, scale, render_text).await;
     resolve::<RenderResult>(value, "render").await
 }
@@ -134,6 +146,12 @@ pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Resu
 /// `cached: true` — the caller must then skip its loading skeleton, because the
 /// canvas is already painted on the first mounted frame.
 pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> Result<ThumbResult, EngineError> {
+    if !bridge::has_pdf_reader() {
+        return Err(EngineError {
+            name: "no_engine".to_string(),
+            message: "PDF engine is not loaded yet. Restart the app and try again.".to_string(),
+        });
+    }
     let value = bridge::render_thumb(canvas_id, page, scale).await;
     resolve::<ThumbResult>(value, "thumb").await
 }
@@ -141,6 +159,9 @@ pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> Result<Thum
 /// Cancel an in-flight thumbnail render (cell unmounted). Does NOT evict the
 /// cached bitmap: a page that scrolls out and back must repaint instantly.
 pub fn cancel_thumb(canvas_id: &str) {
+    if !bridge::has_pdf_reader() {
+        return;
+    }
     bridge::cancel_thumb(canvas_id);
 }
 

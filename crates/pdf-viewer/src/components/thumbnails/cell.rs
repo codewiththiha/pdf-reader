@@ -197,7 +197,7 @@ pub fn ThumbCell(
     view! {
         <button
             type="button"
-            class="flex w-full cursor-pointer flex-col items-center"
+            class="group flex w-full cursor-pointer flex-col items-center"
             // Jumping to a page does NOT close the panel: browsing thumbnails
             // is a navigation loop (jump, look, jump again), and closing the
             // sidebar on every click forces the reader to reopen it each time.
@@ -270,11 +270,8 @@ pub fn ThumbCell(
                 // can drop). If the render never resolves, `loaded` stays
                 // false — no fade, no timer, no removal — and the pulsing
                 // skeleton persists as the intended fallback. aria-hidden: the
-                // page number is already announced by the in-flow `.thumb-num`
-                // band (which also reads through the transparent canvas
-                // pre-resolve), so the cover's copy must not double-announce;
-                // for the current page the cover's number is also hidden
-                // visually so it can't ghost behind the z-10 accent pill.
+                // page number is announced by the permanent `.thumb-num`
+                // badge, so the cover must not carry a second copy.
                 // A cell that mounts with a CACHED bitmap gets neither the
                 // pulse animation nor the opacity transition: it is already
                 // painted, so there is nothing to cover and nothing to fade.
@@ -283,18 +280,30 @@ pub fn ThumbCell(
                 // the animated cover.
                 <div
                     node_ref=cover_ref
-                    class="thumb-skeleton absolute inset-0 flex items-center justify-center"
+                    class="thumb-skeleton absolute inset-0 flex items-center justify-center pointer-events-none"
                     aria-hidden="true"
                     class=("thumb-skeleton-loading", move || !starts_cached)
                     class=("transition-opacity", move || !starts_cached)
                     class=("duration-300", move || !starts_cached)
                     class=("opacity-100", move || !loaded.get())
                     class=("opacity-0", move || loaded.get())
+                />
+                // Permanent page badge. The skeleton used to own the only
+                // number and faded to opacity-0 once loaded (and hid it with
+                // `invisible` on the current page), so every card except the
+                // active one lost its label. This overlay stays at z-10 on
+                // every cell after the cover is gone.
+                <div
+                    class="thumb-num pointer-events-none absolute bottom-1.5 inset-x-0 z-10 flex justify-center"
+                    class=("is-current", is_current)
                 >
                     <span
-                        class="text-sm font-bold text-muted"
-                        class=("invisible", is_current)
-                    >{page}</span>
+                        class="rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums shadow-sm transition-colors"
+                        class=("bg-accent text-white", is_current)
+                        class=("bg-surface/90 text-ink border border-line/60", move || !is_current())
+                    >
+                        {page}
+                    </span>
                 </div>
             </div>
         </button>

@@ -9,8 +9,11 @@ export function releaseCanvas(canvas: MaybeCanvas): void {
   if (!canvas) return;
   const c = canvas as HTMLCanvasElement;
   try {
-    if (c.width !== 0) c.width = 0;
-    if (c.height !== 0) c.height = 0;
+    // Browsers keep the GPU texture until both dimensions are 0.
+    c.width = 0;
+    c.height = 0;
+    const ctx = typeof c.getContext === "function" ? c.getContext("2d") : null;
+    if (ctx) ctx.clearRect(0, 0, 0, 0);
   } catch (_) {
     /* detached / already gone */
   }

@@ -1,6 +1,6 @@
 //! Top toolbar. OWNED BY branch B (viewer/chrome).
 //! Redesigned (U2): hamburger + filename on the left, true viewport-centered
-//! page nav (Single mode only). The right group is the U7 audit layout:
+//! page nav (visible whenever a document is Ready). The right group is the U7 audit layout:
 //! search + segmented Single/Continuous + zoom, then a single Appearance menu
 //! (U6) and a More (⋯) overflow menu. The sidebar panel toggles were removed —
 //! the sidebar's own tab rail is the single source of truth for which panel is
@@ -99,17 +99,18 @@ pub fn Toolbar(state: AppState) -> impl IntoView {
                 </Tooltip>
                 </div>
                 // Document name. Self-measuring: it folds with `…` ONLY when it
-                // would otherwise collide with the centered page nav (single
-                // mode) or the right-hand controls, and hides itself entirely
+                // would otherwise collide with the centered page nav or the
+                // right-hand controls, and hides itself entirely
                 // when the window is too narrow for any useful name.
                 <DocTitle state=filename_state />
             </div>
 
-            // CENTER: absolutely positioned, TRUE viewport centering (Single
-            // mode only; the self-sized wrapper stays out of the left/right
-            // groups' way). `#toolbar-center` is a doc_title measurement anchor:
-            // its PRESENCE is how the label knows the centered nav is in play.
-            <Show when=move || mode.get() == ViewMode::Single>
+            // CENTER: absolutely positioned, TRUE viewport centering. Shown in
+            // both Single and Continuous once a document is Ready — hiding it
+            // in Continuous left the header with no page counter at all.
+            // `#toolbar-center` is a doc_title measurement anchor: its
+            // PRESENCE is how the label knows the centered nav is in play.
+            <Show when=move || menu_state.doc.status.get() == DocStatus::Ready>
                 <div
                     id="toolbar-center"
                     class="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"

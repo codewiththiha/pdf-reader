@@ -200,7 +200,9 @@ export function refreshHighlights(): void {
 }
 
 function pageOutputScale(cssW: number, cssH: number): number {
-  const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
+  // Cap at 1.5: 2× Retina/4K backing stores were ~17 MB each and stacked
+  // across mounted pages + bake intermediates. Text stays sharp enough.
+  const dpr = Math.min(globalThis.devicePixelRatio || 1, 1.5);
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
 
   const vw = globalThis.innerWidth || 0;

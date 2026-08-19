@@ -230,6 +230,15 @@ function applyFilterPixels(
     d[i + 2] = (L6[r] + L7[g] + L8[b] + o2) >> 16;
   }
 
+  // Mutate throwaway/offscreen rasters in place so a bake does not pin a
+  // second full-page buffer. Live DOM canvases stay untouched (theme change
+  // must not destroy the only copy of a page).
+  const inDom = typeof (src as HTMLCanvasElement).isConnected === "boolean"
+    && (src as HTMLCanvasElement).isConnected;
+  if (!inDom && sctx) {
+    sctx.putImageData(img, 0, 0);
+    return src;
+  }
   const out = acquireScratch(w, h);
   const octx = out.getContext("2d", { alpha: false });
   if (!octx) return src;
