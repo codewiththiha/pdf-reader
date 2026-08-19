@@ -375,21 +375,20 @@ export async function renderPageInternal(
   }
 
   if (needsBake && pipeline) {
-    // Keep the raw raster ONLY while appearance-scrubbing; otherwise the
-    // extra full-page buffer (~30 MB at 2× DPR) is released immediately.
+    // Keep the unbaked `target` on the page. Slider scrub restores it and
+    // lets live CSS filter/blend the raw pixels; dropping it made Dark
+    // invert twice (flash to light) and Dim apply twice (go darker).
     const baked = bakeRaster(target, pipeline);
     if (baked !== st.canvas) {
       blitInto(st.canvas, baked);
       if (baked !== target) releasePooledCanvas(baked);
     }
-    if (scrubbing) {
-      st.rawCanvas = target;
-    } else {
-      if (target !== st.canvas) releaseCanvas(target);
-      st.rawCanvas = null;
+    if (st.rawCanvas && st.rawCanvas !== st.canvas && st.rawCanvas !== target) {
+      releaseCanvas(st.rawCanvas);
     }
+    st.rawCanvas = target;
   } else {
-    // Identity: the live canvas IS the raw. No extra buffer.
+    // Identity / already-scrubbing: the live canvas IS the raw.
     st.rawCanvas = st.canvas;
   }
 
@@ -483,6 +482,20 @@ export async function renderPage(
       }
     });
   });
+}
+
+/** Re-render pages that have no unbaked raw so slider scrub can start
+ *  without applying CSS filters on already-baked pixels. */
+export async function preparePagesForScrub(): Promise<void> {
+  const jobs: Promise<unknown>[] = [];
+  for (const [id, st] of stateByCanvasId) {
+    if (st.dead || !st.canvas) continue;
+    if (st.rawCanvas && st.rawCanvas !== st.canvas) continue;
+    if (!st.rawCanvas) {
+      jobs.push(renderPageInternal(id, st.scale || 1, false));
+    }
+  }
+  if (jobs.length) await Promise.all(jobs);
 }
 
 /** Re-render every live page from pdf.js. Used when a theme change arrives

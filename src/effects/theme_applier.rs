@@ -263,14 +263,24 @@ pub fn flush_appearance_commit() {
     }
 }
 
+fn patch_needs_canvas_scrub(p: AppearanceScrub) -> bool {
+    // Only tint rewrites `--canvas-filter` / `--canvas-blend`. Noise and
+    // texture sliders only touch overlays; putting the engine in scrub mode
+    // would apply those CSS filters on already-baked pixels (Dark flashes
+    // to light, Dim goes darker) for no reason.
+    matches!(p, AppearanceScrub::Tint { .. })
+}
+
 /// Live-preview a slider: paint CSS this frame, write Settings once the
 /// gesture pauses. Does NOT notify `settings` on the way, so PageCanvas /
 /// presets / localStorage stay quiet for the whole drag.
 pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
     // The theme variables change every frame from here on; switch the engine
-    // to raw rasters + live CSS so the PAGE tracks the slider, not just the
-    // chrome. Idempotent for the rest of the drag.
-    enter_scrub();
+    // to raw rasters + live CSS so the PAGE tracks a tint drag. Overlay
+    // sliders (noise / texture) must not enter canvas scrub.
+    if patch_needs_canvas_scrub(patch) {
+        enter_scrub();
+    }
 
     let mut a = state.settings.get_untracked().appearance;
     apply_scrub(&mut a, patch);
@@ -288,7 +298,9 @@ pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
             // The drag has paused: re-bake the rasters at the final values
             // (the scrub already painted them live, so the re-bake reads the
             // same variables) and drop the live-CSS pipeline.
-            leave_scrub();
+            if patch_needs_canvas_scrub(patch) {
+                leave_scrub();
+            }
             state.settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();

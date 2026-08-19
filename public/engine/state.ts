@@ -124,13 +124,10 @@ export function sweepPdf(): void {
   }
 }
 
-export function dropRawIfIdle(st: PageState): void {
-  if (scrubbing) return;
-  // A distinct raw buffer is only needed while scrubbing. Identity renders
-  // point rawCanvas at the live canvas (no extra memory) and that pointer
-  // is left in place so a later theme bake still has a source.
-  if (st.rawCanvas && st.rawCanvas !== st.canvas) {
-    releaseCanvas(st.rawCanvas);
-    st.rawCanvas = null;
-  }
+export function dropRawIfIdle(_st: PageState): void {
+  // Intentionally keep a distinct unbaked raw on mounted pages. Appearance
+  // sliders restore it before applying live CSS; releasing it here was the
+  // Dark-mode "flash to light" / Dim "goes darker" scrub bug. The extra
+  // buffer dies with the page on unregister (virtualization already caps
+  // how many pages are mounted).
 }

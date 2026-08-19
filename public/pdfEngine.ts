@@ -13,6 +13,7 @@ import { disposeScratch, releaseCanvas } from "./engine/canvas";
 import { coverDataUrl, open, takePendingFile } from "./engine/loader";
 import {
   cancelPage,
+  preparePagesForScrub,
   registerPage,
   renderPage,
   rerenderLivePages,
@@ -57,6 +58,7 @@ import {
   highlightsByPage,
   setSearchQuery,
   setActiveMatchValue,
+  setScrubbing,
 } from "./engine/state";
 
 declare global {
@@ -140,6 +142,16 @@ async function refreshTheme(): Promise<void> {
   }
   if (thumbJobs.length) await Promise.all(thumbJobs);
   paintAllVisibleThumbs();
+}
+
+async function setScrubMode(on: boolean): Promise<void> {
+  if (on) {
+    // Produce unbaked raws BEFORE the CSS filter class goes on, otherwise
+    // the first drag frame double-filters the baked Dark/Dim raster.
+    setScrubbing(true);
+    await preparePagesForScrub();
+  }
+  await applyScrubMode(on);
 }
 
 function stats(): Stats {

@@ -350,26 +350,54 @@ export function thumbRaw(entry: ThumbEntry | null | undefined): MaybeCanvas {
   return null;
 }
 
+async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(src);
+    } catch (_) {
+      /* fall through */
+    }
+  }
+  const clone = acquirePooledCanvas(src.width, src.height);
+  blitInto(clone, src);
+  return clone;
+}
+
 export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas> {
-  if (scrubbing || entry.gen === pipelineCache.gen) {
-    return entry.display && (entry.display as ImageBitmap).width > 0 ? entry.display : null;
+  if (scrubbing) {
+    return rasterWidth(entry.display) > 0 ? entry.display : null;
+  }
+  if (entry.gen === pipelineCache.gen && rasterWidth(entry.display) > 0) {
+    return entry.display;
   }
   if (entry.pending) return await entry.pending;
   entry.pending = (async () => {
     const raw = thumbRaw(entry);
     if (!raw) return null;
     const pipeline = readPipeline();
-    const { canvas: rawCanvas, borrowed } = rasterToCanvas(
+    const { canvas: src, borrowed } = rasterToCanvas(
       raw as HTMLCanvasElement | ImageBitmap,
     );
-    const baked = bakeRaster(rawCanvas, pipeline);
-    if (borrowed && baked !== rawCanvas) releasePooledCanvas(rawCanvas);
-    const newDisplay = await cacheDisplay({ display: baked });
+    let work = src;
+    let owned = borrowed;
+    if (!borrowed) {
+      work = acquirePooledCanvas(src.width, src.height);
+      blitInto(work, src);
+      owned = true;
+    }
+    const baked = bakeRaster(work, pipeline);
+    let newDisplay: MaybeCanvas;
+    if (baked === work) {
+      newDisplay = await snapshotRaster(work);
+      if (owned) releasePooledCanvas(work);
+    } else {
+      if (owned) releasePooledCanvas(work);
+      newDisplay = await cacheDisplay({ display: baked });
+    }
     if (entry.display && entry.display !== entry.raw && entry.display !== newDisplay) {
       releaseDisplayOnly(entry);
     }
     entry.display = newDisplay;
-    if (baked === raw) entry.raw = entry.display;
     entry.gen = pipelineCache.gen;
     return entry.display;
   })();
@@ -460,10 +488,11 @@ export async function applyScrubMode(on: boolean): Promise<void> {
 }
 
 async function setScrubModeInternal(on: boolean): Promise<void> {
-  if (scrubbing === on) return;
-  setScrubbing(on);
-
   if (on) {
+    setScrubbing(true);
+    // Restore UNBAKED pixels first. Adding the CSS class while the canvas
+    // still holds a baked Dark/Dim raster double-applies invert/brightness
+    // (the "flash to light" / "goes dimmer" glitch).
     for (const st of stateByCanvasId.values()) {
       if (st.dead || !st.canvas) continue;
       const raw = st.rawCanvas;
@@ -478,6 +507,9 @@ async function setScrubModeInternal(on: boolean): Promise<void> {
     document.documentElement.classList.add("appearance-scrubbing");
     return;
   }
+
+  if (!scrubbing) return;
+  setScrubbing(false);
 
   const pipeline = readPipeline();
   for (const [canvasId, { page }] of thumbLive) {

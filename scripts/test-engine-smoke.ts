@@ -582,11 +582,22 @@ void sleep;
   assertClose(darkPx2, darkExpect, "dark render bake");
   console.log("render ok (dark/baked):", r2.width, "x", r2.height, `(${darkAllocs} canvases)`);
 
-  // 5. scrub mode on/off
+  // 5. scrub mode must restore UNBAKED (near-white) pixels, not leave the
+  // baked Dark raster under the live CSS filter (that double-inverts to light).
   await PDFReader.setScrubMode(true);
-  console.log("scrub on ok");
+  const scrubPx = cv0._ctx.getImageData(0, 0, 1, 1).data;
+  if (scrubPx[0]! < 200 || scrubPx[1]! < 200 || scrubPx[2]! < 200) {
+    throw new Error(
+      "scrub should show raw page pixels, got [" +
+        Array.from(scrubPx).slice(0, 3).join(",") +
+        "]",
+    );
+  }
+  console.log("scrub on ok (raw pixels)", Array.from(scrubPx).slice(0, 3));
   await PDFReader.setScrubMode(false);
-  console.log("scrub off ok");
+  const afterScrub = cv0._ctx.getImageData(0, 0, 1, 1).data;
+  assertClose(afterScrub, darkExpect, "scrub off rebake");
+  console.log("scrub off ok (rebaked)", Array.from(afterScrub).slice(0, 3));
 
   // 6. thumbnails
   const t = await PDFReader.renderThumb("thumb-1", 1, 0.25);
