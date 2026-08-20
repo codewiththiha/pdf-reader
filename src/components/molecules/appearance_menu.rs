@@ -14,7 +14,7 @@
 //! The panel scrolls and is clamped/flipped by the Popover, so it can never
 //! overflow off-screen.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use leptos::html;
 use leptos::prelude::*;
@@ -101,7 +101,7 @@ pub fn appearance_entry(
         id: "appearance",
         priority: 90,
         keep_mounted: true,
-        inline: Rc::new(move || {
+        inline: Arc::new(move || {
             let hide = Signal::derive(move || {
                 collapsed_ids.get().iter().any(|id| *id == "appearance")
             });
@@ -115,9 +115,9 @@ pub fn appearance_entry(
             }
             .into_any()
         }),
-        collapsed: Rc::new(move |done| {
+        collapsed: Arc::new(move |done| {
             view! {
-                <OverflowRow icon=IconName::Palette label="Appearance…" on_click=move |_| {
+                <OverflowRow icon=IconName::Palette label="Appearance…" on_click=move || {
                     done.run(());
                     request_animation_frame(move || appearance_open.set(true));
                 } />

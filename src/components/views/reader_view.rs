@@ -5,7 +5,7 @@
 //! Slot wiring is the SINGLE coordinator's job — branches
 //! must not edit this file.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use leptos::html;
 use leptos::prelude::*;
@@ -37,7 +37,7 @@ fn view_mode_entry(state: AppState) -> ToolbarEntry {
         id: "view-mode",
         priority: 90,
         keep_mounted: false,
-        inline: Rc::new(move || {
+        inline: Arc::new(move || {
             view! {
                 <Tooltip text="View mode".to_string()>
                     <Segmented
@@ -60,13 +60,13 @@ fn view_mode_entry(state: AppState) -> ToolbarEntry {
             }
             .into_any()
         }),
-        collapsed: Rc::new(move |done| {
+        collapsed: Arc::new(move |done| {
             view! {
-                <OverflowRow icon=IconName::SinglePage label="Single page" on_click=move |_| {
+                <OverflowRow icon=IconName::SinglePage label="Single page" on_click=move || {
                     state.viewer.mode.set(ViewMode::Single);
                     done.run(());
                 } />
-                <OverflowRow icon=IconName::Continuous label="Continuous" on_click=move |_| {
+                <OverflowRow icon=IconName::Continuous label="Continuous" on_click=move || {
                     state.viewer.mode.set(ViewMode::Continuous);
                     done.run(());
                 } />
@@ -132,7 +132,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                     </Show>
                     <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
                         <Button
-                            on_click=move |_| open_dialog(state)
+                            on_click=move || open_dialog(state)
                             kind=ButtonKind::Toolbar
                             icon=IconName::Open
                             label="Open".to_string()

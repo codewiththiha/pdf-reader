@@ -7,7 +7,7 @@
 //! The popover renders through the shared window-aware `Popover`, which owns
 //! outside-click/Escape dismissal, viewport clamping and the titlebar hold.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use leptos::html;
 use leptos::prelude::*;
@@ -236,7 +236,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             id: "zoom-out",
             priority: 80,
             keep_mounted: false,
-            inline: Rc::new(move || {
+            inline: Arc::new(move || {
                 view! {
                     <Tooltip text="Zoom out (-)".to_string()>
                         <Button
@@ -249,9 +249,9 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 }
                 .into_any()
             }),
-            collapsed: Rc::new(move |done| {
+            collapsed: Arc::new(move |done| {
                 view! {
-                    <OverflowRow icon=IconName::ZoomOut label="Zoom out" on_click=move |_| {
+                    <OverflowRow icon=IconName::ZoomOut label="Zoom out" on_click=move || {
                         apply_zoom(state, nearest_zoom(step_base(state), -1));
                         done.run(());
                     } />
@@ -263,7 +263,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             id: "zoom-in",
             priority: 80,
             keep_mounted: false,
-            inline: Rc::new(move || {
+            inline: Arc::new(move || {
                 view! {
                     <Tooltip text="Zoom in (+)".to_string()>
                         <Button
@@ -276,9 +276,9 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 }
                 .into_any()
             }),
-            collapsed: Rc::new(move |done| {
+            collapsed: Arc::new(move |done| {
                 view! {
-                    <OverflowRow icon=IconName::ZoomIn label="Zoom in" on_click=move |_| {
+                    <OverflowRow icon=IconName::ZoomIn label="Zoom in" on_click=move || {
                         apply_zoom(state, nearest_zoom(step_base(state), 1));
                         done.run(());
                     } />
@@ -290,7 +290,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             id: "fit-width",
             priority: 70,
             keep_mounted: false,
-            inline: Rc::new(move || {
+            inline: Arc::new(move || {
                 view! {
                     <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
                         <Button
@@ -303,9 +303,9 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 }
                 .into_any()
             }),
-            collapsed: Rc::new(move |done| {
+            collapsed: Arc::new(move |done| {
                 view! {
-                    <OverflowRow icon=IconName::FitWidth label="Fit width" on_click=move |_| {
+                    <OverflowRow icon=IconName::FitWidth label="Fit width" on_click=move || {
                         state.viewer.fit.set(FitMode::Width);
                         done.run(());
                     } />
@@ -317,7 +317,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             id: "fit-page",
             priority: 70,
             keep_mounted: false,
-            inline: Rc::new(move || {
+            inline: Arc::new(move || {
                 view! {
                     <Tooltip text="Fit page".to_string()>
                         <Button
@@ -330,9 +330,9 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 }
                 .into_any()
             }),
-            collapsed: Rc::new(move |done| {
+            collapsed: Arc::new(move |done| {
                 view! {
-                    <OverflowRow icon=IconName::FitPage label="Fit page" on_click=move |_| {
+                    <OverflowRow icon=IconName::FitPage label="Fit page" on_click=move || {
                         state.viewer.fit.set(FitMode::Page);
                         done.run(());
                     } />
@@ -349,10 +349,10 @@ fn zoom_readout_entry(state: AppState) -> ToolbarEntry {
         id: "zoom-readout",
         priority: u32::MAX,
         keep_mounted: true,
-        inline: Rc::new(move || view! { <ZoomReadout state=state /> }.into_any()),
-        collapsed: Rc::new(move |done| {
+        inline: Arc::new(move || view! { <ZoomReadout state=state /> }.into_any()),
+        collapsed: Arc::new(move |done| {
             view! {
-                <OverflowRow icon=IconName::ZoomIn label="Zoom" on_click=move |_| {
+                <OverflowRow icon=IconName::ZoomIn label="Zoom" on_click=move || {
                     done.run(());
                 } />
             }

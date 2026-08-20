@@ -1,6 +1,6 @@
 //! Collision-aware toolbar group. Items that don't fit move into a
 //! conditional "…" overflow popover; with room to spare the button vanishes.
-use std::rc::Rc;
+use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
@@ -25,9 +25,9 @@ pub struct ToolbarEntry {
     pub priority: u32,
     /// Stay in the DOM while collapsed so a popover owner can still open.
     pub keep_mounted: bool,
-    pub inline: Rc<dyn Fn() -> AnyView>,
+    pub inline: Arc<dyn Fn() -> AnyView + Send + Sync>,
     /// Row shown inside the overflow menu; the callback closes the menu.
-    pub collapsed: Rc<dyn Fn(Callback<()>) -> AnyView>,
+    pub collapsed: Arc<dyn Fn(Callback<()>) -> AnyView + Send + Sync>,
 }
 
 /// Indices that must move to the overflow menu. Pure + deterministic.
@@ -63,7 +63,7 @@ pub fn AdaptiveGroup(
     /// Overflow "…" wrapper; Appearance re-anchors here when collapsed.
     overflow_ref: NodeRef<html::Div>,
 ) -> impl IntoView {
-    let entries = Rc::new(entries);
+    let entries = Arc::new(entries);
     let sizer_ref: NodeRef<html::Div> = NodeRef::new();
     let open = RwSignal::new(false);
 
@@ -116,32 +116,20 @@ pub fn AdaptiveGroup(
         callback_handle.try_set_value(None);
     });
 
-    let kept = {
-        let e = entries.clone();
-        move || {
-            let c = collapsed_ids.get();
-            e.iter()
-                .filter(|en| en.keep_mounted || !c.contains(&en.id))
-                .cloned()
-                .collect::<Vec<_>>()
-        }
-    };
-    let collapsed = {
-        let e = entries.clone();
-        move || {
-            let c = collapsed_ids.get();
-            e.iter().filter(|en| c.contains(&en.id)).cloned().collect::<Vec<_>>()
-        }
-    };
     let sizer = entries.clone();
+    let inline_src = entries.clone();
+    let overflow_src = entries.clone();
 
     view! {
         <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
-            <For
-                each=kept
-                key=|e: &ToolbarEntry| e.id
-                children=move |e: ToolbarEntry| (e.inline)()
-            />
+            {move || {
+                let c = collapsed_ids.get();
+                inline_src
+                    .iter()
+                    .filter(|en| en.keep_mounted || !c.contains(&en.id))
+                    .map(|en| (en.inline)())
+                    .collect_view()
+            }}
             <Show when=move || !collapsed_ids.get().is_empty()>
                 <div node_ref=overflow_ref class="relative inline-flex">
                     <button
@@ -153,14 +141,17 @@ pub fn AdaptiveGroup(
                         <Icon name=IconName::More size=18 />
                     </button>
                     <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
-                        <For
-                            each=collapsed
-                            key=|e: &ToolbarEntry| e.id
-                            children=move |e: ToolbarEntry| {
-                                let done = Callback::new(move |_| open.set(false));
-                                (e.collapsed)(done)
-                            }
-                        />
+                        {move || {
+                            let c = collapsed_ids.get();
+                            overflow_src
+                                .iter()
+                                .filter(|en| c.contains(&en.id))
+                                .map(|en| {
+                                    let done = Callback::new(move |_| open.set(false));
+                                    (en.collapsed)(done)
+                                })
+                                .collect_view()
+                        }}
                     </Popover>
                 </div>
             </Show>
