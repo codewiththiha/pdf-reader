@@ -5,6 +5,5 @@ pub mod bottom_bar;
 pub mod doc_title;
 pub mod more_menu;
 pub mod page_pill;
-pub mod sidebar_item;
 pub mod top_left_cluster;
 pub mod zoom_controls;
