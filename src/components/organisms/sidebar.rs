@@ -1,10 +1,11 @@
 //! Left sidebar with panels (outline / thumbnails). OWNED BY branch C
 //! (panels/sidebar). Search moved out of the sidebar into the floating overlay
 //! (Phase 2); the panel toggles moved to a bottom icon-only rail (redesign).
-//! The titlebar chrome (traffic-light inset + toggler + search + ⋯) now lives
-//! in the root `TitleBar`, which overlays the top band of the sidebar; the
-//! sidebar keeps an empty 48px band at the top and a book-identity row below
-//! it that appears/disappears with the titlebar (`chrome_visible`).
+//! The sidebar OWNS the titlebar chrome while it is open: a always-visible
+//! 48px chrome row (traffic-light inset + close toggle + search + ⋯) and a
+//! book-identity row (cover + title + author). They are not hover-gated — the
+//! native traffic lights follow `sidebar_open || reader_bar_hover`, so an open
+//! sidebar keeps the lights on its own.
 //!
 //! The `<aside>` is ALWAYS mounted and animates its `width` between 18rem and 0
 //! (single-phase slide, no two-phase unmount). The inner content stays fixed at
@@ -40,9 +41,13 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
+use pdf_engine::types::DocStatus;
+use pdf_viewer::components::atoms::button::{Button, ButtonKind};
 use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::components::atoms::tooltip::Tooltip;
 use pdf_viewer::components::outline_panel::OutlinePanel;
 use pdf_viewer::components::thumbnails::ThumbnailsPanel;
+use crate::components::molecules::more_menu::MoreMenu;
 use crate::core::state::AppState;
 use pdf_viewer::state::SidebarMode;
 
@@ -125,7 +130,7 @@ fn RailToggle(
 }
 
 #[component]
-pub fn Sidebar(state: AppState, chrome_visible: RwSignal<bool>) -> impl IntoView {
+pub fn Sidebar(state: AppState) -> impl IntoView {
     let viewer_state = state.viewer_state();
     // Last non-None mode, and whether a close slide is still in flight.
     // `last` is what we keep painted during the outro; `collapsing` flips
@@ -191,64 +196,106 @@ pub fn Sidebar(state: AppState, chrome_visible: RwSignal<bool>) -> impl IntoView
             class=("w-0", move || state.sidebar.get() == SidebarMode::None)
             class=("border-r-0", move || state.sidebar.get() == SidebarMode::None)
         >
-            // The content row spans the full window height. The empty 48px band
-            // at the top keeps the panels below the root TitleBar (which
-            // overlays this band while hovering, carrying the traffic-light
-            // inset + toggler + search + ⋯); the book-identity row sits under
-            // it and appears/disappears with the titlebar.
+            // The content row spans the full window height. The chrome row at
+            // the top carries the 48px traffic-light inset; the book-identity
+            // row sits below it. Both are always visible while the sidebar is
+            // open (not hover-gated) — the sidebar is the lights' home.
             <div
                 class="flex h-full w-72 min-h-0 flex-col"
                 prop:inert=move || state.sidebar.get() == SidebarMode::None
             >
-                <div class="h-12 shrink-0"></div>
-
-                // ── Book identity (cover + title + author + info). Shown with
-                // the titlebar: `invisible` (not unmounted) so the panels
-                // never shift.
+                // ── Row 1: sidebar chrome. Always visible while open. The
+                // native traffic lights overlay the left ~76px; the filled
+                // panel glyph marks "sidebar is on". A drag region so the
+                // window stays grabable from the sidebar.
                 <div
-                    class="flex items-center gap-3 border-b border-line px-3 pb-3"
-                    class=("invisible", move || !chrome_visible.get())
+                    class="flex h-12 shrink-0 items-center gap-1 pl-[76px] pr-2"
+                    data-tauri-drag-region="true"
                 >
-                    {move || {
-                        let path = state.doc.path.get().unwrap_or_default();
-                        match state.covers.get().get(&path).cloned() {
-                            Some(c) => view! {
-                                <img
-                                    class="h-12 w-10 rounded-sm border border-line/60 object-cover"
-                                    src=c.data_url
-                                    alt="Cover"
-                                    loading="lazy"
-                                />
+                    <Tooltip text="Close sidebar".to_string()>
+                        <Button
+                            on_click=move |_| state.sidebar.set(SidebarMode::None)
+                            kind=ButtonKind::Ghost
+                            icon=IconName::SidebarOpen
+                            title="Close sidebar".to_string()
+                        />
+                    </Tooltip>
+                    // Floating-search toggle: raw button so pointerdown can
+                    // stop propagation (the floating bar's outside-click
+                    // dismiss listens on window pointerdown, which would
+                    // otherwise close the bar and let the click re-open it —
+                    // a one-way toggle).
+                    <button
+                        type="button"
+                        data-search-chrome="true"
+                        title="Search (Cmd/Ctrl+F)"
+                        on:pointerdown=move |ev| ev.stop_propagation()
+                        on:click=move |_| {
+                            let vs = state.viewer_state();
+                            if state.search.visible.get() {
+                                pdf_viewer::effects::search_effects::dismiss_search(vs);
+                            } else {
+                                pdf_viewer::effects::search_effects::resume_search(vs);
                             }
-                            .into_any(),
-                            None => view! {
-                                <div class="flex h-12 w-10 items-center justify-center rounded-sm border border-line bg-surface">
-                                    <Icon name=IconName::Open size=14 />
-                                </div>
-                            }
-                            .into_any(),
                         }
-                    }}
-                    <div class="min-w-0 flex-1">
-                        <p class="truncate text-sm font-semibold text-ink">
-                            {move || pdf_core::filename::display_name(
-                                state.doc.title.get().as_deref(),
-                                state.doc.path.get().as_deref(),
-                            )
-                            .unwrap_or_else(|| "No document".to_string())}
-                        </p>
-                        <p class="truncate text-xs text-muted">
-                            {move || state.doc.author.get().unwrap_or_default()}
-                        </p>
-                    </div>
-                    // Info: native tooltip with the full path is enough.
-                    <span
-                        title=move || state.doc.path.get().unwrap_or_default()
-                        class="text-muted"
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                        <Icon name=IconName::More size=14 />
-                    </span>
+                        <Icon name=IconName::Search size=16 />
+                    </button>
+                    <MoreMenu state=state />
                 </div>
+
+                // ── Row 2: book identity (cover + title + author + info).
+                // Always visible while open and a document is Ready.
+                <Show when=move || state.doc.status.get() == DocStatus::Ready>
+                    <div
+                        class="flex items-center gap-3 border-b border-line px-3 pb-3"
+                        data-tauri-drag-region="true"
+                    >
+                        {move || {
+                            let path = state.doc.path.get().unwrap_or_default();
+                            match state.covers.get().get(&path).cloned() {
+                                Some(c) => view! {
+                                    <img
+                                        class="h-12 w-10 rounded-sm border border-line/60 object-cover"
+                                        src=c.data_url
+                                        alt="Cover"
+                                        loading="lazy"
+                                    />
+                                }
+                                .into_any(),
+                                None => view! {
+                                    <div class="flex h-12 w-10 items-center justify-center rounded-sm border border-line bg-surface">
+                                        <Icon name=IconName::Open size=14 />
+                                    </div>
+                                }
+                                .into_any(),
+                            }
+                        }}
+                        <div class="min-w-0 flex-1" data-tauri-drag-region="true">
+                            <p
+                                class="truncate text-sm font-semibold text-ink"
+                                data-tauri-drag-region="true"
+                            >
+                                {move || pdf_core::filename::display_name(
+                                    state.doc.title.get().as_deref(),
+                                    state.doc.path.get().as_deref(),
+                                )
+                                .unwrap_or_else(|| "No document".to_string())}
+                            </p>
+                            <p class="truncate text-xs text-muted">
+                                {move || state.doc.author.get().unwrap_or_default()}
+                            </p>
+                        </div>
+                        // Info: native tooltip with the full path is enough.
+                        <span
+                            title=move || state.doc.path.get().unwrap_or_default()
+                            class="text-muted"
+                        >
+                            <Icon name=IconName::More size=14 />
+                        </span>
+                    </div>
+                </Show>
 
                 // ── Panels: stacked absolutely, invisible/is-outro toggles
                 // drive which is painted (see module docs).

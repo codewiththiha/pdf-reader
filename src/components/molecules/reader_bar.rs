@@ -1,14 +1,13 @@
-//! Hover-reveal titlebar. The h-12 band is ALWAYS mounted: it is the hover
-//! trigger AND the grab area (`data-tauri-drag-region`), so the window is
-//! draggable from that band even while the bar is invisible. The visible
-//! bar fades in inside the band. Visibility is shared (prop signal) so the
-//! sidebar identity row and the native traffic lights appear/disappear with
-//! it (the reader view syncs `chrome_visible` to `set_traffic_lights`).
+//! Hover-revealed reader titlebar. Mounted INSIDE `main#viewer-slot` so it
+//! spans only the reader area: hovering the sidebar never reveals it. When the
+//! sidebar is open it contains no traffic lights and no sidebar toggle (those
+//! live in the sidebar's always-visible chrome row). Visibility is owned by
+//! ReaderView because the traffic lights follow `sidebar_open || bar_visible`.
 //!
 //! Grab note: Tauri v2 starts a drag only when the mousedown lands on an
-//! element that itself carries `data-tauri-drag-region` (child buttons keep
-//! receiving clicks), and it requires the `core:window:allow-start-dragging`
-//! capability — see src-tauri/capabilities/default.json.
+//! element that itself carries `data-tauri-drag-region`, so the band, the bar
+//! and every non-interactive child (the left/right group wrappers and the
+//! title span in DocTitle) carry it, while buttons stay clickable.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -34,7 +33,7 @@ use super::zoom_controls::ZoomControls;
 const HIDE_DELAY_MS: u64 = 400;
 
 #[component]
-pub fn TitleBar(state: AppState, chrome_visible: RwSignal<bool>) -> impl IntoView {
+pub fn ReaderBar(state: AppState, visible: RwSignal<bool>) -> impl IntoView {
     let timer = StoredValue::new_local(None::<TimeoutHandle>);
 
     // Popover states lifted so an open menu pins the bar open.
@@ -53,23 +52,22 @@ pub fn TitleBar(state: AppState, chrome_visible: RwSignal<bool>) -> impl IntoVie
             h.clear();
             timer.set_value(None);
         }
-        chrome_visible.set(true);
+        visible.set(true);
     });
     let hide_later = move || {
         if let Some(h) = timer.get_value() {
             h.clear();
         }
         let h = set_timeout_with_handle(
-            move || chrome_visible.set(false),
+            move || visible.set(false),
             Duration::from_millis(HIDE_DELAY_MS),
         )
         .ok();
         timer.set_value(h);
     };
 
-    // Copyable, so each class toggle below can read it.
-    let visible: Signal<bool> = Signal::derive(move || chrome_visible.get());
-    let sidebar_open = move || state.sidebar.get() != SidebarMode::None;
+    // Copyable closure: used by the toggle's Show and the pl toggles.
+    let sidebar_closed = move || state.sidebar.get() == SidebarMode::None;
 
     let show_strip = show.clone();
     let show_bar = show;
@@ -79,9 +77,10 @@ pub fn TitleBar(state: AppState, chrome_visible: RwSignal<bool>) -> impl IntoVie
     let mode_state = state;
 
     view! {
-        // Grab + hover band: always mounted, spans the whole window.
+        // Hot band: the whole 48px reader-top area is the hover trigger + grab
+        // zone, always mounted.
         <div
-            class="absolute inset-x-0 top-0 z-50 h-12"
+            class="absolute inset-x-0 top-0 z-40 h-12"
             data-tauri-drag-region="true"
             on:mouseenter=move |_| show_strip()
             on:mouseleave=move |_| {
@@ -101,65 +100,66 @@ pub fn TitleBar(state: AppState, chrome_visible: RwSignal<bool>) -> impl IntoVie
                         hide_later();
                     }
                 }
-                // pl-20 clears the native traffic lights (x:20 + ~54px) with a
-                // small gap. Tune to pl-[84px] for a touch more air.
-                class="toolbar-glass flex h-full items-center gap-2 pl-20 pr-3 transition-opacity duration-200"
+                class="toolbar-glass flex h-full items-center gap-2 pr-3 transition-opacity duration-200"
+                // pl-20 clears the native lights when they live over this bar
+                // (sidebar closed); pl-3 when the sidebar owns the lights.
+                class=("pl-20", sidebar_closed)
+                class=("pl-3", move || !sidebar_closed())
                 class=("opacity-0", move || !visible.get())
                 class=("pointer-events-none", move || !visible.get())
             >
-                // LEFT: sidebar toggle (real panel glyph) + name. DocTitle sits
-                // OUTSIDE #toolbar-left-pre on purpose: its measurement reads
-                // the left group's width, and the group must not contain the
-                // label it is sizing (a feedback loop).
-                <div class="flex min-w-0 items-center gap-1">
-                    <div id="toolbar-left-pre" class="flex shrink-0 items-center gap-1">
-                        <Show when=move || state.doc.status.get() == DocStatus::Ready>
-                            <Tooltip text="Toggle sidebar".to_string()>
-                                <Button
-                                    on_click=move |_| {
-                                        let next = if sidebar_open() {
-                                            SidebarMode::None
-                                        } else {
-                                            SidebarMode::Thumbs
-                                        };
-                                        state.sidebar.set(next);
-                                    }
-                                    kind=ButtonKind::Ghost
-                                    icon=IconName::Sidebar
-                                    title="Toggle sidebar".to_string()
-                                />
-                            </Tooltip>
-                        </Show>
-                        <Show when=move || {
-                            matches!(
-                                state.doc.status.get(),
-                                DocStatus::Ready | DocStatus::Opening
-                            )
-                        }>
-                            <Tooltip text="Library".to_string()>
-                                <Button
-                                    on_click=move |_| close_document(state)
-                                    kind=ButtonKind::Ghost
-                                    icon=IconName::Library
-                                    title="Close this book and return to the library".to_string()
-                                />
-                            </Tooltip>
-                        </Show>
-                        <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
+                // LEFT GROUP. Drag-region on the wrapper so its gaps drag too.
+                <div
+                    id="toolbar-left-pre"
+                    data-tauri-drag-region="true"
+                    class="flex shrink-0 items-center gap-1"
+                >
+                    <Show when=sidebar_closed>
+                        <Tooltip text="Toggle sidebar".to_string()>
                             <Button
-                                on_click=move |_| open_dialog(state)
-                                kind=ButtonKind::Toolbar
-                                icon=IconName::Open
-                                label="Open".to_string()
-                                title="Open PDF (Cmd/Ctrl+O)".to_string()
+                                on_click=move |_| state.sidebar.set(SidebarMode::Thumbs)
+                                kind=ButtonKind::Ghost
+                                icon=IconName::Sidebar
+                                title="Toggle sidebar".to_string()
                             />
                         </Tooltip>
-                    </div>
-                    <DocTitle state=state />
+                    </Show>
+                    <Show when=move || {
+                        matches!(
+                            state.doc.status.get(),
+                            DocStatus::Ready | DocStatus::Opening
+                        )
+                    }>
+                        <Tooltip text="Library".to_string()>
+                            <Button
+                                on_click=move |_| close_document(state)
+                                kind=ButtonKind::Ghost
+                                icon=IconName::Library
+                                title="Close this book and return to the library".to_string()
+                            />
+                        </Tooltip>
+                    </Show>
+                    <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
+                        <Button
+                            on_click=move |_| open_dialog(state)
+                            kind=ButtonKind::Toolbar
+                            icon=IconName::Open
+                            label="Open".to_string()
+                            title="Open PDF (Cmd/Ctrl+O)".to_string()
+                        />
+                    </Tooltip>
                 </div>
 
-                // RIGHT: unchanged control set.
-                <div id="toolbar-right" class="ml-auto flex shrink-0 items-center gap-1">
+                // The label span itself carries the drag attribute (see
+                // doc_title.rs) so grabbing the filename drags the window.
+                <DocTitle state=state />
+
+                // RIGHT GROUP.
+                <div
+                    id="toolbar-right"
+                    data-tauri-drag-region="true"
+                    class="ml-auto flex shrink-0 items-center gap-1"
+                >
                     <Tooltip text="Search (Cmd/Ctrl+F)".to_string()>
                         <button
                             type="button"
