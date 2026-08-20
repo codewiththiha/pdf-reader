@@ -69,12 +69,14 @@ export function setScrubbing(on: boolean): void {
   scrubbing = on;
 }
 
-/** Max pixels per canvas layer (6M ≈ 24 MB RGBA). At 3x DPR on a letter page
- *  the canvas is ~4.4M px; 6M leaves headroom for larger formats while the
- *  3-page mounted ceiling (RENDER_BUDGET max_items: 3) keeps total GPU mem
- *  under ~150 MB even with raw + baked copies. */
-export const PAGE_MAX_PIXELS = 6 * 1024 * 1024;
-export const CANVAS_AREA_FACTOR = 1.0;
+/** Max pixels per canvas layer (16M ≈ 64 MB RGBA) — the ceiling, not the
+ *  target. A US-Letter page at 100% zoom on a 2x display is ~1.5M px; at
+ *  200% on 2x it's ~7.8M; on a 3x display at 100% it's ~4.4M. 16M keeps the
+ *  FULL native devicePixelRatio through ~200% zoom on any display, and only
+ *  the 3-page mounted ceiling (RENDER_BUDGET max_items: 3) bounds total GPU
+ *  memory (≤3 × 16M × 2 copies × 4B ≈ 384 MB worst case; typical usage is a
+ *  fraction of that). */
+export const PAGE_MAX_PIXELS = 16 * 1024 * 1024;
 
 const RAW_IDLE_MS = 10_000;
 const rawTimers = new WeakMap<PageState, ReturnType<typeof setTimeout>>();

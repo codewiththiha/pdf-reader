@@ -21,7 +21,6 @@ import {
   noteActivity,
   sweepPdf,
   PAGE_MAX_PIXELS,
-  CANVAS_AREA_FACTOR,
 } from "./state";
 import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
@@ -134,17 +133,20 @@ export function cancelPage(canvasId: string): void {
 }
 
 function pageOutputScale(cssW: number, cssH: number): number {
-  // Full native DPR — text is razor-sharp at every resolution.
-  // PAGE_MAX_PIXELS is the memory guardrail for extreme zoomed-in pages.
+  // Full native DPR for crisp text; PAGE_MAX_PIXELS is the memory guardrail.
   const dpr = globalThis.devicePixelRatio || 1;
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
 
-  const vw = globalThis.innerWidth || 0;
-  const vh = globalThis.innerHeight || 0;
-  const viewportBudget = vw > 0 && vh > 0 ? vw * vh * CANVAS_AREA_FACTOR : Infinity;
-  const budget = Math.min(PAGE_MAX_PIXELS, viewportBudget);
-
-  const capped = Math.sqrt(budget / (cssW * cssH));
+  // Cap so a single canvas never exceeds PAGE_MAX_PIXELS pixels.
+  //
+  // (The old code ALSO capped against one windowful of pixels —
+  // `vw * vh * CANVAS_AREA_FACTOR` — which was the soft-text bug: a US Letter
+  // page at 100% zoom on a 2x display needs 612*2 × 792*2 ≈ 1.48M pixels,
+  // more than a 1440×900 window's 1.30M, so the render was throttled to
+  // ~1.64x and the browser upscaled it. Dropping the window term lets a
+  // single page use its full native resolution; the per-page ceiling below
+  // bounds memory.)
+  const capped = Math.sqrt(PAGE_MAX_PIXELS / (cssW * cssH));
   return Math.min(dpr, Math.max(0.5, capped));
 }
 
