@@ -134,8 +134,9 @@ export function cancelPage(canvasId: string): void {
 }
 
 function pageOutputScale(cssW: number, cssH: number): number {
-  // Native DPR for crisp text; PAGE_MAX_PIXELS is the memory guardrail.
-  const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
+  // Full native DPR — text is razor-sharp at every resolution.
+  // PAGE_MAX_PIXELS is the memory guardrail for extreme zoomed-in pages.
+  const dpr = globalThis.devicePixelRatio || 1;
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
 
   const vw = globalThis.innerWidth || 0;

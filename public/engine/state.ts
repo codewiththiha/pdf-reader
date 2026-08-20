@@ -69,7 +69,11 @@ export function setScrubbing(on: boolean): void {
   scrubbing = on;
 }
 
-export const PAGE_MAX_PIXELS = 4 * 1024 * 1024;
+/** Max pixels per canvas layer (6M ≈ 24 MB RGBA). At 3x DPR on a letter page
+ *  the canvas is ~4.4M px; 6M leaves headroom for larger formats while the
+ *  3-page mounted ceiling (RENDER_BUDGET max_items: 3) keeps total GPU mem
+ *  under ~150 MB even with raw + baked copies. */
+export const PAGE_MAX_PIXELS = 6 * 1024 * 1024;
 export const CANVAS_AREA_FACTOR = 1.0;
 
 const RAW_IDLE_MS = 10_000;
