@@ -1,6 +1,6 @@
-//! Top-level app view: toolbar + sidebar + viewer slot + status bar + noise
-//! overlay. The viewer slot switches on viewer.mode. The real mode match is
-//! wired during integration; until then it renders the placeholder.
+//! Top-level app view: sidebar + viewer slot + the auto-hide chrome (hover
+//! toolbar, top-left cluster, page pill, bottom bar) + noise overlay + the
+//! drag-drop feedback overlay. The viewer slot switches on viewer.mode.
 //!
 //! Slot wiring is the SINGLE coordinator's job — branches
 //! must not edit this file.
@@ -56,22 +56,18 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     // double-move of `state`.
     let status = state.doc.status;
     let mode = state.viewer.mode;
-    let state_toolbar = state;
     let state_sidebar = state;
 
     let is_ready = move || status.get() == DocStatus::Ready;
 
     view! {
         <div class="relative flex h-full w-full flex-col bg-paper text-ink">
-            <header
-                class="toolbar-glass absolute inset-x-0 top-0 z-50 border-b border-line/60"
-            >
-                <crate::components::molecules::toolbar::Toolbar state=state_toolbar />
-            </header>
-            // No top margin: the viewer starts at the very top so page content
-            // scrolls UNDER the translucent header, which is what gives the
-            // glass something to refract. Each view pads its own scroller by
-            // the toolbar height so the first page is not born behind the bar.
+            // No persistent header: the auto-hide toolbar (mounted inside the
+            // viewer slot below) owns the top 48px band. No top margin either:
+            // the viewer starts at the very top so page content scrolls UNDER
+            // the revealed bar, which is what gives the glass something to
+            // refract. Each view pads its own scroller by the toolbar height so
+            // the first page is not born behind the bar.
             <div class="flex min-h-0 flex-1">
                 <crate::components::organisms::sidebar::Sidebar state=state_sidebar />
                 <main id="viewer-slot" class="relative min-w-0 flex-1">
@@ -94,17 +90,21 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                             .into_any(),
                         }}
                     </Show>
+                    // The new chrome lives inside the viewer slot, so it spans
+                    // only the reader area (right of the sidebar), exactly like
+                    // the reference app.
+                    <crate::components::molecules::auto_hide_toolbar::AutoHideToolbar state=state />
+                    <crate::components::molecules::top_left_cluster::TopLeftCluster state=state />
+                    <crate::components::molecules::page_pill::PagePill state=state />
+                    <crate::components::molecules::bottom_bar::BottomBar state=state />
                     // Floating search overlay (U4): mounted at the viewer slot,
                     // not inside the backdrop-blur header (which would trap
-                    // fixed descendants). The slot now starts at the window top
-                    // so pages can scroll under the glass, so the panel carries
+                    // fixed descendants). The slot starts at the window top so
+                    // pages can scroll under the glass, so the panel carries
                     // its own top-14 offset to clear the toolbar.
                     <pdf_viewer::components::floating_search::FloatingSearch state=vs />
                 </main>
             </div>
-            <footer class="pointer-events-none absolute inset-x-0 bottom-0 z-50 mix-blend-difference">
-                <pdf_viewer::components::status_bar::StatusBar state=vs />
-            </footer>
             <div class="noise-overlay"></div>
             // Drop-feedback overlay: appears only while a file drag is over the
             // window (drag_active), themed to follow the current appearance.
