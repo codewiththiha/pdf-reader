@@ -63,38 +63,35 @@ pub fn AdaptiveGroup(
     /// Overflow "…" wrapper; Appearance re-anchors here when collapsed.
     overflow_ref: NodeRef<html::Div>,
 ) -> impl IntoView {
-    let entries = Arc::new(entries);
+    let entries = RwSignal::new(entries);
     let sizer_ref: NodeRef<html::Div> = NodeRef::new();
     let open = RwSignal::new(false);
 
-    let recalc = {
-        let entries = entries.clone();
-        move || {
-            let entries = entries.clone();
-            request_animation_frame(move || {
-                let Some(sizer) = sizer_ref.get() else { return };
-                let Some(row) = by_id("toolbar-row") else { return };
-                let kids = sizer.children();
-                let widths: Vec<f64> = (0..entries.len() as u32)
-                    .map(|i| kids.item(i).map(|e| e.get_bounding_client_rect().width()).unwrap_or(0.0))
-                    .collect();
-                let priorities: Vec<u32> = entries.iter().map(|e| e.priority).collect();
-                let rr = row.get_bounding_client_rect();
-                let left_end = by_id("toolbar-left-pre")
-                    .map(|e| e.get_bounding_client_rect().right())
-                    .unwrap_or(rr.left());
-                let title_reserve = if state.doc.status.get_untracked() == DocStatus::Ready {
-                    TB_TITLE_RESERVE
-                } else { 0.0 };
-                let start = left_end + TB_GAP + title_reserve + 12.0; // 12 = GAP_RIGHT
-                let capacity = (rr.right() - TB_RIGHT_RESERVE - start - 12.0).max(0.0);
-                let ids: Vec<&'static str> = compute_collapsed(&widths, &priorities, capacity, TB_GAP, TB_OVERFLOW_W)
-                    .iter().map(|&i| entries[i].id).collect();
-                if ids != collapsed_ids.get_untracked() {
-                    collapsed_ids.set(ids);
-                }
-            });
-        }
+    let recalc = move || {
+        request_animation_frame(move || {
+            let Some(sizer) = sizer_ref.get() else { return };
+            let Some(row) = by_id("toolbar-row") else { return };
+            let list = entries.get_untracked();
+            let kids = sizer.children();
+            let widths: Vec<f64> = (0..list.len() as u32)
+                .map(|i| kids.item(i).map(|e| e.get_bounding_client_rect().width()).unwrap_or(0.0))
+                .collect();
+            let priorities: Vec<u32> = list.iter().map(|e| e.priority).collect();
+            let rr = row.get_bounding_client_rect();
+            let left_end = by_id("toolbar-left-pre")
+                .map(|e| e.get_bounding_client_rect().right())
+                .unwrap_or(rr.left());
+            let title_reserve = if state.doc.status.get_untracked() == DocStatus::Ready {
+                TB_TITLE_RESERVE
+            } else { 0.0 };
+            let start = left_end + TB_GAP + title_reserve + 12.0; // 12 = GAP_RIGHT
+            let capacity = (rr.right() - TB_RIGHT_RESERVE - start - 12.0).max(0.0);
+            let ids: Vec<&'static str> = compute_collapsed(&widths, &priorities, capacity, TB_GAP, TB_OVERFLOW_W)
+                .iter().map(|&i| list[i].id).collect();
+            if ids != collapsed_ids.get_untracked() {
+                collapsed_ids.set(ids);
+            }
+        });
     };
 
     let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
@@ -125,69 +122,66 @@ pub fn AdaptiveGroup(
         callback_handle.try_set_value(None);
     });
 
-    let kept_src = entries.clone();
-    let overflow_src = entries.clone();
-    let sizer_src = entries.clone();
-    let kept_ids = {
-        let e = entries.clone();
-        move || {
-            let c = collapsed_ids.get();
-            e.iter()
-                .filter(|en| en.keep_mounted || !c.contains(&en.id))
-                .map(|en| en.id)
-                .collect::<Vec<&'static str>>()
-        }
-    };
-    let overflow_ids = {
-        let e = entries.clone();
-        move || {
-            let c = collapsed_ids.get();
-            e.iter().filter(|en| c.contains(&en.id)).map(|en| en.id).collect::<Vec<&'static str>>()
-        }
-    };
-
     view! {
         <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
             <For
-                each=kept_ids
+                each=move || {
+                    let c = collapsed_ids.get();
+                    entries
+                        .get()
+                        .into_iter()
+                        .filter(|en| en.keep_mounted || !c.contains(&en.id))
+                        .map(|en| en.id)
+                        .collect::<Vec<&'static str>>()
+                }
                 key=|id| *id
                 children=move |id| {
-                    kept_src
-                        .iter()
+                    entries
+                        .get_untracked()
+                        .into_iter()
                         .find(|en| en.id == id)
                         .map(|en| (en.inline)())
                         .unwrap_or_else(|| ().into_any())
                 }
             />
-            <Show when=move || !collapsed_ids.get().is_empty()>
-                <div node_ref=overflow_ref class="relative inline-flex">
-                    <button
-                        type="button"
-                        title="More tools"
-                        on:click=move |_| open.set(!open.get())
-                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        <Icon name=IconName::More size=18 />
-                    </button>
-                    <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
-                        <For
-                            each=overflow_ids
-                            key=|id| *id
-                            children=move |id| {
-                                let done = Callback::new(move |_| open.set(false));
-                                overflow_src
-                                    .iter()
-                                    .find(|en| en.id == id)
-                                    .map(|en| (en.collapsed)(done))
-                                    .unwrap_or_else(|| ().into_any())
-                            }
-                        />
-                    </Popover>
-                </div>
-            </Show>
+            <div
+                node_ref=overflow_ref
+                class="relative inline-flex"
+                class=("hidden", move || collapsed_ids.get().is_empty())
+            >
+                <button
+                    type="button"
+                    title="More tools"
+                    on:click=move |_| open.set(!open.get())
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                    <Icon name=IconName::More size=18 />
+                </button>
+                <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
+                    <For
+                        each=move || collapsed_ids.get()
+                        key=|id| *id
+                        children=move |id| {
+                            let done = Callback::new(move |_| open.set(false));
+                            entries
+                                .get_untracked()
+                                .into_iter()
+                                .find(|en| en.id == id)
+                                .map(|en| (en.collapsed)(done))
+                                .unwrap_or_else(|| ().into_any())
+                        }
+                    />
+                </Popover>
+            </div>
         </div>
         <div node_ref=sizer_ref class="tb-sizer" aria-hidden="true">
-            {sizer_src.iter().map(|e| (e.inline)()).collect_view()}
+            {move || {
+                entries
+                    .get()
+                    .into_iter()
+                    .map(|e| (e.inline)())
+                    .collect_view()
+            }}
         </div>
     }
 }
