@@ -51,6 +51,58 @@ fn step_base(state: AppState) -> f64 {
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
 pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
+    let zoom_step_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
+        view! {
+            <div class="flex items-center gap-1">
+                <Tooltip text="Zoom out (-)".to_string()>
+                    <Button
+                        on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), -1))
+                        kind=ButtonKind::Ghost
+                        icon=IconName::ZoomOut
+                        title="Zoom out (-)".to_string()
+                    />
+                </Tooltip>
+                <Tooltip text="Zoom in (+)".to_string()>
+                    <Button
+                        on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), 1))
+                        kind=ButtonKind::Ghost
+                        icon=IconName::ZoomIn
+                        title="Zoom in (+)".to_string()
+                    />
+                </Tooltip>
+            </div>
+        }
+        .into_any()
+    });
+
+    let fit_width_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
+        view! {
+            <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
+                <Button
+                    on_click=move |_| state.viewer.fit.set(FitMode::Width)
+                    kind=ButtonKind::Ghost
+                    icon=IconName::FitWidth
+                    title="Fit width (Cmd/Ctrl+0)".to_string()
+                />
+            </Tooltip>
+        }
+        .into_any()
+    });
+
+    let fit_page_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
+        view! {
+            <Tooltip text="Fit page".to_string()>
+                <Button
+                    on_click=move |_| state.viewer.fit.set(FitMode::Page)
+                    kind=ButtonKind::Ghost
+                    icon=IconName::FitPage
+                    title="Fit page".to_string()
+                />
+            </Tooltip>
+        }
+        .into_any()
+    });
+
     vec![
         // Zoom out + zoom in are one entry so they collapse together and stay
         // on one horizontal row in both the bar and the overflow menu.
@@ -58,29 +110,8 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             id: "zoom-step",
             priority: 80,
             keep_mounted: false,
-            inline: Arc::new(move || {
-                view! {
-                    <div class="flex items-center gap-1">
-                        <Tooltip text="Zoom out (-)".to_string()>
-                            <Button
-                                on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), -1))
-                                kind=ButtonKind::Ghost
-                                icon=IconName::ZoomOut
-                                title="Zoom out (-)".to_string()
-                            />
-                        </Tooltip>
-                        <Tooltip text="Zoom in (+)".to_string()>
-                            <Button
-                                on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), 1))
-                                kind=ButtonKind::Ghost
-                                icon=IconName::ZoomIn
-                                title="Zoom in (+)".to_string()
-                            />
-                        </Tooltip>
-                    </div>
-                }
-                .into_any()
-            }),
+            inline: zoom_step_inline.clone(),
+            sizer: zoom_step_inline,
             collapsed: Arc::new(move |_done| {
                 view! {
                     <div class="flex w-full items-center gap-1 px-1 py-0.5">
@@ -116,19 +147,8 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             id: "fit-width",
             priority: 70,
             keep_mounted: false,
-            inline: Arc::new(move || {
-                view! {
-                    <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
-                        <Button
-                            on_click=move |_| state.viewer.fit.set(FitMode::Width)
-                            kind=ButtonKind::Ghost
-                            icon=IconName::FitWidth
-                            title="Fit width (Cmd/Ctrl+0)".to_string()
-                        />
-                    </Tooltip>
-                }
-                .into_any()
-            }),
+            inline: fit_width_inline.clone(),
+            sizer: fit_width_inline,
             collapsed: Arc::new(move |done| {
                 view! {
                     <OverflowRow icon=IconName::FitWidth label="Fit width" done=done
@@ -141,19 +161,8 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             id: "fit-page",
             priority: 70,
             keep_mounted: false,
-            inline: Arc::new(move || {
-                view! {
-                    <Tooltip text="Fit page".to_string()>
-                        <Button
-                            on_click=move |_| state.viewer.fit.set(FitMode::Page)
-                            kind=ButtonKind::Ghost
-                            icon=IconName::FitPage
-                            title="Fit page".to_string()
-                        />
-                    </Tooltip>
-                }
-                .into_any()
-            }),
+            inline: fit_page_inline.clone(),
+            sizer: fit_page_inline,
             collapsed: Arc::new(move |done| {
                 view! {
                     <OverflowRow icon=IconName::FitPage label="Fit page" done=done
@@ -172,6 +181,27 @@ fn zoom_readout_entry(state: AppState) -> ToolbarEntry {
         priority: u32::MAX,
         keep_mounted: true,
         inline: Arc::new(move || view! { <ZoomReadout state=state /> }.into_any()),
+        sizer: Arc::new(move || {
+            view! {
+                <div class="inline-flex items-center justify-center gap-1.5 rounded-lg border h-9 px-2.5 text-sm font-medium border-line bg-surface text-ink">
+                    <span>"100%"</span>
+                    <svg
+                        class="text-muted"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path d="m6 9 6 6 6-6"/>
+                    </svg>
+                </div>
+            }
+            .into_any()
+        }),
         collapsed: Arc::new(move |done| {
             view! {
                 <OverflowRow icon=IconName::ZoomIn label="Zoom" done=done on_click=move || {} />

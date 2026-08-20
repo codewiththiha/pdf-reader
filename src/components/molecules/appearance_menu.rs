@@ -103,7 +103,7 @@ pub fn appearance_entry(
         keep_mounted: true,
         inline: Arc::new(move || {
             let hide = Signal::derive(move || {
-                collapsed_ids.get().iter().any(|id| *id == "appearance")
+                collapsed_ids.get().contains(&"appearance")
             });
             view! {
                 <AppearanceMenu
@@ -112,6 +112,17 @@ pub fn appearance_entry(
                     hide_trigger=hide
                     fallback_anchor=overflow_ref
                 />
+            }
+            .into_any()
+        }),
+        sizer: Arc::new(move || {
+            view! {
+                <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-lg border h-9 px-2.5 text-sm font-medium border-line bg-surface text-ink"
+                >
+                    <Icon name=IconName::Palette size=18 />
+                </button>
             }
             .into_any()
         }),

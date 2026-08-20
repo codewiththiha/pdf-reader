@@ -26,6 +26,8 @@ pub struct ToolbarEntry {
     /// Stay in the DOM while collapsed so a popover owner can still open.
     pub keep_mounted: bool,
     pub inline: Arc<dyn Fn() -> AnyView + Send + Sync>,
+    /// Pure measurement twin: always renders at full uncollapsed width.
+    pub sizer: Arc<dyn Fn() -> AnyView + Send + Sync>,
     /// Row shown inside the overflow menu; the callback closes the menu.
     pub collapsed: Arc<dyn Fn(Callback<()>) -> AnyView + Send + Sync>,
 }
@@ -96,25 +98,36 @@ pub fn AdaptiveGroup(
 
     let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
     let callback_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
-    Effect::new({
-        let recalc = recalc.clone();
-        move |_| {
-            // Track the sizer node so this re-runs once it mounts.
-            let Some(sizer) = sizer_ref.get() else { return };
-            if callback_handle.with_value(|c| c.is_some()) { return; }
-            let Some(row) = by_id("toolbar-row") else { return };
-            let recalc = recalc.clone();
-            let cb: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> =
-                Closure::wrap(Box::new(move |_: Vec<ResizeObserverEntry>| recalc())
-                    as Box<dyn FnMut(Vec<ResizeObserverEntry>)>);
-            let fn_ref: &js_sys::Function = cb.as_ref().unchecked_ref();
-            let Ok(ro) = web_sys::ResizeObserver::new(fn_ref) else { return };
-            ro.observe(&row);
-            ro.observe(&sizer);
-            observer_handle.set_value(Some(ro));
-            callback_handle.set_value(Some(cb));
-            recalc();
+    Effect::new(move |_| {
+        // Track the sizer node so this re-runs once it mounts.
+        let Some(sizer) = sizer_ref.get() else { return };
+        if callback_handle.with_value(|c| c.is_some()) { return; }
+        let Some(row) = by_id("toolbar-row") else { return };
+        let cb: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> =
+            Closure::wrap(Box::new(move |_: Vec<ResizeObserverEntry>| recalc())
+                as Box<dyn FnMut(Vec<ResizeObserverEntry>)>);
+        let fn_ref: &js_sys::Function = cb.as_ref().unchecked_ref();
+        let Ok(ro) = web_sys::ResizeObserver::new(fn_ref) else { return };
+        ro.observe(&row);
+        ro.observe(&sizer);
+        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+            for id in ["toolbar-left-pre", "toolbar-right"] {
+                if let Some(el) = doc.get_element_by_id(id) {
+                    ro.observe(&el);
+                }
+            }
         }
+        observer_handle.set_value(Some(ro));
+        callback_handle.set_value(Some(cb));
+        recalc();
+    });
+    Effect::new(move |_| {
+        _ = state.sidebar.get();
+        _ = state.doc.status.get();
+        _ = state.doc.num_pages.get();
+        _ = state.doc.title.get();
+        _ = state.doc.path.get();
+        recalc();
     });
     on_cleanup(move || {
         if let Some(ro) = observer_handle.try_get_value().flatten() { ro.disconnect(); }
@@ -178,7 +191,7 @@ pub fn AdaptiveGroup(
                     entries
                         .get()
                         .into_iter()
-                        .map(|e| (e.inline)())
+                        .map(|e| (e.sizer)())
                         .collect_view()
                 }}
             </div>
@@ -228,7 +241,7 @@ mod tests {
     fn tight_drops_lowest_priority_first() {
         let widths = [40.0, 40.0, 40.0];
         let prios = [90, 80, 70];
-        let dropped = compute_collapsed(&widths, &prios, 90.0, 4.0, 36.0);
+        let dropped = compute_collapsed(&widths, &prios, 125.0, 4.0, 36.0);
         assert!(dropped.contains(&2));
         assert_eq!(dropped.first().copied(), Some(2));
     }
@@ -254,7 +267,7 @@ mod tests {
     fn ties_drop_rightmost_first() {
         let widths = [50.0, 50.0];
         let prios = [70, 70];
-        let dropped = compute_collapsed(&widths, &prios, 70.0, 4.0, 36.0);
+        let dropped = compute_collapsed(&widths, &prios, 90.0, 4.0, 36.0);
         assert_eq!(dropped, vec![1]);
     }
 }

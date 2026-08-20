@@ -30,6 +30,10 @@ pub fn Popover(
     /// Extra classes (padding, max-h, overflow…).
     #[prop(optional, into)]
     class: String,
+    /// Whether opening this popover holds the reader titlebar open.
+    /// Defaults to true; sidebar popovers (MoreMenu) set this to false.
+    #[prop(default = true)]
+    hold_titlebar: bool,
     children: ChildrenFn,
 ) -> impl IntoView {
     let panel_ref: NodeRef<html::Div> = NodeRef::new();
@@ -46,11 +50,13 @@ pub fn Popover(
             (None, Some(f)) => f,
             (None, None) => return,
         };
-        let Some(panel) = panel_ref.get() else { return };
         let Some(win) = web_sys::window() else { return };
         let ar = a.get_bounding_client_rect();
         let pw = width as f64;
-        let ph = panel.get_bounding_client_rect().height();
+        let ph = panel_ref
+            .get()
+            .map(|p| p.get_bounding_client_rect().height())
+            .unwrap_or(200.0);
         let win_w = win
             .inner_width()
             .ok()
@@ -78,6 +84,7 @@ pub fn Popover(
         if !open.get() {
             return;
         }
+        place();
         request_animation_frame(place);
         let h = window_event_listener_untyped("resize", move |_| place());
         on_cleanup(move || h.remove());
@@ -85,11 +92,26 @@ pub fn Popover(
 
     // Keep the reader titlebar from auto-hiding while this menu is up.
     let held_ctx = use_context::<TitleBarCtx>();
-    Effect::new(move |_| {
-        if let Some(ctx) = held_ctx {
-            ctx.held.set(open.get());
-        }
-    });
+    if hold_titlebar && let Some(ctx) = held_ctx {
+        let was_holding = StoredValue::new_local(false);
+        Effect::new(move |_| {
+            let is_open = open.get();
+            let holding = was_holding.get_value();
+            if is_open && !holding {
+                ctx.held_count.update(|c| *c += 1);
+                was_holding.set_value(true);
+            } else if !is_open && holding {
+                ctx.held_count.update(|c| *c = c.saturating_sub(1));
+                was_holding.set_value(false);
+            }
+        });
+        on_cleanup(move || {
+            if was_holding.get_value() {
+                ctx.held_count.update(|c| *c = c.saturating_sub(1));
+                was_holding.set_value(false);
+            }
+        });
+    }
 
     // Outside-click + Escape dismissal owned HERE so every menu gets it free.
     Effect::new(move |_| {
@@ -104,11 +126,15 @@ pub fn Popover(
                     .get()
                     .map(|a| a.contains(Some(&target)))
                     .unwrap_or(false);
+                let in_fallback = fallback_anchor
+                    .get()
+                    .map(|f| f.contains(Some(&target)))
+                    .unwrap_or(false);
                 let in_panel = panel_ref
                     .get()
                     .map(|p| p.contains(Some(&target)))
                     .unwrap_or(false);
-                if !in_anchor && !in_panel {
+                if !in_anchor && !in_fallback && !in_panel {
                     open.set(false);
                 }
             },

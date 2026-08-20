@@ -48,7 +48,7 @@ pub struct AutoCenter {
     /// back-reference and re-arm itself while the user is still driving the
     /// grid. The step is replaced on every effect run; on_cleanup cancels the
     /// pending timer, so the old step is dropped with its timer.
-    pub glide_slot: StoredValue<Option<Rc<RefCell<Option<Rc<dyn Fn()>>>>>, LocalStorage>,
+    pub glide_slot: StoredValue<Option<RevealSlot>, LocalStorage>,
     /// The panel's scroll container element (shared with the size-tracking
     /// effect in the panel, which also writes it).
     pub container_el: StoredValue<Option<web_sys::Element>, LocalStorage>,
@@ -67,7 +67,7 @@ impl AutoCenter {
             last_user_drive: Rc::new(Cell::new(f64::NEG_INFINITY)),
             centered: StoredValue::new_local((false, 0u32)),
             glide_timer: StoredValue::new_local(None::<TimeoutHandle>),
-            glide_slot: StoredValue::new_local(None::<Rc<RefCell<Option<Rc<dyn Fn()>>>>>),
+            glide_slot: StoredValue::new_local(None::<RevealSlot>),
             container_el,
             viewport_h,
         }

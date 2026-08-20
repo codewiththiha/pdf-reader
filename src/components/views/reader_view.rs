@@ -33,33 +33,35 @@ use pdf_viewer::state::SidebarMode;
 
 fn view_mode_entry(state: AppState) -> ToolbarEntry {
     let mode = state.viewer.mode;
+    let inline_view: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
+        view! {
+            <Tooltip text="View mode".to_string()>
+                <Segmented
+                    options=vec![
+                        (
+                            ViewMode::Single,
+                            SegmentedLabel::Icon(IconName::SinglePage),
+                            "Single page view",
+                        ),
+                        (
+                            ViewMode::Continuous,
+                            SegmentedLabel::Icon(IconName::Continuous),
+                            "Continuous scroll view",
+                        ),
+                    ]
+                    value={mode.read_only()}
+                    on_change=move |m: ViewMode| state.viewer.mode.set(m)
+                />
+            </Tooltip>
+        }
+        .into_any()
+    });
     ToolbarEntry {
         id: "view-mode",
         priority: 90,
         keep_mounted: false,
-        inline: Arc::new(move || {
-            view! {
-                <Tooltip text="View mode".to_string()>
-                    <Segmented
-                        options=vec![
-                            (
-                                ViewMode::Single,
-                                SegmentedLabel::Icon(IconName::SinglePage),
-                                "Single page view",
-                            ),
-                            (
-                                ViewMode::Continuous,
-                                SegmentedLabel::Icon(IconName::Continuous),
-                                "Continuous scroll view",
-                            ),
-                        ]
-                        value={mode.read_only()}
-                        on_change=move |m: ViewMode| state.viewer.mode.set(m)
-                    />
-                </Tooltip>
-            }
-            .into_any()
-        }),
+        inline: inline_view.clone(),
+        sizer: inline_view,
         collapsed: Arc::new(move |done| {
             view! {
                 <OverflowRow icon=IconName::SinglePage label="Single page" done=done
