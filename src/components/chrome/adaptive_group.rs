@@ -67,48 +67,57 @@ pub fn AdaptiveGroup(
     let sizer_ref: NodeRef<html::Div> = NodeRef::new();
     let open = RwSignal::new(false);
 
-    let recalc_entries = entries.clone();
-    let recalc = move || {
-        request_animation_frame(move || {
-            let Some(sizer) = sizer_ref.get() else { return };
-            let Some(row) = by_id("toolbar-row") else { return };
-            let kids = sizer.children();
-            let widths: Vec<f64> = (0..recalc_entries.len() as u32)
-                .map(|i| kids.item(i).map(|e| e.get_bounding_client_rect().width()).unwrap_or(0.0))
-                .collect();
-            let priorities: Vec<u32> = recalc_entries.iter().map(|e| e.priority).collect();
-            let rr = row.get_bounding_client_rect();
-            let left_end = by_id("toolbar-left-pre")
-                .map(|e| e.get_bounding_client_rect().right())
-                .unwrap_or(rr.left());
-            let title_reserve = if state.doc.status.get_untracked() == DocStatus::Ready {
-                TB_TITLE_RESERVE
-            } else { 0.0 };
-            let start = left_end + TB_GAP + title_reserve + 12.0; // 12 = GAP_RIGHT
-            let capacity = (rr.right() - TB_RIGHT_RESERVE - start - 12.0).max(0.0);
-            let ids: Vec<&'static str> = compute_collapsed(&widths, &priorities, capacity, TB_GAP, TB_OVERFLOW_W)
-                .iter().map(|&i| recalc_entries[i].id).collect();
-            if ids != collapsed_ids.get_untracked() {
-                collapsed_ids.set(ids);   // write only on real change (no churn)
-            }
-        });
+    let recalc = {
+        let entries = entries.clone();
+        move || {
+            let entries = entries.clone();
+            request_animation_frame(move || {
+                let Some(sizer) = sizer_ref.get() else { return };
+                let Some(row) = by_id("toolbar-row") else { return };
+                let kids = sizer.children();
+                let widths: Vec<f64> = (0..entries.len() as u32)
+                    .map(|i| kids.item(i).map(|e| e.get_bounding_client_rect().width()).unwrap_or(0.0))
+                    .collect();
+                let priorities: Vec<u32> = entries.iter().map(|e| e.priority).collect();
+                let rr = row.get_bounding_client_rect();
+                let left_end = by_id("toolbar-left-pre")
+                    .map(|e| e.get_bounding_client_rect().right())
+                    .unwrap_or(rr.left());
+                let title_reserve = if state.doc.status.get_untracked() == DocStatus::Ready {
+                    TB_TITLE_RESERVE
+                } else { 0.0 };
+                let start = left_end + TB_GAP + title_reserve + 12.0; // 12 = GAP_RIGHT
+                let capacity = (rr.right() - TB_RIGHT_RESERVE - start - 12.0).max(0.0);
+                let ids: Vec<&'static str> = compute_collapsed(&widths, &priorities, capacity, TB_GAP, TB_OVERFLOW_W)
+                    .iter().map(|&i| entries[i].id).collect();
+                if ids != collapsed_ids.get_untracked() {
+                    collapsed_ids.set(ids);
+                }
+            });
+        }
     };
 
-    // Re-measure: window/padding changes (row) + content width changes
-    // (sizer — e.g. "95%" -> "137%"). RO fires initially too.
     let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
     let callback_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
-    Effect::new(move |_| {
-        if callback_handle.with_value(|c| c.is_some()) { return; }
-        let cb: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> =
-            Closure::wrap(Box::new(move |_: Vec<ResizeObserverEntry>| recalc())
-                as Box<dyn FnMut(Vec<ResizeObserverEntry>)>);
-        let fn_ref: &js_sys::Function = cb.as_ref().unchecked_ref();
-        let Ok(ro) = web_sys::ResizeObserver::new(fn_ref) else { return };
-        if let Some(row) = by_id("toolbar-row") { ro.observe(&row); }
-        if let Some(sizer) = sizer_ref.get() { ro.observe(&sizer); }
-        observer_handle.set_value(Some(ro));
-        callback_handle.set_value(Some(cb));
+    Effect::new({
+        let recalc = recalc.clone();
+        move |_| {
+            // Track the sizer node so this re-runs once it mounts.
+            let Some(sizer) = sizer_ref.get() else { return };
+            if callback_handle.with_value(|c| c.is_some()) { return; }
+            let Some(row) = by_id("toolbar-row") else { return };
+            let recalc = recalc.clone();
+            let cb: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> =
+                Closure::wrap(Box::new(move |_: Vec<ResizeObserverEntry>| recalc())
+                    as Box<dyn FnMut(Vec<ResizeObserverEntry>)>);
+            let fn_ref: &js_sys::Function = cb.as_ref().unchecked_ref();
+            let Ok(ro) = web_sys::ResizeObserver::new(fn_ref) else { return };
+            ro.observe(&row);
+            ro.observe(&sizer);
+            observer_handle.set_value(Some(ro));
+            callback_handle.set_value(Some(cb));
+            recalc();
+        }
     });
     on_cleanup(move || {
         if let Some(ro) = observer_handle.try_get_value().flatten() { ro.disconnect(); }
@@ -116,20 +125,40 @@ pub fn AdaptiveGroup(
         callback_handle.try_set_value(None);
     });
 
-    let sizer = entries.clone();
-    let inline_src = entries.clone();
+    let kept_src = entries.clone();
     let overflow_src = entries.clone();
+    let sizer_src = entries.clone();
+    let kept_ids = {
+        let e = entries.clone();
+        move || {
+            let c = collapsed_ids.get();
+            e.iter()
+                .filter(|en| en.keep_mounted || !c.contains(&en.id))
+                .map(|en| en.id)
+                .collect::<Vec<&'static str>>()
+        }
+    };
+    let overflow_ids = {
+        let e = entries.clone();
+        move || {
+            let c = collapsed_ids.get();
+            e.iter().filter(|en| c.contains(&en.id)).map(|en| en.id).collect::<Vec<&'static str>>()
+        }
+    };
 
     view! {
         <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
-            {move || {
-                let c = collapsed_ids.get();
-                inline_src
-                    .iter()
-                    .filter(|en| en.keep_mounted || !c.contains(&en.id))
-                    .map(|en| (en.inline)())
-                    .collect_view()
-            }}
+            <For
+                each=kept_ids
+                key=|id| *id
+                children=move |id| {
+                    kept_src
+                        .iter()
+                        .find(|en| en.id == id)
+                        .map(|en| (en.inline)())
+                        .unwrap_or_else(|| ().into_any())
+                }
+            />
             <Show when=move || !collapsed_ids.get().is_empty()>
                 <div node_ref=overflow_ref class="relative inline-flex">
                     <button
@@ -141,24 +170,24 @@ pub fn AdaptiveGroup(
                         <Icon name=IconName::More size=18 />
                     </button>
                     <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
-                        {move || {
-                            let c = collapsed_ids.get();
-                            overflow_src
-                                .iter()
-                                .filter(|en| c.contains(&en.id))
-                                .map(|en| {
-                                    let done = Callback::new(move |_| open.set(false));
-                                    (en.collapsed)(done)
-                                })
-                                .collect_view()
-                        }}
+                        <For
+                            each=overflow_ids
+                            key=|id| *id
+                            children=move |id| {
+                                let done = Callback::new(move |_| open.set(false));
+                                overflow_src
+                                    .iter()
+                                    .find(|en| en.id == id)
+                                    .map(|en| (en.collapsed)(done))
+                                    .unwrap_or_else(|| ().into_any())
+                            }
+                        />
                     </Popover>
                 </div>
             </Show>
         </div>
-        // Measurement twin: every inline view at natural size, invisible.
         <div node_ref=sizer_ref class="tb-sizer" aria-hidden="true">
-            {sizer.iter().map(|e| (e.inline)()).collect_view()}
+            {sizer_src.iter().map(|e| (e.inline)()).collect_view()}
         </div>
     }
 }
@@ -191,9 +220,8 @@ mod tests {
         let widths = [40.0, 40.0, 40.0];
         let prios = [90, 80, 70];
         let dropped = compute_collapsed(&widths, &prios, 90.0, 4.0, 36.0);
-        assert_eq!(dropped.first().copied(), Some(2));
-        assert!(!dropped.contains(&0) || dropped.contains(&1) || dropped.contains(&2));
         assert!(dropped.contains(&2));
+        assert_eq!(dropped.first().copied(), Some(2));
     }
 
     #[test]

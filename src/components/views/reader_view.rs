@@ -132,7 +132,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                     </Show>
                     <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
                         <Button
-                            on_click=move || open_dialog(state)
+                            on_click=move |_| open_dialog(state)
                             kind=ButtonKind::Toolbar
                             icon=IconName::Open
                             label="Open".to_string()
