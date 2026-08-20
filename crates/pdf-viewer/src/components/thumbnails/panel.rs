@@ -26,6 +26,7 @@ use std::time::Duration;
 
 use leptos::html;
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::Event;
@@ -37,6 +38,7 @@ use crate::state::{ViewerState, SidebarMode};
 use super::cell::ThumbCell;
 use super::geometry::{
     row_count, row_height, CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, MIN_VIEWPORT_H, PAD, ROW_BUFFER,
+    THUMB_SCALE,
 };
 
 #[component]
@@ -447,6 +449,16 @@ pub fn ThumbnailsPanel(
             opts.set_behavior(behavior);
             step_el.scroll_to_with_scroll_to_options(&opts);
             step_timer.set_value(None);
+
+            // Idle prefetch: warm the thumbnail cache around the reader's
+            // current page so a later grid fling mounts every cell as a
+            // synchronous cache blit (no skeleton, no waiting). Best-effort.
+            let prefetch_page = step_page;
+            spawn_local(async move {
+                for p in prefetch_page.saturating_sub(2)..=prefetch_page + 8 {
+                    pdf_engine::api::prefetch_thumb(p, THUMB_SCALE).await;
+                }
+            });
         });
         *step_slot.borrow_mut() = Some(step.clone());
         glide_slot.set_value(Some(step_slot));

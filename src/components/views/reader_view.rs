@@ -44,7 +44,6 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     zoom_system(vs);
     page_tracking(vs);
     reading_progress(state);
-    pdf_viewer::effects::search_effects::dismissed_search_watch(vs);
 
     let status = state.doc.status;
     let mode = state.viewer.mode;
@@ -109,24 +108,6 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                 data-tauri-drag-region="true"
                 class="flex shrink-0 items-center gap-1"
             >
-                <Tooltip text="Search (Cmd/Ctrl+F)".to_string()>
-                    <button
-                        type="button"
-                        data-search-chrome="true"
-                        title="Search (Cmd/Ctrl+F)"
-                        on:pointerdown=move |ev| ev.stop_propagation()
-                        on:click=move |_| {
-                            if state.search.visible.get() {
-                                pdf_viewer::effects::search_effects::dismiss_search(vs);
-                            } else {
-                                pdf_viewer::effects::search_effects::resume_search(vs);
-                            }
-                        }
-                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        <Icon name=IconName::Search size=18 />
-                    </button>
-                </Tooltip>
                 <Tooltip text="View mode".to_string()>
                     <Segmented
                         options=vec![

@@ -207,9 +207,8 @@ export function refreshHighlights(): void {
 }
 
 function pageOutputScale(cssW: number, cssH: number): number {
-  // Cap at 1.25: vectors stay sharp at reading distance; 1.5× cost ~30% more.
-  // across mounted pages + bake intermediates. Text stays sharp enough.
-  const dpr = Math.min(globalThis.devicePixelRatio || 1, 1.25);
+  // Native DPR for crisp text; PAGE_MAX_PIXELS is the memory guardrail.
+  const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
   if (!(cssW > 0) || !(cssH > 0)) return dpr;
 
   const vw = globalThis.innerWidth || 0;

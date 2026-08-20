@@ -34,9 +34,9 @@ export function setCurrentPath(p: string | null): void {
 
 export const stateByCanvasId = new Map<string, PageState>();
 export const thumbCache = new Map<number, ThumbEntry>();
-/** Cap kept tight: each thumb is a pair of rasters. 8 covers the 2-column
- *  window + one buffer row without pinning a textbook's worth of bitmaps. */
-export const THUMB_CACHE_MAX = 8;
+/** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
+ *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
+export const THUMB_CACHE_MAX = 16;
 export const thumbTasks = new Map<string, RenderTask>();
 export const thumbCancelled = new Set<string>();
 export const thumbLive = new Map<string, { page: number }>();
