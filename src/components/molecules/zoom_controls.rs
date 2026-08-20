@@ -81,7 +81,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 }
                 .into_any()
             }),
-            collapsed: Arc::new(move |done| {
+            collapsed: Arc::new(move |_done| {
                 view! {
                     <div class="flex w-full items-center gap-1 px-1 py-0.5">
                         <button
@@ -89,7 +89,6 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                             title="Zoom out"
                             on:click=move |_| {
                                 apply_zoom(state, nearest_zoom(step_base(state), -1));
-                                done.run(());
                             }
                             class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm text-ink hover:bg-line"
                         >
@@ -157,10 +156,8 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             }),
             collapsed: Arc::new(move |done| {
                 view! {
-                    <OverflowRow icon=IconName::FitPage label="Fit page" on_click=move || {
-                        state.viewer.fit.set(FitMode::Page);
-                        done.run(());
-                    } />
+                    <OverflowRow icon=IconName::FitPage label="Fit page" done=done
+                        on_click=move || state.viewer.fit.set(FitMode::Page) />
                 }
                 .into_any()
             }),

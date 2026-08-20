@@ -145,7 +145,7 @@ pub fn AdaptiveGroup(
                             .unwrap_or_else(|| ().into_any())
                     }
                 />
-                <Show when=move || !collapsed_ids.get().is_empty()>
+                <Show when=move || !collapsed_ids.get().is_empty() || open.get()>
                     <div node_ref=overflow_ref class="relative inline-flex">
                         <button
                             type="button"
