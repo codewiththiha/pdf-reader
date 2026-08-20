@@ -86,7 +86,6 @@ fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 /// macOS-only: on other platforms the window has a normal caption and this is
 /// a no-op.
 #[tauri::command]
-#[allow(unexpected_cfgs)] // objc 0.2's sel_impl! macro references a `cargo-clippy` cfg
 fn set_traffic_lights(window: tauri::Window, visible: bool) {
     #[cfg(target_os = "macos")]
     unsafe {
