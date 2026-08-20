@@ -1553,3 +1553,12 @@ html.theme-switching * {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------
+   13. Auto-hide chrome — no text selection while grabbing the drag
+   regions (the always-mounted hot strips + the hover-reveal bars).
+   --------------------------------------------------------------------- */
+[data-tauri-drag-region] {
+  -webkit-user-select: none;
+  user-select: none;
+}
