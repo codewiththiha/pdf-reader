@@ -761,6 +761,10 @@ body {
   height: 100%;
   margin: 0;
   overscroll-behavior: none;
+  /* The auto-hide bottom bar slides down out of view; clip it here so its
+     hidden 12px translate can never leak a phantom window scrollbar. The
+     only scrollers left are the page list, thumbnails, outline and popovers. */
+  overflow: hidden;
 }
 
 body {
