@@ -207,6 +207,7 @@ pub fn DocTitle(state: AppState) -> impl IntoView {
     view! {
         <span
             id="toolbar-doc-title"
+            data-tauri-drag-region="true"
             class="min-w-0 shrink truncate text-sm text-ink"
             class=("hidden", hidden)
             title=full
