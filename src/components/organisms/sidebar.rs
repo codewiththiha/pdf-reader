@@ -4,7 +4,7 @@
 //! The sidebar OWNS the titlebar chrome while it is open: a always-visible
 //! 48px chrome row (traffic-light inset + close toggle + search + ⋯) and a
 //! book-identity row (cover + title + author). They are not hover-gated — the
-//! native traffic lights follow `sidebar_open || reader_bar_hover`, so an open
+//! native traffic lights follow `sidebar_open || bar_visible`, so an open
 //! sidebar keeps the lights on its own.
 //!
 //! The `<aside>` is ALWAYS mounted and animates its `width` between 18rem and 0
@@ -209,7 +209,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                 // panel glyph marks "sidebar is on". A drag region so the
                 // window stays grabable from the sidebar.
                 <div
-                    class="flex h-12 shrink-0 items-center gap-1 pl-[76px] pr-2"
+                    class="flex h-12 shrink-0 items-center gap-1 pl-[88px] pr-2"
                     data-tauri-drag-region="true"
                 >
                     <Tooltip text="Close sidebar".to_string()>
@@ -240,7 +240,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                         }
                         class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     >
-                        <Icon name=IconName::Search size=16 />
+                        <Icon name=IconName::Search size=18 />
                     </button>
                     <MoreMenu state=state />
                 </div>
