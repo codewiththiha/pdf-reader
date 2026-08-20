@@ -86,6 +86,7 @@ fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 /// macOS-only: on other platforms the window has a normal caption and this is
 /// a no-op.
 #[tauri::command]
+#[allow(unexpected_cfgs)] // objc 0.2's sel_impl! macro references a `cargo-clippy` cfg
 fn set_traffic_lights(window: tauri::Window, visible: bool) {
     #[cfg(target_os = "macos")]
     unsafe {
@@ -93,8 +94,13 @@ fn set_traffic_lights(window: tauri::Window, visible: bool) {
         // `sel_impl` is referenced unqualified by the `sel!`/`msg_send!`
         // expansions, so it must be imported alongside them.
         use objc::{msg_send, sel, sel_impl};
+        // rwh 0.6: window_handle() -> WindowHandle::as_raw() gives the raw
+        // handle. (HasRawWindowHandle::raw_window_handle() is the deprecated
+        // path, and HasWindowHandle alone doesn't provide raw_window_handle.)
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        if let Ok(RawWindowHandle::AppKit(h)) = window.raw_window_handle() {
+        if let Ok(handle) = window.window_handle()
+            && let RawWindowHandle::AppKit(h) = handle.as_raw()
+        {
             let ns_view = h.ns_view.as_ptr() as *mut Object;
             let ns_window: *mut Object = msg_send![ns_view, window];
             if !ns_window.is_null() {
