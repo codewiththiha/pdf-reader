@@ -24,8 +24,9 @@ use crate::components::molecules::zoom_controls::ZoomControls;
 use crate::core::open_flow::{close_document, open_dialog};
 use crate::core::state::AppState;
 use crate::effects::reading_progress::reading_progress;
-use pdf_viewer::effects::fit::{fit_effect, zoom_system};
+use pdf_viewer::effects::fit::fit_effect;
 use pdf_viewer::effects::page_tracking::page_tracking;
+use pdf_viewer::effects::zoom::zoom_system;
 use pdf_viewer::state::SidebarMode;
 
 #[component]

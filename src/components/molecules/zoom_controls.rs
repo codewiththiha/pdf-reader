@@ -17,7 +17,7 @@ use pdf_viewer::components::atoms::tooltip::Tooltip;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
 use crate::components::chrome::popover::Popover;
 use crate::core::state::AppState;
-use pdf_viewer::effects::fit::request_zoom;
+use pdf_viewer::effects::zoom::request_zoom;
 
 /// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
 /// coordinator.
