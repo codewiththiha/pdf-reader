@@ -48,11 +48,14 @@ use web_sys::ResizeObserverEntry;
 use pdf_core::filename::display_name;
 use crate::core::state::AppState;
 
-/// Left padding of the toolbar row (the ReaderBar's `pl-20`, which reserves
-/// room for the native traffic lights when the sidebar is closed).
-const ROW_PAD_LEFT: f64 = 80.0;
-/// Right padding of the toolbar row (`pr-3`).
-const ROW_PAD_RIGHT: f64 = 12.0;
+/// Left padding of the toolbar row (`pl-[88px]`, which reserves room for the
+/// native traffic lights when the sidebar is closed).
+const ROW_PAD_LEFT: f64 = 88.0;
+/// Space on the right the measured name must not enter: `pr-2` + the 36px pin
+/// button + a gap. The pin lives OUTSIDE `#toolbar-right` (the provider
+/// appends it after the right slot), so its width is reserved here instead of
+/// being measured.
+const ROW_PAD_RIGHT: f64 = 48.0;
 /// Gap between the label and the buttons to its left (`gap-1` in the left group).
 const GAP_LEFT: f64 = 4.0;
 /// Gap the label keeps from whatever is on its right (the centered page nav or
