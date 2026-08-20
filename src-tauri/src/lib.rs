@@ -13,12 +13,12 @@
 //!     The file path arrives differently per platform, so all three routes
 //!     queue into one `PendingFile` slot:
 //!       - macOS   : `RunEvent::Opened` (LaunchServices), at launch AND while
-//!                   running (the running instance receives it).
+//!         running (the running instance receives it).
 //!       - Windows/Linux initial launch : plain argv entry ("%1" from the
-//!                   shell association).
+//!         shell association).
 //!       - Windows/Linux second launch : `tauri-plugin-single-instance`
-//!                   forwards the second process's argv to the running one
-//!                   instead of spawning a second window.
+//!         forwards the second process's argv to the running one
+//!         instead of spawning a second window.
 //!     The frontend collects the slot through the `take_pending_file`
 //!     command (the authoritative handoff — an event emitted before the
 //!     webview mounted would otherwise be lost) and `pdf-open-file` is only
