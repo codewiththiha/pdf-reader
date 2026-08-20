@@ -4,5 +4,5 @@ pub mod bottom_bar;
 pub mod doc_title;
 pub mod more_menu;
 pub mod page_pill;
-pub mod title_bar;
+pub mod reader_bar;
 pub mod zoom_controls;

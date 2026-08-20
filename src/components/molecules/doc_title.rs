@@ -48,8 +48,8 @@ use web_sys::ResizeObserverEntry;
 use pdf_core::filename::display_name;
 use crate::core::state::AppState;
 
-/// Left padding of the toolbar row (the TitleBar's `pl-20`, which reserves
-/// room for the native traffic lights).
+/// Left padding of the toolbar row (the ReaderBar's `pl-20`, which reserves
+/// room for the native traffic lights when the sidebar is closed).
 const ROW_PAD_LEFT: f64 = 80.0;
 /// Right padding of the toolbar row (`pr-3`).
 const ROW_PAD_RIGHT: f64 = 12.0;
