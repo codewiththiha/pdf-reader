@@ -36,7 +36,7 @@ use crate::state::{ViewerState, SidebarMode};
 
 use super::cell::ThumbCell;
 use super::geometry::{
-    row_count, row_height, CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, PAD, ROW_BUFFER,
+    row_count, row_height, CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, MIN_VIEWPORT_H, PAD, ROW_BUFFER,
 };
 
 #[component]
@@ -145,7 +145,36 @@ pub fn ThumbnailsPanel(
         // The rows live inside the container's 12px top padding, so the window
         // is computed against the content box (`scroll_top - PAD`, clamped).
         let st = (scroll_top.get() - PAD).max(0.0);
-        visible_grid_rows(st, viewport_h.get(), rows(), row_height(), ROW_BUFFER)
+        // A zero viewport (measurement not landed yet) must not collapse the
+        // window to the two buffer rows — render a generous window instead,
+        // and let the re-seed effect below tighten it once the real height is
+        // known.
+        let vh = viewport_h.get();
+        let vh = if vh <= 0.0 { MIN_VIEWPORT_H } else { vh };
+        visible_grid_rows(st, vh, rows(), row_height(), ROW_BUFFER)
+    });
+
+    // Self-healing measurement: re-seed the window the moment the panel
+    // becomes visible. The seed below can land before the routed layout has
+    // settled, and the ResizeObserver only fires on size CHANGES — the
+    // container's height is constant across the sidebar's open/close slide
+    // (only its width is clipped), so a stale zero would never self-correct
+    // and the grid would stay stuck at the buffer rows. Re-reading the real
+    // client height on every open guarantees a correct window.
+    Effect::new(move |_| {
+        if !live.get() {
+            return;
+        }
+        let el = container_el.get_value().or_else(|| {
+            web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.get_element_by_id("thumb-scroll"))
+        });
+        if let Some(el) = el {
+            container_el.set_value(Some(el.clone()));
+            viewport_h.set(el.client_height() as f64);
+            scroll_top.set(el.scroll_top() as f64);
+        }
     });
 
     // --- scroll / size tracking ----------------------------------------------
