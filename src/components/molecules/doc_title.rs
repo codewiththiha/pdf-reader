@@ -48,8 +48,11 @@ use web_sys::ResizeObserverEntry;
 use pdf_core::filename::display_name;
 use crate::core::state::AppState;
 
-/// Horizontal padding of the toolbar row (`px-3`).
-const ROW_PAD: f64 = 12.0;
+/// Left padding of the toolbar row (the TitleBar's `pl-20`, which reserves
+/// room for the native traffic lights).
+const ROW_PAD_LEFT: f64 = 80.0;
+/// Right padding of the toolbar row (`pr-3`).
+const ROW_PAD_RIGHT: f64 = 12.0;
 /// Gap between the label and the buttons to its left (`gap-1` in the left group).
 const GAP_LEFT: f64 = 4.0;
 /// Gap the label keeps from whatever is on its right (the centered page nav or
@@ -79,8 +82,8 @@ fn measure_available() -> Option<f64> {
     // The right-hand control group is always a hard stop.
     let right_w = width_of("toolbar-right").unwrap_or(0.0);
 
-    let start = ROW_PAD + pre_w + GAP_LEFT;
-    let mut end = row_w - ROW_PAD - right_w - GAP_RIGHT;
+    let start = ROW_PAD_LEFT + pre_w + GAP_LEFT;
+    let mut end = row_w - ROW_PAD_RIGHT - right_w - GAP_RIGHT;
 
     // When a document is Ready the page nav is absolutely centered on the ROW,
     // so its left edge is (row/2 - nav/2) regardless of the flex groups around

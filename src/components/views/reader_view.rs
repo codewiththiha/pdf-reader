@@ -58,19 +58,25 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
     let mode = state.viewer.mode;
     let state_sidebar = state;
 
+    // Shared chrome visibility: the TitleBar reveal signal also drives the
+    // native traffic lights (backend command) and the sidebar identity row.
+    let chrome_visible = RwSignal::new(false);
+    Effect::new(move |_| {
+        let v = chrome_visible.get();
+        wasm_bindgen_futures::spawn_local(async move {
+            pdf_engine::api::set_traffic_lights(v).await;
+        });
+    });
+
     let is_ready = move || status.get() == DocStatus::Ready;
 
     view! {
-        <div class="relative flex h-full w-full flex-col bg-paper text-ink">
-            // No persistent header: the auto-hide toolbar (mounted inside the
-            // viewer slot below) owns the top 48px band. No top margin either:
-            // the viewer starts at the very top so page content scrolls UNDER
-            // the revealed bar, which is what gives the glass something to
-            // refract. Each view pads its own scroller by the toolbar height so
-            // the first page is not born behind the bar.
+        // overflow-hidden clips the hidden BottomBar's slide-down translate so
+        // it can never leak a phantom scrollbar onto the window.
+        <div class="relative flex h-full w-full flex-col overflow-hidden bg-paper text-ink">
             <div class="flex min-h-0 flex-1">
-                <crate::components::organisms::sidebar::Sidebar state=state_sidebar />
-                <main id="viewer-slot" class="relative min-w-0 flex-1">
+                <crate::components::organisms::sidebar::Sidebar state=state_sidebar chrome_visible=chrome_visible />
+                <main id="viewer-slot" class="relative min-w-0 flex-1 overflow-hidden">
                     <Show
                         when=is_ready
                         fallback=move || {
@@ -90,11 +96,6 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                             .into_any(),
                         }}
                     </Show>
-                    // The new chrome lives inside the viewer slot, so it spans
-                    // only the reader area (right of the sidebar), exactly like
-                    // the reference app.
-                    <crate::components::molecules::auto_hide_toolbar::AutoHideToolbar state=state />
-                    <crate::components::molecules::top_left_cluster::TopLeftCluster state=state />
                     <crate::components::molecules::page_pill::PagePill state=state />
                     <crate::components::molecules::bottom_bar::BottomBar state=state />
                     // Floating search overlay (U4): mounted at the viewer slot,
@@ -105,6 +106,9 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                     <pdf_viewer::components::floating_search::FloatingSearch state=vs />
                 </main>
             </div>
+            // TitleBar lives at ROOT level: it spans the sidebar AND the
+            // reader, like the reference app.
+            <crate::components::molecules::title_bar::TitleBar state=state chrome_visible=chrome_visible />
             <div class="noise-overlay"></div>
             // Drop-feedback overlay: appears only while a file drag is over the
             // window (drag_active), themed to follow the current appearance.
