@@ -1,7 +1,10 @@
 pub mod appearance;
 pub mod appearance_menu;
+pub mod auto_hide_toolbar;
+pub mod bottom_bar;
 pub mod doc_title;
 pub mod more_menu;
+pub mod page_pill;
 pub mod sidebar_item;
-pub mod toolbar;
+pub mod top_left_cluster;
 pub mod zoom_controls;

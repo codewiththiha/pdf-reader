@@ -43,9 +43,13 @@ fn step_base(state: AppState) -> f64 {
 }
 
 #[component]
-pub fn ZoomControls(state: AppState) -> impl IntoView {
-    
-    let open = RwSignal::new(false);
+pub fn ZoomControls(
+    state: AppState,
+    #[prop(optional)] open_ext: Option<RwSignal<bool>>,
+) -> impl IntoView {
+    // The auto-hide toolbar injects a shared signal so it can pin the bar open
+    // while the popover is up; standalone use falls back to a private one.
+    let open = open_ext.unwrap_or_else(|| RwSignal::new(false));
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     // Outside-click dismiss (U7): while the popover is open, any pointerdown

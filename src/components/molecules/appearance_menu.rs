@@ -35,8 +35,13 @@ fn SectionLabel(#[prop(into)] text: String) -> impl IntoView {
 }
 
 #[component]
-pub fn AppearanceMenu(state: AppState) -> impl IntoView {
-    let open = RwSignal::new(false);
+pub fn AppearanceMenu(
+    state: AppState,
+    #[prop(optional)] open_ext: Option<RwSignal<bool>>,
+) -> impl IntoView {
+    // The auto-hide toolbar injects a shared signal so it can pin the bar open
+    // while the popover is up; standalone use falls back to a private one.
+    let open = open_ext.unwrap_or_else(|| RwSignal::new(false));
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     let trigger_class = move || {
