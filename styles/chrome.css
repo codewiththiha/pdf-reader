@@ -515,11 +515,9 @@ html.theme-switching * {
 .tb-sizer {
   position: absolute;
   top: 0;
-  left: 0;
+  left: -10000px;            /* off-screen so it cannot steal bar width */
   display: flex;
   gap: 0.25rem;              /* must match gap-1 on #toolbar-right */
-  height: 0;
-  overflow: hidden;
   visibility: hidden;
   pointer-events: none;
 }

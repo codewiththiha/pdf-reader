@@ -123,65 +123,65 @@ pub fn AdaptiveGroup(
     });
 
     view! {
-        <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
-            <For
-                each=move || {
-                    let c = collapsed_ids.get();
+        <div class="relative shrink-0">
+            <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
+                <For
+                    each=move || {
+                        let c = collapsed_ids.get();
+                        entries
+                            .get()
+                            .into_iter()
+                            .filter(|en| en.keep_mounted || !c.contains(&en.id))
+                            .map(|en| en.id)
+                            .collect::<Vec<&'static str>>()
+                    }
+                    key=|id| *id
+                    children=move |id| {
+                        entries
+                            .get_untracked()
+                            .into_iter()
+                            .find(|en| en.id == id)
+                            .map(|en| (en.inline)())
+                            .unwrap_or_else(|| ().into_any())
+                    }
+                />
+                <Show when=move || !collapsed_ids.get().is_empty()>
+                    <div node_ref=overflow_ref class="relative inline-flex">
+                        <button
+                            type="button"
+                            title="More tools"
+                            on:click=move |_| open.set(!open.get())
+                            class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        >
+                            <Icon name=IconName::More size=18 />
+                        </button>
+                        <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
+                            <For
+                                each=move || collapsed_ids.get()
+                                key=|id| *id
+                                children=move |id| {
+                                    let done = Callback::new(move |_| open.set(false));
+                                    entries
+                                        .get_untracked()
+                                        .into_iter()
+                                        .find(|en| en.id == id)
+                                        .map(|en| (en.collapsed)(done))
+                                        .unwrap_or_else(|| ().into_any())
+                                }
+                            />
+                        </Popover>
+                    </div>
+                </Show>
+            </div>
+            <div node_ref=sizer_ref class="tb-sizer" aria-hidden="true">
+                {move || {
                     entries
                         .get()
                         .into_iter()
-                        .filter(|en| en.keep_mounted || !c.contains(&en.id))
-                        .map(|en| en.id)
-                        .collect::<Vec<&'static str>>()
-                }
-                key=|id| *id
-                children=move |id| {
-                    entries
-                        .get_untracked()
-                        .into_iter()
-                        .find(|en| en.id == id)
-                        .map(|en| (en.inline)())
-                        .unwrap_or_else(|| ().into_any())
-                }
-            />
-            <div
-                node_ref=overflow_ref
-                class="relative inline-flex"
-                class=("hidden", move || collapsed_ids.get().is_empty())
-            >
-                <button
-                    type="button"
-                    title="More tools"
-                    on:click=move |_| open.set(!open.get())
-                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                    <Icon name=IconName::More size=18 />
-                </button>
-                <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
-                    <For
-                        each=move || collapsed_ids.get()
-                        key=|id| *id
-                        children=move |id| {
-                            let done = Callback::new(move |_| open.set(false));
-                            entries
-                                .get_untracked()
-                                .into_iter()
-                                .find(|en| en.id == id)
-                                .map(|en| (en.collapsed)(done))
-                                .unwrap_or_else(|| ().into_any())
-                        }
-                    />
-                </Popover>
+                        .map(|e| (e.inline)())
+                        .collect_view()
+                }}
             </div>
-        </div>
-        <div node_ref=sizer_ref class="tb-sizer" aria-hidden="true">
-            {move || {
-                entries
-                    .get()
-                    .into_iter()
-                    .map(|e| (e.inline)())
-                    .collect_view()
-            }}
         </div>
     }
 }
