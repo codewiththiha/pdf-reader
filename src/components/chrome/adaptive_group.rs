@@ -1,0 +1,232 @@
+//! Collision-aware toolbar group. Items that don't fit move into a
+//! conditional "…" overflow popover; with room to spare the button vanishes.
+use std::rc::Rc;
+use leptos::html;
+use leptos::prelude::*;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
+use web_sys::ResizeObserverEntry;
+use pdf_engine::types::DocStatus;
+use pdf_viewer::components::atoms::icon::{Icon, IconName};
+use pdf_viewer::dom::by_id;
+use crate::components::chrome::popover::Popover;
+use crate::core::state::AppState;
+
+pub const TB_GAP: f64 = 4.0;          // gap-1
+pub const TB_OVERFLOW_W: f64 = 36.0;  // h-9 w-9
+pub const TB_RIGHT_RESERVE: f64 = 48.0; // pr-2 + pin button (same contract as DocTitle)
+pub const TB_TITLE_RESERVE: f64 = 56.0; // MIN_LABEL_W: promise the name this much
+
+/// One control that can live in the bar or in the overflow menu.
+#[derive(Clone)]
+pub struct ToolbarEntry {
+    pub id: &'static str,
+    /// Higher survives longer. `u32::MAX` = essential, never collapses.
+    pub priority: u32,
+    /// Stay in the DOM while collapsed so a popover owner can still open.
+    pub keep_mounted: bool,
+    pub inline: Rc<dyn Fn() -> AnyView>,
+    /// Row shown inside the overflow menu; the callback closes the menu.
+    pub collapsed: Rc<dyn Fn(Callback<()>) -> AnyView>,
+}
+
+/// Indices that must move to the overflow menu. Pure + deterministic.
+pub fn compute_collapsed(
+    widths: &[f64], priorities: &[u32], capacity: f64, gap: f64, overflow_w: f64,
+) -> Vec<usize> {
+    let n = widths.len();
+    if n == 0 { return vec![]; }
+    let total: f64 = widths.iter().sum::<f64>() + gap * (n.saturating_sub(1) as f64);
+    if total <= capacity { return vec![]; }
+    // The "…" button itself will occupy space once anything collapses.
+    let budget = capacity - overflow_w - gap;
+    // Drop lowest priority first; ties drop the right-most UI item first.
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| priorities[a].cmp(&priorities[b]).then(b.cmp(&a)));
+    let mut dropped = vec![false; n];
+    let mut used = total;
+    for &i in &order {
+        if priorities[i] == u32::MAX { continue; }
+        if used <= budget { break; }
+        used -= widths[i] + gap;
+        dropped[i] = true;
+    }
+    (0..n).filter(|&i| dropped[i]).collect()
+}
+
+#[component]
+pub fn AdaptiveGroup(
+    state: AppState,
+    entries: Vec<ToolbarEntry>,
+    /// Shared collapsed-id list so popover owners can hide their trigger.
+    collapsed_ids: RwSignal<Vec<&'static str>>,
+    /// Overflow "…" wrapper; Appearance re-anchors here when collapsed.
+    overflow_ref: NodeRef<html::Div>,
+) -> impl IntoView {
+    let entries = Rc::new(entries);
+    let sizer_ref: NodeRef<html::Div> = NodeRef::new();
+    let open = RwSignal::new(false);
+
+    let recalc_entries = entries.clone();
+    let recalc = move || {
+        request_animation_frame(move || {
+            let Some(sizer) = sizer_ref.get() else { return };
+            let Some(row) = by_id("toolbar-row") else { return };
+            let kids = sizer.children();
+            let widths: Vec<f64> = (0..recalc_entries.len() as u32)
+                .map(|i| kids.item(i).map(|e| e.get_bounding_client_rect().width()).unwrap_or(0.0))
+                .collect();
+            let priorities: Vec<u32> = recalc_entries.iter().map(|e| e.priority).collect();
+            let rr = row.get_bounding_client_rect();
+            let left_end = by_id("toolbar-left-pre")
+                .map(|e| e.get_bounding_client_rect().right())
+                .unwrap_or(rr.left());
+            let title_reserve = if state.doc.status.get_untracked() == DocStatus::Ready {
+                TB_TITLE_RESERVE
+            } else { 0.0 };
+            let start = left_end + TB_GAP + title_reserve + 12.0; // 12 = GAP_RIGHT
+            let capacity = (rr.right() - TB_RIGHT_RESERVE - start - 12.0).max(0.0);
+            let ids: Vec<&'static str> = compute_collapsed(&widths, &priorities, capacity, TB_GAP, TB_OVERFLOW_W)
+                .iter().map(|&i| recalc_entries[i].id).collect();
+            if ids != collapsed_ids.get_untracked() {
+                collapsed_ids.set(ids);   // write only on real change (no churn)
+            }
+        });
+    };
+
+    // Re-measure: window/padding changes (row) + content width changes
+    // (sizer — e.g. "95%" -> "137%"). RO fires initially too.
+    let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
+    let callback_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
+    Effect::new(move |_| {
+        if callback_handle.with_value(|c| c.is_some()) { return; }
+        let cb: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> =
+            Closure::wrap(Box::new(move |_: Vec<ResizeObserverEntry>| recalc())
+                as Box<dyn FnMut(Vec<ResizeObserverEntry>)>);
+        let fn_ref: &js_sys::Function = cb.as_ref().unchecked_ref();
+        let Ok(ro) = web_sys::ResizeObserver::new(fn_ref) else { return };
+        if let Some(row) = by_id("toolbar-row") { ro.observe(&row); }
+        if let Some(sizer) = sizer_ref.get() { ro.observe(&sizer); }
+        observer_handle.set_value(Some(ro));
+        callback_handle.set_value(Some(cb));
+    });
+    on_cleanup(move || {
+        if let Some(ro) = observer_handle.try_get_value().flatten() { ro.disconnect(); }
+        observer_handle.try_set_value(None);
+        callback_handle.try_set_value(None);
+    });
+
+    let kept = {
+        let e = entries.clone();
+        move || {
+            let c = collapsed_ids.get();
+            e.iter()
+                .filter(|en| en.keep_mounted || !c.contains(&en.id))
+                .cloned()
+                .collect::<Vec<_>>()
+        }
+    };
+    let collapsed = {
+        let e = entries.clone();
+        move || {
+            let c = collapsed_ids.get();
+            e.iter().filter(|en| c.contains(&en.id)).cloned().collect::<Vec<_>>()
+        }
+    };
+    let sizer = entries.clone();
+
+    view! {
+        <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
+            <For
+                each=kept
+                key=|e: &ToolbarEntry| e.id
+                children=move |e: ToolbarEntry| (e.inline)()
+            />
+            <Show when=move || !collapsed_ids.get().is_empty()>
+                <div node_ref=overflow_ref class="relative inline-flex">
+                    <button
+                        type="button"
+                        title="More tools"
+                        on:click=move |_| open.set(!open.get())
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        <Icon name=IconName::More size=18 />
+                    </button>
+                    <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
+                        <For
+                            each=collapsed
+                            key=|e: &ToolbarEntry| e.id
+                            children=move |e: ToolbarEntry| {
+                                let done = Callback::new(move |_| open.set(false));
+                                (e.collapsed)(done)
+                            }
+                        />
+                    </Popover>
+                </div>
+            </Show>
+        </div>
+        // Measurement twin: every inline view at natural size, invisible.
+        <div node_ref=sizer_ref class="tb-sizer" aria-hidden="true">
+            {sizer.iter().map(|e| (e.inline)()).collect_view()}
+        </div>
+    }
+}
+
+/// Standard overflow-menu row.
+#[component]
+pub fn OverflowRow(icon: IconName, label: &'static str, on_click: impl Fn() + 'static) -> impl IntoView {
+    view! {
+        <button type="button" on:click=move |_| on_click()
+            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line">
+            <span class="inline-flex w-4 shrink-0 justify-center text-muted"><Icon name=icon size=14 /></span>
+            <span>{label}</span>
+        </button>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_collapsed;
+
+    #[test]
+    fn all_fit_returns_empty() {
+        let widths = [40.0, 40.0, 40.0];
+        let prios = [80, 80, 90];
+        assert!(compute_collapsed(&widths, &prios, 200.0, 4.0, 36.0).is_empty());
+    }
+
+    #[test]
+    fn tight_drops_lowest_priority_first() {
+        let widths = [40.0, 40.0, 40.0];
+        let prios = [90, 80, 70];
+        let dropped = compute_collapsed(&widths, &prios, 90.0, 4.0, 36.0);
+        assert_eq!(dropped.first().copied(), Some(2));
+        assert!(!dropped.contains(&0) || dropped.contains(&1) || dropped.contains(&2));
+        assert!(dropped.contains(&2));
+    }
+
+    #[test]
+    fn essential_never_dropped() {
+        let widths = [40.0, 80.0, 40.0];
+        let prios = [70, u32::MAX, 80];
+        let dropped = compute_collapsed(&widths, &prios, 50.0, 4.0, 36.0);
+        assert!(!dropped.contains(&1));
+    }
+
+    #[test]
+    fn identical_inputs_are_stable() {
+        let widths = [36.0, 36.0, 64.0, 48.0, 40.0];
+        let prios = [80, 80, u32::MAX, 90, 70];
+        let a = compute_collapsed(&widths, &prios, 140.0, 4.0, 36.0);
+        let b = compute_collapsed(&widths, &prios, 140.0, 4.0, 36.0);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn ties_drop_rightmost_first() {
+        let widths = [50.0, 50.0];
+        let prios = [70, 70];
+        let dropped = compute_collapsed(&widths, &prios, 70.0, 4.0, 36.0);
+        assert_eq!(dropped, vec![1]);
+    }
+}

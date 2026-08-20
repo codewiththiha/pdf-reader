@@ -17,6 +17,10 @@ pub fn Popover(
     open: RwSignal<bool>,
     /// NodeRef of the trigger wrapper the panel anchors to.
     anchor: NodeRef<html::Div>,
+    /// Used when `anchor` is hidden (zero-size), e.g. a collapsed toolbar
+    /// control re-anchored at the overflow "…" button.
+    #[prop(optional)]
+    fallback_anchor: NodeRef<html::Div>,
     /// Desired panel width in CSS px (custom per menu).
     #[prop(default = 256)]
     width: u32,
@@ -34,7 +38,14 @@ pub fn Popover(
     // Window-aware placement: right-aligned to the trigger, clamped into the
     // viewport, flipped ABOVE the trigger when there is no room below.
     let place = move || {
-        let Some(a) = anchor.get() else { return };
+        let primary = anchor.get();
+        let fallback = fallback_anchor.get();
+        let a = match (primary, fallback) {
+            (Some(p), Some(f)) if p.get_bounding_client_rect().width() < 1.0 => f,
+            (Some(p), _) => p,
+            (None, Some(f)) => f,
+            (None, None) => return,
+        };
         let Some(panel) = panel_ref.get() else { return };
         let Some(win) = web_sys::window() else { return };
         let ar = a.get_bounding_client_rect();
