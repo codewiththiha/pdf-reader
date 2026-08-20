@@ -102,7 +102,6 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                             title="Zoom in"
                             on:click=move |_| {
                                 apply_zoom(state, nearest_zoom(step_base(state), 1));
-                                done.run(());
                             }
                             class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm text-ink hover:bg-line"
                         >
@@ -133,10 +132,8 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
             }),
             collapsed: Arc::new(move |done| {
                 view! {
-                    <OverflowRow icon=IconName::FitWidth label="Fit width" on_click=move || {
-                        state.viewer.fit.set(FitMode::Width);
-                        done.run(());
-                    } />
+                    <OverflowRow icon=IconName::FitWidth label="Fit width" done=done
+                        on_click=move || state.viewer.fit.set(FitMode::Width) />
                 }
                 .into_any()
             }),
@@ -180,9 +177,7 @@ fn zoom_readout_entry(state: AppState) -> ToolbarEntry {
         inline: Arc::new(move || view! { <ZoomReadout state=state /> }.into_any()),
         collapsed: Arc::new(move |done| {
             view! {
-                <OverflowRow icon=IconName::ZoomIn label="Zoom" on_click=move || {
-                    done.run(());
-                } />
+                <OverflowRow icon=IconName::ZoomIn label="Zoom" done=done on_click=move || {} />
             }
             .into_any()
         }),

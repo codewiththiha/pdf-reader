@@ -187,10 +187,25 @@ pub fn AdaptiveGroup(
 }
 
 /// Standard overflow-menu row.
+///
+/// `close_on_click` (default true) dismisses the "…" popover after the
+/// action. Set it false for controls that should stay available (zoom ±).
 #[component]
-pub fn OverflowRow(icon: IconName, label: &'static str, on_click: impl Fn() + 'static) -> impl IntoView {
+pub fn OverflowRow(
+    icon: IconName,
+    label: &'static str,
+    on_click: impl Fn() + 'static,
+    done: Callback<()>,
+    #[prop(default = true)]
+    close_on_click: bool,
+) -> impl IntoView {
     view! {
-        <button type="button" on:click=move |_| on_click()
+        <button type="button" on:click=move |_| {
+            on_click();
+            if close_on_click {
+                done.run(());
+            }
+        }
             class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line">
             <span class="inline-flex w-4 shrink-0 justify-center text-muted"><Icon name=icon size=14 /></span>
             <span>{label}</span>

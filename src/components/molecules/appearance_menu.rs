@@ -117,10 +117,10 @@ pub fn appearance_entry(
         }),
         collapsed: Arc::new(move |done| {
             view! {
-                <OverflowRow icon=IconName::Palette label="Appearance…" on_click=move || {
-                    done.run(());
-                    request_animation_frame(move || appearance_open.set(true));
-                } />
+                <OverflowRow icon=IconName::Palette label="Appearance…" done=done
+                    on_click=move || {
+                        request_animation_frame(move || appearance_open.set(true));
+                    } />
             }
             .into_any()
         }),

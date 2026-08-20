@@ -62,14 +62,10 @@ fn view_mode_entry(state: AppState) -> ToolbarEntry {
         }),
         collapsed: Arc::new(move |done| {
             view! {
-                <OverflowRow icon=IconName::SinglePage label="Single page" on_click=move || {
-                    state.viewer.mode.set(ViewMode::Single);
-                    done.run(());
-                } />
-                <OverflowRow icon=IconName::Continuous label="Continuous" on_click=move || {
-                    state.viewer.mode.set(ViewMode::Continuous);
-                    done.run(());
-                } />
+                <OverflowRow icon=IconName::SinglePage label="Single page" done=done
+                    on_click=move || state.viewer.mode.set(ViewMode::Single) />
+                <OverflowRow icon=IconName::Continuous label="Continuous" done=done
+                    on_click=move || state.viewer.mode.set(ViewMode::Continuous) />
             }
             .into_any()
         }),
