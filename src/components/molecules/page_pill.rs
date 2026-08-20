@@ -15,7 +15,7 @@ use crate::core::state::AppState;
 pub fn PagePill(state: AppState) -> impl IntoView {
     view! {
         <Show when=move || state.doc.status.get() == DocStatus::Ready>
-            <div class="pointer-events-none absolute bottom-2 right-2 z-30">
+            <div class="pointer-events-none absolute bottom-3 right-3 z-30">
                 <span class="rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white/90 backdrop-blur-sm">
                     {move || format!("{} / {}", state.viewer.page.get(), state.doc.num_pages.get())}
                 </span>
