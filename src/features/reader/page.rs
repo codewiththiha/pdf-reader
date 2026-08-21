@@ -20,7 +20,7 @@ use crate::components::layout::document_title::FloatingDocumentTitle;
 use crate::components::layout::app_title_bar::AppTitleBar;
 use crate::components::layout::document_title::DocumentTitle;
 use crate::components::reader::page_indicator::PageIndicator;
-use crate::components::reader::reader_controls::ReaderControls;
+use crate::components::reader::bottom_bar::ReaderBottomBar;
 use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::effects::reader::reading_progress::reading_progress;
@@ -141,7 +141,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     view! {
         <AppTitleBar state=state left=left right=right>
-            // overflow-hidden clips the hidden ReaderControls's slide-down translate
+            // overflow-hidden clips the hidden ReaderBottomBar's slide-down translate
             // so it can never leak a phantom scrollbar onto the window.
             <div class="relative flex h-full w-full flex-col overflow-hidden bg-paper text-ink">
                 <div class="flex min-h-0 flex-1">
@@ -168,7 +168,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
                             </div>
                         </Show>
-                        <ReaderControls state=state layout=layout />
+                        <ReaderBottomBar state=state layout=layout />
                         // Floating search overlay (U4): mounted at the viewer
                         // slot; its top-14 offset clears the titlebar.
                         <crate::components::search::floating::FloatingSearch state=vs />
