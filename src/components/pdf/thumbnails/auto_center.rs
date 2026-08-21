@@ -9,7 +9,7 @@
 //! constructs one and passes it in. Pure move from `panel.rs` — no behavior
 //! change.
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -21,9 +21,6 @@ use crate::state::ui::SidebarMode;
 use super::geometry::{
     row_count, row_height, CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, PAD,
 };
-
-type RevealSlot =
-    std::rc::Rc<std::cell::RefCell<Option<std::rc::Rc<dyn Fn()>>>>;
 
 /// Panel-lifetime state shared between the thumbnail panel's own effects and
 /// the auto-center machinery. Constructed once per panel mount; the panel
@@ -44,12 +41,14 @@ pub struct AutoCenter {
     /// closes, and a fired glide that finds the user-drive grace still active
     /// can re-arm itself.
     pub glide_timer: StoredValue<Option<TimeoutHandle>, LocalStorage>,
-    /// The self-re-arming glide step lives in an `Rc` parked here (component-
-    /// scoped, not an effect-run local) so a fired step can upgrade its Weak
-    /// back-reference and re-arm itself while the user is still driving the
-    /// grid. The step is replaced on every effect run; on_cleanup cancels the
-    /// pending timer, so the old step is dropped with its timer.
-    pub glide_slot: StoredValue<Option<RevealSlot>, LocalStorage>,
+    /// The current glide step, parked here (component-scoped, not an
+    /// effect-run local) so a fired step can read itself back out and re-arm
+    /// while the user is still driving the grid. `StoredValue` is a cheap
+    /// Copy handle — the step captures a copy of it, never a reference to
+    /// itself, so there is no `Rc` cycle to manage. The step is replaced on
+    /// every effect run; on_cleanup cancels the timer and clears the slot, so
+    /// a superseded step can never fire or re-arm.
+    pub glide_step: StoredValue<Option<Rc<dyn Fn()>>, LocalStorage>,
     /// The panel's scroll container element (shared with the size-tracking
     /// effect in the panel, which also writes it).
     pub container_el: StoredValue<Option<web_sys::Element>, LocalStorage>,
@@ -68,7 +67,7 @@ impl AutoCenter {
             last_user_drive: Rc::new(Cell::new(f64::NEG_INFINITY)),
             centered: StoredValue::new_local((false, 0u32)),
             glide_timer: StoredValue::new_local(None::<TimeoutHandle>),
-            glide_slot: StoredValue::new_local(None::<RevealSlot>),
+            glide_step: StoredValue::new_local(None::<Rc<dyn Fn()>>),
             container_el,
             viewport_h,
         }
@@ -205,14 +204,13 @@ impl AutoCenter {
 
             // Self-re-arming glide step: performs the scroll once the grace has
             // fully lapsed and the panel is still showing thumbs; while the user
-            // keeps driving, it defers by re-checking after the grace lapses. The
-            // step's back-reference to its own holder is a Weak, and the holder's
-            // strong `Rc` lives in the component-scoped `glide_slot` StoredValue —
-            // NOT an effect-run local (that would drop when this callback returns,
-            // permanently breaking the upgrade). So a fired step can always find
-            // itself and re-arm; the deferral survives the effect callback.
-            let step_slot: RevealSlot = Rc::new(RefCell::new(None));
-            let step_self = Rc::downgrade(&step_slot);
+            // keeps driving, it defers by re-checking after the grace lapses.
+            // The step reads ITSELF back out of `glide_step` (the component-
+            // scoped StoredValue holds the strong Rc; the step only captures
+            // the Copy handle), so there is no reference cycle and the
+            // deferral survives the effect callback. on_cleanup clears the
+            // slot, which is what retires a superseded step.
+            let step_handle = auto.glide_step;
             let step_state = state;
             let step_sidebar = sidebar;
             let step_el = el;
@@ -234,7 +232,7 @@ impl AutoCenter {
                 }
                 if elapsed < GRACE_MS {
                     // User still driving the grid — re-check once the grace lapses.
-                    let next = step_self.upgrade().and_then(|slot| slot.borrow().clone());
+                    let next = step_handle.get_value();
                     let h = next.and_then(|next| {
                         set_timeout_with_handle(
                             move || next(),
@@ -261,8 +259,7 @@ impl AutoCenter {
                     }
                 });
             });
-            *step_slot.borrow_mut() = Some(step.clone());
-            auto.glide_slot.set_value(Some(step_slot));
+            auto.glide_step.set_value(Some(step.clone()));
 
             // Debounce: cancel any pending glide and re-arm. Sustained page writes
             // keep re-running this effect, so each run clears the previous timer
@@ -284,14 +281,14 @@ impl AutoCenter {
             let fire = step.clone();
             let h = set_timeout_with_handle(move || fire(), Duration::from_millis(delay)).ok();
             let glide_timer = auto.glide_timer;
-            let glide_slot = auto.glide_slot;
+            let glide_step = auto.glide_step;
             auto.glide_timer.set_value(h);
             on_cleanup(move || {
                 if let Some(h) = glide_timer.get_value() {
                     h.clear();
                     glide_timer.set_value(None);
                 }
-                glide_slot.set_value(None);
+                glide_step.set_value(None);
             });
         });
     }

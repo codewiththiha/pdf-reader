@@ -5,6 +5,10 @@
 //! cancellation on unmount) and is the only place that talks to the engine's
 //! thumbnail lane. The panel above it only decides WHICH cells exist.
 
+// The registry + generation guard are shared with `on_cleanup` callbacks,
+// which Leptos stores in a `Send + Sync` slot - so these stay `Arc` +
+// `Mutex`/`AtomicU32`. This is single-threaded UI code, but the owner's
+// cleanup contract demands thread-safe handles; `Rc` would not compile here.
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
