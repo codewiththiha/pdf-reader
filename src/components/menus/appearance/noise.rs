@@ -8,6 +8,7 @@ use leptos::prelude::*;
 
 use pdf_viewer::components::shared::slider::Slider;
 use pdf_core::appearance::NoiseMode;
+use crate::components::shared::option_button::OptionButton;
 use crate::state::AppState;
 use crate::effects::appearance::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,
@@ -30,11 +31,11 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
             {NoiseMode::all()
                 .into_iter()
                 .map(|m| {
+                    let selected = Signal::derive(move || current() == m);
                     view! {
-                        <button
-                            type="button"
-                            aria-pressed=move || (current() == m).to_string()
-                            on:click=move |_| {
+                        <OptionButton
+                            selected=selected
+                            on_click=move || {
                                 flush_appearance_commit();
                                 state
                                     .settings
@@ -48,16 +49,10 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                                         s.touch_appearance();
                                     })
                             }
-                            class=move || {
-                                if current() == m {
-                                    "rounded-md border border-accent bg-accent-soft px-2 py-1.5 text-xs font-medium text-accent"
-                                } else {
-                                    "rounded-md border border-line px-2 py-1.5 text-xs text-ink hover:bg-line"
-                                }
-                            }
+                            variant_class="px-2 py-1.5 text-xs"
                         >
                             {m.label()}
-                        </button>
+                        </OptionButton>
                     }
                 })
                 .collect_view()}

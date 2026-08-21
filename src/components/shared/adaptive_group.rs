@@ -9,6 +9,7 @@ use web_sys::ResizeObserverEntry;
 use pdf_engine::types::DocStatus;
 use pdf_viewer::components::shared::icon::{Icon, IconName};
 use pdf_viewer::dom::by_id;
+use crate::components::shared::menu_item::MenuItem;
 use crate::components::shared::popover::Popover;
 use crate::state::AppState;
 
@@ -216,17 +217,15 @@ pub fn OverflowRow(
     #[prop(default = true)]
     close_on_click: bool,
 ) -> impl IntoView {
-    view! {
-        <button type="button" on:click=move |_| {
-            on_click();
-            if close_on_click {
-                done.run(());
-            }
+    let action = move || {
+        on_click();
+        if close_on_click {
+            done.run(());
         }
-            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line">
-            <span class="inline-flex w-4 shrink-0 justify-center text-muted"><Icon name=icon size=14 /></span>
-            <span>{label}</span>
-        </button>
+    };
+
+    view! {
+        <MenuItem icon=icon label=label on_click=action />
     }
 }
 

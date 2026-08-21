@@ -13,6 +13,7 @@ use wasm_bindgen::JsValue;
 use pdf_viewer::components::shared::icon::{Icon, IconName};
 use pdf_viewer::components::shared::kbd::Kbd;
 use pdf_engine::bridge;
+use crate::components::shared::menu_item::MenuItem;
 use crate::components::shared::popover::Popover;
 use crate::state::AppState;
 
@@ -79,10 +80,6 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
         }
     };
 
-    let item_class =
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line";
-    let icon_slot = "inline-flex w-4 shrink-0 justify-center text-muted";
-
     view! {
         <div node_ref=root_ref class="relative inline-flex">
             <button
@@ -94,34 +91,27 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
                 <Icon name=IconName::More size=18 />
             </button>
             <Popover open=open anchor=root_ref width=256 hold_titlebar=false class="p-1".to_string()>
-                <button
-                    type="button"
-                    on:click=move |_| toggle_fullscreen()
-                    class=item_class
+                <MenuItem
+                    icon=IconName::Fullscreen
+                    label="Fullscreen"
+                    on_click=move || toggle_fullscreen()
                 >
-                    <span class=icon_slot><Icon name=IconName::Fullscreen size=14 /></span>
-                    <span>"Fullscreen"</span>
                     {move || full.get().then(|| view! { <span class="ml-auto text-xs text-muted">"On"</span> })}
-                </button>
-                <button
-                    type="button"
-                    on:click=move |_| {
+                </MenuItem>
+                <MenuItem
+                    icon=IconName::Print
+                    label="Print…"
+                    on_click=move || {
                         if let Some(w) = web_sys::window() {
                             _ = w.print();
                         }
                     }
-                    class=item_class
+                />
+                <MenuItem
+                    icon=IconName::Keyboard
+                    label="Keyboard Shortcuts"
+                    on_click=move || show_keys.update(|v| *v = !*v)
                 >
-                    <span class=icon_slot><Icon name=IconName::Print size=14 /></span>
-                    <span>"Print…"</span>
-                </button>
-                <button
-                    type="button"
-                    on:click=move |_| show_keys.update(|v| *v = !*v)
-                    class=item_class
-                >
-                    <span class=icon_slot><Icon name=IconName::Keyboard size=14 /></span>
-                    <span>"Keyboard Shortcuts"</span>
                     <svg
                         class="ml-auto text-muted"
                         width="12"
@@ -135,7 +125,7 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
                     >
                         <path d="m6 9 6 6 6-6"/>
                     </svg>
-                </button>
+                </MenuItem>
                 <Show when=move || show_keys.get()>
                     <div class="mt-1 max-h-56 overflow-y-auto border-t border-line pt-1">
                         <ShortcutRow label="Open…" keys=vec!["⌘", "O"] />

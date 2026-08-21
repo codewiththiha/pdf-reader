@@ -13,6 +13,7 @@ use pdf_viewer::components::shared::hue_picker::HuePicker;
 use pdf_viewer::components::shared::icon::{Icon, IconName};
 use pdf_viewer::components::shared::slider::Slider;
 use pdf_core::appearance::BaseMode;
+use crate::components::shared::option_button::OptionButton;
 use crate::state::AppState;
 use crate::effects::appearance::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,
@@ -47,12 +48,11 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
             {BaseMode::all()
                 .into_iter()
                 .map(|b| {
+                    let selected = Signal::derive(move || current_base() == b);
                     view! {
-                        <button
-                            type="button"
-                            title=b.label()
-                            aria-pressed=move || (current_base() == b).to_string()
-                            on:click=move |_| {
+                        <OptionButton
+                            selected=selected
+                            on_click=move || {
                                 // Keep the hue the reader was just dialling,
                                 // then switch family.
                                 flush_appearance_commit();
@@ -63,17 +63,12 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                                         s.touch_appearance();
                                     })
                             }
-                            class=move || {
-                                if current_base() == b {
-                                    "flex flex-col items-center gap-1 rounded-md border border-accent bg-accent-soft px-2 py-2 text-xs font-medium text-accent"
-                                } else {
-                                    "flex flex-col items-center gap-1 rounded-md border border-line px-2 py-2 text-xs text-ink hover:bg-line"
-                                }
-                            }
+                            title=b.label()
+                            variant_class="flex flex-col items-center gap-1 px-2 py-2 text-xs"
                         >
                             <Icon name=base_icon(b) size=16 />
                             <span>{b.label()}</span>
-                        </button>
+                        </OptionButton>
                     }
                 })
                 .collect_view()}

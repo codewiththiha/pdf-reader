@@ -11,6 +11,7 @@ use leptos::prelude::*;
 use pdf_viewer::components::shared::icon::{Icon, IconName};
 use pdf_viewer::components::shared::slider::Slider;
 use pdf_core::appearance::TextureMode;
+use crate::components::shared::option_button::OptionButton;
 use crate::state::AppState;
 use crate::effects::appearance::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,
@@ -36,11 +37,11 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
             {TextureMode::all()
                 .into_iter()
                 .map(|mode| {
+                    let selected = Signal::derive(move || current() == mode);
                     view! {
-                        <button
-                            type="button"
-                            aria-pressed=move || (current() == mode).to_string()
-                            on:click=move |_| {
+                        <OptionButton
+                            selected=selected
+                            on_click=move || {
                                 flush_appearance_commit();
                                 state
                                     .settings
@@ -49,20 +50,14 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                                         s.touch_appearance();
                                     })
                             }
-                            class=move || {
-                                if current() == mode {
-                                    "flex items-center justify-center gap-1 rounded-md border border-accent bg-accent-soft px-1.5 py-1.5 text-[11px] font-medium text-accent"
-                                } else {
-                                    "flex items-center justify-center gap-1 rounded-md border border-line px-1.5 py-1.5 text-[11px] text-ink hover:bg-line"
-                                }
-                            }
+                            variant_class="flex items-center justify-center gap-1 px-1.5 py-1.5 text-[11px]"
                         >
                             {move || {
                                 (current() == mode)
                                     .then(|| view! { <Icon name=IconName::Check size=11 /> })
                             }}
                             <span class="truncate">{mode.label()}</span>
-                        </button>
+                        </OptionButton>
                     }
                 })
                 .collect_view()}
