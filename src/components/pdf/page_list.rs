@@ -16,6 +16,8 @@
 use leptos::prelude::*;
 
 use crate::components::pdf::PageCanvas;
+use crate::state::TextureSignal;
+use pdf_core::appearance::TextureMode;
 use pdf_core::layout::{DocumentLayout, RENDER_BUDGET};
 use crate::state::ReaderState;
 
@@ -26,6 +28,9 @@ pub fn PageList(
     /// the reader page and shared by every scroll/render/zoom query.
     layout: Memo<DocumentLayout>,
 ) -> impl IntoView {
+    // The texture signal is app-provided context; the view resolves it once
+    // and hands it to every PageCanvas as an explicit prop.
+    let texture = use_context::<TextureSignal>().unwrap_or_else(|| RwSignal::new(TextureMode::None));
     // Seed every page's height from its OWN intrinsic size, at the scale in
     // force when the document is first laid out.
     //
@@ -212,6 +217,9 @@ pub fn PageList(
                             <PageCanvas
                                 page={(i + 1) as u32}
                                 scale=display_scale
+                                render_scale=state.viewer.render_scale
+                                zoom_animating=state.viewer.zoom_animating
+                                texture=texture
                                 canvas_id=format!("cont-{i}-cv")
                                 host_id=format!("cont-{i}-pg")
                                 render_text=true

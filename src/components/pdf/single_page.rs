@@ -17,11 +17,16 @@
 use leptos::prelude::*;
 
 use crate::components::pdf::PageCanvas;
+use crate::state::TextureSignal;
+use pdf_core::appearance::TextureMode;
 use crate::state::ReaderState;
 use crate::components::pdf::dom::{observe_content_size, SINGLE_PAGE_CONTAINER_ID};
 
 #[component]
 pub fn SinglePageView(state: ReaderState) -> impl IntoView {
+    // App-provided texture context, resolved once per view and passed to the
+    // PageCanvas as an explicit prop (same pattern as PageList).
+    let texture = use_context::<TextureSignal>().unwrap_or_else(|| RwSignal::new(TextureMode::None));
     let display_scale = state.viewer.display_scale.read_only();
 
     // Previously shown page, for the direction-aware page-turn animation.
@@ -74,6 +79,9 @@ pub fn SinglePageView(state: ReaderState) -> impl IntoView {
                                 <PageCanvas
                                     page=page
                                     scale=display_scale
+                                    render_scale=state.viewer.render_scale
+                                    zoom_animating=state.viewer.zoom_animating
+                                    texture=texture
                                     canvas_id=format!("sp-{page}-cv")
                                     host_id=format!("sp-{page}-pg")
                                     render_text=true

@@ -32,7 +32,7 @@ use leptos::task::spawn_local;
 
 use pdf_engine::api as engine;
 use pdf_core::appearance::TextureMode;
-use crate::state::ReaderState;
+use leptos::prelude::Signal;
 
 #[component]
 pub fn PageCanvas(
@@ -52,14 +52,21 @@ pub fn PageCanvas(
     /// Called with (page, width, height) CSS px after each successful render.
     #[prop(optional)]
     on_geometry: Option<Callback<(u32, f64, f64)>>,
+    /// The render scale (crisp target). The RENDER effect renders at this;
+    /// the `scale` prop is the DISPLAY scale.
+    #[prop(into)]
+    render_scale: Signal<f64>,
+    /// True while a zoom/layout animation is in flight (renders suspended).
+    #[prop(into)]
+    zoom_animating: Signal<bool>,
+    /// The page texture mode (from the app shell, derived from settings).
+    #[prop(into)]
+    texture: Signal<TextureMode>,
 ) -> impl IntoView {
-    let state = use_context::<ReaderState>();
-    // Texture comes from the app shell via context (derived from settings);
-    // a Memo so only a real texture change rebuilds the host class.
-    let texture = {
-        let ctx = use_context::<crate::state::TextureSignal>();
-        Memo::new(move |_| ctx.map(|t| t.get()).unwrap_or(TextureMode::None))
-    };
+    // Texture is a prop, not context: this component is reusable without an
+    // ambient provider. A Memo so only a real texture change rebuilds the
+    // host class.
+    let texture = Memo::new(move |_| texture.get());
     let host_class = move || {
         let t = texture.get();
         let base = if t == TextureMode::None {
@@ -112,12 +119,9 @@ pub fn PageCanvas(
     // the size jump this unit removes.
     let render_seq = StoredValue::new_local(0u32);
 
-    // `render_scale` / `zoom_animating` come from the app state; the `scale`
-    // prop is the DISPLAY scale. Outside a provider (tests/isolated mounts) we
-    // fall back to the prop for both, which restores the old single-scale
-    // behaviour rather than rendering nothing.
-    let render_scale_sig = state.as_ref().map(|s| s.viewer.render_scale);
-    let zoom_anim_sig = state.as_ref().map(|s| s.viewer.zoom_animating);
+    // `scale` is the DISPLAY scale (stretch target); `render_scale` the crisp
+    // render target; `zoom_animating` suspends renders mid-gesture. All three
+    // are explicit props so the component has no hidden ambient dependency.
 
     // --- Stretch effect ------------------------------------------------------
     // Follows `display_scale`. Pure CSS: resize the host so the EXISTING bitmap
@@ -144,11 +148,8 @@ pub fn PageCanvas(
         // Read every dependency unconditionally: a Leptos effect only
         // subscribes to what it READS during a run, so a conditional read would
         // silently drop the subscription the first time the branch was skipped.
-        let anim = zoom_anim_sig.map(|z| z.get()).unwrap_or(false);
-        let s_render = match render_scale_sig {
-            Some(rs) => rs.get(),
-            None => scale.get(),
-        };
+        let anim = zoom_animating.get();
+        let s_render = render_scale.get();
         if s_render <= 0.0 {
             return;
         }
