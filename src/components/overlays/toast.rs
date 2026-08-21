@@ -19,9 +19,9 @@ pub fn ToastHost(state: AppState) -> impl IntoView {
     // that replaced the one it captured. The handle is cleared when the effect
     // re-runs or the component unmounts.
     Effect::new(move |_| {
-        if let Some(t) = state.toast.get() {
+        if let Some(t) = state.ui.toast.get() {
             let captured = t.clone();
-            let clear = state.toast;
+            let clear = state.ui.toast;
             let handle = set_timeout_with_handle(
                 move || {
                     if clear.get().as_ref() == Some(&captured) {
@@ -50,7 +50,7 @@ pub fn ToastHost(state: AppState) -> impl IntoView {
         // the animation ends).
         <div class="pointer-events-none fixed inset-x-0 top-14 z-[100] flex justify-center px-4">
             {move || {
-                state.toast.get().map(|t| {
+                state.ui.toast.get().map(|t| {
                     let (surface, icon) = match t.kind {
                         ToastKind::Info => {
                             ("border-line bg-surface/95 text-ink", IconName::Check)

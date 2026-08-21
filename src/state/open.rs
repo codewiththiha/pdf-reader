@@ -87,7 +87,7 @@ pub fn open_dialog(state: AppState) {
                 if msg != "Open cancelled" {
                     state.doc.error.set(Some(msg.clone()));
                     state.doc.status.set(DocStatus::Error);
-                    state.toast.set(Some(Toast {
+                    state.ui.toast.set(Some(Toast {
                         kind: ToastKind::Error,
                         message: format!("Could not open PDF: {}", msg),
                     }));
@@ -129,7 +129,7 @@ pub fn open_path(state: AppState, path: String) {
                 state.doc.error.set(None);
                 state.doc.status.set(DocStatus::Ready);
                 // A successful open dismisses any stale error toast.
-                state.toast.set(None);
+                state.ui.toast.set(None);
 
                 // Resume point (clamped to the real count — a re-edited
                 // document may have fewer pages than remembered).
@@ -241,7 +241,7 @@ pub fn open_path(state: AppState, path: String) {
             Err(e) => {
                 state.doc.error.set(Some(e.message.clone()));
                 state.doc.status.set(DocStatus::Error);
-                state.toast.set(Some(Toast {
+                state.ui.toast.set(Some(Toast {
                     kind: ToastKind::Error,
                     message: format!("Could not open PDF: {}", e.message),
                 }));
@@ -311,5 +311,5 @@ pub fn close_document(state: AppState) {
     state.search.visible.set(false);
     state.search.dismissed.set(false);
 
-    state.sidebar.set(SidebarMode::None);
+    state.ui.sidebar.set(SidebarMode::None);
 }

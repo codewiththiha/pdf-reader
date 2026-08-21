@@ -23,7 +23,7 @@ pub(crate) fn SidebarHeader(state: AppState) -> impl IntoView {
         >
             <Tooltip text="Close sidebar".to_string()>
                 <Button
-                    on_click=move |_| state.sidebar.set(SidebarMode::None)
+                    on_click=move |_| state.ui.sidebar.set(SidebarMode::None)
                     kind=ButtonKind::Ghost
                     icon=IconName::SidebarOpen
                     title="Close sidebar".to_string()

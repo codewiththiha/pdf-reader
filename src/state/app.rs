@@ -23,15 +23,23 @@ pub struct Toast {
     pub message: String,
 }
 
+/// UI chrome state: the sidebar and the toast surface. Grouped so new UI
+/// signals don't keep piling onto the flat `AppState` struct.
+#[derive(Clone, Copy)]
+pub struct UiState {
+    /// Which sidebar panel (if any) is open.
+    pub sidebar: RwSignal<SidebarMode>,
+    /// Current toast (if any), rendered by the app-root `ToastHost`.
+    pub toast: RwSignal<Option<Toast>>,
+}
+
 #[derive(Clone, Copy)]
 pub struct AppState {
     pub settings: RwSignal<Settings>,
     pub doc: DocumentState,
     pub viewer: ViewerSignals,
     pub search: SearchState,
-    pub sidebar: RwSignal<SidebarMode>,
-    /// Current toast (if any), rendered by the app-root `ToastHost`.
-    pub toast: RwSignal<Option<Toast>>,
+    pub ui: UiState,
     /// The "recent books" library: recently opened documents, most-recent
     /// first, each carrying its last-reached page.
     pub library: RwSignal<Vec<RecentBook>>,
@@ -43,7 +51,7 @@ impl AppState {
     /// The viewer slice of app state. Field paths match `ViewerState` exactly,
     /// so reusable viewer components accept this without copying atoms.
     pub fn viewer_state(self) -> ViewerState {
-        ViewerState::new(self.doc, self.viewer, self.search, self.sidebar)
+        ViewerState::new(self.doc, self.viewer, self.search, self.ui.sidebar)
     }
 }
 
@@ -60,8 +68,10 @@ impl Default for AppState {
             doc: DocumentState::default(),
             viewer: ViewerSignals::default(),
             search: SearchState::default(),
-            sidebar: RwSignal::new(SidebarMode::None),
-            toast: RwSignal::new(None),
+            ui: UiState {
+                sidebar: RwSignal::new(SidebarMode::None),
+                toast: RwSignal::new(None),
+            },
             library: RwSignal::new(Vec::new()),
             covers: RwSignal::new(HashMap::new()),
         }

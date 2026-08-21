@@ -24,6 +24,8 @@ use crate::components::chrome::floating_title::FloatingTitle;
 use crate::components::chrome::title_bar::TitleBar;
 use crate::components::menus::appearance::appearance_entry;
 use crate::components::chrome::floating_title::DocumentTitle;
+use crate::components::reader::page_indicator::PageIndicator;
+use crate::components::reader::reader_controls::ReaderControls;
 use crate::components::reader::zoom_controls::zoom_entries;
 use crate::state::open::{close_document, open_dialog};
 use crate::state::AppState;
@@ -184,10 +186,10 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                     data-tauri-drag-region="true"
                     class="flex shrink-0 items-center gap-1"
                 >
-                    <Show when=move || state.sidebar.get() == SidebarMode::None>
+                    <Show when=move || state.ui.sidebar.get() == SidebarMode::None>
                         <Tooltip text="Toggle sidebar".to_string()>
                             <Button
-                                on_click=move |_| state.sidebar.set(SidebarMode::Thumbs)
+                                on_click=move |_| state.ui.sidebar.set(SidebarMode::Thumbs)
                                 kind=ButtonKind::Ghost
                                 icon=IconName::Sidebar
                                 title="Toggle sidebar".to_string()
@@ -265,8 +267,15 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                             }}
                         </Show>
                         <FloatingTitle state=state />
-                        <crate::components::reader::page_indicator::PageIndicator state=state />
-                        <crate::components::reader::reader_controls::ReaderControls state=state />
+                        // Corner page counter, gated on a ready document and
+                        // positioned by the page; the indicator itself is
+                        // reusable UI with no knowledge of AppState.
+                        <Show when=is_ready>
+                            <div class="pointer-events-none absolute bottom-3 right-3 z-30">
+                                <PageIndicator current=state.viewer.page total=state.doc.num_pages />
+                            </div>
+                        </Show>
+                        <ReaderControls state=state />
                         // Floating search overlay (U4): mounted at the viewer
                         // slot; its top-14 offset clears the titlebar.
                         <pdf_viewer::components::search::floating::FloatingSearch state=vs />

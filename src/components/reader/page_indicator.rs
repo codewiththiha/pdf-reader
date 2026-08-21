@@ -1,25 +1,27 @@
-//! Corner page counter pill. Solid translucent backdrop instead of the old
-//! mix-blend-difference footer: the reference shows a rounded badge sitting
-//! on the page corner, readable over any document color.
+//! Corner page counter ("25 / 300"). Solid translucent backdrop instead of
+//! the old mix-blend-difference footer: the reference shows a rounded badge
+//! sitting on the page corner, readable over any document color.
 //!
 //! `bg-black/60 text-white` is deliberately theme-independent (same reason the
 //! old footer used white + difference): it must read on light paper, dark
 //! paper, and every tint.
+//!
+//! Takes plain signals, not `AppState`: the indicator is reusable UI and
+//! knows nothing about the app's state shape. The caller gates on
+//! `DocStatus::Ready` and positions the badge.
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
-use crate::state::AppState;
-
 #[component]
-pub fn PageIndicator(state: AppState) -> impl IntoView {
+pub fn PageIndicator(
+    #[prop(into)]
+    current: Signal<u32>,
+    #[prop(into)]
+    total: Signal<u32>,
+) -> impl IntoView {
     view! {
-        <Show when=move || state.doc.status.get() == DocStatus::Ready>
-            <div class="pointer-events-none absolute bottom-3 right-3 z-30">
-                <span class="rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white/90 backdrop-blur-sm">
-                    {move || format!("{} / {}", state.viewer.page.get(), state.doc.num_pages.get())}
-                </span>
-            </div>
-        </Show>
+        <span class="rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white/90 backdrop-blur-sm">
+            {move || format!("{} / {}", current.get(), total.get())}
+        </span>
     }
 }

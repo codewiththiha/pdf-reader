@@ -89,7 +89,7 @@ pub fn FloatingTitle(state: AppState) -> impl IntoView {
 
     let shown = move || {
         state.doc.status.get() == DocStatus::Ready
-            && state.sidebar.get() == SidebarMode::None
+            && state.ui.sidebar.get() == SidebarMode::None
             && ctx.map(|c| !c.visible.get()).unwrap_or(true)
             && budget.get().is_none_or(|b| label_w.get() <= b)  // None = unknown = show
     };
@@ -235,7 +235,7 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
     // both the ResizeObserver and the reactive triggers below.
     let remeasure = move || {
         request_animation_frame(move || {
-            let sidebar_open = state.sidebar.get_untracked() != SidebarMode::None;
+            let sidebar_open = state.ui.sidebar.get_untracked() != SidebarMode::None;
             if let Some(w) = measure_available(sidebar_open) {
                 // Only write on a real change: an idempotent write would still
                 // notify and re-run the class/style closures every frame the
@@ -305,7 +305,7 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
     let num_pages = state.doc.num_pages;
     let title = state.doc.title;
     let path = state.doc.path;
-    let sidebar = state.sidebar;
+    let sidebar = state.ui.sidebar;
     Effect::new(move |_| {
         _ = status.get();
         _ = num_pages.get();

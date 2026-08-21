@@ -61,7 +61,7 @@ pub fn TitleBar(
     // Traffic lights: on while pinned/hovered, or while an open sidebar owns
     // them (its chrome row is always visible).
     Effect::new(move |_| {
-        let on = visible.get() || state.sidebar.get() != SidebarMode::None;
+        let on = visible.get() || state.ui.sidebar.get() != SidebarMode::None;
         wasm_bindgen_futures::spawn_local(async move {
             pdf_engine::api::set_traffic_lights(on).await;
         });
@@ -97,7 +97,7 @@ pub fn TitleBar(
 
     let show_band = show.clone();
     let show_bar = show;
-    let sidebar_open = move || state.sidebar.get() != SidebarMode::None;
+    let sidebar_open = move || state.ui.sidebar.get() != SidebarMode::None;
 
     view! {
         <>

@@ -111,7 +111,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
     let collapse_timer = StoredValue::new_local(None::<TimeoutHandle>);
 
     Effect::new(move |_| {
-        let mode = state.sidebar.get();
+        let mode = state.ui.sidebar.get();
         if mode != SidebarMode::None {
             last_mode.set(mode);
             collapsing.set(false);
@@ -136,7 +136,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
     let show_outline = Signal::derive(move || {
         panel_is_shown(
             SidebarMode::Outline,
-            state.sidebar.get(),
+            state.ui.sidebar.get(),
             collapsing.get(),
             last_mode.get(),
         )
@@ -144,34 +144,34 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
     let show_thumbs = Signal::derive(move || {
         panel_is_shown(
             SidebarMode::Thumbs,
-            state.sidebar.get(),
+            state.ui.sidebar.get(),
             collapsing.get(),
             last_mode.get(),
         )
     });
     let thumbs_live = Signal::derive(move || {
-        thumbs_should_stay_mounted(state.sidebar.get(), collapsing.get(), last_mode.get())
+        thumbs_should_stay_mounted(state.ui.sidebar.get(), collapsing.get(), last_mode.get())
     });
-    let is_closed = Signal::derive(move || state.sidebar.get() == SidebarMode::None);
+    let is_closed = Signal::derive(move || state.ui.sidebar.get() == SidebarMode::None);
 
     // Bottom-rail active states: re-run when the mode changes so the rounded
     // chip highlight stays in sync.
-    let outline_active = Signal::derive(move || state.sidebar.get() == SidebarMode::Outline);
-    let thumbs_active = Signal::derive(move || state.sidebar.get() == SidebarMode::Thumbs);
+    let outline_active = Signal::derive(move || state.ui.sidebar.get() == SidebarMode::Outline);
+    let thumbs_active = Signal::derive(move || state.ui.sidebar.get() == SidebarMode::Thumbs);
 
     view! {
         <aside
             class="flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
-            class=("w-72", move || state.sidebar.get() != SidebarMode::None)
-            class=("w-0", move || state.sidebar.get() == SidebarMode::None)
-            class=("border-r-0", move || state.sidebar.get() == SidebarMode::None)
+            class=("w-72", move || state.ui.sidebar.get() != SidebarMode::None)
+            class=("w-0", move || state.ui.sidebar.get() == SidebarMode::None)
+            class=("border-r-0", move || state.ui.sidebar.get() == SidebarMode::None)
         >
             // The content row spans the full window height. The chrome row at
             // the top carries the 48px traffic-light inset; the book-identity
             // row sits below it.
             <div
                 class="flex h-full w-72 min-h-0 flex-col"
-                prop:inert=move || state.sidebar.get() == SidebarMode::None
+                prop:inert=move || state.ui.sidebar.get() == SidebarMode::None
             >
                 <SidebarHeader state=state />
                 <BookInfo state=state />
@@ -189,7 +189,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                 </div>
 
                 <PanelSwitcher
-                    mode=state.sidebar
+                    mode=state.ui.sidebar
                     thumbs_active=thumbs_active
                     outline_active=outline_active
                     on_reveal=request_reveal_active

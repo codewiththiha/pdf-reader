@@ -123,7 +123,7 @@ pub fn AdaptiveGroup(
         recalc();
     });
     Effect::new(move |_| {
-        _ = state.sidebar.get();
+        _ = state.ui.sidebar.get();
         _ = state.doc.status.get();
         _ = state.doc.num_pages.get();
         _ = state.doc.title.get();
