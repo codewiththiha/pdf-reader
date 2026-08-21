@@ -1,0 +1,73 @@
+/* =====================================================================
+   App shell: document/body defaults, reader scrollbars, the drag
+   regions, and the adaptive-toolbar measurement twin.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   7. App shell defaults.
+   --------------------------------------------------------------------- */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+  /* The auto-hide bottom bar slides down out of view; clip it here so its
+     hidden 12px translate can never leak a phantom window scrollbar. The
+     only scrollers left are the page list, thumbnails, outline and popovers. */
+  overflow: hidden;
+}
+
+body {
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin scrollbars for the reader chrome. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------
+   13. Auto-hide chrome — no text selection while grabbing the drag
+   regions (the always-mounted hot strips + the hover-reveal bars).
+   --------------------------------------------------------------------- */
+[data-tauri-drag-region] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* --- adaptive toolbar measurement twin -------------------------------
+   visibility:hidden (NOT display:none) so children keep layout width. */
+.tb-sizer {
+  position: absolute;
+  top: 0;
+  left: -10000px;            /* off-screen so it cannot steal bar width */
+  display: flex;
+  gap: 0.25rem;              /* must match gap-1 on #toolbar-right */
+  visibility: hidden;
+  pointer-events: none;
+}
+.tb-sizer > * { flex-shrink: 0; }
