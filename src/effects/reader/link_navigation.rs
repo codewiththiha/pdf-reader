@@ -1,7 +1,7 @@
 //! Internal PDF link navigation.
 //!
 //! The engine's link layer cannot navigate by itself: page position is Rust
-//! state (`viewer.page`), and the scroll/settle machinery in `page_tracking`
+//! state (`viewer.page`), and the scroll/settle machinery in `navigation_sync`
 //! is what makes a jump land cleanly instead of fighting the scroll observer.
 //! So an internal link dispatches a `pdfreader:navigate` CustomEvent and this
 //! effect is the single place that turns it into a page change — the same

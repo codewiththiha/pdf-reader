@@ -42,9 +42,9 @@ pub(crate) fn SidebarHeader(state: AppState) -> impl IntoView {
                 on:click=move |_| {
                     let vs = state.reader;
                     if state.reader.search.visible.get() {
-                        crate::effects::search_effects::dismiss_search(vs);
+                        crate::effects::reader::search::dismiss_search(vs);
                     } else {
-                        crate::effects::search_effects::resume_search(vs);
+                        crate::effects::reader::search::resume_search(vs);
                     }
                 }
                 class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"

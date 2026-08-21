@@ -25,7 +25,7 @@ pub fn reading_progress(state: AppState) {
     let timer = StoredValue::new_local(None::<TimeoutHandle>);
 
     Effect::new(move || {
-        // Read deps unconditionally at the top (see page_tracking for the
+        // Read deps unconditionally at the top (see navigation_sync for the
         // subscription gotcha): status/path/page must all be subscribed.
         let status = state.reader.document.status.get();
         let path = state.reader.document.path.get();

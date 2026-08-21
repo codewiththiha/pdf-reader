@@ -29,10 +29,10 @@ use crate::components::reader::reader_controls::ReaderControls;
 use crate::components::reader::zoom_controls::zoom_entries;
 use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
-use crate::effects::reading_progress::reading_progress;
-use crate::effects::fit::fit_effect;
-use crate::effects::page_tracking::page_tracking;
-use crate::effects::zoom::zoom_system;
+use crate::effects::reader::reading_progress::reading_progress;
+use crate::effects::reader::fit::fit_effect;
+use crate::effects::reader::navigation_sync::navigation_sync;
+use crate::effects::reader::zoom::zoom_system;
 use crate::state::SidebarMode;
 
 fn view_mode_entry(state: AppState) -> ToolbarItem {
@@ -168,7 +168,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let layout = Memo::new(move |_| DocumentLayout::new(&vs.document.page_heights.get(), PAGE_GAP));
     fit_effect(vs, state.ui.sidebar, layout);
     zoom_system(vs, layout);
-    page_tracking(vs, layout);
+    navigation_sync(vs, layout);
     reading_progress(state);
 
     let status = state.reader.document.status;

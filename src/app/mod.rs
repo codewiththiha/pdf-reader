@@ -10,9 +10,9 @@ use leptos::prelude::*;
 use leptos_router::components::Router;
 
 use crate::components::overlays::toast::ToastHost;
-use crate::effects::link_navigation::link_navigation;
-use crate::effects::page_selection::page_selection;
-use crate::effects::theme::apply_theme;
+use crate::effects::reader::link_navigation::link_navigation;
+use crate::effects::reader::page_selection::page_selection;
+use crate::effects::app::theme::apply_theme;
 use crate::state::AppState;
 use bootstrap::{create_app_state, provide_app_contexts};
 use shell::AppShell;
@@ -48,7 +48,7 @@ fn shortcuts(state: AppState) {
     let open_doc = {
         move || crate::services::document::open_dialog(state)
     };
-    crate::effects::shortcuts::shortcuts(
+    crate::effects::app::shortcuts::shortcuts(
         state.reader,
         open_doc,
         state.ui.sidebar,

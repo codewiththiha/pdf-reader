@@ -17,7 +17,7 @@ use pdf_core::settings::Settings;
 use crate::state::AppState;
 use crate::storage::save_settings;
 
-use super::theme::paint_appearance_now;
+use crate::effects::app::theme::paint_appearance_now;
 
 /// How long after the last slider tick we write Settings. Long enough that a
 /// continuous drag is one write; short enough that a tap still feels instant.

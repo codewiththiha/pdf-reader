@@ -19,7 +19,7 @@ use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOO
 use crate::components::layout::adaptive_toolbar::{OverflowRow, ToolbarItem};
 use crate::components::shared::popover::Popover;
 use crate::state::AppState;
-use crate::effects::zoom::request_zoom;
+use crate::effects::reader::zoom::request_zoom;
 
 /// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
 /// coordinator.

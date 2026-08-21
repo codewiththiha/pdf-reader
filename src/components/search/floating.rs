@@ -14,7 +14,7 @@ use leptos::task::spawn_local;
 use crate::components::shared::icon::{Icon, IconName};
 use super::result_list::ResultList;
 use crate::state::ReaderState;
-use crate::effects::search_effects::{
+use crate::effects::reader::search::{
     activate_match, clear_search, dismiss_search, run_search, search_navigate,
 };
 

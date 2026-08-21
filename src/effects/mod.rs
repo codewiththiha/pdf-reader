@@ -1,16 +1,7 @@
-//! Application effects: app-level concerns (appearance, drag-drop, links,
-//! reading progress, page selection, theme) plus the viewer effects that
-//! (fit/zoom, scroll, page tracking, search, shortcuts).
+//! Reactive effects, grouped by domain: app-level concerns in `app`,
+//! reader systems in `reader`, and the appearance scrub/commit
+//! scheduler here (it serves both surfaces).
 
+pub mod app;
 pub mod appearance;
-pub mod continuous_scroll;
-pub mod drag_drop;
-pub mod fit;
-pub mod link_navigation;
-pub mod page_selection;
-pub mod page_tracking;
-pub mod reading_progress;
-pub mod search_effects;
-pub mod shortcuts;
-pub mod theme;
-pub mod zoom;
+pub mod reader;

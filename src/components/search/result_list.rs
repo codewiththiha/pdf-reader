@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use pdf_core::search::SearchMatch;
-use crate::effects::search_effects::activate_match;
+use crate::effects::reader::search::activate_match;
 use crate::state::ReaderState;
 
 // Search results list. Used by FloatingSearch overlay.

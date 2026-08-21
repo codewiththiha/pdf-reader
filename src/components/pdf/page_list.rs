@@ -181,8 +181,8 @@ pub fn PageList(
         //     still equals `page_top_css(i)` exactly, as effect 4 assumes;
         //   * a page's top in scroll coordinates becomes `48 + page_top_css(i)`,
         //     and landing it just under a 48px bar needs
-        //     `scrollTop = page_top_css(i)` — precisely what page_tracking and
-        //     search_effects already write. No offset arithmetic anywhere.
+        //     `scrollTop = page_top_css(i)` — precisely what navigation_sync and
+        //     the search effects already write. No offset arithmetic anywhere.
         <div class="relative mt-12">
             // Spacer: makes the scrollbar span the whole column.
             <div

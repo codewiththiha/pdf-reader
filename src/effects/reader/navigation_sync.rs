@@ -1,4 +1,4 @@
-//! Page-tracking: keeps `viewer.page` and the continuous scroll position in
+//! Navigation sync: keeps `viewer.page` and the continuous scroll position in
 //! sync so the status-bar counter follows scrolling and page jumps (nav,
 //! thumbnails, outline, search) actually move the scrollport in continuous
 //! mode.
@@ -92,7 +92,7 @@ fn estimated_top(page: u32, state: ReaderState) -> f64 {
 }
 
 /// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
-pub fn page_tracking(state: ReaderState, layout: Memo<DocumentLayout>) {
+pub fn navigation_sync(state: ReaderState, layout: Memo<DocumentLayout>) {
     // --- 1. Entering continuous mode: align scroll to the current page -------
     // `page_heights`/`page1_size` are read untracked so this effect only fires
     // on a real mode transition (not on every render/zoom).

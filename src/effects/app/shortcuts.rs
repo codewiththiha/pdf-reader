@@ -12,7 +12,7 @@ use std::cell::Cell;
 use pdf_core::layout::ViewMode;
 use pdf_core::math::{nearest_zoom, FitMode};
 use crate::state::{ReaderState, SidebarMode};
-use crate::effects::zoom::request_zoom;
+use crate::effects::reader::zoom::request_zoom;
 use crate::components::pdf::dom::page_list;
 
 /// One Arrow Up/Down tap is a reading nudge, not a page jump.
@@ -240,7 +240,7 @@ pub fn shortcuts(
             if state.search.visible.get() {
                 // Closes the bar but leaves the muted highlights behind; the
                 // next interaction with the document clears them.
-                crate::effects::search_effects::dismiss_search(state);
+                crate::effects::reader::search::dismiss_search(state);
             } else if sidebar.get() != SidebarMode::None {
                 sidebar.set(SidebarMode::None);
             }
@@ -270,7 +270,7 @@ pub fn shortcuts(
                     ev.prevent_default();
                     // Resumes a just-dismissed search (query and all) instead
                     // of opening an empty bar.
-                    crate::effects::search_effects::resume_search(state);
+                    crate::effects::reader::search::resume_search(state);
                 }
                 // Cmd/Ctrl+1 / 2 -> view mode
                 "1" => {

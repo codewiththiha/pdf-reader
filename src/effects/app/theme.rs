@@ -32,7 +32,7 @@ use web_sys::wasm_bindgen::JsCast;
 use pdf_core::appearance::Appearance;
 use crate::state::AppState;
 
-use super::appearance::schedule_save;
+use crate::effects::appearance::schedule_save;
 
 /// The seven tokens the tint may override. Listed once so they can be cleared
 /// as a set — a stale override left behind when the tint is removed would keep

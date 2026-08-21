@@ -15,7 +15,7 @@ pub fn ContinuousView(
 ) -> impl IntoView {
     // Runs once per mount: attaches the scroll listener on #page-list and
     // cleans it up when the view unmounts (mode switch / document close).
-    crate::effects::continuous_scroll::continuous_scroll(state);
+    crate::effects::reader::continuous_scroll::continuous_scroll(state);
 
     // Container-size tracking: reports the #page-list content box into
     // viewer.container_size so fit modes and the visible-page window use the

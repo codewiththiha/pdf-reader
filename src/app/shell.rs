@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use leptos_router::components::{Route, Routes};
 
 use crate::components::overlays::drag_overlay::DragOverlay;
-use crate::effects::drag_drop::drag_drop;
+use crate::effects::app::drag_drop::drag_drop;
 use crate::features::library::LibraryPage;
 use crate::features::reader::ReaderPage;
 use crate::state::AppState;

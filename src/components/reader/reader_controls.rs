@@ -5,7 +5,7 @@
 //!
 //! The slider is a raw `<input type="range">` rather than the shared
 //! `Slider` because its max is REACTIVE (it tracks the live page-height
-//! column); `Slider`'s `min`/`max` are fixed `f64`s. `page_tracking` already syncs DOM
+//! column); `Slider`'s `min`/`max` are fixed `f64`s. `navigation_sync` already syncs DOM
 //! scroll ↔ `viewer.page`, so the slider and the page pill stay consistent
 //! for free (setting `#page-list` scroll fires `continuous_scroll`, which
 //! writes `viewer.scroll_top` back).
@@ -76,7 +76,7 @@ pub fn ReaderControls(
         >
             <PageNavigation state=vs />
             // Continuous mode only: a scroll slider that follows the page
-            // column. `page_tracking` keeps it and the pill in sync.
+            // column. `navigation_sync` keeps it and the pill in sync.
             <Show when=move || state.reader.viewer.mode.get() == ViewMode::Continuous>
                 <input
                     type="range"
