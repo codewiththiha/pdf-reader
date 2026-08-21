@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_core::layout::TOOLBAR_H;
+use pdf_core::layout::{DocumentLayout, TOOLBAR_H};
 use pdf_core::math::{constrained_scale, fit_scale, page_intrinsic, FitMode};
 use crate::state::{ReaderState, SidebarMode};
 
@@ -23,6 +23,7 @@ pub fn fit_effect(
     // Sidebar open/close re-runs fit so the page re-centers (app chrome
     // state passed in explicitly).
     sidebar: RwSignal<SidebarMode>,
+    layout: Memo<DocumentLayout>,
 ) {
     // Width of the window at the last refit, used to tell a WINDOW resize from
     // a sidebar slide: both move `container_size`, but only the former moves
@@ -224,7 +225,7 @@ pub fn fit_effect(
             let cur = state.viewer.display_scale.get_untracked();
             if (target - cur).abs() >= 0.0005 {
                 state.viewer.zoom_animating.set(true);
-                relayout_to(state, target / cur);
+                relayout_to(state, target / cur, layout);
                 state.viewer.display_scale.set(target);
             }
         }
@@ -266,7 +267,7 @@ pub fn fit_effect(
                 // heights stay at the old scale and the scroll teleports.
                 let cur = state.viewer.display_scale.get_untracked();
                 if (target - cur).abs() >= 0.0005 {
-                    relayout_to(state, target / cur);
+                    relayout_to(state, target / cur, layout);
                     state.viewer.display_scale.set(target);
                 }
                 let prev = state.viewer.render_scale.get_untracked();

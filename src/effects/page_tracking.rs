@@ -48,7 +48,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use pdf_core::layout::{dominant_page, page_top_css, ViewMode, PAGE_GAP};
+use pdf_core::layout::{DocumentLayout, ViewMode, PAGE_GAP};
 use crate::state::ReaderState;
 use crate::components::pdf::dom::page_list;
 
@@ -92,7 +92,7 @@ fn estimated_top(page: u32, state: ReaderState) -> f64 {
 }
 
 /// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
-pub fn page_tracking(state: ReaderState) {
+pub fn page_tracking(state: ReaderState, layout: Memo<DocumentLayout>) {
     // --- 1. Entering continuous mode: align scroll to the current page -------
     // `page_heights`/`page1_size` are read untracked so this effect only fires
     // on a real mode transition (not on every render/zoom).
@@ -101,13 +101,15 @@ pub fn page_tracking(state: ReaderState) {
         let continuous = state.viewer.mode.get() == ViewMode::Continuous;
         if continuous && !was_continuous {
             let page = state.viewer.page.get_untracked();
-            let top = state.document.page_heights.with_untracked(|heights| {
-                if heights.is_empty() {
-                    estimated_top(page, state)
-                } else {
-                    page_top_css(page.saturating_sub(1) as usize, heights, PAGE_GAP)
-                }
-            });
+            let empty = state
+                .document
+                .page_heights
+                .with_untracked(|heights| heights.is_empty());
+            let top = if empty {
+                estimated_top(page, state)
+            } else {
+                layout.with(|l| l.page_top(page.saturating_sub(1) as usize))
+            };
             state.viewer.scroll_top.set(top);
         }
         was_continuous = continuous;
@@ -127,8 +129,10 @@ pub fn page_tracking(state: ReaderState) {
             return;
         }
         let st = scroll_top.get();
-        let hs = heights.get();
-        if hs.is_empty() {
+        // Subscribes to `page_heights` AND gives the emptiness check without
+        // cloning the whole column (the effect must re-run when heights
+        // change — a render fill, a zoom — even when the scroll didn't move).
+        if heights.with(|hs| hs.is_empty()) {
             return;
         }
         // Read the scrollport's real height; `container_size` is tracked too so
@@ -138,7 +142,7 @@ pub fn page_tracking(state: ReaderState) {
             .map(|el| el.client_height() as f64)
             .filter(|h| *h > 1.0)
             .unwrap_or(cont_h);
-        let p = dominant_page(st, vh, &hs, PAGE_GAP);
+        let p = layout.with(|l| l.dominant(st, vh));
         if page.get_untracked() != p {
             suppress_a.set(true);
             page.set(p);
@@ -180,11 +184,11 @@ pub fn page_tracking(state: ReaderState) {
             suppress_b.set(false);
             return;
         }
-        let hs = heights.get_untracked();
-        let target_top = if hs.is_empty() {
+        let empty = heights.with_untracked(|hs| hs.is_empty());
+        let target_top = if empty {
             estimated_top(p, state)
         } else {
-            page_top_css(p.saturating_sub(1) as usize, &hs, PAGE_GAP)
+            layout.with(|l| l.page_top(p.saturating_sub(1) as usize))
         };
         // Round UP: the boundary is crossed exactly even for fractional page
         // tops — `as i32` truncation (floor) would land short.
@@ -196,12 +200,12 @@ pub fn page_tracking(state: ReaderState) {
             .map(|el| el.client_height() as f64)
             .filter(|h| *h > 1.0)
             .unwrap_or_else(|| state.viewer.container_size.get_untracked().1);
-        if hs.is_empty() || dominant_page(scroll_top.get_untracked(), vh_now, &hs, PAGE_GAP) != p {
+        if empty || layout.with(|l| l.dominant(scroll_top.get_untracked(), vh_now)) != p {
             scroll_top.set(target_px);
         }
         // ...and the real scrollport.
         if let Some(list) = page_list()
-            && (hs.is_empty() || dominant_page(list.scroll_top() as f64, vh_now, &hs, PAGE_GAP) != p)
+            && (empty || layout.with(|l| l.dominant(list.scroll_top() as f64, vh_now)) != p)
         {
             let cur = list.scroll_top() as f64;
             let vh = list.client_height() as f64;
@@ -238,7 +242,9 @@ pub fn page_tracking(state: ReaderState) {
         mode.get();
         scroll_top.get();
         settle_wake.get();
-        let hs = heights.get();
+        // Subscribes to `page_heights` so the correction re-fires when a
+        // newly rendered page reports its height (see module docs).
+        let empty = heights.with(|hs| hs.is_empty());
         if mode.get() != ViewMode::Continuous {
             pending_b.set(None);
             return;
@@ -305,10 +311,10 @@ pub fn page_tracking(state: ReaderState) {
             None => {
                 // Wrapper not mounted yet — aim at the current height-estimate so
                 // the page enters the render window and mounts. Never clear here.
-                let est = if hs.is_empty() {
+                let est = if empty {
                     estimated_top(target, state)
                 } else {
-                    page_top_css(target.saturating_sub(1) as usize, &hs, PAGE_GAP)
+                    layout.with(|l| l.page_top(target.saturating_sub(1) as usize))
                 }
                 .ceil();
                 if (est - cur).abs() >= 0.5 {

@@ -20,7 +20,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use pdf_core::layout::{anchored_scroll, total_height_css, PAGE_GAP};
+use pdf_core::layout::DocumentLayout;
 use pdf_core::math::clamp_scale;
 use crate::state::ReaderState;
 use crate::components::pdf::dom::page_list;
@@ -121,19 +121,16 @@ pub(super) fn take_commit_echo() -> bool {
 ///
 /// This is what a "relayout" means here — pure arithmetic on already-known
 /// geometry. No render is involved, and none is waited for.
-pub fn relayout_to(state: ReaderState, factor: f64) {
+pub fn relayout_to(state: ReaderState, factor: f64, layout: Memo<DocumentLayout>) {
     if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
         return;
     }
-    let new_st = state.document.page_heights.with_untracked(|heights| {
-        if heights.is_empty() {
-            return None;
-        }
-        let vh = viewport_h(state);
-        let st = state.viewer.scroll_top.get_untracked();
-        let anchor = vh * ANCHOR_FRAC;
-        anchored_scroll(st, vh, heights, PAGE_GAP, factor, anchor)
-    });
+    // Anchoring runs on the cached layout: O(log n) page lookup, O(1) sums —
+    // no linear walk over the heights per animation frame.
+    let vh = viewport_h(state);
+    let st = state.viewer.scroll_top.get_untracked();
+    let anchor = vh * ANCHOR_FRAC;
+    let new_st = layout.with(|l| l.anchored_scroll(st, vh, factor, anchor));
     let scaled: Vec<f64> = state
         .document
         .page_heights
@@ -172,10 +169,7 @@ pub fn relayout_to(state: ReaderState, factor: f64) {
                 .first_element_child()
                 .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
             {
-                let total = state
-                    .document
-                    .page_heights
-                    .with_untracked(|heights| total_height_css(heights, PAGE_GAP));
+                let total = layout.with(|l| l.total());
                 _ = spacer.style().set_property("height", &format!("{total}px"));
             }
             list.set_scroll_top(new_st.round() as i32);
@@ -188,7 +182,7 @@ pub fn relayout_to(state: ReaderState, factor: f64) {
 ///
 /// Owns `display_scale`, `zoom_animating`, `scale` and `render_scale` for the
 /// duration of a gesture. Nothing else may write them while a zoom is running.
-pub fn zoom_system(state: ReaderState) {
+pub fn zoom_system(state: ReaderState, layout: Memo<DocumentLayout>) {
     // rAF plumbing. The step holds a Weak back-reference to its own holder so
     // it can re-arm itself; the strong Rc lives in this owner-scoped
     // StoredValue (the pattern proven in thumbnails_panel's glide).
@@ -229,7 +223,7 @@ pub fn zoom_system(state: ReaderState) {
         if !animate || prefers_reduced_motion() {
             // Instant — but still a proper anchored relayout, never a bare
             // scale write.
-            relayout_to(state, target / from);
+            relayout_to(state, target / from, layout);
             commit(target);
             return;
         }
@@ -251,7 +245,7 @@ pub fn zoom_system(state: ReaderState) {
             let cur = state.viewer.display_scale.get_untracked();
 
             // Per-frame delta, applied to layout + scroll together.
-            relayout_to(state, want / cur);
+            relayout_to(state, want / cur, layout);
             state.viewer.display_scale.set(want);
 
             if t >= 1.0 {

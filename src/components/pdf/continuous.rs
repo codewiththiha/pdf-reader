@@ -3,11 +3,16 @@
 use leptos::prelude::*;
 
 use crate::state::ReaderState;
-use pdf_core::layout::{DocumentLayout, PAGE_GAP};
+use pdf_core::layout::DocumentLayout;
 use crate::components::pdf::dom::{observe_content_size, PAGE_LIST_ID};
 
 #[component]
-pub fn ContinuousView(state: ReaderState) -> impl IntoView {
+pub fn ContinuousView(
+    state: ReaderState,
+    /// The cached column layout, built once by the reader page (shared with
+    /// PageList, the zoom anchor and page tracking).
+    layout: Memo<DocumentLayout>,
+) -> impl IntoView {
     // Runs once per mount: attaches the scroll listener on #page-list and
     // cleans it up when the view unmounts (mode switch / document close).
     crate::effects::continuous_scroll::continuous_scroll(state);
@@ -18,8 +23,6 @@ pub fn ContinuousView(state: ReaderState) -> impl IntoView {
     observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
 
     // Reading-progress bar: fraction of the scrollable extent consumed.
-    // One cached layout per heights-change (same pattern as PageList).
-    let layout = Memo::new(move |_| DocumentLayout::new(&state.document.page_heights.get(), PAGE_GAP));
     let total_height = Memo::new(move |_| layout.with(|l| l.total()));
     let progress = move || {
         let st = state.viewer.scroll_top.get();
@@ -34,7 +37,7 @@ pub fn ContinuousView(state: ReaderState) -> impl IntoView {
 
     view! {
         <div class="relative h-full w-full">
-            <crate::components::PageList state=state />
+            <crate::components::PageList state=state layout=layout />
             // Thin scroll-progress bar pinned to the bottom of the view. The
             // outer track is pointer-events-none so it never blocks scrolling.
             <div class="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-0.5">

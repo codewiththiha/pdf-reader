@@ -16,11 +16,16 @@
 use leptos::prelude::*;
 
 use crate::components::PageCanvas;
-use pdf_core::layout::{DocumentLayout, PAGE_GAP, RENDER_BUDGET};
+use pdf_core::layout::{DocumentLayout, RENDER_BUDGET};
 use crate::state::ReaderState;
 
 #[component]
-pub fn PageList(state: ReaderState) -> impl IntoView {
+pub fn PageList(
+    state: ReaderState,
+    /// The cached column layout for the CURRENT page heights, built once by
+    /// the reader page and shared by every scroll/render/zoom query.
+    layout: Memo<DocumentLayout>,
+) -> impl IntoView {
     // Seed every page's height from its OWN intrinsic size, at the scale in
     // force when the document is first laid out.
     //
@@ -75,10 +80,6 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
     // stale/empty selection. Pinning the selected pages keeps them — and
     // their text layers — mounted so the selection's DOM nodes stay valid
     // and copy of multi-page selections works through any scroll.
-    // One cached layout per heights-change: scroll/render queries borrow it
-    // instead of rebuilding the strip's prefix sums per call.
-    let layout = Memo::new(move |_| DocumentLayout::new(&state.document.page_heights.get(), PAGE_GAP));
-
     let visible = Memo::new(move |_| {
         let scroll_top = state.viewer.scroll_top.get();
         let vh = state.viewer.container_size.get().1;

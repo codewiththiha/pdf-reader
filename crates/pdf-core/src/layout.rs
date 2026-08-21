@@ -39,13 +39,19 @@ pub enum ViewMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentLayout {
     strip: Strip,
+    gap: f64,
 }
 
 impl DocumentLayout {
     pub fn new(heights: &[f64], gap: f64) -> Self {
         Self {
             strip: Strip::new(heights.iter().copied(), gap),
+            gap,
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.strip.is_empty()
     }
 
     /// Vertical offset of the top of page `page0` (0-based) within the column.
@@ -53,9 +59,94 @@ impl DocumentLayout {
         self.strip.offset(page0)
     }
 
+    /// Height of page `i`, recovered from the prefix offsets (no per-call
+    /// vector walk).
+    pub fn height(&self, i: usize) -> f64 {
+        if i + 1 < self.strip.len() {
+            self.strip.offset(i + 1) - self.strip.offset(i) - self.gap
+        } else {
+            self.strip.total() - self.strip.offset(i)
+        }
+    }
+
     /// Total scrollable height of the whole column (pages + gaps).
     pub fn total(&self) -> f64 {
         self.strip.total()
+    }
+
+    /// Scroll offset that keeps the document point currently at
+    /// `anchor_screen_y` (viewport coordinates, from the top of the
+    /// scrollport) pinned to the same screen position after every page
+    /// height is multiplied by `factor`.
+    ///
+    /// Page heights are linear in scale, so a scale change can be applied to
+    /// the whole layout in one synchronous step without waiting for a render;
+    /// gaps are chrome and deliberately NOT scaled. Returns `None` when there
+    /// is nothing to anchor (no measured heights, or a nonsensical factor).
+    ///
+    /// Works entirely on the prebuilt prefix sums: the page lookup is
+    /// `O(log n)` (`Strip::index_at`) and every offset/total is `O(1)` — no
+    /// per-call rebuild of the strip and no linear walk over the heights.
+    pub fn anchored_scroll(
+        &self,
+        scroll_top: f64,
+        viewport_h: f64,
+        factor: f64,
+        anchor_screen_y: f64,
+    ) -> Option<f64> {
+        let n = self.strip.len();
+        if n == 0 || factor <= 0.0 || !factor.is_finite() {
+            return None;
+        }
+        // Sitting at the very top: pin the top, or the start of page 1 would be
+        // pushed up off the viewport. The bottom edge needs no equivalent case:
+        // the `max_scroll` clamp below keeps the end of the document pinned.
+        if scroll_top <= 0.5 {
+            return Some(0.0);
+        }
+
+        let doc_y = scroll_top + anchor_screen_y;
+
+        // Locate the page containing `doc_y`, plus how far down that page it
+        // sits. `over` carries any excess past the page bottom (i.e. a
+        // position inside the following gap) so it can be re-added unscaled.
+        //
+        // `index_at` reports the page whose span contains the position, but it
+        // treats a gap position as belonging to the NEXT page; the anchoring
+        // semantics attribute it to the page ABOVE (a gap has no content to
+        // anchor), so a position that landed inside a gap is re-attributed
+        // with `frac = 1` and `over = position - bottom`.
+        let mut idx = self.strip.index_at(doc_y).min(n - 1);
+        let start = self.strip.offset(idx);
+        let h = self.height(idx);
+        let bottom = start + h;
+        let (frac, over) = if doc_y < start {
+            // Inside the gap above `idx`: the page above owns the point.
+            let prev = idx.saturating_sub(1);
+            idx = prev;
+            let prev_bottom = self.strip.offset(prev) + self.height(prev);
+            (1.0, (doc_y - prev_bottom).max(0.0))
+        } else if doc_y >= bottom {
+            // Inside the gap below `idx` (or past the end of the last page).
+            (1.0, doc_y - bottom)
+        } else if h > 0.0 {
+            (((doc_y - start) / h).clamp(0.0, 1.0), 0.0)
+        } else {
+            (0.0, 0.0)
+        };
+
+        // Where that same point lands once every page is `factor` taller.
+        // `offset(i)` = sum(heights[..i]) + gap * i, so the scaled prefix is
+        // factor * (offset(i) - gap*i) + gap*i.
+        let scaled_prefix =
+            (self.strip.offset(idx) - self.gap * idx as f64) * factor + self.gap * idx as f64;
+        let new_doc_y = scaled_prefix + frac * h * factor + over;
+
+        // total() = sum(heights) + gap * (n-1); same split.
+        let total_new = (self.strip.total() - self.gap * (n - 1) as f64) * factor
+            + self.gap * (n - 1) as f64;
+        let max_scroll = (total_new - viewport_h).max(0.0);
+        Some((new_doc_y - anchor_screen_y).clamp(0.0, max_scroll))
     }
 
     /// 1-based page the reader is actually looking at (ties go to the lower
@@ -117,50 +208,9 @@ pub fn anchored_scroll(
     factor: f64,
     anchor_screen_y: f64,
 ) -> Option<f64> {
-    if heights.is_empty() || factor <= 0.0 || !factor.is_finite() {
-        return None;
-    }
-    // Sitting at the very top: pin the top, or the start of page 1 would be
-    // pushed up off the viewport. The bottom edge needs no equivalent case:
-    // the `max_scroll` clamp below keeps the end of the document pinned.
-    if scroll_top <= 0.5 {
-        return Some(0.0);
-    }
-
-    let doc_y = scroll_top + anchor_screen_y;
-
-    // Locate the page containing `doc_y`, plus how far down that page it sits.
-    // `over` carries any excess past the page bottom (i.e. a position inside
-    // the following gap) so it can be re-added unscaled.
-    let last = heights.len() - 1;
-    let mut acc = 0.0;
-    let mut idx = last;
-    let mut frac = 1.0;
-    let mut over = 0.0;
-    for (i, &h) in heights.iter().enumerate() {
-        let bottom = acc + h;
-        if doc_y < bottom + gap || i == last {
-            idx = i;
-            frac = if h > 0.0 {
-                ((doc_y - acc) / h).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            over = (doc_y - bottom).max(0.0);
-            break;
-        }
-        acc = bottom + gap;
-    }
-
-    // Where that same point lands once every page is `factor` taller.
-    let new_page_top: f64 =
-        heights.iter().take(idx).map(|h| h * factor).sum::<f64>() + gap * idx as f64;
-    let new_doc_y = new_page_top + frac * heights[idx] * factor + over;
-
-    let total_new: f64 =
-        heights.iter().sum::<f64>() * factor + gap * last as f64;
-    let max_scroll = (total_new - viewport_h).max(0.0);
-    Some((new_doc_y - anchor_screen_y).clamp(0.0, max_scroll))
+    // One-shot wrapper; the hot path goes through
+    // `DocumentLayout::anchored_scroll` on a cached layout.
+    DocumentLayout::new(heights, gap).anchored_scroll(scroll_top, viewport_h, factor, anchor_screen_y)
 }
 
 /// 0-based inclusive range of ROWS visible in a scrollport

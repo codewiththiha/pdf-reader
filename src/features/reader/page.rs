@@ -16,7 +16,7 @@ use crate::components::{Segmented, SegmentedLabel};
 use crate::components::Tooltip;
 
 use pdf_engine::types::DocStatus;
-use pdf_core::layout::ViewMode;
+use pdf_core::layout::{DocumentLayout, PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
 use crate::components::{AdaptiveGroup, ToolbarEntry};
 use crate::components::Sidebar;
@@ -162,9 +162,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
-    fit_effect(vs, state.ui.sidebar);
-    zoom_system(vs);
-    page_tracking(vs);
+    // The ONE cached column layout for this reader session: every scroll,
+    // render-window, zoom-anchor and jump query borrows it instead of
+    // rebuilding the strip's prefix sums from the raw heights.
+    let layout = Memo::new(move |_| DocumentLayout::new(&vs.document.page_heights.get(), PAGE_GAP));
+    fit_effect(vs, state.ui.sidebar, layout);
+    zoom_system(vs, layout);
+    page_tracking(vs, layout);
     reading_progress(state);
 
     let status = state.reader.document.status;
@@ -276,7 +280,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 }
                                 .into_any(),
                                 ViewMode::Continuous => view! {
-                                    <crate::components::ContinuousView state=vs />
+                                    <crate::components::ContinuousView state=vs layout=layout />
                                 }
                                 .into_any(),
                             }}
@@ -290,7 +294,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
                             </div>
                         </Show>
-                        <ReaderControls state=state />
+                        <ReaderControls state=state layout=layout />
                         // Floating search overlay (U4): mounted at the viewer
                         // slot; its top-14 offset clears the titlebar.
                         <crate::components::FloatingSearch state=vs />
