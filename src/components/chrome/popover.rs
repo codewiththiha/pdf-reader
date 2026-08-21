@@ -68,12 +68,32 @@ pub fn Popover(
             .and_then(|v| v.as_f64())
             .unwrap_or(800.0);
         let m = margin as f64;
-        let left = (ar.right() - pw).clamp(m, (win_w - pw - m).max(m));
-        let (top, origin) = if ar.bottom() + ph + m <= win_h {
+        let mut left = (ar.right() - pw).clamp(m, (win_w - pw - m).max(m));
+        let (top_raw, origin) = if ar.bottom() + ph + m <= win_h {
             (ar.bottom() + 4.0, "top right") // opens downward
         } else {
             ((ar.top() - ph - 4.0).max(m), "bottom right") // opens upward
         };
+        let mut top = top_raw;
+
+        // ── FIX ──────────────────────────────────────────────────────────
+        // WebKit treats `backdrop-filter` as a containing block for
+        // `position: fixed` descendants.  When the anchor sits inside
+        // #toolbar-row (.toolbar-glass), the popover's fixed origin is the
+        // toolbar row, NOT the viewport.  Subtract the row's viewport offset
+        // so the coordinates become row-relative.
+        if let Some(doc) = win.document() {
+            if let Some(row) = doc.get_element_by_id("toolbar-row") {
+                let anchor_in_row = row.contains(Some(&a));
+                if anchor_in_row {
+                    let rr = row.get_bounding_client_rect();
+                    left -= rr.left();
+                    top  -= rr.top();
+                }
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────
+
         style_sig.set(format!(
             "left:{left:.1}px;top:{top:.1}px;width:{pw:.0}px;transform-origin:{origin}"
         ));
