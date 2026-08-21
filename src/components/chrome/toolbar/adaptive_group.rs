@@ -7,7 +7,7 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
 use crate::components::{Icon, IconName};
-use crate::components::pdf::dom::by_id;
+use crate::components::dom::by_id;
 use crate::components::MenuItem;
 use crate::components::Popover;
 

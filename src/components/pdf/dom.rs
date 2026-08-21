@@ -17,12 +17,7 @@ pub const PAGE_LIST_ID: &str = "page-list";
 /// Id of the single-page view's container.
 pub const SINGLE_PAGE_CONTAINER_ID: &str = "single-page-container";
 
-/// The element with `id`, if the document is available and it exists.
-pub fn by_id(id: &str) -> Option<web_sys::Element> {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id(id))
-}
+pub use crate::components::dom::by_id;
 
 /// The continuous viewer's scroll container, if it is mounted.
 pub fn page_list() -> Option<web_sys::Element> {

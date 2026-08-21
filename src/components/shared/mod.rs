@@ -2,7 +2,6 @@
 //! icon, slider, ...), the collision-aware toolbar group, the window-aware
 //! popover container, and the shared option/menu building blocks.
 
-pub mod adaptive_group;
 pub mod button;
 pub mod hue_picker;
 pub mod icon;

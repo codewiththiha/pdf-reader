@@ -14,6 +14,7 @@
 
 pub mod chrome;
 mod metrics;
+mod dom;
 pub mod menus;
 pub mod overlays;
 pub mod pdf;
@@ -22,7 +23,7 @@ pub mod shared;
 pub mod sidebar;
 
 // Shared primitives.
-pub(crate) use shared::adaptive_group::{AdaptiveGroup, OverflowRow, ToolbarEntry};
+pub(crate) use chrome::toolbar::{AdaptiveGroup, OverflowRow, ToolbarEntry};
 pub(crate) use shared::menu_item::MenuItem;
 pub(crate) use shared::option_button::OptionButton;
 pub(crate) use shared::popover::Popover;
