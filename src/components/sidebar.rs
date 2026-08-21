@@ -1,11 +1,6 @@
-//! Left sidebar with panels (outline / thumbnails). OWNED BY branch C
-//! (panels/sidebar). Search moved out of the sidebar into the floating overlay
-//! (Phase 2); the panel toggles moved to a bottom icon-only rail (redesign).
-//! The sidebar OWNS the titlebar chrome while it is open: a always-visible
-//! 48px chrome row (traffic-light inset + close toggle + search + ⋯) and a
-//! book-identity row (cover + title + author). They are not hover-gated — the
-//! native traffic lights follow `sidebar_open || bar_visible`, so an open
-//! sidebar keeps the lights on its own.
+//! Left sidebar with panels (outline / thumbnails). The coordinator owns the
+//! open/close state machine and composes the chrome row, the book-identity
+//! row, the two stacked panels, and the bottom rail (see the sibling modules).
 //!
 //! The `<aside>` is ALWAYS mounted and animates its `width` between 18rem and 0
 //! (single-phase slide, no two-phase unmount). The inner content stays fixed at
@@ -37,19 +32,24 @@
 //! SyntaxError and the class is silently never applied. Keep every conditional
 //! class to a SINGLE token (hence `w-0` and `border-r-0` as separate toggles).
 
+mod book_info;
+mod header;
+mod outline;
+mod panel_switcher;
+mod thumbnails;
+
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_engine::types::DocStatus;
-use pdf_viewer::components::shared::button::{Button, ButtonKind};
-use pdf_viewer::components::shared::icon::{Icon, IconName};
-use pdf_viewer::components::shared::tooltip::Tooltip;
-use pdf_viewer::components::sidebar::outline::OutlinePanel;
-use pdf_viewer::components::sidebar::thumbnails::ThumbnailsPanel;
-use crate::components::menus::more::MoreMenu;
-use crate::state::AppState;
 use pdf_viewer::state::SidebarMode;
+use crate::state::AppState;
+
+use book_info::BookInfo;
+use header::SidebarHeader;
+use outline::SidebarOutline;
+use panel_switcher::PanelSwitcher;
+use thumbnails::SidebarThumbs;
 
 /// Must match the aside's `duration-300` width slide. The panel fade and
 /// the deferred canvas release both key off this so the three outros land
@@ -62,7 +62,7 @@ pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
 /// gesture with no state to hold, and a counter signal would need to be read
 /// by both panels and could not distinguish "asked twice" from "asked once"
 /// without extra bookkeeping. Same mechanism the PDF link layer uses.
-fn request_reveal_active() {
+pub(crate) fn request_reveal_active() {
     if let Some(win) = web_sys::window() {
         _ = win.dispatch_event(&web_sys::CustomEvent::new("pdfreader:reveal-active").unwrap());
     }
@@ -96,36 +96,6 @@ pub(crate) fn thumbs_should_stay_mounted(
     match mode {
         SidebarMode::Thumbs | SidebarMode::Outline => true,
         SidebarMode::None => collapsing && last == SidebarMode::Thumbs,
-    }
-}
-
-/// Icon-only bottom-rail toggle. Active state is a rounded filled chip,
-/// exactly like the reference's bookmark button.
-#[component]
-fn RailToggle(
-    icon: IconName,
-    title: &'static str,
-    active: Signal<bool>,
-    on_click: impl Fn() + 'static,
-) -> impl IntoView {
-    view! {
-        <button
-            type="button"
-            title=title
-            aria-label=title
-            aria-pressed=move || active.get().to_string()
-            on:click=move |_| on_click()
-            class="inline-flex h-9 w-14 items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            // Repo rule: each conditional class carries ONE token. A
-            // space-separated value here throws a swallowed SyntaxError and
-            // the highlight silently never applies.
-            class=("bg-line", move || active.get())
-            class=("text-ink", move || active.get())
-            class=("text-muted", move || !active.get())
-            class=("hover:text-ink", move || !active.get())
-        >
-            <Icon name=icon size=16 />
-        </button>
     }
 }
 
@@ -198,153 +168,32 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
         >
             // The content row spans the full window height. The chrome row at
             // the top carries the 48px traffic-light inset; the book-identity
-            // row sits below it. Both are always visible while the sidebar is
-            // open (not hover-gated) — the sidebar is the lights' home.
+            // row sits below it.
             <div
                 class="flex h-full w-72 min-h-0 flex-col"
                 prop:inert=move || state.sidebar.get() == SidebarMode::None
             >
-                // ── Row 1: sidebar chrome. Always visible while open. The
-                // native traffic lights overlay the left ~76px; the filled
-                // panel glyph marks "sidebar is on". A drag region so the
-                // window stays grabable from the sidebar.
-                <div
-                    class="flex h-12 shrink-0 items-center gap-1 pl-[88px] pr-2"
-                    data-tauri-drag-region="true"
-                >
-                    <Tooltip text="Close sidebar".to_string()>
-                        <Button
-                            on_click=move |_| state.sidebar.set(SidebarMode::None)
-                            kind=ButtonKind::Ghost
-                            icon=IconName::SidebarOpen
-                            title="Close sidebar".to_string()
-                        />
-                    </Tooltip>
-                    // Floating-search toggle: raw button so pointerdown can
-                    // stop propagation (the floating bar's outside-click
-                    // dismiss listens on window pointerdown, which would
-                    // otherwise close the bar and let the click re-open it —
-                    // a one-way toggle).
-                    <button
-                        type="button"
-                        data-search-chrome="true"
-                        title="Search (Cmd/Ctrl+F)"
-                        on:pointerdown=move |ev| ev.stop_propagation()
-                        on:click=move |_| {
-                            let vs = state.viewer_state();
-                            if state.search.visible.get() {
-                                pdf_viewer::effects::search_effects::dismiss_search(vs);
-                            } else {
-                                pdf_viewer::effects::search_effects::resume_search(vs);
-                            }
-                        }
-                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        <Icon name=IconName::Search size=18 />
-                    </button>
-                    <MoreMenu state=state />
-                </div>
-
-                // ── Row 2: book identity (cover + title + author + info).
-                // Always visible while open and a document is Ready.
-                <Show when=move || state.doc.status.get() == DocStatus::Ready>
-                    <div
-                        class="flex items-center gap-3 border-b border-line px-3 pb-3"
-                        data-tauri-drag-region="true"
-                    >
-                        {move || {
-                            let path = state.doc.path.get().unwrap_or_default();
-                            match state.covers.get().get(&path).cloned() {
-                                Some(c) => view! {
-                                    <img
-                                        class="h-12 w-10 rounded-sm border border-line/60 object-cover"
-                                        src=c.data_url
-                                        alt="Cover"
-                                        loading="lazy"
-                                    />
-                                }
-                                .into_any(),
-                                None => view! {
-                                    <div class="flex h-12 w-10 items-center justify-center rounded-sm border border-line bg-surface">
-                                        <Icon name=IconName::Open size=14 />
-                                    </div>
-                                }
-                                .into_any(),
-                            }
-                        }}
-                        <div class="min-w-0 flex-1" data-tauri-drag-region="true">
-                            <p
-                                class="truncate text-sm font-semibold text-ink"
-                                data-tauri-drag-region="true"
-                            >
-                                {move || pdf_core::filename::display_name(
-                                    state.doc.title.get().as_deref(),
-                                    state.doc.path.get().as_deref(),
-                                )
-                                .unwrap_or_else(|| "No document".to_string())}
-                            </p>
-                            <p class="truncate text-xs text-muted">
-                                {move || state.doc.author.get().unwrap_or_default()}
-                            </p>
-                        </div>
-                        // Info: native tooltip with the full path is enough.
-                        <span
-                            title=move || state.doc.path.get().unwrap_or_default()
-                            class="text-muted"
-                        >
-                            <Icon name=IconName::More size=14 />
-                        </span>
-                    </div>
-                </Show>
+                <SidebarHeader state=state />
+                <BookInfo state=state />
 
                 // ── Panels: stacked absolutely, invisible/is-outro toggles
                 // drive which is painted (see module docs).
                 <div class="relative min-h-0 flex-1">
-                    <div
-                        class="sidebar-panel absolute inset-0 flex flex-col"
-                        class=("invisible", move || !show_outline.get())
-                        class=("is-outro", move || is_closed.get())
-                    >
-                        <OutlinePanel state=viewer_state />
-                    </div>
-                    <div
-                        class="sidebar-panel absolute inset-0 flex flex-col"
-                        class=("invisible", move || !show_thumbs.get())
-                        class=("is-outro", move || is_closed.get())
-                    >
-                        <ThumbnailsPanel state=viewer_state live=thumbs_live />
-                    </div>
+                    <SidebarOutline state=viewer_state shown=show_outline outro=is_closed />
+                    <SidebarThumbs
+                        state=viewer_state
+                        live=thumbs_live
+                        shown=show_thumbs
+                        outro=is_closed
+                    />
                 </div>
 
-                // ── Bottom rail: icons-only horizontal panel toggles.
-                <div class="flex shrink-0 items-center justify-around gap-1 border-t border-line p-1.5">
-                    <RailToggle
-                        icon=IconName::Thumbs
-                        title="Thumbnails"
-                        active=thumbs_active
-                        on_click=move || {
-                            // Re-clicking the ACTIVE tab means "take me to where
-                            // I am", not "close".
-                            if state.sidebar.get() == SidebarMode::Thumbs {
-                                request_reveal_active();
-                            } else {
-                                state.sidebar.set(SidebarMode::Thumbs);
-                            }
-                        }
-                    />
-                    <RailToggle
-                        icon=IconName::Outline
-                        title="Outline"
-                        active=outline_active
-                        on_click=move || {
-                            if state.sidebar.get() == SidebarMode::Outline {
-                                request_reveal_active();
-                            } else {
-                                state.sidebar.set(SidebarMode::Outline);
-                            }
-                        }
-                    />
-                </div>
+                <PanelSwitcher
+                    mode=state.sidebar
+                    thumbs_active=thumbs_active
+                    outline_active=outline_active
+                    on_reveal=request_reveal_active
+                />
             </div>
         </aside>
     }
