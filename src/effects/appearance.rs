@@ -200,7 +200,9 @@ pub fn schedule_save(settings: Settings) {
     }
     let handle = set_timeout_with_handle(
         move || {
-            let _ = save_settings(&settings);
+            if let Err(e) = save_settings(&settings) {
+                e.report();
+            }
         },
         Duration::from_millis(SAVE_MS),
     )

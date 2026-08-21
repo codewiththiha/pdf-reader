@@ -200,12 +200,16 @@ pub fn open_path(state: AppState, path: String) {
                     },
                 );
                 state.library.books.set(recent);
-                let _ = save_library(&state.library.books.get_untracked());
+                if let Err(e) = save_library(&state.library.books.get_untracked()) {
+                    e.report();
+                }
                 if let Some(evicted_path) = evicted {
                     state.library.covers.update(|c| {
                         c.remove(&evicted_path);
                     });
-                    let _ = save_covers(&state.library.covers.get_untracked());
+                    if let Err(e) = save_covers(&state.library.covers.get_untracked()) {
+                        e.report();
+                    }
                 }
 
                 // Generate the shelf cover (page-1 JPEG) in the background. It
@@ -226,7 +230,9 @@ pub fn open_path(state: AppState, path: String) {
                                     },
                                 );
                             });
-                            let _ = save_covers(&cover_state.library.covers.get_untracked());
+                            if let Err(e) = save_covers(&cover_state.library.covers.get_untracked()) {
+                                e.report();
+                            }
                         }
                         Err(_) => { /* stylised fallback cover */ }
                     }

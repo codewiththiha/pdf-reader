@@ -21,10 +21,22 @@ pub const COVERS_KEY: &str = "pdfreader.covers.v1";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
 /// error). The UI should never crash on these — but they must not vanish.
+///
+/// Handling rule (one consistent decision, no per-call judgment): every
+/// save failure is reported through [`StorageError::report`] at the call
+/// site. Covers could arguably be dropped silently (they regenerate), but
+/// a single rule beats a case-by-case call.
 #[derive(Debug)]
 pub struct StorageError {
     op: &'static str,
     detail: String,
+}
+
+impl StorageError {
+    /// Surface the failure on the console without interrupting the UI.
+    pub fn report(&self) {
+        web_sys::console::warn_1(&JsValue::from_str(&format!("[storage] {self}")));
+    }
 }
 
 impl fmt::Display for StorageError {

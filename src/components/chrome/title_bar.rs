@@ -54,7 +54,9 @@ pub fn AppTitleBar(
         let p = pinned.get();
         if state.settings.with(|s| s.titlebar_pinned) != p {
             state.settings.update(|s| s.titlebar_pinned = p);
-            let _ = save_settings(&state.settings.get_untracked());
+            if let Err(e) = save_settings(&state.settings.get_untracked()) {
+                e.report();
+            }
         }
     });
 

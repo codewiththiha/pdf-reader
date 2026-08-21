@@ -46,20 +46,25 @@ pub fn PageList(
     Effect::new(move || {
         let n = state.document.num_pages.get() as usize;
         let scale = state.viewer.render_scale.get();
-        let sizes = state.document.page_sizes.get();
+        // Borrow-only guard: this effect also re-runs per zoom commit
+        // (render_scale is tracked), and cloning every page size on each
+        // commit just to hit the early return is pure waste.
+        let empty = state.document.page_sizes.with(|sizes| sizes.is_empty());
         let fallback = state.document.page1_size.get().map(|s| s.height).unwrap_or(0.0);
-        if n == 0 || scale <= 0.0 || (sizes.is_empty() && fallback <= 0.0) {
+        if n == 0 || scale <= 0.0 || (empty && fallback <= 0.0) {
             return;
         }
         state.document.page_heights.update(|v| {
             if v.len() == n {
                 return; // already laid out for this document
             }
-            *v = (0..n)
-                .map(|i| {
-                    sizes.get(i).copied().filter(|h| *h > 0.0).unwrap_or(fallback) * scale
-                })
-                .collect();
+            *v = state.document.page_sizes.with(|sizes| {
+                (0..n)
+                    .map(|i| {
+                        sizes.get(i).copied().filter(|h| *h > 0.0).unwrap_or(fallback) * scale
+                    })
+                    .collect()
+            });
         });
     });
 

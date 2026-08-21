@@ -197,8 +197,12 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
         state.library.covers.update(|covers| {
             covers.remove(&remove_path);
         });
-        let _ = crate::storage::save_library(&state.library.books.get_untracked());
-        let _ = crate::storage::save_covers(&state.library.covers.get_untracked());
+        if let Err(e) = crate::storage::save_library(&state.library.books.get_untracked()) {
+            e.report();
+        }
+        if let Err(e) = crate::storage::save_covers(&state.library.covers.get_untracked()) {
+            e.report();
+        }
     };
 
     let alt_path = path.clone();
