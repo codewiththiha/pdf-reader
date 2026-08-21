@@ -32,28 +32,69 @@ use pdf_viewer::effects::page_tracking::page_tracking;
 use pdf_viewer::effects::zoom::zoom_system;
 use pdf_viewer::state::SidebarMode;
 
-fn layout_entry(state: AppState) -> ToolbarEntry {
+fn view_mode_entry(state: AppState) -> ToolbarEntry {
     let mode = state.viewer.mode;
 
     // ── inline (what the bar shows) ──────────────────────────────
+    // Compact icon-only segmented — same as before.
     let inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
         view! {
-            <div class="flex items-center gap-1">
-                <Tooltip text="View mode".to_string()>
+            <Tooltip text="View mode".to_string()>
+                <Segmented
+                    options=vec![
+                        (ViewMode::Single,
+                         SegmentedLabel::Icon(IconName::SinglePage),
+                         "Single page view"),
+                        (ViewMode::Continuous,
+                         SegmentedLabel::Icon(IconName::Continuous),
+                         "Continuous scroll view"),
+                    ]
+                    value={mode.read_only()}
+                    on_change=move |m: ViewMode| state.viewer.mode.set(m)
+                />
+            </Tooltip>
+        }
+        .into_any()
+    });
+
+    ToolbarEntry {
+        id: "view-mode",
+        // collapses AFTER fit (70), BEFORE zoom-step (80)
+        priority: 75,
+        keep_mounted: false,
+        inline: inline.clone(),
+        sizer: inline,
+        // Menu: full-width segmented WITH text labels; picking one closes the menu.
+        collapsed: Arc::new(move |done| {
+            view! {
+                <div class="w-full px-1 py-1">
                     <Segmented
+                        full_width=true
                         options=vec![
                             (ViewMode::Single,
-                             SegmentedLabel::Icon(IconName::SinglePage),
+                             SegmentedLabel::IconText(IconName::SinglePage, "Single"),
                              "Single page view"),
                             (ViewMode::Continuous,
-                             SegmentedLabel::Icon(IconName::Continuous),
+                             SegmentedLabel::IconText(IconName::Continuous, "Continuous"),
                              "Continuous scroll view"),
                         ]
                         value={mode.read_only()}
-                        on_change=move |m: ViewMode| state.viewer.mode.set(m)
+                        on_change=move |m: ViewMode| {
+                            state.viewer.mode.set(m);
+                            done.run(());
+                        }
                     />
-                </Tooltip>
+                </div>
+            }
+            .into_any()
+        }),
+    }
+}
 
+fn fit_entry(state: AppState) -> ToolbarEntry {
+    let inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
+        view! {
+            <div class="flex items-center gap-1">
                 <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
                     <Button
                         on_click=move |_| state.viewer.fit.set(FitMode::Width)
@@ -62,7 +103,6 @@ fn layout_entry(state: AppState) -> ToolbarEntry {
                         title="Fit width (Cmd/Ctrl+0)".to_string()
                     />
                 </Tooltip>
-
                 <Tooltip text="Fit page".to_string()>
                     <Button
                         on_click=move |_| state.viewer.fit.set(FitMode::Page)
@@ -76,50 +116,37 @@ fn layout_entry(state: AppState) -> ToolbarEntry {
         .into_any()
     });
 
-    // ── collapsed (what the ⋯ popover shows) ─────────────────────
-    //     Row 1: native Segmented selector (same as the bar)
-    //     Row 2: FitW / FitP as labelled buttons
     ToolbarEntry {
-        id: "layout",
+        id: "fit",
+        // collapses FIRST of the layout trio
         priority: 70,
         keep_mounted: false,
         inline: inline.clone(),
         sizer: inline,
-        collapsed: Arc::new(move |_done| {
+        // Menu: two equal-half buttons; clicking closes the menu.
+        collapsed: Arc::new(move |done| {
             view! {
-                <div class="flex w-full flex-col gap-1.5 px-1 py-1">
-                    // Row 1 — Segmented, exactly like the main bar
-                    <Segmented
-                        options=vec![
-                            (ViewMode::Single,
-                             SegmentedLabel::Icon(IconName::SinglePage),
-                             "Single page view"),
-                            (ViewMode::Continuous,
-                             SegmentedLabel::Icon(IconName::Continuous),
-                             "Continuous scroll view"),
-                        ]
-                        value={mode.read_only()}
-                        on_change=move |m: ViewMode| state.viewer.mode.set(m)
-                    />
-                    // Row 2 — FitW | FitP buttons
-                    <div class="flex items-center gap-1">
-                        <button
-                            type="button"
-                            on:click=move |_| state.viewer.fit.set(FitMode::Width)
-                            class="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
-                        >
-                            <Icon name=IconName::FitWidth size=14 />
-                            <span>"Fit width"</span>
-                        </button>
-                        <button
-                            type="button"
-                            on:click=move |_| state.viewer.fit.set(FitMode::Page)
-                            class="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
-                        >
-                            <Icon name=IconName::FitPage size=14 />
-                            <span>"Fit page"</span>
-                        </button>
-                    </div>
+                <div class="flex w-full items-center gap-1 px-1 py-1">
+                    <button type="button"
+                        on:click=move |_| {
+                            state.viewer.fit.set(FitMode::Width);
+                            done.run(());
+                        }
+                        class="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
+                    >
+                        <Icon name=IconName::FitWidth size=14 />
+                        <span>"Fit width"</span>
+                    </button>
+                    <button type="button"
+                        on:click=move |_| {
+                            state.viewer.fit.set(FitMode::Page);
+                            done.run(());
+                        }
+                        class="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
+                    >
+                        <Icon name=IconName::FitPage size=14 />
+                        <span>"Fit page"</span>
+                    </button>
                 </div>
             }
             .into_any()
@@ -196,16 +223,16 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
         }
     };
 
-    // RIGHT slot: layout, zoom, appearance — collision-aware overflow.
+    // RIGHT slot: view-mode, fit, zoom, appearance — collision-aware overflow.
     let right = move || {
-        let mut entries = vec![layout_entry(state)];
-        entries.extend(zoom_entries(state));
+        let mut entries = vec![view_mode_entry(state), fit_entry(state)];
+        entries.extend(zoom_entries(state));          // zoom-step (80), readout (MAX)
         entries.push(appearance_entry(
             state,
             appearance_open,
             collapsed_ids,
             overflow_ref,
-        ));
+        ));                                          // MAX
         view! {
             <AdaptiveGroup
                 state=state

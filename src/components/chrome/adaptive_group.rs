@@ -138,26 +138,9 @@ pub fn AdaptiveGroup(
     view! {
         <div class="relative shrink-0">
             <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
-                <For
-                    each=move || {
-                        let c = collapsed_ids.get();
-                        entries
-                            .get()
-                            .into_iter()
-                            .filter(|en| en.keep_mounted || !c.contains(&en.id))
-                            .map(|en| en.id)
-                            .collect::<Vec<&'static str>>()
-                    }
-                    key=|id| *id
-                    children=move |id| {
-                        entries
-                            .get_untracked()
-                            .into_iter()
-                            .find(|en| en.id == id)
-                            .map(|en| (en.inline)())
-                            .unwrap_or_else(|| ().into_any())
-                    }
-                />
+                // ⋯ FIRST: it stands where the collapsed controls used to be.
+                // When nothing has collapsed the trigger stays hidden via `<Show>`,
+                // so this only occupies space once at least one entry was evicted.
                 <Show when=move || !collapsed_ids.get().is_empty() || open.get()>
                     <div node_ref=overflow_ref class="relative inline-flex">
                         <button
@@ -185,6 +168,27 @@ pub fn AdaptiveGroup(
                         </Popover>
                     </div>
                 </Show>
+                // Surviving entries AFTER the ⋯.
+                <For
+                    each=move || {
+                        let c = collapsed_ids.get();
+                        entries
+                            .get()
+                            .into_iter()
+                            .filter(|en| en.keep_mounted || !c.contains(&en.id))
+                            .map(|en| en.id)
+                            .collect::<Vec<&'static str>>()
+                    }
+                    key=|id| *id
+                    children=move |id| {
+                        entries
+                            .get_untracked()
+                            .into_iter()
+                            .find(|en| en.id == id)
+                            .map(|en| (en.inline)())
+                            .unwrap_or_else(|| ().into_any())
+                    }
+                />
             </div>
             <div node_ref=sizer_ref class="tb-sizer" aria-hidden="true">
                 {move || {

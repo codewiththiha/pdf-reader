@@ -115,7 +115,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 .into_any()
             }),
         },
-        // fit-width and fit-page entries removed — now inside layout_entry
+        // fit-width and fit-page entries live in `fit_entry` (reader_view.rs)
         zoom_readout_entry(state),
     ]
 }
