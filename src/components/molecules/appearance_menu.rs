@@ -99,7 +99,7 @@ pub fn appearance_entry(
 ) -> ToolbarEntry {
     ToolbarEntry {
         id: "appearance",
-        priority: 90,
+        priority: u32::MAX,
         keep_mounted: true,
         inline: Arc::new(move || {
             let hide = Signal::derive(move || {

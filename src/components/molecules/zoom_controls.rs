@@ -75,34 +75,6 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
         .into_any()
     });
 
-    let fit_width_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
-        view! {
-            <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
-                <Button
-                    on_click=move |_| state.viewer.fit.set(FitMode::Width)
-                    kind=ButtonKind::Ghost
-                    icon=IconName::FitWidth
-                    title="Fit width (Cmd/Ctrl+0)".to_string()
-                />
-            </Tooltip>
-        }
-        .into_any()
-    });
-
-    let fit_page_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
-        view! {
-            <Tooltip text="Fit page".to_string()>
-                <Button
-                    on_click=move |_| state.viewer.fit.set(FitMode::Page)
-                    kind=ButtonKind::Ghost
-                    icon=IconName::FitPage
-                    title="Fit page".to_string()
-                />
-            </Tooltip>
-        }
-        .into_any()
-    });
-
     vec![
         // Zoom out + zoom in are one entry so they collapse together and stay
         // on one horizontal row in both the bar and the overflow menu.
@@ -143,34 +115,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 .into_any()
             }),
         },
-        ToolbarEntry {
-            id: "fit-width",
-            priority: 70,
-            keep_mounted: false,
-            inline: fit_width_inline.clone(),
-            sizer: fit_width_inline,
-            collapsed: Arc::new(move |done| {
-                view! {
-                    <OverflowRow icon=IconName::FitWidth label="Fit width" done=done
-                        on_click=move || state.viewer.fit.set(FitMode::Width) />
-                }
-                .into_any()
-            }),
-        },
-        ToolbarEntry {
-            id: "fit-page",
-            priority: 70,
-            keep_mounted: false,
-            inline: fit_page_inline.clone(),
-            sizer: fit_page_inline,
-            collapsed: Arc::new(move |done| {
-                view! {
-                    <OverflowRow icon=IconName::FitPage label="Fit page" done=done
-                        on_click=move || state.viewer.fit.set(FitMode::Page) />
-                }
-                .into_any()
-            }),
-        },
+        // fit-width and fit-page entries removed — now inside layout_entry
         zoom_readout_entry(state),
     ]
 }
