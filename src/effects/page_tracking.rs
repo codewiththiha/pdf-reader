@@ -3,7 +3,7 @@
 //! thumbnails, outline, search) actually move the scrollport in continuous
 //! mode.
 //!
-//! Wired once from ReaderView (like `fit_effect`). All effects are no-ops
+//! Wired once from ReaderPage (like `fit_effect`). All effects are no-ops
 //! outside continuous mode:
 //!   1. mode-flip — entering continuous mode aligns `scroll_top` to the current
 //!      page. `viewer.page` is the source of truth here, NOT the stale offset
@@ -91,7 +91,7 @@ fn estimated_top(page: u32, state: ViewerState) -> f64 {
     (page.saturating_sub(1)) as f64 * (est + PAGE_GAP)
 }
 
-/// Must be called once from the app root (ReaderView), alongside `fit_effect`.
+/// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
 pub fn page_tracking(state: ViewerState) {
     // --- 1. Entering continuous mode: align scroll to the current page -------
     // `page_heights`/`page1_size` are read untracked so this effect only fires

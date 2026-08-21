@@ -116,7 +116,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
         Box::new(move |ev: Event| {
             drop_sig.set(false);
             if let Some(path) = first_drop_path(&ev) {
-                crate::state::open::open_path(st, path);
+                crate::services::document::open_path(st, path);
             }
         }) as Box<dyn FnMut(Event)>,
     );

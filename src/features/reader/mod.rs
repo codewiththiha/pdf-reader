@@ -2,4 +2,4 @@
 
 pub mod page;
 
-pub use page::ReaderView;
+pub use page::ReaderPage;

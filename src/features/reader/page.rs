@@ -27,7 +27,7 @@ use crate::components::DocumentTitle;
 use crate::components::PageIndicator;
 use crate::components::ReaderControls;
 use crate::components::zoom_entries;
-use crate::state::open::{close_document, open_dialog};
+use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::effects::reading_progress::reading_progress;
 use crate::effects::fit::fit_effect;
@@ -158,7 +158,7 @@ fn fit_entry(state: AppState) -> ToolbarEntry {
 }
 
 #[component]
-pub fn ReaderView(state: AppState) -> impl IntoView {
+pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.viewer_state();

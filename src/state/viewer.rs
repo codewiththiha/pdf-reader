@@ -1,7 +1,7 @@
 //! Viewer-level reactive state, provided to the reusable viewer components.
 //! App chrome composes these into its own app-level state.
 
-use leptos::prelude::RwSignal;
+use leptos::prelude::{RwSignal, Set};
 
 use pdf_core::appearance::TextureMode;
 use pdf_core::layout::ViewMode;
@@ -39,6 +39,25 @@ pub struct DocumentState {
     /// Rendered CSS-px heights per page, 0-based, seeded from `page_sizes` and
     /// refined by on_geometry as pages actually render.
     pub page_heights: RwSignal<Vec<f64>>,
+}
+
+impl DocumentState {
+    /// Back to the no-document state. Every field the open flow writes is
+    /// reset here, so a field added to the struct cannot be silently
+    /// forgotten by close_document.
+    pub fn reset(&self) {
+        self.status.set(DocStatus::Idle);
+        self.error.set(None);
+        self.path.set(None);
+        self.num_pages.set(0);
+        self.title.set(None);
+        self.author.set(None);
+        self.outline.set(Vec::new());
+        self.page1_size.set(None);
+        self.page_sizes.set(Vec::new());
+        self.page_widths.set(Vec::new());
+        self.page_heights.set(Vec::new());
+    }
 }
 
 impl Default for DocumentState {
@@ -96,6 +115,16 @@ pub struct ViewerSignals {
     pub selected_pages: RwSignal<Option<(u32, u32)>>,
 }
 
+impl ViewerSignals {
+    /// Reset the reading position (page + scroll) on document close. Kept
+    /// separate from a full reset: fit/zoom state is the reader's, not the
+    /// document's.
+    pub fn reset_position(&self) {
+        self.page.set(1);
+        self.scroll_top.set(0.0);
+    }
+}
+
 impl Default for ViewerSignals {
     fn default() -> Self {
         Self {
@@ -129,6 +158,20 @@ pub struct SearchState {
     /// The bar has been dismissed but its highlights are still on screen,
     /// muted; the next real interaction ends the grace period.
     pub dismissed: RwSignal<bool>,
+}
+
+impl SearchState {
+    /// Back to the no-search state (fresh document or close). The floating
+    /// overlay must not linger after opening/closing a document.
+    pub fn reset(&self) {
+        self.query.set(String::new());
+        self.total.set(0);
+        self.matches.set(Vec::new());
+        self.active.set(None);
+        self.index_built.set(false);
+        self.visible.set(false);
+        self.dismissed.set(false);
+    }
 }
 
 impl Default for SearchState {

@@ -12,7 +12,7 @@ use crate::components::AppearanceMenu;
 use crate::components::DocumentTitle;
 use crate::components::MoreMenu;
 use crate::state::AppState;
-use crate::features::library::LibraryView;
+use crate::features::library::LibraryShelf;
 
 #[component]
 pub fn LibraryPage(state: AppState) -> impl IntoView {
@@ -26,7 +26,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
                 >
                     <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
                         <Button
-                            on_click=move |_| crate::state::open::open_dialog(state)
+                            on_click=move |_| crate::services::document::open_dialog(state)
                             kind=ButtonKind::Toolbar
                             icon=IconName::Open
                             label="Open".to_string()
@@ -54,7 +54,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     view! {
         <TitleBar state=state left=left right=right>
             <div class="relative h-full w-full overflow-hidden bg-paper text-ink">
-                <LibraryView state=state />
+                <LibraryShelf state=state />
             </div>
         </TitleBar>
     }

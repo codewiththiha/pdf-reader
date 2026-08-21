@@ -16,11 +16,11 @@ use crate::components::{Button, ButtonKind};
 use crate::components::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::state::library::RecentBook;
-use crate::state::open;
+use crate::services::document;
 use crate::state::AppState;
 
 #[component]
-pub fn LibraryView(state: AppState) -> impl IntoView {
+pub fn LibraryShelf(state: AppState) -> impl IntoView {
     let status = state.doc.status;
     let error = state.doc.error;
 
@@ -46,7 +46,7 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
                             <p class="text-lg">"Opening…"</p>
                         </div>
                         <Button
-                            on_click=move |_| open::close_document(state)
+                            on_click=move |_| document::close_document(state)
                             kind=ButtonKind::Ghost
                             label="Cancel".to_string()
                             title="Cancel and return to the library".to_string()
@@ -91,7 +91,7 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
                                         </span>
                                     </Show>
                                     <Button
-                                        on_click=move |_| open::open_dialog(open_state)
+                                        on_click=move |_| document::open_dialog(open_state)
                                         kind=ButtonKind::Primary
                                         icon=IconName::Open
                                         label="Open PDF".to_string()
@@ -125,7 +125,7 @@ fn EmptyState(state: AppState) -> impl IntoView {
                     <p class="text-sm text-muted">"Or drop a PDF anywhere in the window"</p>
                 })}
                 <Button
-                    on_click=move |_| open::open_dialog(state)
+                    on_click=move |_| document::open_dialog(state)
                     kind=ButtonKind::Primary
                     label="Open…".to_string()
                     title="Open a PDF file".to_string()
@@ -178,13 +178,13 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
     };
 
     let click_path = path.clone();
-    let open = move |_| open::open_path(state, click_path.clone());
+    let open = move |_| document::open_path(state, click_path.clone());
 
     let key_path = path.clone();
     let key_state = state;
     let on_key = move |ev: leptos::ev::KeyboardEvent| {
         if ev.key() == "Enter" {
-            open::open_path(key_state, key_path.clone());
+            document::open_path(key_state, key_path.clone());
         }
     };
 

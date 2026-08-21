@@ -18,7 +18,7 @@ use crate::storage::save_library;
 /// continuous scroll writes once instead of once per row boundary.
 const SAVE_MS: u64 = 400;
 
-/// Must be called once from the app root (ReaderView), alongside `fit_effect`.
+/// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
 pub fn reading_progress(state: AppState) {
     // Debounce timer handle, parked so it can never fire against a torn-down
     // app, and re-armed on each update.

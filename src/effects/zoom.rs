@@ -178,7 +178,7 @@ pub fn relayout_to(state: ViewerState, factor: f64) {
     }
 }
 
-/// The zoom coordinator. Must be called once from the app root (ReaderView),
+/// The zoom coordinator. Must be called once from the app root (ReaderPage),
 /// next to `fit_effect`.
 ///
 /// Owns `display_scale`, `zoom_animating`, `scale` and `render_scale` for the

@@ -1,10 +1,7 @@
-//! The shared "open a document" flow.
-//!
-//! Lifted out of `components::molecules::toolbar`, which is a piece of chrome
-//! and had no business owning it: the same flow is driven by the toolbar
-//! button, the Ctrl+O shortcut, drag-and-drop and the empty-state placeholder.
-//! Living in `core` it is reachable from all of them without any of them
-//! depending on the toolbar widget.
+//! Opening a document: the dialog flow, the OS "Open with" handoff, and the
+//! shared open sequence (engine open → document/viewer/search state →
+//! library record → cover generation). Driven by the toolbar button,
+//! Ctrl+O, drag-and-drop and the empty-state placeholder.
 
 use leptos::prelude::*;
 // NOTE: the open flow spawns on the wasm-bindgen-futures executor, NOT
@@ -24,7 +21,6 @@ use pdf_core::filename::display_name;
 use crate::state::library::{self, CoverImage, RecentBook};
 use pdf_core::math::{fit_scale, FitMode};
 use crate::state::{AppState, Toast, ToastKind};
-use crate::state::SidebarMode;
 use crate::storage::{save_covers, save_library};
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app
@@ -53,8 +49,8 @@ pub fn init_open_file_handling(state: AppState) {
     }
 
     // Park the JS closure in a StoredValue so the listener stays registered
-    // for the lifetime of the app (same pattern as the drag-drop listeners
-    // in reader_view.rs; the unlisten handle is deliberately discarded).
+    // for the lifetime of the app (same pattern as the drag-drop listeners in
+    // effects/drag_drop.rs; the unlisten handle is deliberately discarded).
     let handle = StoredValue::new_local(None::<Closure<dyn FnMut(Event)>>);
     let cb_state = state;
     let cb: Closure<dyn FnMut(Event)> = Closure::wrap(
@@ -173,12 +169,7 @@ pub fn open_path(state: AppState, path: String) {
 
                 // Reset search + clear stale highlights. The floating search
                 // overlay must not linger after opening a new document.
-                state.search.query.set(String::new());
-                state.search.total.set(0);
-                state.search.matches.set(Vec::new());
-                state.search.active.set(None);
-                state.search.index_built.set(false);
-                state.search.visible.set(false);
+                state.search.reset();
                 engine::clear_highlights();
 
                 // Fire index build in the background; result is ignored
@@ -247,68 +238,4 @@ pub fn open_path(state: AppState, path: String) {
             }
         }
     });
-}
-
-/// Close the current document and return to the library shelf.
-///
-/// Tears the engine's document state down and resets the document / viewer /
-/// search signals so the reader lands back on the empty-state bookshelf (which
-/// renders whenever `doc.status != Ready`). The library itself is untouched:
-/// the just-closed book keeps its saved page so reopening resumes there.
-pub fn close_document(state: AppState) {
-    // Flush the current reading position NOW, before the signals are reset.
-    // The reading-progress effect writes the library signal synchronously but
-    // debounces the localStorage save; closing (and then possibly quitting)
-    // must not lose the last position to that debounce.
-    if state.doc.status.get_untracked() == DocStatus::Ready
-        && let Some(path) = state.doc.path.get_untracked()
-    {
-        let page = state.viewer.page.get_untracked();
-        let mut changed = false;
-        state.library.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path == path)
-                && b.page != page
-            {
-                b.page = page;
-                changed = true;
-            }
-        });
-        if changed {
-            save_library(&state.library.get_untracked());
-        }
-    }
-
-    // Tear the engine document down while the reader is idle on the shelf.
-    // destroy() is non-blocking (it drops the loading-task reference
-    // synchronously and lets the worker die in the background), so this can
-    // never hang, and a fast "close → reopen" is safe because the reopen's
-    // own destroy() is idempotent.
-    spawn_local(async move {
-        _ = engine::destroy().await;
-    });
-
-    state.doc.status.set(DocStatus::Idle);
-    state.doc.error.set(None);
-    state.doc.path.set(None);
-    state.doc.num_pages.set(0);
-    state.doc.title.set(None);
-    state.doc.author.set(None);
-    state.doc.outline.set(Vec::new());
-    state.doc.page1_size.set(None);
-    state.doc.page_sizes.set(Vec::new());
-    state.doc.page_widths.set(Vec::new());
-    state.doc.page_heights.set(Vec::new());
-
-    state.viewer.page.set(1);
-    state.viewer.scroll_top.set(0.0);
-
-    state.search.query.set(String::new());
-    state.search.total.set(0);
-    state.search.matches.set(Vec::new());
-    state.search.active.set(None);
-    state.search.index_built.set(false);
-    state.search.visible.set(false);
-    state.search.dismissed.set(false);
-
-    state.ui.sidebar.set(SidebarMode::None);
 }

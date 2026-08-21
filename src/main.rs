@@ -2,6 +2,7 @@ mod app;
 mod components;
 mod effects;
 mod features;
+mod services;
 mod state;
 mod storage;
 

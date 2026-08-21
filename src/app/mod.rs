@@ -33,7 +33,7 @@ pub fn App() -> impl IntoView {
     link_navigation(state);
     page_selection(state);
     // OS file opening: double-click / "Open with" / default-app launch.
-    crate::state::open::init_open_file_handling(state);
+    crate::services::document::init_open_file_handling(state);
 
     view! {
         <Router>
@@ -49,7 +49,7 @@ pub fn App() -> impl IntoView {
 /// the viewer crate never depends on app chrome.
 fn shortcuts(state: AppState) {
     let open_doc = {
-        move || crate::state::open::open_dialog(state)
+        move || crate::services::document::open_dialog(state)
     };
     crate::effects::shortcuts::shortcuts(
         state.viewer_state(),

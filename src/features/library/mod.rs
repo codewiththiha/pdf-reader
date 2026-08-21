@@ -4,4 +4,4 @@ pub mod page;
 pub mod shelf;
 
 pub use page::LibraryPage;
-pub use shelf::LibraryView;
+pub use shelf::LibraryShelf;

@@ -17,7 +17,7 @@ use crate::state::{ViewerState, SidebarMode};
 
 use super::zoom::{commit_scale, gesture_owns_layout, relayout_to, take_commit_echo};
 
-/// Must be called once from the app root (ReaderView).
+/// Must be called once from the app root (ReaderPage).
 pub fn fit_effect(state: ViewerState) {
     // Width of the window at the last refit, used to tell a WINDOW resize from
     // a sidebar slide: both move `container_size`, but only the former moves
