@@ -49,7 +49,7 @@ pub struct AppState {
 
 impl AppState {
     /// The viewer slice of app state. Field paths match `ViewerState` exactly,
-    /// so reusable viewer components accept this without copying atoms.
+    /// so viewer components accept this without copying signals.
     pub fn viewer_state(self) -> ViewerState {
         ViewerState::new(self.doc, self.viewer, self.search, self.ui.sidebar)
     }

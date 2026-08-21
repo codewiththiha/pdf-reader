@@ -3,9 +3,9 @@
 //! pattern (always-mounted hot strip + slide-up + hide after a grace period),
 //! so mouse readers keep page navigation without any persistent bottom chrome.
 //!
-//! The slider is a raw `<input type="range">` rather than the `Slider` atom
-//! because its max is REACTIVE (it tracks the live page-height column); the
-//! atom's `min`/`max` are fixed `f64`s. `page_tracking` already syncs DOM
+//! The slider is a raw `<input type="range">` rather than the shared
+//! `Slider` because its max is REACTIVE (it tracks the live page-height
+//! column); `Slider`'s `min`/`max` are fixed `f64`s. `page_tracking` already syncs DOM
 //! scroll ↔ `viewer.page`, so the slider and the page pill stay consistent
 //! for free (setting `#page-list` scroll fires `continuous_scroll`, which
 //! writes `viewer.scroll_top` back).

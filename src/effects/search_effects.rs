@@ -1,6 +1,6 @@
 //! Search pipeline: build the index once, run the query as the reader types,
 //! and step through individual matches — scrolling each one into view rather
-//! than jumping to the top of its page. OWNED BY branch C (panels/sidebar).
+//! than jumping to the top of its page.
 
 use leptos::prelude::*;
 

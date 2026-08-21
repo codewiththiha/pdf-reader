@@ -1,5 +1,4 @@
-//! Virtualized scroll container for the continuous layout. OWNED BY branch A
-//! (viewer/continuous).
+//! Virtualized scroll container for the continuous layout.
 //!
 //! A scroll container (`#page-list`) holding:
 //!  - an in-flow spacer whose height equals the full document height, so the

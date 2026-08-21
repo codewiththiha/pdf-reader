@@ -8,7 +8,7 @@
 //! clips it while closed. When collapsed the content is made `inert` so the
 //! clipped rail can't be tab-focused / activated.
 //!
-//! CLOSE / OPEN (appendix 22). The rail labels (Thumbs / Outline) outro by
+//! CLOSE / OPEN. The rail labels (Thumbs / Outline) outro by
 //! being clipped as the aside shrinks — a 300ms ease-in-out the reader
 //! already has. The panels used to go `visibility:hidden` on the FIRST frame
 //! of that slide, so the thumbnail grid popped off while the labels slid

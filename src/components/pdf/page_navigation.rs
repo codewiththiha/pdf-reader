@@ -1,4 +1,4 @@
-//! Previous/next + page-number input. OWNED BY branch B (viewer/chrome).
+//! Previous/next + page-number input.
 //! Prev/Next clamp viewer.page to 1..=num_pages; the editable readout parses on
 //! commit and clamps the same way. Shows "– / –" when no document is open.
 

@@ -1,4 +1,4 @@
-//! Range slider atom bound to a numeric signal.
+//! Range slider bound to a numeric signal.
 
 use leptos::prelude::*;
 

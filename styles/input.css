@@ -13,8 +13,10 @@
 
 /* --- content scanning --- */
 /* Tailwind's auto-detector skips .gitignore'd files; src/ is tracked so this
-   is mostly belt-and-braces, but keeps scanning explicit. Classes must be
-   static literals in .rs files — never built with format!(). */
+   is mostly belt-and-braces, but keeps scanning explicit. Rule: every
+   Tailwind class token must appear as a static literal somewhere in the
+   source; dynamic strings may only concatenate known static class fragments,
+   never generate new class names from runtime data. */
 @source "../src";
 @source "../crates";
 

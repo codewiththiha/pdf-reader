@@ -1,5 +1,4 @@
-//! Zoom controls. OWNED BY branch B (viewer/chrome).
-//! Redesigned (U2): zoom in/out (stepping through the presets in math::ZOOM_STEPS),
+//! Zoom controls: zoom in/out (stepping through the presets in math::ZOOM_STEPS),
 //! fit width / fit page, and a percent readout + popover replacing the old preset
 //! Select. Any manual zoom clears the fit mode. The readout reads `viewer.scale`
 //! directly, so a non-preset fit value like 137% shows correctly.
@@ -115,7 +114,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
                 .into_any()
             }),
         },
-        // fit-width and fit-page entries live in `fit_entry` (reader_view.rs)
+        // fit-width and fit-page entries live in `fit_entry` (features/reader/page.rs)
         zoom_readout_entry(state),
     ]
 }

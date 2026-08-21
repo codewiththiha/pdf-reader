@@ -1,4 +1,4 @@
-//! Generic segmented control. OWNED BY U7 (phase 3): replaces two ToggleButtons.
+//! Generic segmented control.
 //!
 //! A compact pill row of two-or-more mutually exclusive options. The active
 //! option is background-based (`bg-accent-soft text-accent`) per the mix-blend
@@ -28,7 +28,7 @@ pub enum SegmentedLabel {
 /// Each option is `(value, label, title)`. The `title` is REQUIRED because the
 /// labels are typically icon-only: without it the buttons are anonymous to
 /// screen readers, hover tooltips, and automated tests. The wrapping `Tooltip`
-/// atom titles the group as a whole, not the individual segments.
+/// the title describes the group as a whole, not the individual segments.
 #[component]
 pub fn Segmented<T: PartialEq + Copy + Send + Sync + 'static>(
     options: Vec<(T, SegmentedLabel, &'static str)>,

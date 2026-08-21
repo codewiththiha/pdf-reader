@@ -1,4 +1,4 @@
-//! Reusable button atom.
+//! Reusable button.
 
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;

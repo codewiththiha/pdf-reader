@@ -1,4 +1,4 @@
-//! Toast notification host (U10). Renders the single current toast (if any)
+//! Toast notification host. Renders the single current toast (if any)
 //! centered near the top of the app and auto-dismisses it after ~3.5s. The
 //! open-flow (toolbar) emits error toasts here; the host is mounted at the app
 //! root (app.rs), so its `position: fixed` is relative to the viewport rather

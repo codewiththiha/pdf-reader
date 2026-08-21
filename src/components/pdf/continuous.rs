@@ -1,4 +1,4 @@
-//! Continuous vertical-scroll view. OWNED BY branch A (viewer/continuous).
+//! Continuous vertical-scroll view.
 
 use leptos::prelude::*;
 

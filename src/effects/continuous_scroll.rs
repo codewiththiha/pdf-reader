@@ -1,5 +1,5 @@
 //! Continuous-scroll effect: maps container scroll -> viewer.scroll_top.
-//! OWNED BY branch A (viewer/continuous).
+
 //!
 //! Runs once when the continuous view mounts. Attaches a scroll listener to
 //! `#page-list` and writes `viewer.scroll_top` whenever the container offset

@@ -1,4 +1,4 @@
-//! Reusable UI primitives shared across the app: generic atoms (button,
+//! Reusable UI primitives shared across the app: generic controls (button,
 //! icon, slider, ...), the collision-aware toolbar group, the window-aware
 //! popover container, and the shared option/menu building blocks.
 

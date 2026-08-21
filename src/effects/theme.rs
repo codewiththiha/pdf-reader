@@ -15,7 +15,7 @@
 //! empty string removes the override and lets the stylesheet's own value win
 //! again, which is how a tint is cleanly un-applied.
 //!
-//! SLIDER RAM (appendix 19). Writing `settings` on every `input` event made
+//! SLIDER RAM. Writing `settings` on every `input` event made
 //! WKWebView allocate a fresh filter intermediate for every visible page,
 //! every tick — that is the 1.2GB spike while dragging Colour / Tint
 //! strength. Sliders now live-paint CSS at most once per animation frame and

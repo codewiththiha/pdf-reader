@@ -1,7 +1,7 @@
 //! Appearance slider scrub + commit scheduler, split out of `theme.rs`.
 //!
 //! Sliders live-paint CSS at most once per animation frame (never per `input`
-//! event — see appendix 19 in the module docs for the 1.2GB WKWebView spike
+//! event — the original per-event painting drove a 1.2GB WKWebView spike
 //! that motivated it) and commit the Settings signal + localStorage only after
 //! the gesture pauses. Structural clicks (preset, base, texture mode, grain
 //! mode) flush or cancel a pending scrub through `flush_appearance_commit` /

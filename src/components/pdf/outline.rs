@@ -1,4 +1,4 @@
-//! Document outline (TOC) panel. OWNED BY branch C (panels/sidebar).
+//! Document outline (TOC) panel.
 
 use leptos::prelude::*;
 

@@ -1,4 +1,4 @@
-//! Thin divider atom.
+//! Thin divider.
 
 use leptos::prelude::*;
 

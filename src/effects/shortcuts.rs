@@ -1,4 +1,4 @@
-//! Global keyboard shortcuts. OWNED BY branch B (viewer/chrome).
+//! Global keyboard shortcuts.
 //!
 //! Must be called once from the app root (wired during integration).
 //! The listener callback runs OUTSIDE the reactive owner, so everything it

@@ -1,7 +1,6 @@
 //! Application effects: app-level concerns (appearance, drag-drop, links,
 //! reading progress, page selection, theme) plus the viewer effects that
-//! previously lived in the `pdf-viewer` crate (fit/zoom, scroll, page
-//! tracking, search, shortcuts).
+//! (fit/zoom, scroll, page tracking, search, shortcuts).
 
 pub mod appearance;
 pub mod continuous_scroll;

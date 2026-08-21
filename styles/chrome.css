@@ -48,7 +48,7 @@ body {
 /* ---------------------------------------------------------------------
    8. Toolbar glass — frosted overlay bar.
 
-   The `<header>` in reader_view.rs carries backdrop-blur + a theme-tinted
+   The `<header>` in features/reader/page.rs carries backdrop-blur + a theme-tinted
    translucent bg (the "milky glass") and is absolutely stacked over the
    viewer, so content scrolls underneath it, blurred.
 
@@ -84,7 +84,7 @@ body {
    it. `backdrop-filter` had only the flat `bg-paper` fill to sample, and
    blurring a solid colour returns that same solid colour. The translucency was
    real the whole time; there was simply nothing behind it to see. The margin
-   is gone now (reader_view.rs) and each view pads its own scroller instead, so
+   is gone now (features/reader/page.rs) and each view pads its own scroller instead, so
    pages genuinely travel under the bar.
 
    Owning the background here (rather than via `bg-surface/60`) keeps the
@@ -140,7 +140,7 @@ html.theme-switching .toolbar-glass {
 
 /* One-frame mute of color transitions so a base/preset swap cannot leave
    a button interpolated between the old and new tokens. Toggled from
-   theme_applier.rs around paint_appearance_now. */
+   effects/theme.rs around paint_appearance_now. */
 html.theme-switching,
 html.theme-switching * {
   transition: none !important;

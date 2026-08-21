@@ -322,7 +322,7 @@ pub fn PageCanvas(
             <canvas id=canvas_id />
             // Placeholder text layer. The engine REPLACES this node on each
             // text render: it builds the spans in a detached `.textLayer` and
-            // swaps it in atomically, so a superseded render's late-arriving
+            // swaps it in atomically (in one step), so a superseded render's late-arriving
             // spans can never land on top of the current ones (that overlap was
             // the doubled text visible when selecting). Leptos does not own the
             // node's contents, so the swap is safe — but keep the class name

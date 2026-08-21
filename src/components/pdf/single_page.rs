@@ -1,8 +1,8 @@
-//! Single-page (page-at-a-time) view. OWNED BY branch B (viewer/chrome).
+//! Single-page (page-at-a-time) view.
 //! One centered PageCanvas in a scroll container. Container size is tracked via
 //! ResizeObserver; fit modes (Width/Page) are recomputed reactively.
 //!
-//! `page` is remounted per page by a keyed `<For>` (the PageCanvas organism keys
+//! `page` is remounted per page by a keyed `<For>` (`PageCanvas` keys
 //! on ids, not the page number — a fresh wrapper + host is mounted per page).
 //! Each remount gets a direction-aware entrance animation (`page-enter-right`
 //! for next page, `page-enter-left` for previous) driven by a non-reactive

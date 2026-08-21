@@ -1,5 +1,5 @@
-//! Keyboard keycap atom, used to document shortcuts in menus/tooltips.
-//! Consumed by the MoreMenu keyboard-shortcuts panel (U7).
+//! Keyboard keycap, used to document shortcuts in menus/tooltips.
+//! Consumed by the MoreMenu keyboard-shortcuts panel.
 
 use leptos::prelude::*;
 
