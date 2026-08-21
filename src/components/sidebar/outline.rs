@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::OutlinePanel;
+use crate::components::pdf::OutlinePanel;
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 use leptos::prelude::RwSignal;

@@ -10,23 +10,23 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::{Button, ButtonKind};
-use crate::components::{Icon, IconName};
-use crate::components::{Segmented, SegmentedLabel};
-use crate::components::Tooltip;
+use crate::components::shared::button::{Button, ButtonKind};
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::segmented::{Segmented, SegmentedLabel};
+use crate::components::shared::tooltip::Tooltip;
 
 use pdf_engine::types::DocStatus;
 use pdf_core::layout::{DocumentLayout, PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
-use crate::components::{AdaptiveGroup, ToolbarEntry};
-use crate::components::Sidebar;
-use crate::components::FloatingDocumentTitle;
-use crate::components::AppTitleBar;
-use crate::components::appearance_entry;
-use crate::components::DocumentTitle;
-use crate::components::PageIndicator;
-use crate::components::ReaderControls;
-use crate::components::zoom_entries;
+use crate::components::layout::adaptive_toolbar::{AdaptiveToolbar, ToolbarItem};
+use crate::components::sidebar::Sidebar;
+use crate::components::layout::document_title::FloatingDocumentTitle;
+use crate::components::layout::title_bar::AppTitleBar;
+use crate::components::menus::appearance::appearance_entry;
+use crate::components::layout::document_title::DocumentTitle;
+use crate::components::reader::page_indicator::PageIndicator;
+use crate::components::reader::reader_controls::ReaderControls;
+use crate::components::reader::zoom_controls::zoom_entries;
 use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::effects::reading_progress::reading_progress;
@@ -35,7 +35,7 @@ use crate::effects::page_tracking::page_tracking;
 use crate::effects::zoom::zoom_system;
 use crate::state::SidebarMode;
 
-fn view_mode_entry(state: AppState) -> ToolbarEntry {
+fn view_mode_entry(state: AppState) -> ToolbarItem {
     let mode = state.reader.viewer.mode;
 
     // ── inline (what the bar shows) ──────────────────────────────
@@ -60,7 +60,7 @@ fn view_mode_entry(state: AppState) -> ToolbarEntry {
         .into_any()
     });
 
-    ToolbarEntry {
+    ToolbarItem {
         id: "view-mode",
         // collapses AFTER fit (70), BEFORE zoom-step (80)
         priority: 75,
@@ -94,7 +94,7 @@ fn view_mode_entry(state: AppState) -> ToolbarEntry {
     }
 }
 
-fn fit_entry(state: AppState) -> ToolbarEntry {
+fn fit_entry(state: AppState) -> ToolbarItem {
     let inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
         view! {
             <div class="flex items-center gap-1">
@@ -119,7 +119,7 @@ fn fit_entry(state: AppState) -> ToolbarEntry {
         .into_any()
     });
 
-    ToolbarEntry {
+    ToolbarItem {
         id: "fit",
         // collapses FIRST of the layout trio
         priority: 70,
@@ -180,7 +180,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let collapsed_ids = RwSignal::new(Vec::<&'static str>::new());
     let overflow_ref: NodeRef<html::Div> = NodeRef::new();
 
-    // AdaptiveGroup is generic UI: it gets a ready flag and a refresh
+    // AdaptiveToolbar is generic UI: it gets a ready flag and a refresh
     // counter instead of AppState. The page bumps the counter whenever
     // chrome state that affects the bar's geometry changes.
     let toolbar_ready = Signal::derive(move || status.get() == DocStatus::Ready);
@@ -255,7 +255,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             overflow_ref,
         ));                                          // MAX
         view! {
-            <AdaptiveGroup
+            <AdaptiveToolbar
                 ready=toolbar_ready
                 refresh=toolbar_refresh.into()
                 entries=entries
@@ -276,11 +276,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {
-                                    <crate::components::SinglePageView state=vs />
+                                    <crate::components::pdf::SinglePageView state=vs />
                                 }
                                 .into_any(),
                                 ViewMode::Continuous => view! {
-                                    <crate::components::ContinuousView state=vs layout=layout />
+                                    <crate::components::pdf::ContinuousView state=vs layout=layout />
                                 }
                                 .into_any(),
                             }}
@@ -297,7 +297,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         <ReaderControls state=state layout=layout />
                         // Floating search overlay (U4): mounted at the viewer
                         // slot; its top-14 offset clears the titlebar.
-                        <crate::components::FloatingSearch state=vs />
+                        <crate::components::search::floating::FloatingSearch state=vs />
                     </main>
                 </div>
             </div>

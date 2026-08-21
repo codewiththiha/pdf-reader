@@ -15,7 +15,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::PageCanvas;
+use crate::components::pdf::PageCanvas;
 use pdf_core::layout::{DocumentLayout, RENDER_BUDGET};
 use crate::state::ReaderState;
 

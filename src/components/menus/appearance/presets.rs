@@ -8,7 +8,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::{Icon, IconName};
+use crate::components::shared::icon::{Icon, IconName};
 use pdf_core::presets::{group_presets, is_builtin, make_preset_id, user_group_names, Preset};
 use crate::state::AppState;
 use crate::effects::appearance::{cancel_appearance_commit, flush_appearance_commit};

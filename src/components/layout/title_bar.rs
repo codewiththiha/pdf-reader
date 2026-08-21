@@ -16,8 +16,8 @@ use std::time::Duration;
 use leptos::children::ViewFn;
 use leptos::prelude::*;
 
-use crate::components::{Icon, IconName};
-use crate::components::Tooltip;
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::tooltip::Tooltip;
 use crate::state::SidebarMode;
 use crate::state::AppState;
 use crate::storage::save_settings;

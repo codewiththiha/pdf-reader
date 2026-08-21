@@ -7,7 +7,7 @@
 //! wiring.
 
 use leptos::prelude::*;
-use crate::components::{Icon, IconName};
+use crate::components::shared::icon::{Icon, IconName};
 
 #[component]
 pub fn DragOverlay() -> impl IntoView {

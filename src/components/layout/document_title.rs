@@ -167,10 +167,10 @@ use pdf_core::filename::display_name;
 
 /// Left padding of the toolbar row: room for the native traffic lights when
 /// the sidebar is closed (see `components/metrics`).
-const ROW_PAD_LEFT: f64 = crate::components::metrics::TRAFFIC_LIGHT_INSET;
+const ROW_PAD_LEFT: f64 = crate::components::layout::metrics::TRAFFIC_LIGHT_INSET;
 /// Space on the right the measured name must not enter (see
 /// `components/metrics::PIN_RESERVE`; the pin lives OUTSIDE `#toolbar-right`).
-const ROW_PAD_RIGHT: f64 = crate::components::metrics::PIN_RESERVE;
+const ROW_PAD_RIGHT: f64 = crate::components::layout::metrics::PIN_RESERVE;
 /// Gap between the label and the buttons to its left (`gap-1` in the left group).
 const GAP_LEFT: f64 = 4.0;
 /// Gap the label keeps from whatever is on its right (the centered page nav or
@@ -178,7 +178,7 @@ const GAP_LEFT: f64 = 4.0;
 /// name never appears to touch the next control.
 const GAP_RIGHT: f64 = 12.0;
 /// Narrower than this and the label would be a useless stub — hide it instead.
-const TITLE_MIN_LABEL_W: f64 = crate::components::metrics::MIN_DOC_TITLE_WIDTH;
+const TITLE_MIN_LABEL_W: f64 = crate::components::layout::metrics::MIN_DOC_TITLE_WIDTH;
 
 /// Live width of an element by id, or `None` when it isn't in the DOM.
 fn width_of(id: &str) -> Option<f64> {

@@ -4,11 +4,11 @@
 
 use leptos::prelude::*;
 
-use crate::components::{Button, ButtonKind};
-use crate::components::{Icon, IconName};
-use crate::components::Tooltip;
+use crate::components::shared::button::{Button, ButtonKind};
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::tooltip::Tooltip;
 use crate::state::SidebarMode;
-use crate::components::MoreMenu;
+use crate::components::menus::more::MoreMenu;
 use crate::state::AppState;
 
 #[component]

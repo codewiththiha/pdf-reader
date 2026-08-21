@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::{Icon, IconName};
+use crate::components::shared::icon::{Icon, IconName};
 use crate::state::AppState;
 
 #[component]

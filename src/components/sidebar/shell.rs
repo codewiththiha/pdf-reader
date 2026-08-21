@@ -32,11 +32,6 @@
 //! SyntaxError and the class is silently never applied. Keep every conditional
 //! class to a SINGLE token (hence `w-0` and `border-r-0` as separate toggles).
 
-mod book_info;
-mod header;
-mod outline;
-mod panel_switcher;
-mod thumbnails;
 
 use std::time::Duration;
 
@@ -45,11 +40,11 @@ use leptos::prelude::*;
 use crate::state::SidebarMode;
 use crate::state::AppState;
 
-use book_info::BookInfo;
-use header::SidebarHeader;
-use outline::SidebarOutline;
-use panel_switcher::PanelSwitcher;
-use thumbnails::SidebarThumbs;
+use super::book_info::BookInfo;
+use super::header::SidebarHeader;
+use super::outline::SidebarOutline;
+use super::panel_switcher::PanelSwitcher;
+use super::thumbnails::SidebarThumbs;
 
 /// Must match the aside's `duration-300` width slide. The panel fade and
 /// the deferred canvas release both key off this so the three outros land

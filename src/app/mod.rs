@@ -9,7 +9,7 @@ mod shell;
 use leptos::prelude::*;
 use leptos_router::components::Router;
 
-use crate::components::ToastHost;
+use crate::components::overlays::toast::ToastHost;
 use crate::effects::link_navigation::link_navigation;
 use crate::effects::page_selection::page_selection;
 use crate::effects::theme::apply_theme;

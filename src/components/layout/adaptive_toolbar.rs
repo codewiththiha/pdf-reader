@@ -6,19 +6,19 @@ use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
-use crate::components::{Icon, IconName};
+use crate::components::shared::icon::{Icon, IconName};
 use crate::components::dom::by_id;
-use crate::components::MenuItem;
-use crate::components::Popover;
+use crate::components::shared::menu_item::MenuItem;
+use crate::components::shared::popover::Popover;
 
 pub const TB_GAP: f64 = 4.0;          // gap-1
 pub const TB_OVERFLOW_W: f64 = 36.0;  // h-9 w-9
-pub const TB_RIGHT_RESERVE: f64 = crate::components::metrics::PIN_RESERVE;
-pub const TB_TITLE_RESERVE: f64 = crate::components::metrics::MIN_DOC_TITLE_WIDTH;
+pub const TB_RIGHT_RESERVE: f64 = crate::components::layout::metrics::PIN_RESERVE;
+pub const TB_TITLE_RESERVE: f64 = crate::components::layout::metrics::MIN_DOC_TITLE_WIDTH;
 
 /// One control that can live in the bar or in the overflow menu.
 #[derive(Clone)]
-pub struct ToolbarEntry {
+pub struct ToolbarItem {
     pub id: &'static str,
     /// Higher survives longer. `u32::MAX` = essential, never collapses.
     pub priority: u32,
@@ -56,7 +56,7 @@ pub fn compute_collapsed(
 }
 
 #[component]
-pub fn AdaptiveGroup(
+pub fn AdaptiveToolbar(
     /// True while a document is open: the title reserve applies then, so
     /// the bar always leaves the document name room.
     ready: Signal<bool>,
@@ -64,7 +64,7 @@ pub fn AdaptiveGroup(
     /// geometry changes (sidebar open/close, document identity, page
     /// count) — the group re-measures in response.
     refresh: Signal<u64>,
-    entries: Vec<ToolbarEntry>,
+    entries: Vec<ToolbarItem>,
     /// Shared collapsed-id list so popover owners can hide their trigger.
     collapsed_ids: RwSignal<Vec<&'static str>>,
     /// Overflow "…" wrapper; Appearance re-anchors here when collapsed.

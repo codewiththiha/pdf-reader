@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::{Icon, IconName};
+use crate::components::shared::icon::{Icon, IconName};
 use crate::state::SidebarMode;
 
 /// One rail toggle.

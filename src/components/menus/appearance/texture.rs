@@ -8,10 +8,10 @@
 
 use leptos::prelude::*;
 
-use crate::components::{Icon, IconName};
-use crate::components::Slider;
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::slider::Slider;
 use pdf_core::appearance::TextureMode;
-use crate::components::OptionButton;
+use crate::components::shared::option_button::OptionButton;
 use crate::state::AppState;
 use crate::effects::appearance::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,

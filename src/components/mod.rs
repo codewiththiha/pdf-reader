@@ -1,59 +1,28 @@
 //! The application's component system, organized by what a component is
 //! used for:
 //!
-//!   * `shared`   — generic UI (button, icon, popover, ...)
-//!   * `chrome`   — window chrome (title bar, floating title)
+//!   * `shared`   — generic UI (button, icon, popover, ...); must never
+//!     know what a PDF reader is
+//!   * `layout`   — reusable structural application chrome (title bar,
+//!     adaptive toolbar, document titles)
 //!   * `menus`    — menu features (appearance, more)
 //!   * `overlays` — transient UI (toast, drag feedback)
 //!   * `reader`   — reader-only controls (zoom, page indicator, ...)
-//!   * `sidebar`  — the app sidebar
+//!   * `sidebar`  — the app sidebar (composition shell + panel hosts)
 //!   * `pdf`      — UI whose purpose is displaying PDF documents
+//!   * `search`   — search presentation shared by reader surfaces
 //!
-//! The public pieces are re-exported here, so callers get a logical API
-//! without caring which folder owns a component.
+//! Import discipline: callers import from the owning group
+//! (`use crate::components::shared::Button`), which keeps each
+//! component's origin visible. `shared` must not reach upward into
+//! `state`/`services`/`effects`/`pdf_engine`.
 
-pub mod chrome;
-mod metrics;
 mod dom;
+pub mod layout;
 pub mod menus;
 pub mod overlays;
 pub mod pdf;
 pub mod reader;
+pub mod search;
 pub mod shared;
 pub mod sidebar;
-
-// Shared primitives.
-pub(crate) use chrome::toolbar::{AdaptiveGroup, OverflowRow, ToolbarEntry};
-pub(crate) use shared::menu_item::MenuItem;
-pub(crate) use shared::option_button::OptionButton;
-pub(crate) use shared::popover::Popover;
-pub(crate) use shared::{
-    Button, ButtonKind, HuePicker, Icon, IconName, Kbd, Segmented, SegmentedLabel, Separator,
-    Slider, Tooltip,
-};
-
-// Window chrome.
-pub(crate) use chrome::floating_title::{DocumentTitle, FloatingDocumentTitle};
-pub(crate) use chrome::title_bar::{AppTitleBar, TitleBarCtx};
-
-// Menus.
-pub(crate) use menus::appearance::{appearance_entry, AppearanceMenu};
-pub(crate) use menus::more::MoreMenu;
-
-// Overlays.
-pub(crate) use overlays::drag_overlay::DragOverlay;
-pub(crate) use overlays::toast::ToastHost;
-
-// Reader controls.
-pub(crate) use reader::page_indicator::PageIndicator;
-pub(crate) use reader::reader_controls::ReaderControls;
-pub(crate) use reader::zoom_controls::zoom_entries;
-
-// Sidebar.
-pub(crate) use sidebar::Sidebar;
-
-// PDF viewing.
-pub(crate) use pdf::{
-    ContinuousView, FloatingSearch, OutlinePanel, PageCanvas, PageList, PageNavigation,
-    SinglePageView, ThumbnailsPanel,
-};

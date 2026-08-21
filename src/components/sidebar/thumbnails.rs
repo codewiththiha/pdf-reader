@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::ThumbnailsPanel;
+use crate::components::pdf::ThumbnailsPanel;
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 use leptos::prelude::RwSignal;

@@ -16,7 +16,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::PageCanvas;
+use crate::components::pdf::PageCanvas;
 use crate::state::ReaderState;
 use crate::components::pdf::dom::{observe_content_size, SINGLE_PAGE_CONTAINER_ID};
 

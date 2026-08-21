@@ -37,7 +37,7 @@ pub fn ContinuousView(
 
     view! {
         <div class="relative h-full w-full">
-            <crate::components::PageList state=state layout=layout />
+            <crate::components::pdf::PageList state=state layout=layout />
             // Thin scroll-progress bar pinned to the bottom of the view. The
             // outer track is pointer-events-none so it never blocks scrolling.
             <div class="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-0.5">

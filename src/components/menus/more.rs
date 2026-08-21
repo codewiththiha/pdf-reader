@@ -13,10 +13,10 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::components::{Icon, IconName};
-use crate::components::Kbd;
-use crate::components::MenuItem;
-use crate::components::Popover;
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::kbd::Kbd;
+use crate::components::shared::menu_item::MenuItem;
+use crate::components::shared::popover::Popover;
 
 /// One keyboard-shortcut reference row: label on the left, keycaps on the right.
 #[component]

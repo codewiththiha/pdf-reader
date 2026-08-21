@@ -16,7 +16,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use pdf_core::layout::{DocumentLayout, ViewMode};
-use crate::components::PageNavigation;
+use crate::components::reader::page_navigation::PageNavigation;
 use crate::state::AppState;
 
 /// Pointer must be off the bar this long before it hides.

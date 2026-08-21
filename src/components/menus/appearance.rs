@@ -19,10 +19,10 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::{Icon, IconName};
-use crate::components::Separator;
-use crate::components::{OverflowRow, ToolbarEntry};
-use crate::components::Popover;
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::separator::Separator;
+use crate::components::layout::adaptive_toolbar::{OverflowRow, ToolbarItem};
+use crate::components::shared::popover::Popover;
 use crate::state::AppState;
 
 mod base;
@@ -101,8 +101,8 @@ pub fn appearance_entry(
     appearance_open: RwSignal<bool>,
     collapsed_ids: RwSignal<Vec<&'static str>>,
     overflow_ref: NodeRef<html::Div>,
-) -> ToolbarEntry {
-    ToolbarEntry {
+) -> ToolbarItem {
+    ToolbarItem {
         id: "appearance",
         priority: u32::MAX,
         keep_mounted: true,

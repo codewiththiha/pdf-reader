@@ -11,13 +11,13 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::{Button, ButtonKind};
-use crate::components::{Icon, IconName};
-use crate::components::Separator;
-use crate::components::Tooltip;
+use crate::components::shared::button::{Button, ButtonKind};
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::separator::Separator;
+use crate::components::shared::tooltip::Tooltip;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
-use crate::components::{OverflowRow, ToolbarEntry};
-use crate::components::Popover;
+use crate::components::layout::adaptive_toolbar::{OverflowRow, ToolbarItem};
+use crate::components::shared::popover::Popover;
 use crate::state::AppState;
 use crate::effects::zoom::request_zoom;
 
@@ -50,7 +50,7 @@ fn step_base(state: AppState) -> f64 {
 }
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
-pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
+pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
     let zoom_step_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
         view! {
             <div class="flex items-center gap-1">
@@ -78,7 +78,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
     vec![
         // Zoom out + zoom in are one entry so they collapse together and stay
         // on one horizontal row in both the bar and the overflow menu.
-        ToolbarEntry {
+        ToolbarItem {
             id: "zoom-step",
             priority: 80,
             keep_mounted: false,
@@ -120,8 +120,8 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarEntry> {
     ]
 }
 
-fn zoom_readout_entry(state: AppState) -> ToolbarEntry {
-    ToolbarEntry {
+fn zoom_readout_entry(state: AppState) -> ToolbarItem {
+    ToolbarItem {
         id: "zoom-readout",
         priority: u32::MAX,
         keep_mounted: true,

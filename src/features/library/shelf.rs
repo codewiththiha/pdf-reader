@@ -12,8 +12,8 @@
 
 use leptos::prelude::*;
 
-use crate::components::{Button, ButtonKind};
-use crate::components::{Icon, IconName};
+use crate::components::shared::button::{Button, ButtonKind};
+use crate::components::shared::icon::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::state::library::RecentBook;
 use crate::services::document;

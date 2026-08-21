@@ -6,19 +6,15 @@
 
 pub mod continuous;
 pub mod dom;
-pub mod floating_search;
 pub mod outline;
 pub mod page_canvas;
 pub mod page_list;
-pub mod page_navigation;
 pub mod single_page;
 pub mod thumbnails;
 
 pub(crate) use continuous::ContinuousView;
-pub(crate) use floating_search::FloatingSearch;
 pub(crate) use outline::OutlinePanel;
 pub(crate) use page_canvas::PageCanvas;
 pub(crate) use page_list::PageList;
-pub(crate) use page_navigation::PageNavigation;
 pub(crate) use single_page::SinglePageView;
 pub(crate) use thumbnails::ThumbnailsPanel;
