@@ -33,12 +33,9 @@ import {
   setActiveMatch,
   setHighlightMode,
 } from "./engine/search";
-import {
-  rebakeTheme,
-  applyScrubMode,
-  invalidatePipeline,
-  paintAllVisibleThumbs,
-} from "./engine/theme";
+import { rebakeTheme, applyScrubMode } from "./engine/theme/scrub";
+import { invalidatePipeline } from "./engine/theme/pipeline";
+import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import { installSelectionTracker } from "./engine/selection";
 import {
   ENGINE_VERSION,

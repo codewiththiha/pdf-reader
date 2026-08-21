@@ -5,11 +5,8 @@ import type {
   RenderResult,
 } from "./types";
 import { blitInto, el, errorInfo, fail, releaseCanvas, releasePooledCanvas } from "./canvas";
-import {
-  bakeRaster,
-  pipelineIsIdentity,
-  readPipeline,
-} from "./theme";
+import { bakeRaster } from "./theme/bake";
+import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import {
   bumpRenderCount,
   CLEANUP_EVERY,

@@ -2,16 +2,15 @@
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
 import { blitInto, el, errorInfo, fail, releaseCanvas } from "./canvas";
+import { bakeRaster } from "./theme/bake";
+import { readPipeline, pipelineCache } from "./theme/pipeline";
 import {
-  bakeRaster,
   cacheDisplay,
   ensureEntryCurrent,
   paintCached,
-  pipelineCache,
-  readPipeline,
   thumbRaw,
   thumbSource,
-} from "./theme";
+} from "./theme/thumbnails";
 import {
   pdf,
   releaseThumbEntry,
