@@ -27,7 +27,7 @@ pub(crate) fn create_app_state() -> AppState {
 pub(crate) fn provide_app_contexts(state: AppState) {
     let texture = RwSignal::new(TextureMode::None);
     Effect::new(move || {
-        let t = state.settings.get().appearance.texture;
+        let t = state.settings.with(|s| s.appearance.texture);
         texture.set(t);
     });
     provide_context(state.reader);

@@ -78,16 +78,17 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
     // their text layers — mounted so the selection's DOM nodes stay valid
     // and copy of multi-page selections works through any scroll.
     let visible = Memo::new(move |_| {
-        let heights = state.document.page_heights.get();
         let scroll_top = state.viewer.scroll_top.get();
         let vh = state.viewer.container_size.get().1;
-        let mut range = render_range(
-            scroll_top,
-            vh,
-            &heights,
-            PAGE_GAP,
-            RENDER_BUDGET,
-        );
+        let mut range = state.document.page_heights.with(|heights| {
+            render_range(
+                scroll_top,
+                vh,
+                heights,
+                PAGE_GAP,
+                RENDER_BUDGET,
+            )
+        });
         // FIX B — pin the dominant page during a layout animation. During a
         // sidebar slide, `scroll_top` is re-anchored by `relayout_to()` AND
         // clamped back by the browser's own scroll clamp (the spacer height
@@ -100,13 +101,27 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
         // replacement has no bitmap). Pinning the dominant page for the
         // duration of any layout animation keeps the SAME DOM node alive
         // through the whole slide so the stretch effect visibly rescales it.
-        if state.viewer.zoom_animating.get() && !heights.is_empty() {
-            let dom = pdf_core::layout::dominant_page(scroll_top, vh, &heights, PAGE_GAP) as usize;
-            let dom = dom.saturating_sub(1); // 1-based → 0-based
-            range = match range {
-                Some((f, l)) => Some((f.min(dom), l.max(dom))),
-                None => Some((dom, dom)),
-            };
+        if state.viewer.zoom_animating.get() {
+            let dom = state
+                .document
+                .page_heights
+                .with(|heights| {
+                    if heights.is_empty() {
+                        None
+                    } else {
+                        Some(
+                            pdf_core::layout::dominant_page(scroll_top, vh, heights, PAGE_GAP)
+                                as usize,
+                        )
+                    }
+                });
+            if let Some(dom) = dom {
+                let dom = dom.saturating_sub(1); // 1-based → 0-based
+                range = match range {
+                    Some((f, l)) => Some((f.min(dom), l.max(dom))),
+                    None => Some((dom, dom)),
+                };
+            }
         }
         // Extend to include the reader's current text-selection page range.
         if let Some((sel_first, sel_last)) = state.viewer.selected_pages.get() {
@@ -179,8 +194,11 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
             <div
                 aria-hidden="true"
                 style:height=move || {
-                    let heights = state.document.page_heights.get();
-                    format!("{}px", total_height_css(&heights, PAGE_GAP))
+                    let total = state
+                        .document
+                        .page_heights
+                        .with(|heights| total_height_css(heights, PAGE_GAP));
+                    format!("{total}px")
                 }
             ></div>
             <For
@@ -193,8 +211,10 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
                 key=|i: &usize| *i
                 children=move |i: usize| {
                     let style = move || {
-                        let heights = state.document.page_heights.get();
-                        let top = page_top_css(i, &heights, PAGE_GAP);
+                        let top = state
+                            .document
+                            .page_heights
+                            .with(|heights| page_top_css(i, heights, PAGE_GAP));
                         format!(
                             "position:absolute;top:{top}px;left:0;right:0;display:flex;justify-content:center"
                         )

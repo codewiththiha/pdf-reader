@@ -102,7 +102,11 @@ pub fn open_path(state: AppState, path: String) {
 
     // The resume point is read BEFORE the open resolves so it can't be
     // clobbered by a concurrent page-tracking write from the closing document.
-    let saved_page = library::find_page(&state.library.books.get_untracked(), &path).unwrap_or(1);
+    let saved_page = state
+        .library
+        .books
+        .with_untracked(|books| library::find_page(books, &path))
+        .unwrap_or(1);
 
     spawn_local(async move {
         match engine::open(&path).await {

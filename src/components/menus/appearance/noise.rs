@@ -20,11 +20,11 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
     let (intensity, set_intensity) = signal(seed.noise_intensity as f64);
 
     Effect::new(move || {
-        let a = state.settings.get().appearance;
+        let a = state.settings.with(|s| s.appearance);
         set_intensity.set(a.noise_intensity as f64);
     });
 
-    let current = move || state.settings.get().appearance.noise;
+    let current = move || state.settings.with(|s| s.appearance.noise);
 
     view! {
         <div class="grid grid-cols-3 gap-1">

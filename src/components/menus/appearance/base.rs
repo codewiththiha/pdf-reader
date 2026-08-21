@@ -36,12 +36,12 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
     // Mirror external writes (applying a preset) back into the local signals,
     // or the sliders would keep showing the old look's numbers.
     Effect::new(move || {
-        let a = state.settings.get().appearance;
+        let a = state.settings.with(|s| s.appearance);
         set_hue.set(a.tint_hue as f64);
         set_strength.set(a.tint_strength as f64);
     });
 
-    let current_base = move || state.settings.get().appearance.base;
+    let current_base = move || state.settings.with(|s| s.appearance.base);
 
     view! {
         <div class="grid grid-cols-3 gap-1">

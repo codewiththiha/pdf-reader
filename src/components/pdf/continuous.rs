@@ -19,8 +19,10 @@ pub fn ContinuousView(state: ReaderState) -> impl IntoView {
 
     // Reading-progress bar: fraction of the scrollable extent consumed.
     let total_height = Memo::new(move |_| {
-        let heights = state.document.page_heights.get();
-        total_height_css(&heights, PAGE_GAP)
+        state
+            .document
+            .page_heights
+            .with(|heights| total_height_css(heights, PAGE_GAP))
     });
     let progress = move || {
         let st = state.viewer.scroll_top.get();

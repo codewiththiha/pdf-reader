@@ -60,7 +60,7 @@ pub fn reading_progress(state: AppState) {
         if let Some(h) = timer.get_value() {
             h.clear();
         }
-        let snapshot = state.library.books.get_untracked();
+        let snapshot = state.library.books.with_untracked(|books| books.clone());
         let handle = set_timeout_with_handle(
             move || {
                 let _ = save_library(&snapshot);

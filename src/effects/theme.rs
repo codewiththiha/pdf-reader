@@ -146,7 +146,7 @@ pub fn apply_theme(state: AppState) {
     // and the live-preview path writes the same properties, so splitting
     // them into three effects just tripled the work on every settings write.
     Effect::new(move || {
-        let a = state.settings.get().appearance;
+        let a = state.settings.with(|s| s.appearance);
         paint_appearance_now(a);
         // The engine bakes the theme into its rasters (pages + thumbnails);
         // re-bake them at the freshly painted variables. A no-op while a
@@ -156,7 +156,7 @@ pub fn apply_theme(state: AppState) {
     });
 
     Effect::new(move || {
-        let settings = state.settings.get();
+        let settings = state.settings.with(|s| s.clone());
         schedule_save(settings);
     });
 }

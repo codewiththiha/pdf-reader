@@ -39,8 +39,6 @@ pub fn fit_effect(
         // Tracked: a wide plate scrolling into view is the same kind of
         // "the space the page needs changed" as the sidebar opening.
         let page = state.viewer.page.get();
-        let widths = state.document.page_widths.get();
-        let intrins_h = state.document.page_sizes.get();
         // A zoom GESTURE owns the layout while it runs.
         //
         // `apply_zoom` writes `fit` (to None) and then calls `request_zoom`, so
@@ -96,7 +94,12 @@ pub fn fit_effect(
         // The page under the eyes, not page 1. A landscape insert is cropped
         // (and a following portrait page stays over-shrunk) if we keep using
         // the first sheet's size for every page.
-        let (pw, ph) = page_intrinsic(page, &widths, &intrins_h, p1.width, p1.height);
+        let (pw, ph) = state.document.page_widths.with(|widths| {
+            state
+                .document
+                .page_sizes
+                .with_untracked(|intrins_h| page_intrinsic(page, widths, intrins_h, p1.width, p1.height))
+        });
         let prev_page = last_fit_page.get_value();
         let page_changed = prev_page != 0 && prev_page != page;
         last_fit_page.set_value(page);

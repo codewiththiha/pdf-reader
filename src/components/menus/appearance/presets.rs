@@ -23,7 +23,7 @@ fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
     let appearance = preset.appearance;
     let active = {
         let id = id.clone();
-        move || state.settings.get().active_preset.as_deref() == Some(id.as_str())
+        move || state.settings.with(|s| s.active_preset.as_deref() == Some(id.as_str()))
     };
     let active_btn = active.clone();
     let name_title = name.clone();
@@ -118,8 +118,8 @@ pub fn PresetSection(state: AppState) -> impl IntoView {
     let new_name = RwSignal::new(String::new());
     let new_group = RwSignal::new(String::new());
 
-    let groups = move || group_presets(&state.settings.get().all_presets());
-    let existing_groups = move || user_group_names(&state.settings.get().user_presets);
+    let groups = move || state.settings.with(|s| group_presets(&s.all_presets()));
+    let existing_groups = move || state.settings.with(|s| user_group_names(&s.user_presets));
 
     let commit = move || {
         let name = new_name.get_untracked().trim().to_string();

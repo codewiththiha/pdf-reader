@@ -101,12 +101,13 @@ pub fn page_tracking(state: ReaderState) {
         let continuous = state.viewer.mode.get() == ViewMode::Continuous;
         if continuous && !was_continuous {
             let page = state.viewer.page.get_untracked();
-            let heights = state.document.page_heights.get_untracked();
-            let top = if heights.is_empty() {
-                estimated_top(page, state)
-            } else {
-                page_top_css(page.saturating_sub(1) as usize, &heights, PAGE_GAP)
-            };
+            let top = state.document.page_heights.with_untracked(|heights| {
+                if heights.is_empty() {
+                    estimated_top(page, state)
+                } else {
+                    page_top_css(page.saturating_sub(1) as usize, heights, PAGE_GAP)
+                }
+            });
             state.viewer.scroll_top.set(top);
         }
         was_continuous = continuous;

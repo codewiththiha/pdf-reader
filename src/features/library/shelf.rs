@@ -163,19 +163,18 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
     // the grid; falls back to 3:4 portrait.
     let cover_path = path.clone();
     let aspect = move || {
-        state
-            .library
-            .covers
-            .get()
-            .get(&cover_path)
-            .map(|c| {
-                if c.width > 0.0 && c.height > 0.0 {
-                    (c.width / c.height).clamp(0.55, 1.8)
-                } else {
-                    0.75
-                }
-            })
-            .unwrap_or(0.75)
+        state.library.covers.with(|covers| {
+            covers
+                .get(&cover_path)
+                .map(|c| {
+                    if c.width > 0.0 && c.height > 0.0 {
+                        (c.width / c.height).clamp(0.55, 1.8)
+                    } else {
+                        0.75
+                    }
+                })
+                .unwrap_or(0.75)
+        })
     };
 
     let click_path = path.clone();
@@ -220,7 +219,11 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
             <div class="book-cover" style:aspect-ratio=move || format!("{:.5} / {:.5}", aspect(), 1.0)>
                 // Fore-edge: stacked page sheets peeking past the right side.
                 <div class="book-pages"></div>
-                {move || match state.library.covers.get().get(&alt_path).cloned() {
+                {move || match state
+                    .library
+                    .covers
+                    .with(|covers| covers.get(&alt_path).cloned())
+                {
                     Some(c) => view! {
                         <img class="book-cover-img" src=c.data_url alt=alt_title.clone() loading="lazy" />
                     }

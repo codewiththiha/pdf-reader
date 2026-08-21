@@ -24,12 +24,12 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
     let (tscale, set_tscale) = signal(seed.texture_scale as f64);
 
     Effect::new(move || {
-        let a = state.settings.get().appearance;
+        let a = state.settings.with(|s| s.appearance);
         set_opacity.set(a.texture_opacity as f64);
         set_tscale.set(a.texture_scale as f64);
     });
 
-    let current = move || state.settings.get().appearance.texture;
+    let current = move || state.settings.with(|s| s.appearance.texture);
     let has_texture = move || current() != TextureMode::None;
 
     view! {

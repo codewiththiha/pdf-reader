@@ -99,9 +99,10 @@ pub fn reveal_match(state: ReaderState, m: &SearchMatch) {
     }
 
     let Some(list) = page_list() else { return };
-    let heights = state.document.page_heights.get_untracked();
     let scale = state.viewer.render_scale.get_untracked();
-    let page_top = page_top_css(m.page.saturating_sub(1) as usize, &heights, PAGE_GAP);
+    let page_top = state.document.page_heights.with_untracked(|heights| {
+        page_top_css(m.page.saturating_sub(1) as usize, heights, PAGE_GAP)
+    });
 
     // Match rects are scale-1; the column is laid out at the render scale.
     //
@@ -129,10 +130,15 @@ pub fn reveal_match(state: ReaderState, m: &SearchMatch) {
 
 /// Select match `index` (bounds-checked) and reveal it.
 pub fn activate_match(state: ReaderState, index: usize) {
-    let matches = state.search.matches.get_untracked();
-    let Some(m) = matches.get(index) else { return };
+    let Some(m) = state
+        .search
+        .matches
+        .with_untracked(|matches| matches.get(index).cloned())
+    else {
+        return;
+    };
     state.search.active.set(Some(index));
-    reveal_match(state, m);
+    reveal_match(state, &m);
 }
 
 /// Step to the next/previous MATCH (not page) and reveal it, wrapping at the

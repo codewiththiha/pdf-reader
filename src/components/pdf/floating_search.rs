@@ -371,7 +371,7 @@ pub fn ResultRow(state: ReaderState, result: SearchMatch, index: usize) -> impl 
 pub fn ResultList(state: ReaderState) -> impl IntoView {
     view! {
         {move || {
-            if state.search.matches.get().is_empty() {
+            if state.search.matches.with(|m| m.is_empty()) {
                 view! {
                     <div class="p-4 text-sm text-muted">No results</div>
                 }

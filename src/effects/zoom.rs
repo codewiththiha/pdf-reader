@@ -125,22 +125,27 @@ pub fn relayout_to(state: ReaderState, factor: f64) {
     if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
         return;
     }
-    let heights = state.document.page_heights.get_untracked();
-    if heights.is_empty() {
+    let new_st = state.document.page_heights.with_untracked(|heights| {
+        if heights.is_empty() {
+            return None;
+        }
+        let vh = viewport_h(state);
+        let st = state.viewer.scroll_top.get_untracked();
+        let anchor = vh * ANCHOR_FRAC;
+        anchored_scroll(st, vh, heights, PAGE_GAP, factor, anchor)
+    });
+    let scaled: Vec<f64> = state
+        .document
+        .page_heights
+        .with_untracked(|heights| heights.iter().map(|h| h * factor).collect());
+    if scaled.is_empty() {
         return;
     }
-    let vh = viewport_h(state);
-    let st = state.viewer.scroll_top.get_untracked();
-    let anchor = vh * ANCHOR_FRAC;
-    let new_st = anchored_scroll(st, vh, &heights, PAGE_GAP, factor, anchor);
 
     // Heights first, then scroll: the wrappers' `top:` values are derived from
     // heights, so this order means the scroll write always lands in a column
     // that is already the right size.
-    state
-        .document
-        .page_heights
-        .set(heights.iter().map(|h| h * factor).collect());
+    state.document.page_heights.set(scaled);
 
     if let Some(new_st) = new_st {
         state.viewer.scroll_top.set(new_st);
@@ -167,10 +172,10 @@ pub fn relayout_to(state: ReaderState, factor: f64) {
                 .first_element_child()
                 .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
             {
-                let total = total_height_css(
-                    &heights.iter().map(|h| h * factor).collect::<Vec<_>>(),
-                    PAGE_GAP,
-                );
+                let total = state
+                    .document
+                    .page_heights
+                    .with_untracked(|heights| total_height_css(heights, PAGE_GAP));
                 _ = spacer.style().set_property("height", &format!("{total}px"));
             }
             list.set_scroll_top(new_st.round() as i32);

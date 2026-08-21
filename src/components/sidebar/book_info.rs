@@ -17,7 +17,11 @@ pub(crate) fn BookInfo(state: AppState) -> impl IntoView {
             >
                 {move || {
                     let path = state.reader.document.path.get().unwrap_or_default();
-                    match state.library.covers.get().get(&path).cloned() {
+                    let cover = state
+                        .library
+                        .covers
+                        .with(|covers| covers.get(&path).cloned());
+                    match cover {
                         Some(c) => view! {
                             <img
                                 class="h-12 w-10 rounded-sm border border-line/60 object-cover"
