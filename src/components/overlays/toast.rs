@@ -9,7 +9,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use pdf_viewer::{Icon, IconName};
-use crate::state::{AppState, ToastKind};
+use crate::state::AppState;
 
 #[component]
 pub fn ToastHost(state: AppState) -> impl IntoView {
@@ -51,22 +51,11 @@ pub fn ToastHost(state: AppState) -> impl IntoView {
         <div class="pointer-events-none fixed inset-x-0 top-14 z-[100] flex justify-center px-4">
             {move || {
                 state.ui.toast.get().map(|t| {
-                    let (surface, icon) = match t.kind {
-                        ToastKind::Info => {
-                            ("border-line bg-surface/95 text-ink", IconName::Check)
-                        }
-                        ToastKind::Error => (
-                            "border-red-400/50 bg-red-950/95 text-red-100",
-                            IconName::Close,
-                        ),
-                    };
                     view! {
                         <div
-                            class=format!(
-                                "toast-enter flex max-w-[min(90vw,32rem)] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm shadow-xl {surface}",
-                            )
+                            class="toast-enter flex max-w-[min(90vw,32rem)] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm shadow-xl border-red-400/50 bg-red-950/95 text-red-100"
                         >
-                            <Icon name=icon size=16 />
+                            <Icon name=IconName::Close size=16 />
                             <span>{t.message.clone()}</span>
                         </div>
                     }

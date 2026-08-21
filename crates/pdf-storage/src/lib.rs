@@ -1,18 +1,13 @@
 //! Key-value persistence abstraction.
 //!
-//! The app talks to [`PdfStorage`], never to a concrete backend. Today the
-//! only live impl is [`local::LocalStorage`] (what the app always used,
-//! reached through `window.localStorage`). A SQLite impl exists behind the
-//! `sqlite` feature; switching backends is a one-line change at startup.
+//! The app talks to [`PdfStorage`], never to a concrete backend. The only
+//! live impl is [`local::LocalStorage`] (what the app always used, reached
+//! through `window.localStorage`); switching backends is a one-line change at
+//! startup.
 
 pub mod local;
 
-#[cfg(feature = "sqlite")]
-pub mod sqlite;
-
 pub use local::LocalStorage;
-#[cfg(feature = "sqlite")]
-pub use sqlite::SqliteStorage;
 
 /// Minimal key-value store for persisted app state.
 ///

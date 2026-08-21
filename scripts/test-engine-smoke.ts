@@ -520,12 +520,6 @@ function assertClose(actual: Uint8ClampedArray, expected: number[], label: strin
   }
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-// Suppress an unused-var lint that fires when `sleep` is exported for the
-// harness's own use.
-void sleep;
-
 (async () => {
   // 1. open
   const opened = await PDFReader.open("/fake/book.pdf");

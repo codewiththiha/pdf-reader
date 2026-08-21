@@ -1,5 +1,5 @@
 [package]
-name = "pdf-ui"
+name = "pdf-reader"
 version = "0.5.0"
 edition = "2024"
 
@@ -10,35 +10,23 @@ leptos_router = "0.8"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-# Feature set kept broad so feature branches (viewer/continuous, viewer/chrome,
-# panels/sidebar, panels/settings) and the redesign units (floating search,
-# appearance/more menus, drag-drop) never need to edit Cargo.toml. DragEvent +
-# DataTransfer are consumed by ReaderView drag-drop in phase 5.
+# Trimmed to what src/ actually uses (audited after the feature-folder
+# refactor): window/document/element access, the html::Div/Span node refs,
+# classList + inline style writes, drag-drop (DragEvent + DataTransfer),
+# scroll anchoring, resize observation, and the reveal CustomEvent.
 web-sys = { version = "0.3", features = [
   "Window",
   "Document",
   "Element",
   "HtmlElement",
   "HtmlDivElement",
-  "HtmlCanvasElement",
-  "HtmlInputElement",
-  "HtmlButtonElement",
-  "HtmlSelectElement",
-  "HtmlOptionElement",
+  "HtmlSpanElement",
   "Node",
-  "NodeList",
-  "Text",
   "DomTokenList",
   "CssStyleDeclaration",
-  "CanvasRenderingContext2d",
-  "Storage",
   "Event",
   "MouseEvent",
   "KeyboardEvent",
-  "FocusEvent",
-  "FocusOptions",
-  "WheelEvent",
-  "InputEvent",
   "ResizeObserver",
   "ResizeObserverEntry",
   "DomRect",
@@ -46,7 +34,6 @@ web-sys = { version = "0.3", features = [
   "DataTransfer",
   "ScrollToOptions",
   "ScrollBehavior",
-  "MediaQueryList",
   "CustomEvent",
 ] }
 serde = { version = "1", features = ["derive"] }

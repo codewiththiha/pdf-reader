@@ -12,8 +12,8 @@ use pdf_viewer::{DocumentState, SearchState, SidebarMode, ViewerSignals, ViewerS
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
-    #[allow(dead_code)] // reserved: info toasts (only errors are emitted so far)
-    Info,
+    /// Only errors are emitted so far; an `Info` variant comes back when an
+    /// information toast actually exists.
     Error,
 }
 
