@@ -2943,22 +2943,12 @@ dependencies = [
  "leptos_router",
  "pdf-core",
  "pdf-engine",
- "pdf-storage",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
  "virtual-list",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "pdf-storage"
-version = "0.5.0"
-dependencies = [
- "serde",
- "serde_json",
  "web-sys",
 ]
 

@@ -12,7 +12,7 @@ use crate::storage::{init_storage, load_covers, load_library, load_settings};
 /// Install the storage backend. localStorage today; swapping for another
 /// `PdfStorage` backend is a one-line change here.
 pub(crate) fn install_storage() {
-    init_storage(Box::new(pdf_storage::LocalStorage));
+    init_storage(Box::new(crate::storage::LocalStorage));
 }
 
 /// App state seeded from the persisted settings/library/covers.

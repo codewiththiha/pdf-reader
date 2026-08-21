@@ -7,7 +7,9 @@ use std::sync::OnceLock;
 
 use crate::state::library::{sanitize as sanitize_library, CoverImage, RecentBook};
 use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
-use pdf_storage::PdfStorage;
+pub mod local;
+
+pub use local::{LocalStorage, PdfStorage};
 
 pub const LIBRARY_KEY: &str = "pdfreader.library.v1";
 pub const COVERS_KEY: &str = "pdfreader.covers.v1";
@@ -15,7 +17,7 @@ pub const COVERS_KEY: &str = "pdfreader.covers.v1";
 static STORAGE: OnceLock<Box<dyn PdfStorage>> = OnceLock::new();
 
 /// Install the storage backend. Must be called once, before any load/save.
-/// Swapping localStorage for SQLite is a one-line change here.
+/// Swapping in another backend is a one-line change here.
 pub fn init_storage(storage: Box<dyn PdfStorage>) {
     _ = STORAGE.set(storage);
 }
@@ -23,7 +25,7 @@ pub fn init_storage(storage: Box<dyn PdfStorage>) {
 fn storage() -> &'static (dyn PdfStorage + 'static) {
     // `&**` instead of `&` to avoid the `borrowed_box` clippy lint: we want
     // `&dyn PdfStorage`, not `&Box<dyn PdfStorage>`.
-    &**STORAGE.get_or_init(|| Box::new(pdf_storage::LocalStorage))
+    &**STORAGE.get_or_init(|| Box::new(local::LocalStorage))
 }
 
 /// Load persisted settings; invalid values fall back to defaults + sanitize.
