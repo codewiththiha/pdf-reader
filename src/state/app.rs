@@ -8,7 +8,7 @@ use leptos::prelude::RwSignal;
 
 use crate::state::library::{CoverImage, RecentBook};
 use pdf_core::settings::Settings;
-use pdf_viewer::state::{DocumentState, SearchState, SidebarMode, ViewerSignals, ViewerState};
+use pdf_viewer::{DocumentState, SearchState, SidebarMode, ViewerSignals, ViewerState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {

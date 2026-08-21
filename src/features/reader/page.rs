@@ -10,10 +10,10 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::button::{Button, ButtonKind};
-use pdf_viewer::components::shared::icon::{Icon, IconName};
-use pdf_viewer::components::shared::segmented::{Segmented, SegmentedLabel};
-use pdf_viewer::components::shared::tooltip::Tooltip;
+use pdf_viewer::{Button, ButtonKind};
+use pdf_viewer::{Icon, IconName};
+use pdf_viewer::{Segmented, SegmentedLabel};
+use pdf_viewer::Tooltip;
 
 use pdf_engine::types::DocStatus;
 use pdf_core::layout::ViewMode;
@@ -30,10 +30,10 @@ use crate::components::reader::zoom_controls::zoom_entries;
 use crate::state::open::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::effects::reading_progress::reading_progress;
-use pdf_viewer::effects::fit::fit_effect;
-use pdf_viewer::effects::page_tracking::page_tracking;
-use pdf_viewer::effects::zoom::zoom_system;
-use pdf_viewer::state::SidebarMode;
+use pdf_viewer::fit_effect;
+use pdf_viewer::page_tracking;
+use pdf_viewer::zoom_system;
+use pdf_viewer::SidebarMode;
 
 fn view_mode_entry(state: AppState) -> ToolbarEntry {
     let mode = state.viewer.mode;
@@ -257,11 +257,11 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {
-                                    <pdf_viewer::components::pages::single_page::SinglePageView state=vs />
+                                    <pdf_viewer::SinglePageView state=vs />
                                 }
                                 .into_any(),
                                 ViewMode::Continuous => view! {
-                                    <pdf_viewer::components::pages::continuous::ContinuousView state=vs />
+                                    <pdf_viewer::ContinuousView state=vs />
                                 }
                                 .into_any(),
                             }}
@@ -278,7 +278,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                         <ReaderControls state=state />
                         // Floating search overlay (U4): mounted at the viewer
                         // slot; its top-14 offset clears the titlebar.
-                        <pdf_viewer::components::search::floating::FloatingSearch state=vs />
+                        <pdf_viewer::FloatingSearch state=vs />
                     </main>
                 </div>
             </div>

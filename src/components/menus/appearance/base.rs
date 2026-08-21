@@ -9,9 +9,9 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::hue_picker::HuePicker;
-use pdf_viewer::components::shared::icon::{Icon, IconName};
-use pdf_viewer::components::shared::slider::Slider;
+use pdf_viewer::HuePicker;
+use pdf_viewer::{Icon, IconName};
+use pdf_viewer::Slider;
 use pdf_core::appearance::BaseMode;
 use crate::components::shared::option_button::OptionButton;
 use crate::state::AppState;

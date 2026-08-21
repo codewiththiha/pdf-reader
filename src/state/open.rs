@@ -19,13 +19,12 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::Event;
 
 use pdf_engine::api as engine;
-use pdf_engine::bridge;
 use pdf_engine::types::DocStatus;
 use pdf_core::filename::display_name;
 use crate::state::library::{self, CoverImage, RecentBook};
 use pdf_core::math::{fit_scale, FitMode};
 use crate::state::{AppState, Toast, ToastKind};
-use pdf_viewer::state::SidebarMode;
+use pdf_viewer::SidebarMode;
 use crate::storage::{save_covers, save_library};
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app
@@ -49,7 +48,7 @@ pub fn init_open_file_handling(state: AppState) {
         }
     });
 
-    if !bridge::has_tauri() {
+    if !pdf_engine::has_tauri() {
         return;
     }
 
@@ -70,7 +69,7 @@ pub fn init_open_file_handling(state: AppState) {
     );
     let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
     spawn_local(async move {
-        _ = bridge::listen("pdf-open-file", f).await;
+        _ = pdf_engine::listen("pdf-open-file", f).await;
     });
     handle.set_value(Some(cb));
 }

@@ -77,7 +77,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // Tauri's own events: drag-enter shows it, drag-leave hides it, and
     // drag-drop opens the file (and hides it). Each Closure is parked so the
     // listener stays registered for the view's lifetime.
-    if !pdf_engine::bridge::has_tauri() {
+    if !pdf_engine::has_tauri() {
         return;
     }
 
@@ -92,7 +92,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
         // The unlisten handle is intentionally discarded: Tauri keeps the
         // listener registered until that fn is called (we never do), and the
         // view lives for the whole app window.
-        _ = pdf_engine::bridge::listen("tauri://drag-enter", f_enter).await;
+        _ = pdf_engine::listen("tauri://drag-enter", f_enter).await;
     });
     enter_handle.set_value(Some(cb_enter));
 
@@ -104,7 +104,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     );
     let f_leave: js_sys::Function = cb_leave.as_ref().unchecked_ref::<js_sys::Function>().clone();
     spawn_local(async move {
-        _ = pdf_engine::bridge::listen("tauri://drag-leave", f_leave).await;
+        _ = pdf_engine::listen("tauri://drag-leave", f_leave).await;
     });
     leave_handle.set_value(Some(cb_leave));
 
@@ -122,7 +122,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     );
     let f_drop: js_sys::Function = cb_drop.as_ref().unchecked_ref::<js_sys::Function>().clone();
     spawn_local(async move {
-        _ = pdf_engine::bridge::listen("tauri://drag-drop", f_drop).await;
+        _ = pdf_engine::listen("tauri://drag-drop", f_drop).await;
     });
     drop_handle.set_value(Some(cb_drop));
 }

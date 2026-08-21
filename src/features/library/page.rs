@@ -4,9 +4,9 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::button::{Button, ButtonKind};
-use pdf_viewer::components::shared::icon::IconName;
-use pdf_viewer::components::shared::tooltip::Tooltip;
+use pdf_viewer::{Button, ButtonKind};
+use pdf_viewer::IconName;
+use pdf_viewer::Tooltip;
 use crate::components::chrome::title_bar::TitleBar;
 use crate::components::menus::appearance::AppearanceMenu;
 use crate::components::chrome::floating_title::DocumentTitle;

@@ -16,9 +16,9 @@ use std::time::Duration;
 use leptos::children::ViewFn;
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::icon::{Icon, IconName};
-use pdf_viewer::components::shared::tooltip::Tooltip;
-use pdf_viewer::state::SidebarMode;
+use pdf_viewer::{Icon, IconName};
+use pdf_viewer::Tooltip;
+use pdf_viewer::SidebarMode;
 use crate::state::AppState;
 use crate::storage::save_settings;
 

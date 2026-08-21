@@ -10,9 +10,8 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use pdf_viewer::components::shared::icon::{Icon, IconName};
-use pdf_viewer::components::shared::kbd::Kbd;
-use pdf_engine::bridge;
+use pdf_viewer::{Icon, IconName};
+use pdf_viewer::Kbd;
 use crate::components::shared::menu_item::MenuItem;
 use crate::components::shared::popover::Popover;
 use crate::state::AppState;
@@ -47,11 +46,11 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
     // its wasm-bindgen shim evaluates `window.__TAURI__.window.getCurrentWindow()`,
     // which throws a TypeError when `window.__TAURI__` is absent — so the guard
     // on the returned JsValue alone would never reach the browser fallback.
-    let has_tauri = pdf_engine::bridge::has_tauri();
+    let has_tauri = pdf_engine::has_tauri();
     let toggle_fullscreen = move || {
         let next = !full.get();
         if has_tauri {
-            let win = pdf_engine::bridge::tauri_get_current_window();
+            let win = pdf_engine::tauri_get_current_window();
             if !(win.is_undefined() || win.is_null()) {
                 if let Ok(f) = js_sys::Reflect::get(&win, &JsValue::from_str("setFullscreen"))
                                     && f.is_function()
@@ -143,8 +142,8 @@ pub fn MoreMenu(state: AppState) -> impl IntoView {
                 <div class="mt-1 flex items-center justify-between border-t border-line px-1 py-1">
                     <span class="text-xs text-muted">"PDF Reader"</span>
                     <span class="text-xs text-muted">{
-                        if bridge::has_pdf_reader() {
-                            format!("v{}", bridge::version())
+                        if pdf_engine::has_pdf_reader() {
+                            format!("v{}", pdf_engine::version())
                         } else {
                             String::new()
                         }

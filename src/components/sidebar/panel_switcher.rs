@@ -3,8 +3,8 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::icon::{Icon, IconName};
-use pdf_viewer::state::SidebarMode;
+use pdf_viewer::{Icon, IconName};
+use pdf_viewer::SidebarMode;
 
 /// One rail toggle.
 #[component]

@@ -16,7 +16,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use pdf_core::layout::{total_height_css, ViewMode, PAGE_GAP};
-use pdf_viewer::components::navigation::page_navigation::PageNavigation;
+use pdf_viewer::PageNavigation;
 use crate::state::AppState;
 
 /// Pointer must be off the bar this long before it hides.
@@ -85,7 +85,7 @@ pub fn ReaderControls(state: AppState) -> impl IntoView {
                     prop:value=move || state.viewer.scroll_top.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<f64>()
-                            && let Some(list) = pdf_viewer::dom::page_list()
+                            && let Some(list) = pdf_viewer::page_list()
                         {
                             list.set_scroll_top(v as i32);
                         }

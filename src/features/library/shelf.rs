@@ -12,8 +12,8 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::button::{Button, ButtonKind};
-use pdf_viewer::components::shared::icon::{Icon, IconName};
+use pdf_viewer::{Button, ButtonKind};
+use pdf_viewer::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::state::library::RecentBook;
 use crate::state::open;
@@ -32,7 +32,7 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
     let is_opening = move || status.get() == DocStatus::Opening;
     let is_error = move || status.get() == DocStatus::Error;
 
-    let has_tauri = pdf_engine::bridge::has_tauri();
+    let has_tauri = pdf_engine::has_tauri();
     let open_state = state;
 
     view! {
@@ -116,7 +116,7 @@ pub fn LibraryView(state: AppState) -> impl IntoView {
 /// library — info text above, an "Open…" button in the middle.
 #[component]
 fn EmptyState(state: AppState) -> impl IntoView {
-    let has_tauri = pdf_engine::bridge::has_tauri();
+    let has_tauri = pdf_engine::has_tauri();
     view! {
         <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
             <div class="flex max-w-md flex-col items-center gap-3 text-center">

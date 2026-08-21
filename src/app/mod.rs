@@ -51,7 +51,7 @@ fn shortcuts(state: AppState) {
     let open_doc = {
         move || crate::state::open::open_dialog(state)
     };
-    pdf_viewer::effects::shortcuts::shortcuts(
+    pdf_viewer::shortcuts(
         state.viewer_state(),
         open_doc,
     );

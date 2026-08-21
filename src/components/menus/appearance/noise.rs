@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::slider::Slider;
+use pdf_viewer::Slider;
 use pdf_core::appearance::NoiseMode;
 use crate::components::shared::option_button::OptionButton;
 use crate::state::AppState;

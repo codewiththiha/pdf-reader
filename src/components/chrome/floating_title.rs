@@ -17,7 +17,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
-use pdf_viewer::state::SidebarMode;
+use pdf_viewer::SidebarMode;
 use crate::state::AppState;
 use super::title_bar::TitleBarCtx;
 
@@ -50,8 +50,8 @@ pub fn FloatingTitle(state: AppState) -> impl IntoView {
             } else {
                 format!("cont-{}-pg", page.saturating_sub(1))
             };
-            let Some(doc_el) = pdf_viewer::dom::by_id(&host_id) else { return };
-            let Some(viewer) = pdf_viewer::dom::by_id("viewer-slot") else { return };
+            let Some(doc_el) = pdf_viewer::by_id(&host_id) else { return };
+            let Some(viewer) = pdf_viewer::by_id("viewer-slot") else { return };
 
             let pr = doc_el.get_bounding_client_rect();
             let vr = viewer.get_bounding_client_rect();

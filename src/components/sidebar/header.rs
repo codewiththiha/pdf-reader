@@ -4,10 +4,10 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::button::{Button, ButtonKind};
-use pdf_viewer::components::shared::icon::{Icon, IconName};
-use pdf_viewer::components::shared::tooltip::Tooltip;
-use pdf_viewer::state::SidebarMode;
+use pdf_viewer::{Button, ButtonKind};
+use pdf_viewer::{Icon, IconName};
+use pdf_viewer::Tooltip;
+use pdf_viewer::SidebarMode;
 use crate::components::menus::more::MoreMenu;
 use crate::state::AppState;
 
@@ -42,9 +42,9 @@ pub(crate) fn SidebarHeader(state: AppState) -> impl IntoView {
                 on:click=move |_| {
                     let vs = state.viewer_state();
                     if state.search.visible.get() {
-                        pdf_viewer::effects::search_effects::dismiss_search(vs);
+                        pdf_viewer::dismiss_search(vs);
                     } else {
-                        pdf_viewer::effects::search_effects::resume_search(vs);
+                        pdf_viewer::resume_search(vs);
                     }
                 }
                 class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"

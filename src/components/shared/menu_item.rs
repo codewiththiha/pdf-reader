@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::components::shared::icon::{Icon, IconName};
+use pdf_viewer::{Icon, IconName};
 
 #[component]
 pub fn MenuItem(

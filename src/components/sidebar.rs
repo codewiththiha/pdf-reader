@@ -42,7 +42,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_viewer::state::SidebarMode;
+use pdf_viewer::SidebarMode;
 use crate::state::AppState;
 
 use book_info::BookInfo;
@@ -202,7 +202,7 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::{panel_is_shown, thumbs_should_stay_mounted, SIDEBAR_SLIDE_MS};
-    use pdf_viewer::state::SidebarMode;
+    use pdf_viewer::SidebarMode;
 
     #[test]
     fn the_slide_matches_the_css_duration() {
