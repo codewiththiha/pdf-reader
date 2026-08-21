@@ -1,4 +1,4 @@
-//! App-level state: the viewer pieces come from `pdf_viewer::state`; this adds
+//! App-level state: the viewer pieces come from `crate::state::viewer`; this adds
 //! the app chrome (settings, library, covers, toast). Field paths match the
 //! viewer state exactly, so components work unchanged in either context.
 
@@ -8,7 +8,7 @@ use leptos::prelude::RwSignal;
 
 use crate::state::library::{CoverImage, RecentBook};
 use pdf_core::settings::Settings;
-use pdf_viewer::{DocumentState, SearchState, SidebarMode, ViewerSignals, ViewerState};
+use crate::state::{DocumentState, SearchState, SidebarMode, ViewerSignals, ViewerState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {

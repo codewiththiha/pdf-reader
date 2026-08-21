@@ -19,10 +19,10 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_viewer::{Icon, IconName};
-use pdf_viewer::Separator;
-use crate::components::shared::adaptive_group::{OverflowRow, ToolbarEntry};
-use crate::components::shared::popover::Popover;
+use crate::components::{Icon, IconName};
+use crate::components::Separator;
+use crate::components::{OverflowRow, ToolbarEntry};
+use crate::components::Popover;
 use crate::state::AppState;
 
 mod base;

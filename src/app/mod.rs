@@ -9,7 +9,7 @@ mod shell;
 use leptos::prelude::*;
 use leptos_router::components::Router;
 
-use crate::components::overlays::toast::ToastHost;
+use crate::components::ToastHost;
 use crate::effects::link_navigation::link_navigation;
 use crate::effects::page_selection::page_selection;
 use crate::effects::theme::apply_theme;
@@ -51,7 +51,7 @@ fn shortcuts(state: AppState) {
     let open_doc = {
         move || crate::state::open::open_dialog(state)
     };
-    pdf_viewer::shortcuts(
+    crate::effects::shortcuts::shortcuts(
         state.viewer_state(),
         open_doc,
     );

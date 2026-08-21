@@ -16,7 +16,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::pages::page_canvas::PageCanvas;
+use crate::components::PageCanvas;
 use pdf_core::layout::{
     page_top_css, render_range, total_height_css, PAGE_GAP, RENDER_BUDGET,
 };

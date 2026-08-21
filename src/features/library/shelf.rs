@@ -12,8 +12,8 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::{Button, ButtonKind};
-use pdf_viewer::{Icon, IconName};
+use crate::components::{Button, ButtonKind};
+use crate::components::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::state::library::RecentBook;
 use crate::state::open;

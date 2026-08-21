@@ -5,5 +5,9 @@
 pub mod app;
 pub mod library;
 pub mod open;
+pub mod viewer;
 
 pub use app::{AppState, Toast, ToastKind};
+pub use viewer::{
+    DocumentState, SearchState, SidebarMode, TextureSignal, ViewerSignals, ViewerState,
+};

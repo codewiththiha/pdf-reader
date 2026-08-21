@@ -10,7 +10,7 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::chrome::title_bar::TitleBarCtx;
+use crate::components::TitleBarCtx;
 
 #[component]
 pub fn Popover(

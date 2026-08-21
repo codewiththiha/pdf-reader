@@ -24,7 +24,7 @@ use pdf_core::filename::display_name;
 use crate::state::library::{self, CoverImage, RecentBook};
 use pdf_core::math::{fit_scale, FitMode};
 use crate::state::{AppState, Toast, ToastKind};
-use pdf_viewer::SidebarMode;
+use crate::state::SidebarMode;
 use crate::storage::{save_covers, save_library};
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app

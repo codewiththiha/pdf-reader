@@ -7,7 +7,7 @@
 //! wiring.
 
 use leptos::prelude::*;
-use pdf_viewer::{Icon, IconName};
+use crate::components::{Icon, IconName};
 
 #[component]
 pub fn DragOverlay() -> impl IntoView {

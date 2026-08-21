@@ -3,8 +3,8 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::ThumbnailsPanel;
-use pdf_viewer::ViewerState;
+use crate::components::ThumbnailsPanel;
+use crate::state::ViewerState;
 
 #[component]
 pub(crate) fn SidebarThumbs(

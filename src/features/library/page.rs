@@ -4,13 +4,13 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::{Button, ButtonKind};
-use pdf_viewer::IconName;
-use pdf_viewer::Tooltip;
-use crate::components::chrome::title_bar::TitleBar;
-use crate::components::menus::appearance::AppearanceMenu;
-use crate::components::chrome::floating_title::DocumentTitle;
-use crate::components::menus::more::MoreMenu;
+use crate::components::{Button, ButtonKind};
+use crate::components::IconName;
+use crate::components::Tooltip;
+use crate::components::TitleBar;
+use crate::components::AppearanceMenu;
+use crate::components::DocumentTitle;
+use crate::components::MoreMenu;
 use crate::state::AppState;
 use crate::features::library::LibraryView;
 

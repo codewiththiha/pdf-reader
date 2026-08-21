@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use pdf_core::appearance::TextureMode;
-use pdf_viewer::TextureSignal;
+use crate::state::TextureSignal;
 use crate::state::AppState;
 use crate::storage::{init_storage, load_covers, load_library, load_settings};
 

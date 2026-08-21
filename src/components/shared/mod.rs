@@ -1,8 +1,25 @@
-//! Reusable UI primitives shared across the app: the collision-aware toolbar
-//! group, the window-aware popover container, and the shared option/menu
-//! building blocks.
+//! Reusable UI primitives shared across the app: generic atoms (button,
+//! icon, slider, ...), the collision-aware toolbar group, the window-aware
+//! popover container, and the shared option/menu building blocks.
 
 pub mod adaptive_group;
+pub mod button;
+pub mod hue_picker;
+pub mod icon;
+pub mod kbd;
 pub mod menu_item;
 pub mod option_button;
 pub mod popover;
+pub mod segmented;
+pub mod separator;
+pub mod slider;
+pub mod tooltip;
+
+pub use button::{Button, ButtonKind};
+pub use hue_picker::HuePicker;
+pub use icon::{Icon, IconName};
+pub use kbd::Kbd;
+pub use segmented::{Segmented, SegmentedLabel};
+pub use separator::Separator;
+pub use slider::Slider;
+pub use tooltip::Tooltip;

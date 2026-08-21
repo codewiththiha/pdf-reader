@@ -10,30 +10,30 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_viewer::{Button, ButtonKind};
-use pdf_viewer::{Icon, IconName};
-use pdf_viewer::{Segmented, SegmentedLabel};
-use pdf_viewer::Tooltip;
+use crate::components::{Button, ButtonKind};
+use crate::components::{Icon, IconName};
+use crate::components::{Segmented, SegmentedLabel};
+use crate::components::Tooltip;
 
 use pdf_engine::types::DocStatus;
 use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
-use crate::components::shared::adaptive_group::{AdaptiveGroup, ToolbarEntry};
+use crate::components::{AdaptiveGroup, ToolbarEntry};
 use crate::components::Sidebar;
-use crate::components::chrome::floating_title::FloatingTitle;
-use crate::components::chrome::title_bar::TitleBar;
-use crate::components::menus::appearance::appearance_entry;
-use crate::components::chrome::floating_title::DocumentTitle;
-use crate::components::reader::page_indicator::PageIndicator;
-use crate::components::reader::reader_controls::ReaderControls;
-use crate::components::reader::zoom_controls::zoom_entries;
+use crate::components::FloatingTitle;
+use crate::components::TitleBar;
+use crate::components::appearance_entry;
+use crate::components::DocumentTitle;
+use crate::components::PageIndicator;
+use crate::components::ReaderControls;
+use crate::components::zoom_entries;
 use crate::state::open::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::effects::reading_progress::reading_progress;
-use pdf_viewer::fit_effect;
-use pdf_viewer::page_tracking;
-use pdf_viewer::zoom_system;
-use pdf_viewer::SidebarMode;
+use crate::effects::fit::fit_effect;
+use crate::effects::page_tracking::page_tracking;
+use crate::effects::zoom::zoom_system;
+use crate::state::SidebarMode;
 
 fn view_mode_entry(state: AppState) -> ToolbarEntry {
     let mode = state.viewer.mode;
@@ -257,11 +257,11 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {
-                                    <pdf_viewer::SinglePageView state=vs />
+                                    <crate::components::SinglePageView state=vs />
                                 }
                                 .into_any(),
                                 ViewMode::Continuous => view! {
-                                    <pdf_viewer::ContinuousView state=vs />
+                                    <crate::components::ContinuousView state=vs />
                                 }
                                 .into_any(),
                             }}
@@ -278,7 +278,7 @@ pub fn ReaderView(state: AppState) -> impl IntoView {
                         <ReaderControls state=state />
                         // Floating search overlay (U4): mounted at the viewer
                         // slot; its top-14 offset clears the titlebar.
-                        <pdf_viewer::FloatingSearch state=vs />
+                        <crate::components::FloatingSearch state=vs />
                     </main>
                 </div>
             </div>

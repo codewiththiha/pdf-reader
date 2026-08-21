@@ -59,7 +59,7 @@ impl Default for DocumentState {
     }
 }
 
-/// The zoom pipeline signals (see `pdf_viewer::effects`).
+/// The zoom pipeline signals (see `crate::effects`).
 #[derive(Clone, Copy)]
 pub struct ViewerSignals {
     pub mode: RwSignal<ViewMode>,

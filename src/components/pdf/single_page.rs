@@ -16,9 +16,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::pages::page_canvas::PageCanvas;
+use crate::components::PageCanvas;
 use crate::state::ViewerState;
-use crate::dom::{observe_content_size, SINGLE_PAGE_CONTAINER_ID};
+use crate::components::pdf::dom::{observe_content_size, SINGLE_PAGE_CONTAINER_ID};
 
 #[component]
 pub fn SinglePageView(state: ViewerState) -> impl IntoView {

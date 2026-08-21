@@ -4,7 +4,7 @@ use leptos::prelude::*;
 
 use crate::state::ViewerState;
 use pdf_core::layout::{total_height_css, PAGE_GAP};
-use crate::dom::{observe_content_size, PAGE_LIST_ID};
+use crate::components::pdf::dom::{observe_content_size, PAGE_LIST_ID};
 
 #[component]
 pub fn ContinuousView(state: ViewerState) -> impl IntoView {
@@ -35,7 +35,7 @@ pub fn ContinuousView(state: ViewerState) -> impl IntoView {
 
     view! {
         <div class="relative h-full w-full">
-            <crate::components::pages::page_list::PageList state=state />
+            <crate::components::PageList state=state />
             // Thin scroll-progress bar pinned to the bottom of the view. The
             // outer track is pointer-events-none so it never blocks scrolling.
             <div class="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-0.5">

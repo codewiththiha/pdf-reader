@@ -4,7 +4,7 @@
 use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
-use pdf_viewer::{Icon, IconName};
+use crate::components::{Icon, IconName};
 use crate::state::AppState;
 
 #[component]

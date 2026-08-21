@@ -3,8 +3,8 @@
 
 use leptos::prelude::*;
 
-use pdf_viewer::OutlinePanel;
-use pdf_viewer::ViewerState;
+use crate::components::OutlinePanel;
+use crate::state::ViewerState;
 
 #[component]
 pub(crate) fn SidebarOutline(

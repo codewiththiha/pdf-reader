@@ -170,7 +170,7 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
                 match row {
                     // A row with no height is not laid out yet; keep waiting.
                     Some(row) if row.get_bounding_client_rect().height() > 0.0 => {
-                        crate::dom::reveal_in_scroll_parent(&row, &parent, 24.0);
+                        crate::components::pdf::dom::reveal_in_scroll_parent(&row, &parent, 24.0);
                     }
                     _ => {
                         let n = attempt.get();
@@ -217,7 +217,7 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
                     .ok()
                     .flatten()
                 {
-                    crate::dom::center_in_scroll_parent(&row, &parent);
+                    crate::components::pdf::dom::center_in_scroll_parent(&row, &parent);
                 }
             },
         );

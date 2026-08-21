@@ -21,12 +21,20 @@ web-sys = { version = "0.3", features = [
   "HtmlElement",
   "HtmlDivElement",
   "HtmlSpanElement",
+  "HtmlCanvasElement",
+  "HtmlInputElement",
+  "HtmlButtonElement",
+  "HtmlSelectElement",
   "Node",
+  "NodeList",
   "DomTokenList",
   "CssStyleDeclaration",
+  "CanvasRenderingContext2d",
   "Event",
   "MouseEvent",
   "KeyboardEvent",
+  "FocusOptions",
+  "WheelEvent",
   "ResizeObserver",
   "ResizeObserverEntry",
   "DomRect",
@@ -34,6 +42,7 @@ web-sys = { version = "0.3", features = [
   "DataTransfer",
   "ScrollToOptions",
   "ScrollBehavior",
+  "MediaQueryList",
   "CustomEvent",
 ] }
 serde = { version = "1", features = ["derive"] }
@@ -44,10 +53,9 @@ virtual-list = { path = "crates/virtual-list" }
 pdf-core = { path = "crates/pdf-core" }
 pdf-storage = { path = "crates/pdf-storage" }
 pdf-engine = { path = "crates/pdf-engine" }
-pdf-viewer = { path = "crates/pdf-viewer" }
 
 [workspace]
-members = ["src-tauri", "crates/virtual-list", "crates/pdf-core", "crates/pdf-storage", "crates/pdf-engine", "crates/pdf-viewer"]
+members = ["src-tauri", "crates/virtual-list", "crates/pdf-core", "crates/pdf-storage", "crates/pdf-engine"]
 
 [profile.release]
 # Keep wasm small for a desktop app.

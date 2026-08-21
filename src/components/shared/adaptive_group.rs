@@ -7,10 +7,10 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
 use pdf_engine::types::DocStatus;
-use pdf_viewer::{Icon, IconName};
-use pdf_viewer::by_id;
-use crate::components::shared::menu_item::MenuItem;
-use crate::components::shared::popover::Popover;
+use crate::components::{Icon, IconName};
+use crate::components::pdf::dom::by_id;
+use crate::components::MenuItem;
+use crate::components::Popover;
 use crate::state::AppState;
 
 pub const TB_GAP: f64 = 4.0;          // gap-1

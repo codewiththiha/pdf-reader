@@ -10,10 +10,10 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use pdf_viewer::{Icon, IconName};
-use pdf_viewer::Kbd;
-use crate::components::shared::menu_item::MenuItem;
-use crate::components::shared::popover::Popover;
+use crate::components::{Icon, IconName};
+use crate::components::Kbd;
+use crate::components::MenuItem;
+use crate::components::Popover;
 use crate::state::AppState;
 
 /// One keyboard-shortcut reference row: label on the left, keycaps on the right.

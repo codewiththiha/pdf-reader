@@ -2944,7 +2944,6 @@ dependencies = [
  "pdf-core",
  "pdf-engine",
  "pdf-storage",
- "pdf-viewer",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -2960,22 +2959,6 @@ version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
- "web-sys",
-]
-
-[[package]]
-name = "pdf-viewer"
-version = "0.5.0"
-dependencies = [
- "js-sys",
- "leptos",
- "pdf-core",
- "pdf-engine",
- "serde",
- "serde-wasm-bindgen",
- "virtual-list",
- "wasm-bindgen",
- "wasm-bindgen-futures",
  "web-sys",
 ]
 

@@ -12,15 +12,15 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_viewer::{Button, ButtonKind};
-use pdf_viewer::{Icon, IconName};
-use pdf_viewer::Separator;
-use pdf_viewer::Tooltip;
+use crate::components::{Button, ButtonKind};
+use crate::components::{Icon, IconName};
+use crate::components::Separator;
+use crate::components::Tooltip;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
-use crate::components::shared::adaptive_group::{OverflowRow, ToolbarEntry};
-use crate::components::shared::popover::Popover;
+use crate::components::{OverflowRow, ToolbarEntry};
+use crate::components::Popover;
 use crate::state::AppState;
-use pdf_viewer::request_zoom;
+use crate::effects::zoom::request_zoom;
 
 /// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
 /// coordinator.

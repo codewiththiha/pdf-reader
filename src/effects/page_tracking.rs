@@ -50,7 +50,7 @@ use wasm_bindgen::JsCast;
 
 use pdf_core::layout::{dominant_page, page_top_css, ViewMode, PAGE_GAP};
 use crate::state::ViewerState;
-use crate::dom::page_list;
+use crate::components::pdf::dom::page_list;
 
 /// How long a smooth jump is allowed to be in flight. The browser owns the
 /// animation and doesn't tell us when it finishes, so effect 4's takeover
