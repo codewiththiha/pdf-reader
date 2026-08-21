@@ -2,18 +2,22 @@
 //! No wasm deps — unit-testable on the host.
 //!
 //! The continuous layout is a vertical column of pages separated by `gap` px:
-//!   * `document` — the cached [`DocumentLayout`] (prebuilt strip + anchored
-//!     scroll math)
-//!   * `window`   — the visible-grid rows and the render-window math
-//!   * here       — the shared constants/types and the one-shot convenience
-//!     wrappers over [`DocumentLayout`] for cold callers
+//!   * `document`      — the cached [`DocumentLayout`] (structure + queries)
+//!   * `anchor`        — the anchored-scroll zoom math
+//!   * `viewport`      — which thumbnail-grid rows overlap the viewport
+//!   * `render_window` — which pages to keep mounted (read-ahead budget)
+//!   * here            — the shared constants/types and the one-shot
+//!     convenience wrappers over [`DocumentLayout`] for cold callers
 
+mod anchor;
 mod document;
-mod window;
+mod render_window;
+mod viewport;
 
 pub use document::DocumentLayout;
 pub use virtual_list::{Budget, Strip};
-pub use window::{render_range, visible_grid_rows};
+pub use render_window::render_range;
+pub use viewport::visible_grid_rows;
 
 pub const PAGE_GAP: f64 = 24.0;
 
