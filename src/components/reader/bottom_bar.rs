@@ -23,7 +23,7 @@ use crate::state::AppState;
 const BOTTOM_HIDE_DELAY_MS: u64 = 400;
 
 #[component]
-pub fn ReaderControls(
+pub fn ReaderBottomBar(
     state: AppState,
     /// The cached column layout, built once by the reader page (the reactive
     /// slider max reads it instead of rebuilding the strip per heights change).

@@ -56,11 +56,11 @@ fn Chevron(up: bool) -> impl IntoView {
 
 #[component]
 pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
-    let last_query = RwSignal::new(String::new());
-    let show_results = RwSignal::new(false);
+    let (last_query, set_last_query) = signal(String::new());
+    let (show_results, set_show_results) = signal(false);
     // Monotonic id for the newest search; guards against out-of-order
     // completions so only the latest query lands its results and its jump.
-    let search_gen = RwSignal::new(0u64);
+    let (search_gen, set_search_gen) = signal(0u64);
     let input_ref: NodeRef<html::Input> = NodeRef::new();
     let container_ref: NodeRef<html::Div> = NodeRef::new();
 
@@ -101,7 +101,7 @@ pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
             );
             on_cleanup(move || handle.remove());
         } else {
-            show_results.set(false);
+            set_show_results.set(false);
         }
     });
 
@@ -131,17 +131,17 @@ pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
         let q = state.search.query.get_untracked();
         if q.trim().is_empty() {
             clear_search(state);
-            last_query.set(String::new());
+            set_last_query.set(String::new());
             return;
         }
-        search_gen.update(|g| *g += 1);
+        set_search_gen.update(|g| *g += 1);
         let started = search_gen.get_untracked();
         spawn_local(async move {
             run_search(state).await;
             if search_gen.get_untracked() != started || state.search.query.get_untracked() != q {
                 return;
             }
-            last_query.set(q);
+            set_last_query.set(q);
             if let Some(f) = then {
                 f();
             }
@@ -273,7 +273,7 @@ pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
                     <button
                         type="button"
                         title="Toggle results list"
-                        on:click=move |_| show_results.update(|v| *v = !*v)
+                        on:click=move |_| set_show_results.update(|v| *v = !*v)
                         class=ICON_BTN
                     >
                         <svg
@@ -300,7 +300,7 @@ pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
                 <Show when=move || show_results.get()>
                     <div
                         class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
-                        on:click=move |_| show_results.set(false)
+                        on:click=move |_| set_show_results.set(false)
                     >
                         <div class="max-h-72 overflow-y-auto">
                             <ResultList state=state />

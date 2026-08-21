@@ -35,8 +35,8 @@ fn ShortcutRow(label: &'static str, keys: Vec<&'static str>) -> impl IntoView {
 #[component]
 pub fn MoreMenu() -> impl IntoView {
     let open = RwSignal::new(false);
-    let full = RwSignal::new(false);
-    let show_keys = RwSignal::new(false);
+    let (full, set_full) = signal(false);
+    let (show_keys, set_show_keys) = signal(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     // Fullscreen toggle: prefer the Tauri window handle, fall back to the
@@ -59,7 +59,7 @@ pub fn MoreMenu() -> impl IntoView {
                                     args.push(&JsValue::from_bool(next));
                                     _ = js_sys::Reflect::apply(&f, &win, &args);
                                 }
-                full.set(next);
+                set_full.set(next);
                 return;
             }
         }
@@ -74,7 +74,7 @@ pub fn MoreMenu() -> impl IntoView {
             } else {
                 doc.exit_fullscreen();
             }
-            full.set(entering);
+            set_full.set(entering);
         }
     };
 
@@ -105,7 +105,7 @@ pub fn MoreMenu() -> impl IntoView {
                 <MenuItem
                     icon=IconName::Keyboard
                     label="Keyboard Shortcuts"
-                    on_click=move || show_keys.update(|v| *v = !*v)
+                    on_click=move || set_show_keys.update(|v| *v = !*v)
                 >
                     <svg
                         class="ml-auto text-muted"
