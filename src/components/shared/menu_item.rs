@@ -8,7 +8,7 @@ use crate::components::{Icon, IconName};
 #[component]
 pub fn MenuItem(
     icon: IconName,
-    label: &'static str,
+    #[prop(into)] label: String,
     on_click: impl Fn() + 'static,
     #[prop(optional)]
     children: Option<Children>,

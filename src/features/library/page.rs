@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use crate::components::{Button, ButtonKind};
 use crate::components::IconName;
 use crate::components::Tooltip;
-use crate::components::TitleBar;
+use crate::components::AppTitleBar;
 use crate::components::AppearanceMenu;
 use crate::components::DocumentTitle;
 use crate::components::MoreMenu;
@@ -52,10 +52,10 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     };
 
     view! {
-        <TitleBar state=state left=left right=right>
+        <AppTitleBar state=state left=left right=right>
             <div class="relative h-full w-full overflow-hidden bg-paper text-ink">
                 <LibraryShelf state=state />
             </div>
-        </TitleBar>
+        </AppTitleBar>
     }
 }

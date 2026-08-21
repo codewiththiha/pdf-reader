@@ -13,8 +13,8 @@ use crate::components::Popover;
 
 pub const TB_GAP: f64 = 4.0;          // gap-1
 pub const TB_OVERFLOW_W: f64 = 36.0;  // h-9 w-9
-pub const TB_RIGHT_RESERVE: f64 = 48.0; // pr-2 + pin button (same contract as DocumentTitle)
-pub const TB_TITLE_RESERVE: f64 = 56.0; // MIN_LABEL_W: promise the name this much
+pub const TB_RIGHT_RESERVE: f64 = crate::components::metrics::PIN_RESERVE;
+pub const TB_TITLE_RESERVE: f64 = crate::components::metrics::MIN_DOC_TITLE_WIDTH;
 
 /// One control that can live in the bar or in the overflow menu.
 #[derive(Clone)]

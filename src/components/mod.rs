@@ -13,6 +13,7 @@
 //! without caring which folder owns a component.
 
 pub mod chrome;
+mod metrics;
 pub mod menus;
 pub mod overlays;
 pub mod pdf;
@@ -21,37 +22,37 @@ pub mod shared;
 pub mod sidebar;
 
 // Shared primitives.
-pub use shared::adaptive_group::{AdaptiveGroup, OverflowRow, ToolbarEntry};
-pub use shared::menu_item::MenuItem;
-pub use shared::option_button::OptionButton;
-pub use shared::popover::Popover;
-pub use shared::{
+pub(crate) use shared::adaptive_group::{AdaptiveGroup, OverflowRow, ToolbarEntry};
+pub(crate) use shared::menu_item::MenuItem;
+pub(crate) use shared::option_button::OptionButton;
+pub(crate) use shared::popover::Popover;
+pub(crate) use shared::{
     Button, ButtonKind, HuePicker, Icon, IconName, Kbd, Segmented, SegmentedLabel, Separator,
     Slider, Tooltip,
 };
 
 // Window chrome.
-pub use chrome::floating_title::{DocumentTitle, FloatingTitle};
-pub use chrome::title_bar::{TitleBar, TitleBarCtx};
+pub(crate) use chrome::floating_title::{DocumentTitle, FloatingDocumentTitle};
+pub(crate) use chrome::title_bar::{AppTitleBar, TitleBarCtx};
 
 // Menus.
-pub use menus::appearance::{appearance_entry, AppearanceMenu};
-pub use menus::more::MoreMenu;
+pub(crate) use menus::appearance::{appearance_entry, AppearanceMenu};
+pub(crate) use menus::more::MoreMenu;
 
 // Overlays.
-pub use overlays::drag_overlay::DragOverlay;
-pub use overlays::toast::ToastHost;
+pub(crate) use overlays::drag_overlay::DragOverlay;
+pub(crate) use overlays::toast::ToastHost;
 
 // Reader controls.
-pub use reader::page_indicator::PageIndicator;
-pub use reader::reader_controls::ReaderControls;
-pub use reader::zoom_controls::zoom_entries;
+pub(crate) use reader::page_indicator::PageIndicator;
+pub(crate) use reader::reader_controls::ReaderControls;
+pub(crate) use reader::zoom_controls::zoom_entries;
 
 // Sidebar.
-pub use sidebar::Sidebar;
+pub(crate) use sidebar::Sidebar;
 
 // PDF viewing.
-pub use pdf::{
+pub(crate) use pdf::{
     ContinuousView, FloatingSearch, OutlinePanel, PageCanvas, PageList, PageNavigation,
     SinglePageView, ThumbnailsPanel,
 };

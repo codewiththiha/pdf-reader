@@ -11,32 +11,44 @@
 //! the virtualization window.
 
 use leptos::prelude::*;
+use wasm_bindgen::JsValue;
 
 use crate::state::AppState;
+
+/// The JS protocol of the `pdfreader:selection-pages` event detail:
+/// `null` (clear) or `{ first, last }` — 1-based, inclusive.
+///
+/// One typed decoder for the whole protocol, so the effect below stays
+/// about reactivity, not about picking fields off a `JsValue`.
+fn parse_selection(detail: &JsValue) -> Option<(u32, u32)> {
+    if detail.is_null() || detail.is_undefined() {
+        return None;
+    }
+    let num = |key: &str| {
+        js_sys::Reflect::get(detail, &key.into())
+            .ok()
+            .and_then(|v| v.as_f64())
+            .map(|n| n as u32)
+    };
+    match (num("first"), num("last")) {
+        (Some(f), Some(l)) => Some((f, l)),
+        _ => None,
+    }
+}
 
 pub fn page_selection(state: AppState) {
     let _handle = window_event_listener(
         leptos::ev::Custom::new("pdfreader:selection-pages"),
         move |ev: web_sys::CustomEvent| {
             let detail = ev.detail();
-            if detail.is_null() {
-                state.reader.viewer.selected_pages.set(None);
-                return;
-            }
-            let first = js_sys::Reflect::get(&detail, &"first".into())
-                .ok()
-                .and_then(|v| v.as_f64());
-            let last = js_sys::Reflect::get(&detail, &"last".into())
-                .ok()
-                .and_then(|v| v.as_f64());
-            match (first, last) {
-                (Some(f), Some(l)) => {
+            match parse_selection(&detail) {
+                Some((first, last)) => {
                     let total = state.reader.document.num_pages.get_untracked().max(1);
-                    let f = (f as u32).clamp(1, total);
-                    let l = (l as u32).clamp(1, total);
+                    let f = first.clamp(1, total);
+                    let l = last.clamp(1, total);
                     state.reader.viewer.selected_pages.set(Some((f.min(l), f.max(l))));
                 }
-                _ => state.reader.viewer.selected_pages.set(None),
+                None => state.reader.viewer.selected_pages.set(None),
             }
         },
     );

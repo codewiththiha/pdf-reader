@@ -6,4 +6,4 @@
 mod host;
 pub mod component;
 
-pub use component::PageCanvas;
+pub(crate) use component::PageCanvas;

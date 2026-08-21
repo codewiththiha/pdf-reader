@@ -20,8 +20,8 @@ use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 use crate::components::{AdaptiveGroup, ToolbarEntry};
 use crate::components::Sidebar;
-use crate::components::FloatingTitle;
-use crate::components::TitleBar;
+use crate::components::FloatingDocumentTitle;
+use crate::components::AppTitleBar;
 use crate::components::appearance_entry;
 use crate::components::DocumentTitle;
 use crate::components::PageIndicator;
@@ -262,7 +262,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     };
 
     view! {
-        <TitleBar state=state left=left right=right>
+        <AppTitleBar state=state left=left right=right>
             // overflow-hidden clips the hidden ReaderControls's slide-down translate
             // so it can never leak a phantom scrollbar onto the window.
             <div class="relative flex h-full w-full flex-col overflow-hidden bg-paper text-ink">
@@ -281,7 +281,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 .into_any(),
                             }}
                         </Show>
-                        <FloatingTitle state=state />
+                        <FloatingDocumentTitle state=state />
                         // Corner page counter, gated on a ready document and
                         // positioned by the page; the indicator itself is
                         // reusable UI with no knowledge of AppState.
@@ -297,6 +297,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     </main>
                 </div>
             </div>
-        </TitleBar>
+        </AppTitleBar>
     }
 }

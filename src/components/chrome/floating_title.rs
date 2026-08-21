@@ -29,7 +29,7 @@ const SAFETY: f64 = 8.0;
 const MIN_LABEL_W: f64 = 40.0;
 
 #[component]
-pub fn FloatingTitle(state: AppState) -> impl IntoView {
+pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
     let label_ref: NodeRef<html::Span> = NodeRef::new();
     // Allowed total width in px, or None = hide.
@@ -165,14 +165,12 @@ use web_sys::ResizeObserverEntry;
 
 use pdf_core::filename::display_name;
 
-/// Left padding of the toolbar row (`pl-[88px]`, which reserves room for the
-/// native traffic lights when the sidebar is closed).
-const ROW_PAD_LEFT: f64 = 88.0;
-/// Space on the right the measured name must not enter: `pr-2` + the 36px pin
-/// button + a gap. The pin lives OUTSIDE `#toolbar-right` (the provider
-/// appends it after the right slot), so its width is reserved here instead of
-/// being measured.
-const ROW_PAD_RIGHT: f64 = 48.0;
+/// Left padding of the toolbar row: room for the native traffic lights when
+/// the sidebar is closed (see `components/metrics`).
+const ROW_PAD_LEFT: f64 = crate::components::metrics::TRAFFIC_LIGHT_INSET;
+/// Space on the right the measured name must not enter (see
+/// `components/metrics::PIN_RESERVE`; the pin lives OUTSIDE `#toolbar-right`).
+const ROW_PAD_RIGHT: f64 = crate::components::metrics::PIN_RESERVE;
 /// Gap between the label and the buttons to its left (`gap-1` in the left group).
 const GAP_LEFT: f64 = 4.0;
 /// Gap the label keeps from whatever is on its right (the centered page nav or
@@ -180,7 +178,7 @@ const GAP_LEFT: f64 = 4.0;
 /// name never appears to touch the next control.
 const GAP_RIGHT: f64 = 12.0;
 /// Narrower than this and the label would be a useless stub — hide it instead.
-const TITLE_MIN_LABEL_W: f64 = 56.0;
+const TITLE_MIN_LABEL_W: f64 = crate::components::metrics::MIN_DOC_TITLE_WIDTH;
 
 /// Live width of an element by id, or `None` when it isn't in the DOM.
 fn width_of(id: &str) -> Option<f64> {

@@ -36,7 +36,7 @@ pub struct TitleBarCtx {
 }
 
 #[component]
-pub fn TitleBar(
+pub fn AppTitleBar(
     state: AppState,
     #[prop(into)] left: ViewFn,
     #[prop(into)] right: ViewFn,

@@ -14,4 +14,4 @@ pub mod cell;
 pub mod geometry;
 pub mod panel;
 
-pub use panel::ThumbnailsPanel;
+pub(crate) use panel::ThumbnailsPanel;
