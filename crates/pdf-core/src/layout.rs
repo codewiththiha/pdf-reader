@@ -31,14 +31,63 @@ pub enum ViewMode {
     Continuous,
 }
 
+/// The column layout for the CURRENT page heights: a prebuilt [`Strip`] plus
+/// the gap. Rebuild this only when the heights change (a `Memo` keyed on
+/// `page_heights` is the natural owner); every scroll / zoom / search query
+/// then borrows it instead of rebuilding the strip's prefix sums from the raw
+/// vector on each call.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentLayout {
+    strip: Strip,
+}
+
+impl DocumentLayout {
+    pub fn new(heights: &[f64], gap: f64) -> Self {
+        Self {
+            strip: Strip::new(heights.iter().copied(), gap),
+        }
+    }
+
+    /// Vertical offset of the top of page `page0` (0-based) within the column.
+    pub fn page_top(&self, page0: usize) -> f64 {
+        self.strip.offset(page0)
+    }
+
+    /// Total scrollable height of the whole column (pages + gaps).
+    pub fn total(&self) -> f64 {
+        self.strip.total()
+    }
+
+    /// 1-based page the reader is actually looking at (ties go to the lower
+    /// page number). Falls back to 1 for an empty column.
+    pub fn dominant(&self, scroll_top: f64, viewport_h: f64) -> u32 {
+        self.strip.dominant(scroll_top, viewport_h) as u32 + 1
+    }
+
+    /// 0-based inclusive range of pages to keep mounted (see `render_range`).
+    pub fn window(
+        &self,
+        scroll_top: f64,
+        viewport_h: f64,
+        budget: RenderBudget,
+    ) -> Option<(usize, usize)> {
+        self.strip
+            .window(scroll_top, viewport_h, budget)
+            .map(|w| (w.first, w.last))
+    }
+}
+
 /// Vertical offset of the top of page `page0` (0-based) within the column.
+///
+/// Convenience wrapper over [`DocumentLayout`] for one-shot callers; the hot
+/// paths hold a cached layout instead of rebuilding per query.
 pub fn page_top_css(page0: usize, heights: &[f64], gap: f64) -> f64 {
-    Strip::new(heights.iter().copied(), gap).offset(page0)
+    DocumentLayout::new(heights, gap).page_top(page0)
 }
 
 /// Total scrollable height of the whole column (pages + gaps).
 pub fn total_height_css(heights: &[f64], gap: f64) -> f64 {
-    Strip::new(heights.iter().copied(), gap).total()
+    DocumentLayout::new(heights, gap).total()
 }
 
 /// 1-based page the reader is actually looking at: the page occupying the most
@@ -49,7 +98,7 @@ pub fn dominant_page(scroll_top: f64, viewport_h: f64, heights: &[f64], gap: f64
     if heights.is_empty() {
         return 1;
     }
-    Strip::new(heights.iter().copied(), gap).dominant(scroll_top, viewport_h) as u32 + 1
+    DocumentLayout::new(heights, gap).dominant(scroll_top, viewport_h)
 }
 
 /// Scroll offset that keeps the document point currently at `anchor_screen_y`
@@ -161,9 +210,7 @@ pub fn render_range(
     gap: f64,
     budget: RenderBudget,
 ) -> Option<(usize, usize)> {
-    Strip::new(heights.iter().copied(), gap)
-        .window(scroll_top, viewport_h, budget)
-        .map(|w| (w.first, w.last))
+    DocumentLayout::new(heights, gap).window(scroll_top, viewport_h, budget)
 }
 
 #[cfg(test)]

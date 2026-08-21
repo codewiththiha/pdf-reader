@@ -16,9 +16,7 @@
 use leptos::prelude::*;
 
 use crate::components::PageCanvas;
-use pdf_core::layout::{
-    page_top_css, render_range, total_height_css, PAGE_GAP, RENDER_BUDGET,
-};
+use pdf_core::layout::{DocumentLayout, PAGE_GAP, RENDER_BUDGET};
 use crate::state::ReaderState;
 
 #[component]
@@ -77,18 +75,14 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
     // stale/empty selection. Pinning the selected pages keeps them — and
     // their text layers — mounted so the selection's DOM nodes stay valid
     // and copy of multi-page selections works through any scroll.
+    // One cached layout per heights-change: scroll/render queries borrow it
+    // instead of rebuilding the strip's prefix sums per call.
+    let layout = Memo::new(move |_| DocumentLayout::new(&state.document.page_heights.get(), PAGE_GAP));
+
     let visible = Memo::new(move |_| {
         let scroll_top = state.viewer.scroll_top.get();
         let vh = state.viewer.container_size.get().1;
-        let mut range = state.document.page_heights.with(|heights| {
-            render_range(
-                scroll_top,
-                vh,
-                heights,
-                PAGE_GAP,
-                RENDER_BUDGET,
-            )
-        });
+        let mut range = layout.with(|l| l.window(scroll_top, vh, RENDER_BUDGET));
         // FIX B — pin the dominant page during a layout animation. During a
         // sidebar slide, `scroll_top` is re-anchored by `relayout_to()` AND
         // clamped back by the browser's own scroll clamp (the spacer height
@@ -102,19 +96,13 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
         // duration of any layout animation keeps the SAME DOM node alive
         // through the whole slide so the stretch effect visibly rescales it.
         if state.viewer.zoom_animating.get() {
-            let dom = state
-                .document
-                .page_heights
-                .with(|heights| {
-                    if heights.is_empty() {
-                        None
-                    } else {
-                        Some(
-                            pdf_core::layout::dominant_page(scroll_top, vh, heights, PAGE_GAP)
-                                as usize,
-                        )
-                    }
-                });
+            let dom = layout.with(|l| {
+                if l.total() > 0.0 {
+                    Some(l.dominant(scroll_top, vh) as usize)
+                } else {
+                    None
+                }
+            });
             if let Some(dom) = dom {
                 let dom = dom.saturating_sub(1); // 1-based → 0-based
                 range = match range {
@@ -194,10 +182,7 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
             <div
                 aria-hidden="true"
                 style:height=move || {
-                    let total = state
-                        .document
-                        .page_heights
-                        .with(|heights| total_height_css(heights, PAGE_GAP));
+                    let total = layout.with(|l| l.total());
                     format!("{total}px")
                 }
             ></div>
@@ -211,10 +196,7 @@ pub fn PageList(state: ReaderState) -> impl IntoView {
                 key=|i: &usize| *i
                 children=move |i: usize| {
                     let style = move || {
-                        let top = state
-                            .document
-                            .page_heights
-                            .with(|heights| page_top_css(i, heights, PAGE_GAP));
+                        let top = layout.with(|l| l.page_top(i));
                         format!(
                             "position:absolute;top:{top}px;left:0;right:0;display:flex;justify-content:center"
                         )

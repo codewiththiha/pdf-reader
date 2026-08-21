@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use crate::state::ReaderState;
-use pdf_core::layout::{total_height_css, PAGE_GAP};
+use pdf_core::layout::{DocumentLayout, PAGE_GAP};
 use crate::components::pdf::dom::{observe_content_size, PAGE_LIST_ID};
 
 #[component]
@@ -18,12 +18,9 @@ pub fn ContinuousView(state: ReaderState) -> impl IntoView {
     observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
 
     // Reading-progress bar: fraction of the scrollable extent consumed.
-    let total_height = Memo::new(move |_| {
-        state
-            .document
-            .page_heights
-            .with(|heights| total_height_css(heights, PAGE_GAP))
-    });
+    // One cached layout per heights-change (same pattern as PageList).
+    let layout = Memo::new(move |_| DocumentLayout::new(&state.document.page_heights.get(), PAGE_GAP));
+    let total_height = Memo::new(move |_| layout.with(|l| l.total()));
     let progress = move || {
         let st = state.viewer.scroll_top.get();
         let (_, vh) = state.viewer.container_size.get();

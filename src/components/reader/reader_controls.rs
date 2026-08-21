@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{total_height_css, ViewMode, PAGE_GAP};
+use pdf_core::layout::{DocumentLayout, ViewMode, PAGE_GAP};
 use crate::components::PageNavigation;
 use crate::state::AppState;
 
@@ -47,6 +47,11 @@ pub fn ReaderControls(state: AppState) -> impl IntoView {
     };
 
     let vs = state.reader;
+    // Cached layout so the reactive slider max doesn't rebuild the strip's
+    // prefix sums on every page-height write during scroll.
+    let layout = Memo::new(move |_| {
+        DocumentLayout::new(&state.reader.document.page_heights.get(), PAGE_GAP)
+    });
     let show_strip = show.clone();
     let show_bar = show;
 
@@ -77,11 +82,7 @@ pub fn ReaderControls(state: AppState) -> impl IntoView {
                     type="range"
                     min="0"
                     max=move || {
-                        let total = state
-                            .reader
-                            .document
-                            .page_heights
-                            .with(|heights| total_height_css(heights, PAGE_GAP));
+                        let total = layout.with(|l| l.total());
                         let (_, vh) = state.reader.viewer.container_size.get();
                         (total - vh).max(0.0).to_string()
                     }
