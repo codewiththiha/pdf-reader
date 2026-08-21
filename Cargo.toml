@@ -85,3 +85,14 @@ strip = "debuginfo"
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
+
+# Debugging profile: the default `dev` profile is optimized (opt-level 1,
+# stripped) because an unoptimized wasm module was responsible for roughly
+# half of the "400MB at idle" footprint this profile set exists to prevent.
+# When you need real debug symbols + step-through, use this instead:
+#   trunk build --profile dev-debug   /   cargo build --profile dev-debug
+[profile.dev-debug]
+inherits = "dev"
+opt-level = 0
+debug = 1
+strip = "none"
