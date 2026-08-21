@@ -101,7 +101,7 @@ pub(crate) fn thumbs_should_stay_mounted(
 
 #[component]
 pub fn Sidebar(state: AppState) -> impl IntoView {
-    let viewer_state = state.viewer_state();
+    let viewer_state = state.reader;
     // Last non-None mode, and whether a close slide is still in flight.
     // `last` is what we keep painted during the outro; `collapsing` flips
     // off SIDEBAR_SLIDE_MS after a close so the grid can unmount. A reopen
@@ -179,9 +179,10 @@ pub fn Sidebar(state: AppState) -> impl IntoView {
                 // ── Panels: stacked absolutely, invisible/is-outro toggles
                 // drive which is painted (see module docs).
                 <div class="relative min-h-0 flex-1">
-                    <SidebarOutline state=viewer_state shown=show_outline outro=is_closed />
+                    <SidebarOutline state=viewer_state sidebar=state.ui.sidebar shown=show_outline outro=is_closed />
                     <SidebarThumbs
                         state=viewer_state
+                        sidebar=state.ui.sidebar
                         live=thumbs_live
                         shown=show_thumbs
                         outro=is_closed

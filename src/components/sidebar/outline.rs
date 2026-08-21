@@ -4,11 +4,14 @@
 use leptos::prelude::*;
 
 use crate::components::OutlinePanel;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
+use crate::state::ui::SidebarMode;
+use leptos::prelude::RwSignal;
 
 #[component]
 pub(crate) fn SidebarOutline(
-    state: ViewerState,
+    state: ReaderState,
+    sidebar: RwSignal<SidebarMode>,
     shown: Signal<bool>,
     outro: Signal<bool>,
 ) -> impl IntoView {
@@ -18,7 +21,7 @@ pub(crate) fn SidebarOutline(
             class=("invisible", move || !shown.get())
             class=("is-outro", move || outro.get())
         >
-            <OutlinePanel state=state />
+            <OutlinePanel state=state sidebar=sidebar />
         </div>
     }
 }

@@ -22,7 +22,7 @@ use wasm_bindgen::JsCast;
 
 use pdf_core::layout::{anchored_scroll, total_height_css, PAGE_GAP};
 use pdf_core::math::clamp_scale;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 use crate::components::pdf::dom::page_list;
 
 /// Duration of the zoom layout animation. Long enough to read as motion,
@@ -49,7 +49,7 @@ fn prefers_reduced_motion() -> bool {
 }
 
 /// The scrollport's height, used as the anchor reference.
-fn viewport_h(state: ViewerState) -> f64 {
+fn viewport_h(state: ReaderState) -> f64 {
     page_list()
         .map(|el| el.client_height() as f64)
         .filter(|h| *h > 1.0)
@@ -62,7 +62,7 @@ fn viewport_h(state: ViewerState) -> f64 {
 ///
 /// `animate = false` still anchors — it just skips the tween (used by fit,
 /// window resize and other programmatic relayouts, which should look instant).
-pub fn request_zoom(state: ViewerState, target: f64, animate: bool) {
+pub fn request_zoom(state: ReaderState, target: f64, animate: bool) {
     let target = clamp_scale(target);
     // A zoom gesture is the ONLY thing that changes what the reader wants.
     //
@@ -121,11 +121,11 @@ pub(super) fn take_commit_echo() -> bool {
 ///
 /// This is what a "relayout" means here — pure arithmetic on already-known
 /// geometry. No render is involved, and none is waited for.
-pub fn relayout_to(state: ViewerState, factor: f64) {
+pub fn relayout_to(state: ReaderState, factor: f64) {
     if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
         return;
     }
-    let heights = state.doc.page_heights.get_untracked();
+    let heights = state.document.page_heights.get_untracked();
     if heights.is_empty() {
         return;
     }
@@ -138,7 +138,7 @@ pub fn relayout_to(state: ViewerState, factor: f64) {
     // heights, so this order means the scroll write always lands in a column
     // that is already the right size.
     state
-        .doc
+        .document
         .page_heights
         .set(heights.iter().map(|h| h * factor).collect());
 
@@ -183,7 +183,7 @@ pub fn relayout_to(state: ViewerState, factor: f64) {
 ///
 /// Owns `display_scale`, `zoom_animating`, `scale` and `render_scale` for the
 /// duration of a gesture. Nothing else may write them while a zoom is running.
-pub fn zoom_system(state: ViewerState) {
+pub fn zoom_system(state: ReaderState) {
     // rAF plumbing. The step holds a Weak back-reference to its own holder so
     // it can re-arm itself; the strong Rc lives in this owner-scoped
     // StoredValue (the pattern proven in thumbnails_panel's glide).
@@ -267,7 +267,7 @@ pub fn zoom_system(state: ViewerState) {
 ///
 /// Ordering matters — releasing `zoom_animating` before `render_scale` would
 /// let the canvases render once at the stale scale first.
-pub(super) fn commit_scale(state: ViewerState, s: f64) {
+pub(super) fn commit_scale(state: ReaderState, s: f64) {
     // The gesture is over: hand the layout back to `fit_effect`, which will
     // re-run (it tracks `zoom_animating`) and reconcile this scale against the
     // space actually available.

@@ -49,7 +49,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use pdf_core::layout::{dominant_page, page_top_css, ViewMode, PAGE_GAP};
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 use crate::components::pdf::dom::page_list;
 
 /// How long a smooth jump is allowed to be in flight. The browser owns the
@@ -80,9 +80,9 @@ fn scroll_to(list: &web_sys::Element, top: f64, smooth: bool) {
 
 /// Uniform page height used when real heights haven't been measured yet — the
 /// same placeholder PageList seeds `page_heights` with.
-fn estimated_top(page: u32, state: ViewerState) -> f64 {
+fn estimated_top(page: u32, state: ReaderState) -> f64 {
     let est = state
-        .doc
+        .document
         .page1_size
         .get_untracked()
         .map(|s| s.height)
@@ -92,7 +92,7 @@ fn estimated_top(page: u32, state: ViewerState) -> f64 {
 }
 
 /// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
-pub fn page_tracking(state: ViewerState) {
+pub fn page_tracking(state: ReaderState) {
     // --- 1. Entering continuous mode: align scroll to the current page -------
     // `page_heights`/`page1_size` are read untracked so this effect only fires
     // on a real mode transition (not on every render/zoom).
@@ -101,7 +101,7 @@ pub fn page_tracking(state: ViewerState) {
         let continuous = state.viewer.mode.get() == ViewMode::Continuous;
         if continuous && !was_continuous {
             let page = state.viewer.page.get_untracked();
-            let heights = state.doc.page_heights.get_untracked();
+            let heights = state.document.page_heights.get_untracked();
             let top = if heights.is_empty() {
                 estimated_top(page, state)
             } else {
@@ -119,7 +119,7 @@ pub fn page_tracking(state: ViewerState) {
     let mode = state.viewer.mode;
     let page = state.viewer.page;
     let scroll_top = state.viewer.scroll_top;
-    let heights = state.doc.page_heights;
+    let heights = state.document.page_heights;
     let suppress_a = suppress.clone();
     Effect::new(move || {
         if mode.get() != ViewMode::Continuous {

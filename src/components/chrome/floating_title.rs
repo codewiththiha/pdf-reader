@@ -41,11 +41,11 @@ pub fn FloatingTitle(state: AppState) -> impl IntoView {
         request_animation_frame(move || {
             // Mid-zoom relayout: geometry is moving; the effect re-runs when
             // zoom_animating drops, so skipping here loses nothing.
-            if state.viewer.zoom_animating.get_untracked() { return; }
+            if state.reader.viewer.zoom_animating.get_untracked() { return; }
 
             // THE page under the eyes, by id — never an arbitrary mounted page.
-            let page = state.viewer.page.get_untracked().max(1);
-            let host_id = if state.viewer.mode.get_untracked() == pdf_core::layout::ViewMode::Single {
+            let page = state.reader.viewer.page.get_untracked().max(1);
+            let host_id = if state.reader.viewer.mode.get_untracked() == pdf_core::layout::ViewMode::Single {
                 format!("sp-{page}-pg")
             } else {
                 format!("cont-{}-pg", page.saturating_sub(1))
@@ -77,18 +77,18 @@ pub fn FloatingTitle(state: AppState) -> impl IntoView {
 
     // Re-measure whenever geometry or identity can change, and on resize.
     Effect::new(move |_| {
-        _ = state.viewer.container_size.get();
-        _ = state.viewer.page.get();
-        _ = state.viewer.mode.get();
-        _ = state.doc.title.get();
-        _ = state.doc.path.get();
+        _ = state.reader.viewer.container_size.get();
+        _ = state.reader.viewer.page.get();
+        _ = state.reader.viewer.mode.get();
+        _ = state.reader.document.title.get();
+        _ = state.reader.document.path.get();
         measure();
         let h = window_event_listener_untyped("resize", move |_| measure());
         on_cleanup(move || h.remove());
     });
 
     let shown = move || {
-        state.doc.status.get() == DocStatus::Ready
+        state.reader.document.status.get() == DocStatus::Ready
             && state.ui.sidebar.get() == SidebarMode::None
             && ctx.map(|c| !c.visible.get()).unwrap_or(true)
             && budget.get().is_none_or(|b| label_w.get() <= b)  // None = unknown = show
@@ -109,8 +109,8 @@ pub fn FloatingTitle(state: AppState) -> impl IntoView {
                 }
             >
                 {move || pdf_core::filename::display_name(
-                    state.doc.title.get().as_deref(),
-                    state.doc.path.get().as_deref(),
+                    state.reader.document.title.get().as_deref(),
+                    state.reader.document.path.get().as_deref(),
                 )
                 .unwrap_or_default()}
             </span>
@@ -301,10 +301,10 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
     // grows with the page count's digits ("/ 9" vs "/ 1024"); a new document
     // changes both. The name itself is included so the first real name measures
     // against the settled toolbar.
-    let status = state.doc.status;
-    let num_pages = state.doc.num_pages;
-    let title = state.doc.title;
-    let path = state.doc.path;
+    let status = state.reader.document.status;
+    let num_pages = state.reader.document.num_pages;
+    let title = state.reader.document.title;
+    let path = state.reader.document.path;
     let sidebar = state.ui.sidebar;
     Effect::new(move |_| {
         _ = status.get();

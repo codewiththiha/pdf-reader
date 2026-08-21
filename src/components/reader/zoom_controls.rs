@@ -30,8 +30,8 @@ use crate::effects::zoom::request_zoom;
 /// ended up pointing at a different page. `request_zoom` animates the layout
 /// and re-anchors the scroll in the same frames, then renders once.
 pub(crate) fn apply_zoom(state: AppState, scale: f64) {
-    state.viewer.fit.set(FitMode::None);
-    request_zoom(state.viewer_state(), scale, true);
+    state.reader.viewer.fit.set(FitMode::None);
+    request_zoom(state.reader, scale, true);
 }
 
 /// The zoom a `+`/`-` step should be measured from: the target of an in-flight
@@ -40,12 +40,13 @@ pub(crate) fn apply_zoom(state: AppState, scale: f64) {
 /// clicking `+` twice quickly moves only one preset.
 fn step_base(state: AppState) -> f64 {
     state
+        .reader
         .viewer
         .zoom_request
         .get_untracked()
-        .filter(|_| state.viewer.zoom_animating.get_untracked())
+        .filter(|_| state.reader.viewer.zoom_animating.get_untracked())
         .map(|(target, _, _)| target)
-        .unwrap_or_else(|| state.viewer.display_scale.get_untracked())
+        .unwrap_or_else(|| state.reader.viewer.display_scale.get_untracked())
 }
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
@@ -160,13 +161,14 @@ fn zoom_readout_entry(state: AppState) -> ToolbarEntry {
 fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
-    let percent = move || format!("{}%", (state.viewer.scale.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (state.reader.viewer.scale.get() * 100.0).round() as u32);
     let zoom_title = move || {
-        let shown = state.viewer.scale.get();
-        let desired = state.viewer.desired_scale.get();
-        let (cw, ch) = state.viewer.container_size.get();
+        let shown = state.reader.viewer.scale.get();
+        let desired = state.reader.viewer.desired_scale.get();
+        let (cw, ch) = state.reader.viewer.container_size.get();
         let held_back = state
-            .doc
+            .reader
+            .document
             .page1_size
             .get()
             .map(|p| {
@@ -219,26 +221,26 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                 <button
                     type="button"
                     on:click=move |_| {
-                        state.viewer.fit.set(FitMode::Width);
+                        state.reader.viewer.fit.set(FitMode::Width);
                         open.set(false);
                     }
                     class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
                 >
                     <span class="inline-flex w-4 shrink-0 justify-center text-accent">
-                        {move || (state.viewer.fit.get() == FitMode::Width).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                        {move || (state.reader.viewer.fit.get() == FitMode::Width).then(|| view! { <Icon name=IconName::Check size=14/> })}
                     </span>
                     <span>Fit width</span>
                 </button>
                 <button
                     type="button"
                     on:click=move |_| {
-                        state.viewer.fit.set(FitMode::Page);
+                        state.reader.viewer.fit.set(FitMode::Page);
                         open.set(false);
                     }
                     class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
                 >
                     <span class="inline-flex w-4 shrink-0 justify-center text-accent">
-                        {move || (state.viewer.fit.get() == FitMode::Page).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                        {move || (state.reader.viewer.fit.get() == FitMode::Page).then(|| view! { <Icon name=IconName::Check size=14/> })}
                     </span>
                     <span>Fit page</span>
                 </button>
@@ -249,7 +251,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                     children=move |z| {
                         let row_class = move || {
                             let base = "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm";
-                            if (state.viewer.scale.get() - z).abs() < 1e-9 {
+                            if (state.reader.viewer.scale.get() - z).abs() < 1e-9 {
                                 format!("{base} bg-accent-soft text-accent")
                             } else {
                                 format!("{base} text-ink hover:bg-line")
@@ -265,7 +267,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                                 class=row_class
                             >
                                 <span>{format!("{}%", (z * 100.0).round() as u32)}</span>
-                                {move || ((state.viewer.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                                {move || ((state.reader.viewer.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
                             </button>
                         }
                     }

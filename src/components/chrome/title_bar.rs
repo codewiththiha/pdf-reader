@@ -77,7 +77,7 @@ pub fn TitleBar(
     });
     let hide_later = move || {
         // An open popover or the floating search pins the bar open.
-        if is_held.get() || state.search.visible.get() {
+        if is_held.get() || state.reader.search.visible.get() {
             return;
         }
         if let Some(h) = timer.get_value() {
@@ -85,7 +85,7 @@ pub fn TitleBar(
         }
         let h = set_timeout_with_handle(
             move || {
-                if !is_held.get() && !state.search.visible.get() {
+                if !is_held.get() && !state.reader.search.visible.get() {
                     hovered.set(false);
                 }
             },

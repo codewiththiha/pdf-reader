@@ -46,7 +46,7 @@ pub fn ReaderControls(state: AppState) -> impl IntoView {
         timer.set_value(h);
     };
 
-    let vs = state.viewer_state();
+    let vs = state.reader;
     let show_strip = show.clone();
     let show_bar = show;
 
@@ -72,17 +72,17 @@ pub fn ReaderControls(state: AppState) -> impl IntoView {
             <PageNavigation state=vs />
             // Continuous mode only: a scroll slider that follows the page
             // column. `page_tracking` keeps it and the pill in sync.
-            <Show when=move || state.viewer.mode.get() == ViewMode::Continuous>
+            <Show when=move || state.reader.viewer.mode.get() == ViewMode::Continuous>
                 <input
                     type="range"
                     min="0"
                     max=move || {
                         let total =
-                            total_height_css(&state.doc.page_heights.get(), PAGE_GAP);
-                        let (_, vh) = state.viewer.container_size.get();
+                            total_height_css(&state.reader.document.page_heights.get(), PAGE_GAP);
+                        let (_, vh) = state.reader.viewer.container_size.get();
                         (total - vh).max(0.0).to_string()
                     }
-                    prop:value=move || state.viewer.scroll_top.get().to_string()
+                    prop:value=move || state.reader.viewer.scroll_top.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<f64>()
                             && let Some(list) = crate::components::pdf::dom::page_list()

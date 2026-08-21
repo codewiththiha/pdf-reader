@@ -28,9 +28,9 @@ pub fn link_navigation(state: AppState) {
             else {
                 return;
             };
-            let total = state.doc.num_pages.get_untracked().max(1);
+            let total = state.reader.document.num_pages.get_untracked().max(1);
             let page = (page as u32).clamp(1, total);
-            state.viewer.page.set(page);
+            state.reader.viewer.page.set(page);
         },
     );
     on_cleanup(move || _handle.remove());

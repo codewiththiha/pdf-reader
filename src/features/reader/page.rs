@@ -36,7 +36,7 @@ use crate::effects::zoom::zoom_system;
 use crate::state::SidebarMode;
 
 fn view_mode_entry(state: AppState) -> ToolbarEntry {
-    let mode = state.viewer.mode;
+    let mode = state.reader.viewer.mode;
 
     // ── inline (what the bar shows) ──────────────────────────────
     // Compact icon-only segmented — same as before.
@@ -53,7 +53,7 @@ fn view_mode_entry(state: AppState) -> ToolbarEntry {
                          "Continuous scroll view"),
                     ]
                     value={mode.read_only()}
-                    on_change=move |m: ViewMode| state.viewer.mode.set(m)
+                    on_change=move |m: ViewMode| state.reader.viewer.mode.set(m)
                 />
             </Tooltip>
         }
@@ -83,7 +83,7 @@ fn view_mode_entry(state: AppState) -> ToolbarEntry {
                         ]
                         value={mode.read_only()}
                         on_change=move |m: ViewMode| {
-                            state.viewer.mode.set(m);
+                            state.reader.viewer.mode.set(m);
                             done.run(());
                         }
                     />
@@ -100,7 +100,7 @@ fn fit_entry(state: AppState) -> ToolbarEntry {
             <div class="flex items-center gap-1">
                 <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
                     <Button
-                        on_click=move |_| state.viewer.fit.set(FitMode::Width)
+                        on_click=move |_| state.reader.viewer.fit.set(FitMode::Width)
                         kind=ButtonKind::Ghost
                         icon=IconName::FitWidth
                         title="Fit width (Cmd/Ctrl+0)".to_string()
@@ -108,7 +108,7 @@ fn fit_entry(state: AppState) -> ToolbarEntry {
                 </Tooltip>
                 <Tooltip text="Fit page".to_string()>
                     <Button
-                        on_click=move |_| state.viewer.fit.set(FitMode::Page)
+                        on_click=move |_| state.reader.viewer.fit.set(FitMode::Page)
                         kind=ButtonKind::Ghost
                         icon=IconName::FitPage
                         title="Fit page".to_string()
@@ -132,7 +132,7 @@ fn fit_entry(state: AppState) -> ToolbarEntry {
                 <div class="flex w-full items-center gap-1 px-1 py-1">
                     <button type="button"
                         on:click=move |_| {
-                            state.viewer.fit.set(FitMode::Width);
+                            state.reader.viewer.fit.set(FitMode::Width);
                             done.run(());
                         }
                         class="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
@@ -142,7 +142,7 @@ fn fit_entry(state: AppState) -> ToolbarEntry {
                     </button>
                     <button type="button"
                         on:click=move |_| {
-                            state.viewer.fit.set(FitMode::Page);
+                            state.reader.viewer.fit.set(FitMode::Page);
                             done.run(());
                         }
                         class="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
@@ -161,14 +161,14 @@ fn fit_entry(state: AppState) -> ToolbarEntry {
 pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
-    let vs = state.viewer_state();
-    fit_effect(vs);
+    let vs = state.reader;
+    fit_effect(vs, state.ui.sidebar);
     zoom_system(vs);
     page_tracking(vs);
     reading_progress(state);
 
-    let status = state.doc.status;
-    let mode = state.viewer.mode;
+    let status = state.reader.document.status;
+    let mode = state.reader.viewer.mode;
     let state_sidebar = state;
     let is_ready = move || status.get() == DocStatus::Ready;
 
@@ -183,10 +183,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let toolbar_refresh = RwSignal::new(0u64);
     Effect::new(move |_| {
         _ = state.ui.sidebar.get();
-        _ = state.doc.status.get();
-        _ = state.doc.num_pages.get();
-        _ = state.doc.title.get();
-        _ = state.doc.path.get();
+        _ = state.reader.document.status.get();
+        _ = state.reader.document.num_pages.get();
+        _ = state.reader.document.title.get();
+        _ = state.reader.document.path.get();
         toolbar_refresh.update(|n| *n += 1);
     });
 
@@ -212,7 +212,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     </Show>
                     <Show when=move || {
                         matches!(
-                            state.doc.status.get(),
+                            state.reader.document.status.get(),
                             DocStatus::Ready | DocStatus::Opening
                         )
                     }>
@@ -287,7 +287,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         // reusable UI with no knowledge of AppState.
                         <Show when=is_ready>
                             <div class="pointer-events-none absolute bottom-3 right-3 z-30">
-                                <PageIndicator current=state.viewer.page total=state.doc.num_pages />
+                                <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
                             </div>
                         </Show>
                         <ReaderControls state=state />

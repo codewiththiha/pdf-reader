@@ -19,10 +19,10 @@ use crate::components::PageCanvas;
 use pdf_core::layout::{
     page_top_css, render_range, total_height_css, PAGE_GAP, RENDER_BUDGET,
 };
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 
 #[component]
-pub fn PageList(state: ViewerState) -> impl IntoView {
+pub fn PageList(state: ReaderState) -> impl IntoView {
     // Seed every page's height from its OWN intrinsic size, at the scale in
     // force when the document is first laid out.
     //
@@ -41,14 +41,14 @@ pub fn PageList(state: ViewerState) -> impl IntoView {
     // scroll against it, so a competing write mid-gesture would fight the
     // anchor and reintroduce the very drift this fixes.
     Effect::new(move || {
-        let n = state.doc.num_pages.get() as usize;
+        let n = state.document.num_pages.get() as usize;
         let scale = state.viewer.render_scale.get();
-        let sizes = state.doc.page_sizes.get();
-        let fallback = state.doc.page1_size.get().map(|s| s.height).unwrap_or(0.0);
+        let sizes = state.document.page_sizes.get();
+        let fallback = state.document.page1_size.get().map(|s| s.height).unwrap_or(0.0);
         if n == 0 || scale <= 0.0 || (sizes.is_empty() && fallback <= 0.0) {
             return;
         }
-        state.doc.page_heights.update(|v| {
+        state.document.page_heights.update(|v| {
             if v.len() == n {
                 return; // already laid out for this document
             }
@@ -78,7 +78,7 @@ pub fn PageList(state: ViewerState) -> impl IntoView {
     // their text layers — mounted so the selection's DOM nodes stay valid
     // and copy of multi-page selections works through any scroll.
     let visible = Memo::new(move |_| {
-        let heights = state.doc.page_heights.get();
+        let heights = state.document.page_heights.get();
         let scroll_top = state.viewer.scroll_top.get();
         let vh = state.viewer.container_size.get().1;
         let mut range = render_range(
@@ -150,7 +150,7 @@ pub fn PageList(state: ViewerState) -> impl IntoView {
             return;
         }
         let idx = p.saturating_sub(1) as usize;
-        state.doc.page_heights.update(|v| {
+        state.document.page_heights.update(|v| {
             while v.len() <= idx {
                 v.push(0.0);
             }
@@ -179,7 +179,7 @@ pub fn PageList(state: ViewerState) -> impl IntoView {
             <div
                 aria-hidden="true"
                 style:height=move || {
-                    let heights = state.doc.page_heights.get();
+                    let heights = state.document.page_heights.get();
                     format!("{}px", total_height_css(&heights, PAGE_GAP))
                 }
             ></div>
@@ -193,7 +193,7 @@ pub fn PageList(state: ViewerState) -> impl IntoView {
                 key=|i: &usize| *i
                 children=move |i: usize| {
                     let style = move || {
-                        let heights = state.doc.page_heights.get();
+                        let heights = state.document.page_heights.get();
                         let top = page_top_css(i, &heights, PAGE_GAP);
                         format!(
                             "position:absolute;top:{top}px;left:0;right:0;display:flex;justify-content:center"

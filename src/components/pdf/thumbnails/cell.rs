@@ -14,7 +14,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use pdf_engine::api as engine;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 
 use super::geometry::{CELL_W, PULSE_STOP_MS, THUMB_SCALE};
 
@@ -25,7 +25,7 @@ use super::geometry::{CELL_W, PULSE_STOP_MS, THUMB_SCALE};
 /// or the app tears down).
 #[component]
 pub fn ThumbCell(
-    state: ViewerState,
+    state: ReaderState,
     /// 1-based page number this cell renders.
     page: u32,
     /// Document generation guard, bumped on document change so a stale
@@ -67,7 +67,7 @@ pub fn ThumbCell(
     // portrait default if page1_size isn't populated yet.
     let aspect = move || {
         state
-            .doc
+            .document
             .page1_size
             .get()
             .map(|s| if s.width > 0.0 { s.height / s.width } else { 0.75 })

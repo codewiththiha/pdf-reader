@@ -10,14 +10,14 @@ use crate::state::AppState;
 #[component]
 pub(crate) fn BookInfo(state: AppState) -> impl IntoView {
     view! {
-        <Show when=move || state.doc.status.get() == DocStatus::Ready>
+        <Show when=move || state.reader.document.status.get() == DocStatus::Ready>
             <div
                 class="flex items-center gap-3 border-b border-line px-3 pb-3"
                 data-tauri-drag-region="true"
             >
                 {move || {
-                    let path = state.doc.path.get().unwrap_or_default();
-                    match state.covers.get().get(&path).cloned() {
+                    let path = state.reader.document.path.get().unwrap_or_default();
+                    match state.library.covers.get().get(&path).cloned() {
                         Some(c) => view! {
                             <img
                                 class="h-12 w-10 rounded-sm border border-line/60 object-cover"
@@ -41,18 +41,18 @@ pub(crate) fn BookInfo(state: AppState) -> impl IntoView {
                         data-tauri-drag-region="true"
                     >
                         {move || pdf_core::filename::display_name(
-                            state.doc.title.get().as_deref(),
-                            state.doc.path.get().as_deref(),
+                            state.reader.document.title.get().as_deref(),
+                            state.reader.document.path.get().as_deref(),
                         )
                         .unwrap_or_else(|| "No document".to_string())}
                     </p>
                     <p class="truncate text-xs text-muted">
-                        {move || state.doc.author.get().unwrap_or_default()}
+                        {move || state.reader.document.author.get().unwrap_or_default()}
                     </p>
                 </div>
                 // Info: native tooltip with the full path is enough.
                 <span
-                    title=move || state.doc.path.get().unwrap_or_default()
+                    title=move || state.reader.document.path.get().unwrap_or_default()
                     class="text-muted"
                 >
                     <Icon name=IconName::More size=14 />

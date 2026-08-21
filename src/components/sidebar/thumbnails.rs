@@ -4,11 +4,14 @@
 use leptos::prelude::*;
 
 use crate::components::ThumbnailsPanel;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
+use crate::state::ui::SidebarMode;
+use leptos::prelude::RwSignal;
 
 #[component]
 pub(crate) fn SidebarThumbs(
-    state: ViewerState,
+    state: ReaderState,
+    sidebar: RwSignal<SidebarMode>,
     live: Signal<bool>,
     shown: Signal<bool>,
     outro: Signal<bool>,
@@ -19,7 +22,7 @@ pub(crate) fn SidebarThumbs(
             class=("invisible", move || !shown.get())
             class=("is-outro", move || outro.get())
         >
-            <ThumbnailsPanel state=state live=live />
+            <ThumbnailsPanel state=state live=live sidebar=sidebar />
         </div>
     }
 }

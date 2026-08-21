@@ -23,12 +23,12 @@ pub fn close_document(state: AppState) {
     // The reading-progress effect writes the library signal synchronously but
     // debounces the localStorage save; closing (and then possibly quitting)
     // must not lose the last position to that debounce.
-    if state.doc.status.get_untracked() == DocStatus::Ready
-        && let Some(path) = state.doc.path.get_untracked()
+    if state.reader.document.status.get_untracked() == DocStatus::Ready
+        && let Some(path) = state.reader.document.path.get_untracked()
     {
-        let page = state.viewer.page.get_untracked();
+        let page = state.reader.viewer.page.get_untracked();
         let mut changed = false;
-        state.library.update(|books| {
+        state.library.books.update(|books| {
             if let Some(b) = books.iter_mut().find(|b| b.path == path)
                 && b.page != page
             {
@@ -37,7 +37,7 @@ pub fn close_document(state: AppState) {
             }
         });
         if changed {
-            save_library(&state.library.get_untracked());
+            save_library(&state.library.books.get_untracked());
         }
     }
 
@@ -50,8 +50,8 @@ pub fn close_document(state: AppState) {
         _ = engine::destroy().await;
     });
 
-    state.doc.reset();
-    state.viewer.reset_position();
-    state.search.reset();
+    state.reader.document.reset();
+    state.reader.viewer.reset_position();
+    state.reader.search.reset();
     state.ui.sidebar.set(SidebarMode::None);
 }

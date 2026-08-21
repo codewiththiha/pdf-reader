@@ -13,12 +13,17 @@ use leptos::prelude::*;
 
 use pdf_core::layout::TOOLBAR_H;
 use pdf_core::math::{constrained_scale, fit_scale, page_intrinsic, FitMode};
-use crate::state::{ViewerState, SidebarMode};
+use crate::state::{ReaderState, SidebarMode};
 
 use super::zoom::{commit_scale, gesture_owns_layout, relayout_to, take_commit_echo};
 
 /// Must be called once from the app root (ReaderPage).
-pub fn fit_effect(state: ViewerState) {
+pub fn fit_effect(
+    state: ReaderState,
+    // Sidebar open/close re-runs fit so the page re-centers (app chrome
+    // state passed in explicitly).
+    sidebar: RwSignal<SidebarMode>,
+) {
     // Width of the window at the last refit, used to tell a WINDOW resize from
     // a sidebar slide: both move `container_size`, but only the former moves
     // `window.innerWidth`. No timers, no guessing.
@@ -34,8 +39,8 @@ pub fn fit_effect(state: ViewerState) {
         // Tracked: a wide plate scrolling into view is the same kind of
         // "the space the page needs changed" as the sidebar opening.
         let page = state.viewer.page.get();
-        let widths = state.doc.page_widths.get();
-        let intrins_h = state.doc.page_sizes.get();
+        let widths = state.document.page_widths.get();
+        let intrins_h = state.document.page_sizes.get();
         // A zoom GESTURE owns the layout while it runs.
         //
         // `apply_zoom` writes `fit` (to None) and then calls `request_zoom`, so
@@ -84,8 +89,8 @@ pub fn fit_effect(state: ViewerState) {
         // effect the moment it starts, not only once the animation has begun
         // moving the container. The value itself no longer matters: the page
         // is sized from the space that is actually available, whatever took it.
-        let _sidebar_open = state.sidebar.get() != SidebarMode::None;
-        let Some(p1) = state.doc.page1_size.get() else {
+        let _sidebar_open = sidebar.get() != SidebarMode::None;
+        let Some(p1) = state.document.page1_size.get() else {
             return;
         };
         // The page under the eyes, not page 1. A landscape insert is cropped

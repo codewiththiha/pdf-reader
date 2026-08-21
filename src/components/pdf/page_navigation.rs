@@ -6,11 +6,11 @@ use leptos::prelude::*;
 
 use crate::components::shared::icon::{Icon, IconName};
 use crate::components::shared::tooltip::Tooltip;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 
 #[component]
-pub fn PageNavigation(state: ViewerState) -> impl IntoView {
-    let num_pages = state.doc.num_pages;
+pub fn PageNavigation(state: ReaderState) -> impl IntoView {
+    let num_pages = state.document.num_pages;
     let page = state.viewer.page;
 
     // Editable readout. A local signal holds the text so typing never fights the
@@ -81,13 +81,13 @@ pub fn PageNavigation(state: ViewerState) -> impl IntoView {
                     let v = event_target_value(&ev);
                     match v.trim().parse::<u32>() {
                         Ok(n) => {
-                            let max = commit_state.doc.num_pages.get().max(1);
+                            let max = commit_state.document.num_pages.get().max(1);
                             commit_state.viewer.page.set(n.clamp(1, max));
                         }
                         // Invalid input: snap the readout back to the current page.
                         Err(_) => {
                             let cur = commit_state.viewer.page.get();
-                            if commit_state.doc.num_pages.get() == 0 {
+                            if commit_state.document.num_pages.get() == 0 {
                                 text.set("–".to_string());
                             } else {
                                 text.set(cur.to_string());
@@ -114,7 +114,7 @@ pub fn PageNavigation(state: ViewerState) -> impl IntoView {
                     disabled=next_disabled
                     on:click=move |_| {
                         let p = next_state.viewer.page.get();
-                        let n = next_state.doc.num_pages.get();
+                        let n = next_state.document.num_pages.get();
                         if n > 0 && p < n {
                             next_state.viewer.page.set(p + 1);
                         }

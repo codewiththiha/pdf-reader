@@ -52,7 +52,8 @@ fn shortcuts(state: AppState) {
         move || crate::services::document::open_dialog(state)
     };
     crate::effects::shortcuts::shortcuts(
-        state.viewer_state(),
+        state.reader,
         open_doc,
+        state.ui.sidebar,
     );
 }

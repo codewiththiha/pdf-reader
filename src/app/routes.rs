@@ -16,7 +16,7 @@ pub(crate) fn RouteSync(state: AppState) -> impl IntoView {
     let navigate = use_navigate();
     let loc = use_location();
     Effect::new(move |_| {
-        let ready = state.doc.status.get() == DocStatus::Ready;
+        let ready = state.reader.document.status.get() == DocStatus::Ready;
         let path = loc.pathname.get();
         if ready && path != "/reader" {
             navigate("/reader", Default::default());

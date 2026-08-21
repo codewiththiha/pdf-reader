@@ -21,12 +21,12 @@ use crate::state::AppState;
 
 #[component]
 pub fn LibraryShelf(state: AppState) -> impl IntoView {
-    let status = state.doc.status;
-    let error = state.doc.error;
+    let status = state.reader.document.status;
+    let error = state.reader.document.error;
 
     // The reactive list (most-recent first). Small enough (<= RECENT_CAP) that
     // re-deriving the whole vec on any library write is cheap.
-    let books = move || state.library.get();
+    let books = move || state.library.books.get();
 
     let is_idle = move || status.get() == DocStatus::Idle;
     let is_opening = move || status.get() == DocStatus::Opening;
@@ -164,6 +164,7 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
     let cover_path = path.clone();
     let aspect = move || {
         state
+            .library
             .covers
             .get()
             .get(&cover_path)
@@ -191,14 +192,14 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
     let remove_path = path.clone();
     let remove = move |ev: leptos::ev::MouseEvent| {
         ev.stop_propagation();
-        state.library.update(|books| {
+        state.library.books.update(|books| {
             crate::state::library::remove(books, &remove_path);
         });
-        state.covers.update(|covers| {
+        state.library.covers.update(|covers| {
             covers.remove(&remove_path);
         });
-        crate::storage::save_library(&state.library.get_untracked());
-        crate::storage::save_covers(&state.covers.get_untracked());
+        crate::storage::save_library(&state.library.books.get_untracked());
+        crate::storage::save_covers(&state.library.covers.get_untracked());
     };
 
     let alt_path = path.clone();
@@ -219,7 +220,7 @@ fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
             <div class="book-cover" style:aspect-ratio=move || format!("{:.5} / {:.5}", aspect(), 1.0)>
                 // Fore-edge: stacked page sheets peeking past the right side.
                 <div class="book-pages"></div>
-                {move || match state.covers.get().get(&alt_path).cloned() {
+                {move || match state.library.covers.get().get(&alt_path).cloned() {
                     Some(c) => view! {
                         <img class="book-cover-img" src=c.data_url alt=alt_title.clone() loading="lazy" />
                     }

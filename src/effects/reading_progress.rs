@@ -27,9 +27,9 @@ pub fn reading_progress(state: AppState) {
     Effect::new(move || {
         // Read deps unconditionally at the top (see page_tracking for the
         // subscription gotcha): status/path/page must all be subscribed.
-        let status = state.doc.status.get();
-        let path = state.doc.path.get();
-        let page = state.viewer.page.get();
+        let status = state.reader.document.status.get();
+        let path = state.reader.document.path.get();
+        let page = state.reader.viewer.page.get();
 
         if status != DocStatus::Ready {
             return;
@@ -42,7 +42,7 @@ pub fn reading_progress(state: AppState) {
         // moved, so the page-tracking syncs (which can re-write an equal page)
         // never dirty the list or trigger a save.
         let mut changed = false;
-        state.library.update(|books| {
+        state.library.books.update(|books| {
             if let Some(b) = books.iter_mut().find(|b| b.path == path)
                 && b.page != page
             {
@@ -60,7 +60,7 @@ pub fn reading_progress(state: AppState) {
         if let Some(h) = timer.get_value() {
             h.clear();
         }
-        let snapshot = state.library.get_untracked();
+        let snapshot = state.library.books.get_untracked();
         let handle = set_timeout_with_handle(
             move || save_library(&snapshot),
             Duration::from_millis(SAVE_MS),

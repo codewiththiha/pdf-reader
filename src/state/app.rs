@@ -1,14 +1,13 @@
-//! App-level state: the viewer pieces come from `crate::state::viewer`; this adds
-//! the app chrome (settings, library, covers, toast). Field paths match the
-//! viewer state exactly, so components work unchanged in either context.
-
-use std::collections::HashMap;
+//! App-level state: settings, the reader slice, the library and the UI
+//! chrome. Deliberately four groups — a flat grab-bag of signals grows
+//! unbounded; these four are the app's real domains.
 
 use leptos::prelude::RwSignal;
 
-use crate::state::library::{CoverImage, RecentBook};
+use crate::state::library::LibraryState;
+use crate::state::ui::SidebarMode;
+use crate::state::viewer::ReaderState;
 use pdf_core::settings::Settings;
-use crate::state::{DocumentState, SearchState, SidebarMode, ViewerSignals, ViewerState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastKind {
@@ -23,8 +22,7 @@ pub struct Toast {
     pub message: String,
 }
 
-/// UI chrome state: the sidebar and the toast surface. Grouped so new UI
-/// signals don't keep piling onto the flat `AppState` struct.
+/// UI chrome state: the sidebar and the toast surface.
 #[derive(Clone, Copy)]
 pub struct UiState {
     /// Which sidebar panel (if any) is open.
@@ -36,44 +34,21 @@ pub struct UiState {
 #[derive(Clone, Copy)]
 pub struct AppState {
     pub settings: RwSignal<Settings>,
-    pub doc: DocumentState,
-    pub viewer: ViewerSignals,
-    pub search: SearchState,
+    pub reader: ReaderState,
+    pub library: LibraryState,
     pub ui: UiState,
-    /// The "recent books" library: recently opened documents, most-recent
-    /// first, each carrying its last-reached page.
-    pub library: RwSignal<Vec<RecentBook>>,
-    /// Cover art (page-1 JPEG data URLs) keyed by path.
-    pub covers: RwSignal<HashMap<String, CoverImage>>,
-}
-
-impl AppState {
-    /// The viewer slice of app state. Field paths match `ViewerState` exactly,
-    /// so viewer components accept this without copying signals.
-    pub fn viewer_state(self) -> ViewerState {
-        ViewerState::new(self.doc, self.viewer, self.search, self.ui.sidebar)
-    }
-}
-
-impl From<AppState> for ViewerState {
-    fn from(state: AppState) -> Self {
-        state.viewer_state()
-    }
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             settings: RwSignal::new(Settings::default()),
-            doc: DocumentState::default(),
-            viewer: ViewerSignals::default(),
-            search: SearchState::default(),
+            reader: ReaderState::default(),
+            library: LibraryState::default(),
             ui: UiState {
                 sidebar: RwSignal::new(SidebarMode::None),
                 toast: RwSignal::new(None),
             },
-            library: RwSignal::new(Vec::new()),
-            covers: RwSignal::new(HashMap::new()),
         }
     }
 }

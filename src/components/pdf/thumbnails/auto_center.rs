@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::state::{ViewerState, SidebarMode};
+use crate::state::ReaderState;
+use crate::state::ui::SidebarMode;
 
 use super::geometry::{
     row_count, row_height, CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, PAD,
@@ -76,7 +77,12 @@ impl AutoCenter {
     /// Install the two auto-center effects. Must be called once from the
     /// panel, alongside the mount/size-tracking effect. Consumes the bundle:
     /// clone any handle you still need (`last_user_drive`) before calling.
-    pub fn install(self, state: ViewerState) {
+    pub fn install(
+        self,
+        state: ReaderState,
+        // Which sidebar panel is open (app chrome state passed in explicitly).
+        sidebar: RwSignal<SidebarMode>,
+    ) {
         let auto = self;
 
         // --- "Take me to where I am": re-clicking the active Thumbs tab. ---
@@ -94,7 +100,7 @@ impl AutoCenter {
                 let handle = window_event_listener(
                     leptos::ev::Custom::new("pdfreader:reveal-active"),
                     move |_: web_sys::CustomEvent| {
-                        if state.sidebar.get_untracked() != SidebarMode::Thumbs {
+                        if sidebar.get_untracked() != SidebarMode::Thumbs {
                             return;
                         }
                         let Some(el) = container_el.get_value() else { return };
@@ -140,7 +146,7 @@ impl AutoCenter {
         // defers again (re-arming itself) — so the skipped page still ends up
         // centered once the panel (and the reader) have been still for the window.
         Effect::new(move |_| {
-            let in_thumbs = state.sidebar.get() == SidebarMode::Thumbs;
+            let in_thumbs = sidebar.get() == SidebarMode::Thumbs;
             let p = state.viewer.page.get();
             let vh = auto.viewport_h.get();
             let rh = row_height(aspect(state));
@@ -208,6 +214,7 @@ impl AutoCenter {
             let step_slot: RevealSlot = Rc::new(RefCell::new(None));
             let step_self = Rc::downgrade(&step_slot);
             let step_state = state;
+            let step_sidebar = sidebar;
             let step_el = el;
             let step_drive = auto.last_user_drive.clone();
             let step_timer = auto.glide_timer;
@@ -215,7 +222,7 @@ impl AutoCenter {
             let step: Rc<dyn Fn()> = Rc::new(move || {
                 let now = js_sys::Date::now();
                 let elapsed = now - step_drive.get();
-                let in_thumbs_now = step_state.sidebar.get_untracked() == SidebarMode::Thumbs;
+                let in_thumbs_now = step_sidebar.get_untracked() == SidebarMode::Thumbs;
                 let page_now = step_state.viewer.page.get_untracked();
                 let cur_now = step_el.scroll_top() as f64;
                 // The world moved on since the glide was armed (panel closed, the
@@ -292,9 +299,9 @@ impl AutoCenter {
 
 /// Page-1 aspect ratio driving the fixed row height (same closure the panel
 /// view uses; duplicated here so the auto-center machinery is self-contained).
-fn aspect(state: ViewerState) -> f64 {
+fn aspect(state: ReaderState) -> f64 {
     state
-        .doc
+        .document
         .page1_size
         .get()
         .map(|s| if s.width > 0.0 { s.height / s.width } else { 0.75 })
@@ -302,6 +309,6 @@ fn aspect(state: ViewerState) -> f64 {
 }
 
 /// Number of 2-column rows needed for the current page count.
-fn rows(state: ViewerState) -> usize {
-    row_count(state.doc.num_pages.get() as usize)
+fn rows(state: ReaderState) -> usize {
+    row_count(state.document.num_pages.get() as usize)
 }

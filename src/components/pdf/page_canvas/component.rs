@@ -32,7 +32,7 @@ use leptos::task::spawn_local;
 
 use pdf_engine::api as engine;
 use pdf_core::appearance::TextureMode;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 
 #[component]
 pub fn PageCanvas(
@@ -53,7 +53,7 @@ pub fn PageCanvas(
     #[prop(optional)]
     on_geometry: Option<Callback<(u32, f64, f64)>>,
 ) -> impl IntoView {
-    let state = use_context::<ViewerState>();
+    let state = use_context::<ReaderState>();
     // Texture comes from the app shell via context (derived from settings);
     // a Memo so only a real texture change rebuilds the host class.
     let texture = {

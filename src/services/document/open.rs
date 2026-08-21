@@ -80,8 +80,8 @@ pub fn open_dialog(state: AppState) {
             Ok(path) => open_path(state, path),
             Err(msg) => {
                 if msg != "Open cancelled" {
-                    state.doc.error.set(Some(msg.clone()));
-                    state.doc.status.set(DocStatus::Error);
+                    state.reader.document.error.set(Some(msg.clone()));
+                    state.reader.document.status.set(DocStatus::Error);
                     state.ui.toast.set(Some(Toast {
                         kind: ToastKind::Error,
                         message: format!("Could not open PDF: {}", msg),
@@ -97,12 +97,12 @@ pub fn open_dialog(state: AppState) {
 /// was opened before, and records it in the recent-books library. Drag-drop
 /// calls this directly.
 pub fn open_path(state: AppState, path: String) {
-    state.doc.status.set(DocStatus::Opening);
-    state.doc.error.set(None);
+    state.reader.document.status.set(DocStatus::Opening);
+    state.reader.document.error.set(None);
 
     // The resume point is read BEFORE the open resolves so it can't be
     // clobbered by a concurrent page-tracking write from the closing document.
-    let saved_page = library::find_page(&state.library.get_untracked(), &path).unwrap_or(1);
+    let saved_page = library::find_page(&state.library.books.get_untracked(), &path).unwrap_or(1);
 
     spawn_local(async move {
         match engine::open(&path).await {
@@ -111,18 +111,18 @@ pub fn open_path(state: AppState, path: String) {
                 let num_pages = open.num_pages;
                 let name = display_name(open.title.as_deref(), Some(&path));
                 // Document state.
-                state.doc.num_pages.set(num_pages);
+                state.reader.document.num_pages.set(num_pages);
                 // Intrinsic per-page sizes, straight from the engine. These
                 // replace the previous document's measured column outright.
-                state.doc.page_sizes.set(open.page_heights.clone());
-                state.doc.page_widths.set(open.page_widths.clone());
-                state.doc.title.set(open.title);
-                state.doc.author.set(open.author);
-                state.doc.outline.set(open.outline);
-                state.doc.page1_size.set(Some(page1.clone()));
-                state.doc.path.set(Some(path.clone()));
-                state.doc.error.set(None);
-                state.doc.status.set(DocStatus::Ready);
+                state.reader.document.page_sizes.set(open.page_heights.clone());
+                state.reader.document.page_widths.set(open.page_widths.clone());
+                state.reader.document.title.set(open.title);
+                state.reader.document.author.set(open.author);
+                state.reader.document.outline.set(open.outline);
+                state.reader.document.page1_size.set(Some(page1.clone()));
+                state.reader.document.path.set(Some(path.clone()));
+                state.reader.document.error.set(None);
+                state.reader.document.status.set(DocStatus::Ready);
                 // A successful open dismisses any stale error toast.
                 state.ui.toast.set(None);
 
@@ -136,26 +136,26 @@ pub fn open_path(state: AppState, path: String) {
                 // `page_heights` reset and `scroll_top = 0` — races the
                 // page-tracking effects: the scroll→page effect reads scroll 0
                 // and "corrects" the page back to 1 before the jump lands.
-                state.viewer.page.set(1);
-                state.viewer.scroll_top.set(0.0);
-                state.viewer.fit.set(FitMode::Width);
+                state.reader.viewer.page.set(1);
+                state.reader.viewer.scroll_top.set(0.0);
+                state.reader.viewer.fit.set(FitMode::Width);
                 // Heights belong to the document that was just closed; leaving
                 // them would have the zoom coordinator anchor against a stale
                 // column on the first gesture. PageList re-seeds them from
                 // `page_sizes` (intrinsic heights) at the current scale.
-                state.doc.page_heights.set(Vec::new());
-                let (cw, ch) = state.viewer.container_size.get();
+                state.reader.document.page_heights.set(Vec::new());
+                let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =
                     fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, 48.0, 1.0);
                 // Direct writes are correct HERE and nowhere else: this is the
                 // initial scale for a brand-new document, so there is no layout
                 // to animate from and nothing to anchor to. All three scales
                 // must start in agreement.
-                state.viewer.zoom_animating.set(false);
-                state.viewer.zoom_request.set(None);
-                state.viewer.scale.set(s);
-                state.viewer.display_scale.set(s);
-                state.viewer.render_scale.set(s);
+                state.reader.viewer.zoom_animating.set(false);
+                state.reader.viewer.zoom_request.set(None);
+                state.reader.viewer.scale.set(s);
+                state.reader.viewer.display_scale.set(s);
+                state.reader.viewer.render_scale.set(s);
 
                 // Jump to the saved page once the view has mounted and seeded
                 // its page heights — the same `page.set()` path outline /
@@ -163,13 +163,13 @@ pub fn open_path(state: AppState, path: String) {
                 if resume > 1 {
                     let jump_state = state;
                     request_animation_frame(move || {
-                        jump_state.viewer.page.set(resume);
+                        jump_state.reader.viewer.page.set(resume);
                     });
                 }
 
                 // Reset search + clear stale highlights. The floating search
                 // overlay must not linger after opening a new document.
-                state.search.reset();
+                state.reader.search.reset();
                 engine::clear_highlights();
 
                 // Fire index build in the background; result is ignored
@@ -185,7 +185,7 @@ pub fn open_path(state: AppState, path: String) {
 
                 // Record this book in the recent-books library (most-recent
                 // first). An evicted entry past the cap has its cover dropped.
-                let mut recent = state.library.get_untracked();
+                let mut recent = state.library.books.get_untracked();
                 let evicted = library::upsert(
                     &mut recent,
                     RecentBook {
@@ -195,13 +195,13 @@ pub fn open_path(state: AppState, path: String) {
                         num_pages,
                     },
                 );
-                state.library.set(recent);
-                save_library(&state.library.get_untracked());
+                state.library.books.set(recent);
+                save_library(&state.library.books.get_untracked());
                 if let Some(evicted_path) = evicted {
-                    state.covers.update(|c| {
+                    state.library.covers.update(|c| {
                         c.remove(&evicted_path);
                     });
-                    save_covers(&state.covers.get_untracked());
+                    save_covers(&state.library.covers.get_untracked());
                 }
 
                 // Generate the shelf cover (page-1 JPEG) in the background. It
@@ -212,7 +212,7 @@ pub fn open_path(state: AppState, path: String) {
                 spawn_local(async move {
                     match engine::cover_data_url(&cover_path, 240.0).await {
                         Ok(c) => {
-                            cover_state.covers.update(|covers| {
+                            cover_state.library.covers.update(|covers| {
                                 covers.insert(
                                     cover_path,
                                     CoverImage {
@@ -222,15 +222,15 @@ pub fn open_path(state: AppState, path: String) {
                                     },
                                 );
                             });
-                            save_covers(&cover_state.covers.get_untracked());
+                            save_covers(&cover_state.library.covers.get_untracked());
                         }
                         Err(_) => { /* stylised fallback cover */ }
                     }
                 });
             }
             Err(e) => {
-                state.doc.error.set(Some(e.message.clone()));
-                state.doc.status.set(DocStatus::Error);
+                state.reader.document.error.set(Some(e.message.clone()));
+                state.reader.document.status.set(DocStatus::Error);
                 state.ui.toast.set(Some(Toast {
                     kind: ToastKind::Error,
                     message: format!("Could not open PDF: {}", e.message),

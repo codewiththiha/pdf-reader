@@ -26,7 +26,9 @@ use web_sys::Event;
 use web_sys::ResizeObserverEntry;
 
 use pdf_core::layout::visible_grid_rows;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
+use crate::state::ui::SidebarMode;
+use leptos::prelude::RwSignal;
 
 use super::auto_center::AutoCenter;
 use super::cell::ThumbCell;
@@ -34,7 +36,7 @@ use super::geometry::{row_count, row_height, MIN_VIEWPORT_H, PAD, ROW_BUFFER};
 
 #[component]
 pub fn ThumbnailsPanel(
-    state: ViewerState,
+    state: ReaderState,
     /// False once a close slide from Thumbs has finished. The `<For>` then
     /// emits no rows, every cell unmounts, and `cancelThumb` zeros the live
     /// canvases. True while the panel is showing, while Outline is showing
@@ -42,9 +44,11 @@ pub fn ThumbnailsPanel(
     /// (a quick reopen must not remount).
     #[prop(into)]
     live: Signal<bool>,
+    /// Which sidebar panel is open (app chrome state passed in explicitly).
+    sidebar: RwSignal<SidebarMode>,
 ) -> impl IntoView {
-    let num_pages = state.doc.num_pages;
-    let page1_size = state.doc.page1_size;
+    let num_pages = state.document.num_pages;
+    let page1_size = state.document.page1_size;
 
     // Reactive geometry: page-1 aspect drives the fixed row height; the row
     // count follows the page count (2 columns per row).
@@ -252,7 +256,7 @@ pub fn ThumbnailsPanel(
     // --- auto-center the current page ---------------------------------------
     // The glide / grace / debounce machinery (and the "reveal-active" listener)
     // lives in `super::auto_center`; install it with the shared handles.
-    auto.install(state);
+    auto.install(state, sidebar);
 
     view! {
         // on:scroll MUST live on the SAME element that has overflow-y-auto —

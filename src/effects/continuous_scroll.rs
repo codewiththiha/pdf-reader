@@ -34,7 +34,7 @@ use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::Event;
 
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 use crate::components::pdf::dom::page_list;
 
 /// The wasm-side wrapper around the JS scroll handler. Not `Send + Sync`, so it
@@ -43,7 +43,7 @@ use crate::components::pdf::dom::page_list;
 type ScrollListener = Closure<dyn FnMut(Event)>;
 
 /// Must be called once when the continuous view mounts.
-pub fn continuous_scroll(state: ViewerState) {
+pub fn continuous_scroll(state: ReaderState) {
     let scroll_top = state.viewer.scroll_top;
 
     // The (element, JS function) pair is parked here so `on_cleanup` (which

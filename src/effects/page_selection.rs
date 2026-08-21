@@ -7,7 +7,7 @@
 //! clear.
 //!
 //! This effect is the single place that turns that event into a write on
-//! `state.viewer.selected_pages`, which `PageList` reads to PIN those pages in
+//! `state.reader.viewer.selected_pages`, which `PageList` reads to PIN those pages in
 //! the virtualization window.
 
 use leptos::prelude::*;
@@ -20,7 +20,7 @@ pub fn page_selection(state: AppState) {
         move |ev: web_sys::CustomEvent| {
             let detail = ev.detail();
             if detail.is_null() {
-                state.viewer.selected_pages.set(None);
+                state.reader.viewer.selected_pages.set(None);
                 return;
             }
             let first = js_sys::Reflect::get(&detail, &"first".into())
@@ -31,12 +31,12 @@ pub fn page_selection(state: AppState) {
                 .and_then(|v| v.as_f64());
             match (first, last) {
                 (Some(f), Some(l)) => {
-                    let total = state.doc.num_pages.get_untracked().max(1);
+                    let total = state.reader.document.num_pages.get_untracked().max(1);
                     let f = (f as u32).clamp(1, total);
                     let l = (l as u32).clamp(1, total);
-                    state.viewer.selected_pages.set(Some((f.min(l), f.max(l))));
+                    state.reader.viewer.selected_pages.set(Some((f.min(l), f.max(l))));
                 }
-                _ => state.viewer.selected_pages.set(None),
+                _ => state.reader.viewer.selected_pages.set(None),
             }
         },
     );

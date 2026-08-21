@@ -3,7 +3,8 @@
 use leptos::prelude::*;
 
 use pdf_engine::types::OutlineNode;
-use crate::state::{ViewerState, SidebarMode};
+use crate::state::ReaderState;
+use crate::state::ui::SidebarMode;
 
 type RevealHolder = std::rc::Rc<std::cell::RefCell<Option<std::rc::Rc<dyn Fn()>>>>;
 
@@ -117,7 +118,11 @@ mod tests {
 }
 
 #[component]
-pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
+pub fn OutlinePanel(
+    state: ReaderState,
+    /// Which sidebar panel is open (app chrome state passed in explicitly).
+    sidebar: RwSignal<SidebarMode>,
+) -> impl IntoView {
     let scroller: NodeRef<leptos::html::Div> = NodeRef::new();
 
     // Keep the active entry on screen.
@@ -133,8 +138,8 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
     // would be silently clamped to zero.
     Effect::new(move |_| {
         let page = state.viewer.page.get();
-        let showing = state.sidebar.get() == SidebarMode::Outline;
-        let outline = state.doc.outline.get();
+        let showing = sidebar.get() == SidebarMode::Outline;
+        let outline = state.document.outline.get();
         let Some(parent) = scroller.get() else { return };
         if !showing || outline.is_empty() {
             return;
@@ -204,10 +209,10 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
         let handle = window_event_listener(
             leptos::ev::Custom::new("pdfreader:reveal-active"),
             move |_: web_sys::CustomEvent| {
-                if state.sidebar.get_untracked() != SidebarMode::Outline {
+                if sidebar.get_untracked() != SidebarMode::Outline {
                     return;
                 }
-                let outline = state.doc.outline.get_untracked();
+                let outline = state.document.outline.get_untracked();
                 let page = state.viewer.page.get_untracked();
                 let Some(idx) = active_outline_index(&outline, page) else { return };
                 let Some(parent) = scroller.get_untracked() else { return };
@@ -227,7 +232,7 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
     view! {
         <div node_ref=scroller class="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {move || {
-                if state.doc.outline.get().is_empty() {
+                if state.document.outline.get().is_empty() {
                     view! {
                         <div class="flex flex-1 items-center justify-center p-4 text-sm text-muted">No outline</div>
                     }
@@ -236,7 +241,7 @@ pub fn OutlinePanel(state: ViewerState) -> impl IntoView {
                     view! {
                         <For
                             each=move || {
-                                let outline = state.doc.outline.get();
+                                let outline = state.document.outline.get();
                                 let active = active_outline_index(
                                     &outline,
                                     state.viewer.page.get(),

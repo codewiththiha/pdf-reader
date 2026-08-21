@@ -40,8 +40,8 @@ pub(crate) fn SidebarHeader(state: AppState) -> impl IntoView {
                 title="Search (Cmd/Ctrl+F)"
                 on:pointerdown=move |ev| ev.stop_propagation()
                 on:click=move |_| {
-                    let vs = state.viewer_state();
-                    if state.search.visible.get() {
+                    let vs = state.reader;
+                    if state.reader.search.visible.get() {
                         crate::effects::search_effects::dismiss_search(vs);
                     } else {
                         crate::effects::search_effects::resume_search(vs);

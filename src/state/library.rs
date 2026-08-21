@@ -10,6 +10,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashMap;
+
+use leptos::prelude::RwSignal;
+
 /// Hard cap on remembered books: enough for a long reading list without
 /// pinning unbounded cover art / paths.
 pub const RECENT_CAP: usize = 20;
@@ -150,4 +154,18 @@ mod tests {
         assert_eq!(v[0].page, 1, "first duplicate wins");
         assert_eq!(v[1].page, 1, "page 0 clamps to 1");
     }
+}
+
+/// The library domain: the recent-books shelf and the cover-art cache.
+///
+/// Covers are grouped WITH the books list on purpose: the recent-book cap
+/// (`RECENT_CAP`) is only a real memory cap if covers are evicted together
+/// with their books, and owning both in one struct makes that invariant
+/// visible at the type level.
+#[derive(Clone, Copy, Default)]
+pub struct LibraryState {
+    /// Recent books, most-recent first.
+    pub books: RwSignal<Vec<RecentBook>>,
+    /// Cover art (page-1 JPEG data URLs) keyed by path.
+    pub covers: RwSignal<HashMap<String, CoverImage>>,
 }

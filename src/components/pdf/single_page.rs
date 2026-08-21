@@ -17,11 +17,11 @@
 use leptos::prelude::*;
 
 use crate::components::PageCanvas;
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 use crate::components::pdf::dom::{observe_content_size, SINGLE_PAGE_CONTAINER_ID};
 
 #[component]
-pub fn SinglePageView(state: ViewerState) -> impl IntoView {
+pub fn SinglePageView(state: ReaderState) -> impl IntoView {
     let display_scale = state.viewer.display_scale.read_only();
 
     // Previously shown page, for the direction-aware page-turn animation.

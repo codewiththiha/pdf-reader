@@ -1,5 +1,6 @@
-//! Viewer-level reactive state, provided to the reusable viewer components.
-//! App chrome composes these into its own app-level state.
+//! Reader-level reactive state: the document, the viewer signals and the
+//! search state. Pure UI chrome (sidebar, toast) lives in `state/ui` +
+//! `state/app`; pure domain logic in `pdf-core`.
 
 use leptos::prelude::{RwSignal, Set};
 
@@ -10,16 +11,9 @@ use pdf_core::search::SearchMatch;
 use pdf_engine::types::{DocStatus, OutlineNode, PageSize};
 
 /// Page-host texture, provided via Leptos context by the app shell (derived
-/// from settings). `PageCanvas` reads it to pick the `texture-*` class; viewer
-/// code never touches settings.
+/// from settings). `PageCanvas` reads it to pick the `texture-*` class; the
+/// reader never touches settings.
 pub type TextureSignal = RwSignal<TextureMode>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SidebarMode {
-    None,
-    Outline,
-    Thumbs,
-}
 
 #[derive(Clone, Copy)]
 pub struct DocumentState {
@@ -188,27 +182,22 @@ impl Default for SearchState {
     }
 }
 
-/// The viewer's slice of app state: everything the reusable components and
-/// effects read/write. The app shell builds this from its own state and hands
-/// it to the viewer; all field paths match the app-level state exactly, so a
-/// component works unchanged in either context.
+/// The reader's slice of app state: everything the PDF components and the
+/// reader effects read/write. Sidebar/UI chrome is deliberately NOT here —
+/// it is app chrome state, passed in explicitly where the reader needs it.
 #[derive(Clone, Copy)]
-pub struct ViewerState {
-    pub doc: DocumentState,
+pub struct ReaderState {
+    pub document: DocumentState,
     pub viewer: ViewerSignals,
     pub search: SearchState,
-    pub sidebar: RwSignal<SidebarMode>,
 }
 
-impl ViewerState {
-    /// Compose a viewer state from the individual pieces (used by the app
-    /// shell when wiring the reader).
-    pub fn new(
-        doc: DocumentState,
-        viewer: ViewerSignals,
-        search: SearchState,
-        sidebar: RwSignal<SidebarMode>,
-    ) -> Self {
-        Self { doc, viewer, search, sidebar }
+impl Default for ReaderState {
+    fn default() -> Self {
+        Self {
+            document: DocumentState::default(),
+            viewer: ViewerSignals::default(),
+            search: SearchState::default(),
+        }
     }
 }

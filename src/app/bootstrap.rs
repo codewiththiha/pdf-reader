@@ -19,8 +19,10 @@ pub(crate) fn install_storage() {
 pub(crate) fn create_app_state() -> AppState {
     AppState {
         settings: RwSignal::new(load_settings()),
-        library: RwSignal::new(load_library()),
-        covers: RwSignal::new(load_covers()),
+        library: crate::state::library::LibraryState {
+            books: RwSignal::new(load_library()),
+            covers: RwSignal::new(load_covers()),
+        },
         ..AppState::default()
     }
 }
@@ -34,6 +36,6 @@ pub(crate) fn provide_app_contexts(state: AppState) {
         let t = state.settings.get().appearance.texture;
         texture.set(t);
     });
-    provide_context(state.viewer_state());
+    provide_context(state.reader);
     provide_context(texture as TextureSignal);
 }

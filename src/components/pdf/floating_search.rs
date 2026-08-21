@@ -13,7 +13,7 @@ use pdf_core::search::SearchMatch;
 use leptos::task::spawn_local;
 
 use crate::components::shared::icon::{Icon, IconName};
-use crate::state::ViewerState;
+use crate::state::ReaderState;
 use crate::effects::search_effects::{
     activate_match, clear_search, dismiss_search, run_search, search_navigate,
 };
@@ -55,7 +55,7 @@ fn Chevron(up: bool) -> impl IntoView {
 }
 
 #[component]
-pub fn FloatingSearch(state: ViewerState) -> impl IntoView {
+pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
     let last_query = RwSignal::new(String::new());
     let show_results = RwSignal::new(false);
     // Monotonic id for the newest search; guards against out-of-order
@@ -334,7 +334,7 @@ pub fn result_key(m: &SearchMatch, index: usize) -> String {
 
 /// One result row: page badge + snippet, with the current match highlighted.
 #[component]
-pub fn ResultRow(state: ViewerState, result: SearchMatch, index: usize) -> impl IntoView {
+pub fn ResultRow(state: ReaderState, result: SearchMatch, index: usize) -> impl IntoView {
     let page = result.page;
     let snippet_text = snippet(&result.text);
     // Compare by list index: `active` indexes `matches`, so this stays exact
@@ -368,7 +368,7 @@ pub fn ResultRow(state: ViewerState, result: SearchMatch, index: usize) -> impl 
 /// sidebar SearchPanel and the floating-search results dropdown so the list
 /// markup lives in exactly one place.
 #[component]
-pub fn ResultList(state: ViewerState) -> impl IntoView {
+pub fn ResultList(state: ReaderState) -> impl IntoView {
     view! {
         {move || {
             if state.search.matches.get().is_empty() {

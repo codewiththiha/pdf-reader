@@ -2,7 +2,7 @@
 //!
 //! Must be called once from the app root (wired during integration).
 //! The listener callback runs OUTSIDE the reactive owner, so everything it
-//! touches is a Copy signal handle / ViewerState captured by value.
+//! touches is a Copy signal handle / ReaderState captured by value.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -11,7 +11,7 @@ use std::cell::Cell;
 
 use pdf_core::layout::ViewMode;
 use pdf_core::math::{nearest_zoom, FitMode};
-use crate::state::{ViewerState, SidebarMode};
+use crate::state::{ReaderState, SidebarMode};
 use crate::effects::zoom::request_zoom;
 use crate::components::pdf::dom::page_list;
 
@@ -60,7 +60,7 @@ thread_local! {
 /// Chaining from the in-flight target means each press advances exactly one
 /// preset, while the coordinator retargets the running animation from wherever
 /// it currently is rather than restarting it.
-fn zoom_by(state: ViewerState, dir: i32) {
+fn zoom_by(state: ReaderState, dir: i32) {
     let cur = state
         .viewer
         .zoom_request
@@ -72,16 +72,16 @@ fn zoom_by(state: ViewerState, dir: i32) {
     request_zoom(state, nearest_zoom(cur, dir), true);
 }
 
-fn page_prev(state: ViewerState) {
+fn page_prev(state: ReaderState) {
     let p = state.viewer.page.get();
     if p > 1 {
         state.viewer.page.set(p - 1);
     }
 }
 
-fn page_next(state: ViewerState) {
+fn page_next(state: ReaderState) {
     let p = state.viewer.page.get();
-    let n = state.doc.num_pages.get();
+    let n = state.document.num_pages.get();
     if n > 0 && p < n {
         state.viewer.page.set(p + 1);
     }
@@ -223,7 +223,13 @@ fn hold_tick() {
 
 /// Must be called once from the app root. `on_open` is the app's open-file
 /// action (Cmd/Ctrl+O), injected so the viewer never depends on app chrome.
-pub fn shortcuts(state: ViewerState, on_open: impl Fn() + 'static) {
+pub fn shortcuts(
+    state: ReaderState,
+    on_open: impl Fn() + 'static,
+    // Sidebar mode is read/written for the panel toggles (app chrome
+    // state passed in explicitly).
+    sidebar: RwSignal<SidebarMode>,
+) {
     window_event_listener(leptos::ev::keydown, move |ev: leptos::ev::KeyboardEvent| {
         let key = ev.key();
 
@@ -235,8 +241,8 @@ pub fn shortcuts(state: ViewerState, on_open: impl Fn() + 'static) {
                 // Closes the bar but leaves the muted highlights behind; the
                 // next interaction with the document clears them.
                 crate::effects::search_effects::dismiss_search(state);
-            } else if state.sidebar.get() != SidebarMode::None {
-                state.sidebar.set(SidebarMode::None);
+            } else if sidebar.get() != SidebarMode::None {
+                sidebar.set(SidebarMode::None);
             }
             return;
         }
