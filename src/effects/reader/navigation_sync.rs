@@ -301,11 +301,9 @@ pub fn navigation_sync(state: ReaderState, layout: Memo<DocumentLayout>) {
                     list.set_scroll_top(top as i32);
                 }
                 // Landed: clear pending so subsequent user scrolls are never
-                // hijacked. The previous version deliberately kept pending armed
-                // (to handle a sidebar close mid-jump), but that caused
-                // scroll-lockups: whenever a newly rendered page reported its
-                // height via on_geometry, Effect 4 re-fired and snapped scrollTop
-                // back to the target, fighting the user's scroll.
+                // hijacked. Keeping pending armed re-fires this correction on
+                // every height report (scroll-lockups: on_geometry snapping
+                // scrollTop back to the target while the user scrolls).
                 pending_b.set(None);
             }
             None => {

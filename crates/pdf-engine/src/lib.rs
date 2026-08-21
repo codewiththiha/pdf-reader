@@ -9,8 +9,9 @@
 //! Tauri window/event access), which are re-exported here.
 
 mod bridge;
+mod host;
 
 pub mod api;
 pub mod types;
 
-pub use bridge::{has_pdf_reader, has_tauri, listen, tauri_get_current_window, version};
+pub use host::{has_pdf_reader, has_tauri, listen, tauri_get_current_window, version};

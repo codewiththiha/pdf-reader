@@ -94,7 +94,7 @@ pub fn PageList(
         let scroll_top = state.viewer.scroll_top.get();
         let vh = state.viewer.container_size.get().1;
         let mut range = layout.with(|l| l.window(scroll_top, vh, RENDER_BUDGET));
-        // FIX B — pin the dominant page during a layout animation. During a
+        // INVARIANT — pin the dominant page during a layout animation. During
         // sidebar slide, `scroll_top` is re-anchored by `relayout_to()` AND
         // clamped back by the browser's own scroll clamp (the spacer height
         // is applied one Leptos pass later), so for one or two frames

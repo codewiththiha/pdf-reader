@@ -120,16 +120,13 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
 // The toolbar's document-name label: correct name, and truncation only when
 // the name would actually collide with something.
 //
-// ## What was wrong
+// ## Contract
 //
-// 1. The label rendered `doc.title.or(doc.path)` verbatim, so a PDF whose
-//    `/Title` metadata is a stale producer path ("file:///F|/Mis%20docum")
-//    showed that path instead of the file.s name. `pdf_core::filename` owns the
-//    rules that pick a trustworthy name; this component just renders it.
-// 2. It carried a hard `max-w-40` (160px), so names were folded with `…` while
-//    the toolbar still had plenty of free space.
+// 1. The name always comes from `pdf_core::filename` (a `/Title` may be a
+//    stale producer path; the rules there pick a trustworthy name).
+// 2. Truncation engages only on a REAL collision, never on a fixed width.
 //
-// ## How the truncation works now
+// ## How the truncation works
 //
 // The label gets a *measured* `max-width` in px equal to the real gap between
 // the buttons on its left and the nearest thing on its right, so `truncate`

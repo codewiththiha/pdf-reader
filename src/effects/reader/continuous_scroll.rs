@@ -7,10 +7,9 @@
 //! on actual value change, so this just avoids redundant JS->Rust calls).
 //! The listener is removed when the view unmounts.
 //!
-//! NO POINTERDOWN FOCUS STEALER. The previous version attached a pointerdown
-//! listener on `#page-list` that called `el.focus()` on every click inside the
-//! scroller. This interrupted the browser's selection initialization: when the
-//! reader clicked-and-dragged to select text, the focus steal fired on
+//! NO POINTERDOWN FOCUS STEALER. Focusing `#page-list` on every click inside
+//! the scroller interrupts the browser's selection initialization: when the
+//! reader clicks-and-drags to select text, the focus steal fires on
 //! pointerdown, stealing focus from the text-layer span the click started on,
 //! and the browser's drag-selection tracking was disrupted — multi-page
 //! selection was discontinuous and jumpy. Removing the pointerdown listener

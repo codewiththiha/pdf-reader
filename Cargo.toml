@@ -96,3 +96,8 @@ inherits = "dev"
 opt-level = 0
 debug = 1
 strip = "none"
+
+# Keep the app memory-safe by construction; the workspace has no unsafe
+# outside the tauri shell crate.
+[lints.rust]
+unsafe_code = "deny"

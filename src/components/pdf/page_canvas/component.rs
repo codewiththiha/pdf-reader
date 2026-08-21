@@ -82,7 +82,7 @@ pub fn PageCanvas(
     };
 
     let registered = Rc::new(Cell::new(false));
-    // PAINTED FLAG (Fix C). True after a successful render; false after a
+    // PAINTED FLAG. True after a successful render; false after a
     // cancelled/error render (which leaves the canvas wiped by pdf.js's
     // `canvas.width = ...` on render start). The no-op fast path below
     // requires `painted == true` so a wiped canvas always re-renders even
@@ -168,7 +168,7 @@ pub fn PageCanvas(
         // size. The thumbnail underlay below covers the gap, and the commit
         // pass (~200ms later) renders it once, correctly.
         //
-        // FIX A (cold-cache first paint). If the page has NO bitmap yet
+        // COLD-CACHE FIRST PAINT. If the page has NO bitmap yet
         // (`!has_geo`) AND the thumbnail cache misses (`blit_thumb` returns
         // false — e.g. the sidebar was never opened this session), the page
         // would sit as an EMPTY TRANSPARENT CANVAS for the entire 300ms slide
@@ -202,7 +202,7 @@ pub fn PageCanvas(
         if s <= 0.0 {
             return;
         }
-        // NO-OP FAST PATH (Fix C). If the page has already been rendered at
+        // NO-OP FAST PATH. If the page has already been rendered at
         // THIS scale AND the canvas still has its bitmap (`painted == true`),
         // re-rendering would only WIPE the live canvas (pdf.js reassigns
         // `canvas.width/height` on render start) without producing a different
