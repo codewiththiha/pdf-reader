@@ -176,6 +176,20 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let collapsed_ids = RwSignal::new(Vec::<&'static str>::new());
     let overflow_ref: NodeRef<html::Div> = NodeRef::new();
 
+    // AdaptiveGroup is generic UI: it gets a ready flag and a refresh
+    // counter instead of AppState. The page bumps the counter whenever
+    // chrome state that affects the bar's geometry changes.
+    let toolbar_ready = Signal::derive(move || status.get() == DocStatus::Ready);
+    let toolbar_refresh = RwSignal::new(0u64);
+    Effect::new(move |_| {
+        _ = state.ui.sidebar.get();
+        _ = state.doc.status.get();
+        _ = state.doc.num_pages.get();
+        _ = state.doc.title.get();
+        _ = state.doc.path.get();
+        toolbar_refresh.update(|n| *n += 1);
+    });
+
     // LEFT slot: sidebar toggle (only while the sidebar is closed — the
     // sidebar's own chrome row owns it otherwise), Library, Open, DocumentTitle.
     let left = move || {
@@ -238,7 +252,8 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         ));                                          // MAX
         view! {
             <AdaptiveGroup
-                state=state
+                ready=toolbar_ready
+                refresh=toolbar_refresh.into()
                 entries=entries
                 collapsed_ids=collapsed_ids
                 overflow_ref=overflow_ref

@@ -46,7 +46,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
                 class="flex shrink-0 items-center gap-1"
             >
                 <AppearanceMenu state=state />
-                <MoreMenu state=state />
+                <MoreMenu />
             </div>
         }
     };

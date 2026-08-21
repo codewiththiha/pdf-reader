@@ -6,12 +6,10 @@ use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
-use pdf_engine::types::DocStatus;
 use crate::components::{Icon, IconName};
 use crate::components::pdf::dom::by_id;
 use crate::components::MenuItem;
 use crate::components::Popover;
-use crate::state::AppState;
 
 pub const TB_GAP: f64 = 4.0;          // gap-1
 pub const TB_OVERFLOW_W: f64 = 36.0;  // h-9 w-9
@@ -59,7 +57,13 @@ pub fn compute_collapsed(
 
 #[component]
 pub fn AdaptiveGroup(
-    state: AppState,
+    /// True while a document is open: the title reserve applies then, so
+    /// the bar always leaves the document name room.
+    ready: Signal<bool>,
+    /// Bumped by the caller whenever chrome state that affects the bar's
+    /// geometry changes (sidebar open/close, document identity, page
+    /// count) — the group re-measures in response.
+    refresh: Signal<u64>,
     entries: Vec<ToolbarEntry>,
     /// Shared collapsed-id list so popover owners can hide their trigger.
     collapsed_ids: RwSignal<Vec<&'static str>>,
@@ -84,7 +88,7 @@ pub fn AdaptiveGroup(
             let left_end = by_id("toolbar-left-pre")
                 .map(|e| e.get_bounding_client_rect().right())
                 .unwrap_or(rr.left());
-            let title_reserve = if state.doc.status.get_untracked() == DocStatus::Ready {
+            let title_reserve = if ready.get_untracked() {
                 TB_TITLE_RESERVE
             } else { 0.0 };
             let start = left_end + TB_GAP + title_reserve + 12.0; // 12 = GAP_RIGHT
@@ -123,11 +127,7 @@ pub fn AdaptiveGroup(
         recalc();
     });
     Effect::new(move |_| {
-        _ = state.ui.sidebar.get();
-        _ = state.doc.status.get();
-        _ = state.doc.num_pages.get();
-        _ = state.doc.title.get();
-        _ = state.doc.path.get();
+        let _ = refresh.get();
         recalc();
     });
     on_cleanup(move || {

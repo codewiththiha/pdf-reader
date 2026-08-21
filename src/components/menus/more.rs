@@ -1,10 +1,13 @@
-//! More menu (⋯ overflow). OWNED BY U7 (phase 3).
+//! More menu (⋯ overflow).
 //!
 //! Fullscreen (Tauri window API with a browser fallback), Print, a
 //! keyboard-shortcuts reference panel, and an About row. The panel renders
 //! through the shared window-aware `Popover`, so outside-click/Escape
 //! dismissal, viewport clamping, upward flipping and the "keep the titlebar
 //! open" hold all come from there.
+//!
+//! Takes no state: every action here is self-contained, so the menu needs
+//! nothing from the app.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -14,7 +17,6 @@ use crate::components::{Icon, IconName};
 use crate::components::Kbd;
 use crate::components::MenuItem;
 use crate::components::Popover;
-use crate::state::AppState;
 
 /// One keyboard-shortcut reference row: label on the left, keycaps on the right.
 #[component]
@@ -30,11 +32,7 @@ fn ShortcutRow(label: &'static str, keys: Vec<&'static str>) -> impl IntoView {
 }
 
 #[component]
-pub fn MoreMenu(state: AppState) -> impl IntoView {
-    // AppState is kept for signature parity with the other toolbar menus (the
-    // appearance menu consumes it); every item here is self-contained.
-    _ = state;
-
+pub fn MoreMenu() -> impl IntoView {
     let open = RwSignal::new(false);
     let full = RwSignal::new(false);
     let show_keys = RwSignal::new(false);

@@ -51,7 +51,7 @@ pub(crate) fn SidebarHeader(state: AppState) -> impl IntoView {
             >
                 <Icon name=IconName::Search size=18 />
             </button>
-            <MoreMenu state=state />
+            <MoreMenu />
         </div>
     }
 }
