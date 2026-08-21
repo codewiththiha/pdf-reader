@@ -3,6 +3,7 @@
 //! that Rust layout code shares with the CSS classes.
 
 pub mod adaptive_toolbar;
+pub mod app_title_bar;
 pub mod document_title;
 mod metrics;
 pub mod title_bar;

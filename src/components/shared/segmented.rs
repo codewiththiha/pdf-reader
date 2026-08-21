@@ -23,15 +23,22 @@ pub enum SegmentedLabel {
     IconText(IconName, &'static str),
 }
 
+/// One selectable segment: the value it produces, what it displays, and its
+/// accessibility title.
+pub struct SegmentOption<T> {
+    pub value: T,
+    pub label: SegmentedLabel,
+    pub title: &'static str,
+}
+
 /// Segmented control.
 ///
-/// Each option is `(value, label, title)`. The `title` is REQUIRED because the
-/// labels are typically icon-only: without it the buttons are anonymous to
-/// screen readers, hover tooltips, and automated tests. The wrapping `Tooltip`
-/// the title describes the group as a whole, not the individual segments.
+/// The `title` is REQUIRED on every option because the labels are typically
+/// icon-only: without it the buttons are anonymous to screen readers, hover
+/// tooltips, and automated tests.
 #[component]
 pub fn Segmented<T: PartialEq + Copy + Send + Sync + 'static>(
-    options: Vec<(T, SegmentedLabel, &'static str)>,
+    options: Vec<SegmentOption<T>>,
     value: ReadSignal<T>,
     on_change: impl Fn(T) + 'static,
     /// Stretch to the parent width and split it into perfect equal shares
@@ -53,7 +60,10 @@ pub fn Segmented<T: PartialEq + Copy + Send + Sync + 'static>(
         <div class=container_class>
             {options
                 .into_iter()
-                .map(move |(t, label, title)| {
+                .map(move |opt| {
+                    let t = opt.value;
+                    let label = opt.label;
+                    let title = opt.title;
                     let cb = Rc::clone(&on_change);
                     let class = move || {
                         let base = if full_width {

@@ -4,10 +4,10 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::button::{Button, ButtonKind};
-use crate::components::shared::icon::IconName;
+use crate::components::shared::button::{Button, ButtonVariant};
+use crate::components::shared::icon::{Icon, IconName};
 use crate::components::shared::tooltip::Tooltip;
-use crate::components::layout::title_bar::AppTitleBar;
+use crate::components::layout::app_title_bar::AppTitleBar;
 use crate::components::menus::appearance::AppearanceMenu;
 use crate::components::layout::document_title::DocumentTitle;
 use crate::components::menus::more::MoreMenu;
@@ -24,14 +24,15 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
                     data-tauri-drag-region="true"
                     class="flex shrink-0 items-center gap-1"
                 >
-                    <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
+                    <Tooltip text="Open PDF (Cmd/Ctrl+O)">
                         <Button
                             on_click=move |_| crate::services::document::open_dialog(state)
-                            kind=ButtonKind::Toolbar
-                            icon=IconName::Open
-                            label="Open".to_string()
-                            title="Open PDF (Cmd/Ctrl+O)".to_string()
-                        />
+                            variant=ButtonVariant::Toolbar
+                            title="Open PDF (Cmd/Ctrl+O)"
+                        >
+                            <Icon name=IconName::Open size=18 />
+                            <span>"Open"</span>
+                        </Button>
                     </Tooltip>
                 </div>
                 <DocumentTitle state=state />

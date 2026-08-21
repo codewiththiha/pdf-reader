@@ -67,13 +67,13 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                 min=0.0
                 max=100.0
                 step=1.0
-                unit="%".to_string()
+                unit="%"
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_intensity.set(v);
                     preview_appearance(state, AppearanceScrub::NoiseIntensity(v as u8));
                 }
-                label="Grain intensity".to_string()
+                label="Grain intensity"
             />
         </div>
     }

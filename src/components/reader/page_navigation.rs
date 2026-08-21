@@ -47,7 +47,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
 
     view! {
         <div class="flex items-center gap-1">
-            <Tooltip text="Previous page (ArrowLeft)".to_string()>
+            <Tooltip text="Previous page (ArrowLeft)">
                 <button
                     type="button"
                     title="Previous page (ArrowLeft)"
@@ -107,7 +107,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                 }}
             </span>
 
-            <Tooltip text="Next page (ArrowRight)".to_string()>
+            <Tooltip text="Next page (ArrowRight)">
                 <button
                     type="button"
                     title="Next page (ArrowRight)"

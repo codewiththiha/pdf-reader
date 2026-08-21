@@ -11,7 +11,7 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::shared::button::{Button, ButtonKind};
+use crate::components::shared::button::{Button, ButtonVariant};
 use crate::components::shared::icon::{Icon, IconName};
 use crate::components::shared::separator::Separator;
 use crate::components::shared::tooltip::Tooltip;
@@ -54,21 +54,23 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
     let zoom_step_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
         view! {
             <div class="flex items-center gap-1">
-                <Tooltip text="Zoom out (-)".to_string()>
+                <Tooltip text="Zoom out (-)">
                     <Button
                         on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), -1))
-                        kind=ButtonKind::Ghost
-                        icon=IconName::ZoomOut
-                        title="Zoom out (-)".to_string()
-                    />
+                        variant=ButtonVariant::Ghost
+                        title="Zoom out (-)"
+                    >
+                        <Icon name=IconName::ZoomOut size=18 />
+                    </Button>
                 </Tooltip>
-                <Tooltip text="Zoom in (+)".to_string()>
+                <Tooltip text="Zoom in (+)">
                     <Button
                         on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), 1))
-                        kind=ButtonKind::Ghost
-                        icon=IconName::ZoomIn
-                        title="Zoom in (+)".to_string()
-                    />
+                        variant=ButtonVariant::Ghost
+                        title="Zoom in (+)"
+                    >
+                        <Icon name=IconName::ZoomIn size=18 />
+                    </Button>
                 </Tooltip>
             </div>
         }

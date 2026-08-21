@@ -6,7 +6,7 @@ use leptos::prelude::*;
 
 #[component]
 pub fn Tooltip(
-    text: String,
+    #[prop(into)] text: String,
     children: Children,
 ) -> impl IntoView {
     view! {

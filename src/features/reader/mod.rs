@@ -1,5 +1,4 @@
-//! The reader feature: the `/reader` route page.
-
 pub mod page;
+pub mod toolbar;
 
 pub use page::ReaderPage;

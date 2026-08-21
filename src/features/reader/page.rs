@@ -1,32 +1,26 @@
-//! The `/reader` route: sidebar + viewer slot + the shared titlebar (via the
-//! chrome `TitleBar`), plus the floating doc title, page pill, bottom
+//! The `/reader` route: sidebar + viewer slot + the app title bar, plus the
+//! floating doc title, page pill, bottom
 //! bar and floating search. The viewer slot switches on viewer.mode.
 //!
 //! Slot wiring is the SINGLE coordinator's job — branches
 //! must not edit this file.
 
-use std::sync::Arc;
-
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::shared::button::{Button, ButtonKind};
-use crate::components::shared::icon::{Icon, IconName};
-use crate::components::shared::segmented::{Segmented, SegmentedLabel};
-use crate::components::shared::tooltip::Tooltip;
 
 use pdf_engine::types::DocStatus;
 use pdf_core::layout::{DocumentLayout, PAGE_GAP, ViewMode};
-use pdf_core::math::FitMode;
-use crate::components::layout::adaptive_toolbar::{AdaptiveToolbar, ToolbarItem};
+use crate::components::layout::adaptive_toolbar::AdaptiveToolbar;
+use crate::components::shared::button::{Button, ButtonVariant};
+use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::tooltip::Tooltip;
 use crate::components::sidebar::Sidebar;
 use crate::components::layout::document_title::FloatingDocumentTitle;
-use crate::components::layout::title_bar::AppTitleBar;
-use crate::components::menus::appearance::appearance_entry;
+use crate::components::layout::app_title_bar::AppTitleBar;
 use crate::components::layout::document_title::DocumentTitle;
 use crate::components::reader::page_indicator::PageIndicator;
 use crate::components::reader::reader_controls::ReaderControls;
-use crate::components::reader::zoom_controls::zoom_entries;
 use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::effects::reader::reading_progress::reading_progress;
@@ -34,128 +28,7 @@ use crate::effects::reader::fit::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::zoom::zoom_system;
 use crate::state::SidebarMode;
-
-fn view_mode_entry(state: AppState) -> ToolbarItem {
-    let mode = state.reader.viewer.mode;
-
-    // ── inline (what the bar shows) ──────────────────────────────
-    // Compact icon-only segmented — same as before.
-    let inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
-        view! {
-            <Tooltip text="View mode".to_string()>
-                <Segmented
-                    options=vec![
-                        (ViewMode::Single,
-                         SegmentedLabel::Icon(IconName::SinglePage),
-                         "Single page view"),
-                        (ViewMode::Continuous,
-                         SegmentedLabel::Icon(IconName::Continuous),
-                         "Continuous scroll view"),
-                    ]
-                    value={mode.read_only()}
-                    on_change=move |m: ViewMode| state.reader.viewer.mode.set(m)
-                />
-            </Tooltip>
-        }
-        .into_any()
-    });
-
-    ToolbarItem {
-        id: "view-mode",
-        // collapses AFTER fit (70), BEFORE zoom-step (80)
-        priority: 75,
-        keep_mounted: false,
-        inline: inline.clone(),
-        sizer: inline,
-        // Menu: full-width segmented WITH text labels; picking one closes the menu.
-        collapsed: Arc::new(move |done| {
-            view! {
-                <div class="w-full px-1 py-1">
-                    <Segmented
-                        full_width=true
-                        options=vec![
-                            (ViewMode::Single,
-                             SegmentedLabel::IconText(IconName::SinglePage, "Single"),
-                             "Single page view"),
-                            (ViewMode::Continuous,
-                             SegmentedLabel::IconText(IconName::Continuous, "Continuous"),
-                             "Continuous scroll view"),
-                        ]
-                        value={mode.read_only()}
-                        on_change=move |m: ViewMode| {
-                            state.reader.viewer.mode.set(m);
-                            done.run(());
-                        }
-                    />
-                </div>
-            }
-            .into_any()
-        }),
-    }
-}
-
-fn fit_entry(state: AppState) -> ToolbarItem {
-    let inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
-        view! {
-            <div class="flex items-center gap-1">
-                <Tooltip text="Fit width (Cmd/Ctrl+0)".to_string()>
-                    <Button
-                        on_click=move |_| state.reader.viewer.fit.set(FitMode::Width)
-                        kind=ButtonKind::Ghost
-                        icon=IconName::FitWidth
-                        title="Fit width (Cmd/Ctrl+0)".to_string()
-                    />
-                </Tooltip>
-                <Tooltip text="Fit page".to_string()>
-                    <Button
-                        on_click=move |_| state.reader.viewer.fit.set(FitMode::Page)
-                        kind=ButtonKind::Ghost
-                        icon=IconName::FitPage
-                        title="Fit page".to_string()
-                    />
-                </Tooltip>
-            </div>
-        }
-        .into_any()
-    });
-
-    ToolbarItem {
-        id: "fit",
-        // collapses FIRST of the layout trio
-        priority: 70,
-        keep_mounted: false,
-        inline: inline.clone(),
-        sizer: inline,
-        // Menu: two equal-half buttons; clicking closes the menu.
-        collapsed: Arc::new(move |done| {
-            view! {
-                <div class="flex w-full items-center gap-1 px-1 py-1">
-                    <button type="button"
-                        on:click=move |_| {
-                            state.reader.viewer.fit.set(FitMode::Width);
-                            done.run(());
-                        }
-                        class="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
-                    >
-                        <Icon name=IconName::FitWidth size=14 />
-                        <span>"Fit width"</span>
-                    </button>
-                    <button type="button"
-                        on:click=move |_| {
-                            state.reader.viewer.fit.set(FitMode::Page);
-                            done.run(());
-                        }
-                        class="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2 text-sm text-ink hover:bg-line"
-                    >
-                        <Icon name=IconName::FitPage size=14 />
-                        <span>"Fit page"</span>
-                    </button>
-                </div>
-            }
-            .into_any()
-        }),
-    }
-}
+use super::toolbar::reader_toolbar_entries;
 
 #[component]
 pub fn ReaderPage(state: AppState) -> impl IntoView {
@@ -205,13 +78,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     class="flex shrink-0 items-center gap-1"
                 >
                     <Show when=move || state.ui.sidebar.get() == SidebarMode::None>
-                        <Tooltip text="Toggle sidebar".to_string()>
+                        <Tooltip text="Toggle sidebar">
                             <Button
                                 on_click=move |_| state.ui.sidebar.set(SidebarMode::Thumbs)
-                                kind=ButtonKind::Ghost
-                                icon=IconName::Sidebar
-                                title="Toggle sidebar".to_string()
-                            />
+                                variant=ButtonVariant::Ghost
+                                title="Toggle sidebar"
+                            >
+                                <Icon name=IconName::Sidebar size=18 />
+                            </Button>
                         </Tooltip>
                     </Show>
                     <Show when=move || {
@@ -220,23 +94,25 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             DocStatus::Ready | DocStatus::Opening
                         )
                     }>
-                        <Tooltip text="Library".to_string()>
+                        <Tooltip text="Library">
                             <Button
                                 on_click=move |_| close_document(state)
-                                kind=ButtonKind::Ghost
-                                icon=IconName::Library
-                                title="Close this book and return to the library".to_string()
-                            />
+                                variant=ButtonVariant::Ghost
+                                title="Close this book and return to the library"
+                            >
+                                <Icon name=IconName::Library size=18 />
+                            </Button>
                         </Tooltip>
                     </Show>
-                    <Tooltip text="Open PDF (Cmd/Ctrl+O)".to_string()>
+                    <Tooltip text="Open PDF (Cmd/Ctrl+O)">
                         <Button
                             on_click=move |_| open_dialog(state)
-                            kind=ButtonKind::Toolbar
-                            icon=IconName::Open
-                            label="Open".to_string()
-                            title="Open PDF (Cmd/Ctrl+O)".to_string()
-                        />
+                            variant=ButtonVariant::Toolbar
+                            title="Open PDF (Cmd/Ctrl+O)"
+                        >
+                            <Icon name=IconName::Open size=18 />
+                            <span>"Open"</span>
+                        </Button>
                     </Tooltip>
                 </div>
                 <DocumentTitle state=state />
@@ -246,14 +122,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     // RIGHT slot: view-mode, fit, zoom, appearance — collision-aware overflow.
     let right = move || {
-        let mut entries = vec![view_mode_entry(state), fit_entry(state)];
-        entries.extend(zoom_entries(state));          // zoom-step (80), readout (MAX)
-        entries.push(appearance_entry(
+        let entries = reader_toolbar_entries(
             state,
             appearance_open,
             collapsed_ids,
             overflow_ref,
-        ));                                          // MAX
+        );
         view! {
             <AdaptiveToolbar
                 ready=toolbar_ready

@@ -13,7 +13,8 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::icon::IconName;
+use crate::components::shared::icon_button::IconButton;
 use crate::components::shared::kbd::Kbd;
 use crate::components::shared::menu_item::MenuItem;
 use crate::components::shared::popover::Popover;
@@ -79,14 +80,11 @@ pub fn MoreMenu() -> impl IntoView {
 
     view! {
         <div node_ref=root_ref class="relative inline-flex">
-            <button
-                type="button"
+            <IconButton
+                icon=IconName::More
                 title="More"
-                on:click=move |_| open.set(!open.get())
-                class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-                <Icon name=IconName::More size=18 />
-            </button>
+                on_click=move || open.set(!open.get())
+            />
             <Popover open=open anchor=root_ref width=256 hold_titlebar=false class="p-1".to_string()>
                 <MenuItem
                     icon=IconName::Fullscreen

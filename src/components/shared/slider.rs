@@ -9,11 +9,11 @@ pub fn Slider(
     max: f64,
     step: f64,
     on_change: impl Fn(f64) + 'static,
-    #[prop(optional)] label: Option<String>,
+    #[prop(into, optional)] label: Option<String>,
     /// Unit appended to the live readout (e.g. "%"). A slider with no numeric
     /// feedback can only be dialled by eye, which is fine for "a bit more
     /// grain" but not for reproducing a look or reporting one.
-    #[prop(optional)]
+    #[prop(into, optional)]
     unit: Option<String>,
 ) -> impl IntoView {
     let unit_s = unit.unwrap_or_default();

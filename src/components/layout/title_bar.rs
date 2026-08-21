@@ -1,14 +1,14 @@
-//! Reusable hover/grab titlebar with a pin. `left`/`right` are render-prop
-//! slots so each page composes whatever controls it needs; the provider owns
-//! the hover/pin state, the traffic lights, and the drag/hover band.
+//! Generic hover/grab titlebar shell. `left`/`right` are render-prop slots
+//! so each page composes whatever controls it needs; the shell owns the
+//! hover/pin state, the hide timers and the drag/hover band.
 //!
 //! It WRAPS its children so descendants (the floating doc title, the slot
 //! menus' popovers) can read the shared [`TitleBarCtx`] — leptos context
 //! flows down the reactive tree, so a sibling overlay would not see it.
 //!
-//! Sidebar-aware: the hover band starts at `left-72` while the sidebar is
-//! open, so hovering the sidebar never reveals the reader bar; the native
-//! traffic lights follow `visible || sidebar_open`.
+//! The shell knows nothing about the application: pin persistence, the
+//! native traffic lights, sidebar insets and search holds are injected
+//! through props/callbacks (see `app_title_bar.rs`).
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -16,11 +16,9 @@ use std::time::Duration;
 use leptos::children::ViewFn;
 use leptos::prelude::*;
 
-use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::icon::IconName;
+use crate::components::shared::icon_button::IconButton;
 use crate::components::shared::tooltip::Tooltip;
-use crate::state::SidebarMode;
-use crate::state::AppState;
-use crate::storage::save_settings;
 
 /// Pointer must be off the bar this long before it hides.
 const HIDE_DELAY_MS: u64 = 400;
@@ -36,38 +34,26 @@ pub struct TitleBarCtx {
 }
 
 #[component]
-pub fn AppTitleBar(
-    state: AppState,
+pub fn TitleBar(
+    /// Pinned state: while on, the bar never auto-hides.
+    pinned: RwSignal<bool>,
+    /// Called with the new value whenever the pin toggles (persistence).
+    on_pin_change: Callback<bool>,
+    /// Extra hold from outside the bar (e.g. the open floating search).
+    extra_hold: Signal<bool>,
+    /// True while something on the left (the sidebar) owns the left inset:
+    /// the hover band starts at `left-72` and the row drops its traffic-light
+    /// padding.
+    band_inset: Signal<bool>,
     #[prop(into)] left: ViewFn,
     #[prop(into)] right: ViewFn,
     children: Children,
 ) -> impl IntoView {
-    let pinned = RwSignal::new(state.settings.get_untracked().titlebar_pinned);
     let hovered = RwSignal::new(false);
     let held_count = RwSignal::new(0usize);
     let is_held = Signal::derive(move || held_count.get() > 0);
     let visible = Signal::derive(move || pinned.get() || hovered.get());
     provide_context(TitleBarCtx { visible, held_count });
-
-    // Persist the pin.
-    Effect::new(move |_| {
-        let p = pinned.get();
-        if state.settings.with(|s| s.titlebar_pinned) != p {
-            state.settings.update(|s| s.titlebar_pinned = p);
-            if let Err(e) = save_settings(&state.settings.get_untracked()) {
-                e.report();
-            }
-        }
-    });
-
-    // Traffic lights: on while pinned/hovered, or while an open sidebar owns
-    // them (its chrome row is always visible).
-    Effect::new(move |_| {
-        let on = visible.get() || state.ui.sidebar.get() != SidebarMode::None;
-        wasm_bindgen_futures::spawn_local(async move {
-            pdf_engine::api::set_traffic_lights(on).await;
-        });
-    });
 
     let timer = StoredValue::new_local(None::<TimeoutHandle>);
     let show: Rc<dyn Fn()> = Rc::new(move || {
@@ -79,7 +65,7 @@ pub fn AppTitleBar(
     });
     let hide_later = move || {
         // An open popover or the floating search pins the bar open.
-        if is_held.get() || state.reader.search.visible.get() {
+        if is_held.get() || extra_hold.get() {
             return;
         }
         if let Some(h) = timer.get_value() {
@@ -87,7 +73,7 @@ pub fn AppTitleBar(
         }
         let h = set_timeout_with_handle(
             move || {
-                if !is_held.get() && !state.reader.search.visible.get() {
+                if !is_held.get() && !extra_hold.get() {
                     hovered.set(false);
                 }
             },
@@ -99,7 +85,7 @@ pub fn AppTitleBar(
 
     let show_band = show.clone();
     let show_bar = show;
-    let sidebar_open = move || state.ui.sidebar.get() != SidebarMode::None;
+    let sidebar_open = move || band_inset.get();
 
     view! {
         <>
@@ -131,7 +117,7 @@ pub fn AppTitleBar(
                     {left.run()}
                     <div class="ml-auto flex shrink-0 items-center gap-1">
                         {right.run()}
-                        <PinButton pinned=pinned />
+                        <PinButton pinned=pinned on_pin_change=on_pin_change />
                     </div>
                 </div>
             </div>
@@ -139,21 +125,24 @@ pub fn AppTitleBar(
     }
 }
 
-/// Pin: while on, the bar never auto-hides. Persisted via Settings.
+/// Pin: while on, the bar never auto-hides. The new value is reported to the
+/// caller, which owns persistence.
 #[component]
-fn PinButton(pinned: RwSignal<bool>) -> impl IntoView {
+fn PinButton(
+    pinned: RwSignal<bool>,
+    on_pin_change: Callback<bool>,
+) -> impl IntoView {
     view! {
-        <Tooltip text="Pin titlebar open".to_string()>
-            <button
-                type="button"
-                aria-pressed=move || pinned.get().to_string()
-                on:click=move |_| pinned.set(!pinned.get())
-                class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                class=("text-accent", move || pinned.get())
-                class=("text-ink", move || !pinned.get())
-            >
-                <Icon name=IconName::Pin size=18 />
-            </button>
+        <Tooltip text="Pin titlebar open">
+            <IconButton
+                icon=IconName::Pin
+                pressed=pinned.into()
+                on_click=move || {
+                    let next = !pinned.get();
+                    pinned.set(next);
+                    on_pin_change.run(next);
+                }
+            />
         </Tooltip>
     }
 }

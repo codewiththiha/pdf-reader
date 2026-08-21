@@ -103,7 +103,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                 min=0.0
                 max=100.0
                 step=1.0
-                unit="%".to_string()
+                unit="%"
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_strength.set(v);
@@ -115,7 +115,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                         AppearanceScrub::Tint { hue, strength: v as u8 },
                     );
                 }
-                label="Tint strength".to_string()
+                label="Tint strength"
             />
         </div>
     }

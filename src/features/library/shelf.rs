@@ -12,7 +12,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::button::{Button, ButtonKind};
+use crate::components::shared::button::{Button, ButtonVariant};
 use crate::components::shared::icon::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::state::library::RecentBook;
@@ -47,10 +47,11 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
                         </div>
                         <Button
                             on_click=move |_| document::close_document(state)
-                            kind=ButtonKind::Ghost
-                            label="Cancel".to_string()
-                            title="Cancel and return to the library".to_string()
-                        />
+                            variant=ButtonVariant::Ghost
+                            title="Cancel and return to the library"
+                        >
+                            <span>"Cancel"</span>
+                        </Button>
                     </div>
                 </div>
             </Show>
@@ -92,11 +93,12 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
                                     </Show>
                                     <Button
                                         on_click=move |_| document::open_dialog(open_state)
-                                        kind=ButtonKind::Primary
-                                        icon=IconName::Open
-                                        label="Open PDF".to_string()
-                                        title="Open a PDF file".to_string()
-                                    />
+                                        variant=ButtonVariant::Primary
+                                        title="Open a PDF file"
+                                    >
+                                        <Icon name=IconName::Open size=18 />
+                                        <span>"Open PDF"</span>
+                                    </Button>
                                 </div>
                             </header>
                             <div class="library-grid">
@@ -126,10 +128,11 @@ fn EmptyState(state: AppState) -> impl IntoView {
                 })}
                 <Button
                     on_click=move |_| document::open_dialog(state)
-                    kind=ButtonKind::Primary
-                    label="Open…".to_string()
-                    title="Open a PDF file".to_string()
-                />
+                    variant=ButtonVariant::Primary
+                    title="Open a PDF file"
+                >
+                    <span>"Open…"</span>
+                </Button>
             </div>
         </div>
     }

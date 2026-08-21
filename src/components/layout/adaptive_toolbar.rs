@@ -6,7 +6,8 @@ use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
-use crate::components::shared::icon::{Icon, IconName};
+use crate::components::shared::icon::IconName;
+use crate::components::shared::icon_button::IconButton;
 use crate::components::dom::by_id;
 use crate::components::shared::menu_item::MenuItem;
 use crate::components::shared::popover::Popover;
@@ -144,14 +145,11 @@ pub fn AdaptiveToolbar(
                 // so this only occupies space once at least one entry was evicted.
                 <Show when=move || !collapsed_ids.get().is_empty() || open.get()>
                     <div node_ref=overflow_ref class="relative inline-flex">
-                        <button
-                            type="button"
+                        <IconButton
+                            icon=IconName::More
                             title="More tools"
-                            on:click=move |_| open.set(!open.get())
-                            class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                        >
-                            <Icon name=IconName::More size=18 />
-                        </button>
+                            on_click=move || open.set(!open.get())
+                        />
                         <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
                             <For
                                 each=move || collapsed_ids.get()

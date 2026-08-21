@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::button::{Button, ButtonKind};
+use crate::components::shared::button::{Button, ButtonVariant};
 use crate::components::shared::icon::{Icon, IconName};
 use crate::components::shared::tooltip::Tooltip;
 use crate::state::SidebarMode;
@@ -21,13 +21,14 @@ pub(crate) fn SidebarHeader(state: AppState) -> impl IntoView {
             class="flex h-12 shrink-0 items-center gap-1 pl-[88px] pr-2"
             data-tauri-drag-region="true"
         >
-            <Tooltip text="Close sidebar".to_string()>
+            <Tooltip text="Close sidebar">
                 <Button
                     on_click=move |_| state.ui.sidebar.set(SidebarMode::None)
-                    kind=ButtonKind::Ghost
-                    icon=IconName::SidebarOpen
-                    title="Close sidebar".to_string()
-                />
+                    variant=ButtonVariant::Ghost
+                    title="Close sidebar"
+                >
+                    <Icon name=IconName::SidebarOpen size=18 />
+                </Button>
             </Tooltip>
             // Floating-search toggle: raw button so pointerdown can
             // stop propagation (the floating bar's outside-click

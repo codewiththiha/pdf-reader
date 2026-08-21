@@ -17,3 +17,4 @@ pub mod segmented;
 pub mod separator;
 pub mod slider;
 pub mod tooltip;
+pub mod icon_button;

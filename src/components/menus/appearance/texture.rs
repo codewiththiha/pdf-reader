@@ -76,26 +76,26 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                 min=0.0
                 max=100.0
                 step=1.0
-                unit="%".to_string()
+                unit="%"
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_opacity.set(v);
                     preview_appearance(state, AppearanceScrub::TextureOpacity(v as u8));
                 }
-                label="Texture opacity".to_string()
+                label="Texture opacity"
             />
             <Slider
                 value=tscale
                 min=25.0
                 max=400.0
                 step=5.0
-                unit="%".to_string()
+                unit="%"
                 on_change=move |v| {
                     let v = v.round().clamp(25.0, 400.0);
                     set_tscale.set(v);
                     preview_appearance(state, AppearanceScrub::TextureScale(v as u16));
                 }
-                label="Texture scale".to_string()
+                label="Texture scale"
             />
         </div>
     }
