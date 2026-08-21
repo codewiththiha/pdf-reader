@@ -22,7 +22,7 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::Event;
 
-use crate::core::state::AppState;
+use crate::state::AppState;
 
 pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
     // Drag-enter/leave DEPTH counter. Window-level `dragenter`/`dragleave`
@@ -116,7 +116,7 @@ pub(crate) fn drag_drop(state: AppState, drag_active: RwSignal<bool>) {
         Box::new(move |ev: Event| {
             drop_sig.set(false);
             if let Some(path) = first_drop_path(&ev) {
-                crate::core::open_flow::open_path(st, path);
+                crate::state::open::open_path(st, path);
             }
         }) as Box<dyn FnMut(Event)>,
     );

@@ -2,16 +2,16 @@ use leptos::prelude::*;
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::hooks::{use_location, use_navigate};
 
-use crate::components::molecules::drag_overlay::DragOverlay;
-use crate::components::organisms::toast::ToastHost;
-use crate::components::views::library_page::LibraryPage;
-use crate::components::views::reader_view::ReaderView;
-use crate::core::state::AppState;
+use crate::components::overlays::drag_overlay::DragOverlay;
+use crate::components::overlays::toast::ToastHost;
+use crate::features::library::LibraryPage;
+use crate::features::reader::ReaderView;
+use crate::state::AppState;
 use crate::effects::drag_drop::drag_drop;
-use crate::effects::link_nav::link_nav;
-use crate::effects::selection_pages::selection_pages;
-use crate::effects::theme_applier::theme_applier;
-use crate::util::storage::{init_storage, load_covers, load_library, load_settings};
+use crate::effects::link_navigation::link_navigation;
+use crate::effects::page_selection::page_selection;
+use crate::effects::theme::apply_theme;
+use crate::storage::{init_storage, load_covers, load_library, load_settings};
 use pdf_core::appearance::TextureMode;
 use pdf_engine::types::DocStatus;
 use pdf_viewer::state::TextureSignal;
@@ -43,12 +43,12 @@ pub fn App() -> impl IntoView {
 
     // App-root hooks: theme (both pages), global keyboard shortcuts, internal
     // PDF link jumps, and text-selection page-range tracking.
-    theme_applier(state);
+    apply_theme(state);
     shortcuts(state);
-    link_nav(state);
-    selection_pages(state);
+    link_navigation(state);
+    page_selection(state);
     // OS file opening: double-click / "Open with" / default-app launch.
-    crate::core::open_flow::init_open_file_handling(state);
+    crate::state::open::init_open_file_handling(state);
 
     view! {
         <Router>
@@ -119,7 +119,7 @@ fn RedirectHome() -> impl IntoView {
 fn shortcuts(state: AppState) {
     let open_doc = {
 
-        move || crate::core::open_flow::open_dialog(state)
+        move || crate::state::open::open_dialog(state)
     };
     pdf_viewer::effects::shortcuts::shortcuts(
         state.viewer_state(),

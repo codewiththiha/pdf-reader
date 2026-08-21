@@ -11,8 +11,8 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
-use crate::core::state::AppState;
-use crate::util::storage::save_library;
+use crate::state::AppState;
+use crate::storage::save_library;
 
 /// Debounce for the library save: reading position settles this fast, and a
 /// continuous scroll writes once instead of once per row boundary.

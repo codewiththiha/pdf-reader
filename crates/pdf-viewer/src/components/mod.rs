@@ -1,10 +1,5 @@
-pub mod atoms;
-pub mod continuous_view;
-pub mod floating_search;
-pub mod outline_panel;
-pub mod page_canvas;
-pub mod page_list;
-pub mod page_nav;
-pub mod search_panel;
-pub mod single_page_view;
-pub mod thumbnails;
+pub mod navigation;
+pub mod pages;
+pub mod search;
+pub mod shared;
+pub mod sidebar;
