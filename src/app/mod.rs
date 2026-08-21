@@ -14,14 +14,11 @@ use crate::effects::link_navigation::link_navigation;
 use crate::effects::page_selection::page_selection;
 use crate::effects::theme::apply_theme;
 use crate::state::AppState;
-use bootstrap::{create_app_state, install_storage, provide_app_contexts};
+use bootstrap::{create_app_state, provide_app_contexts};
 use shell::AppShell;
 
 #[component]
 pub fn App() -> impl IntoView {
-    // Storage backend: localStorage today. One line to swap in bootstrap.
-    install_storage();
-
     let state = create_app_state();
     provide_context(state);
     provide_app_contexts(state);

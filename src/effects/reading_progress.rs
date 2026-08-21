@@ -62,7 +62,9 @@ pub fn reading_progress(state: AppState) {
         }
         let snapshot = state.library.books.get_untracked();
         let handle = set_timeout_with_handle(
-            move || save_library(&snapshot),
+            move || {
+                let _ = save_library(&snapshot);
+            },
             Duration::from_millis(SAVE_MS),
         )
         .ok();

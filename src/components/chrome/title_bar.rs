@@ -54,7 +54,7 @@ pub fn TitleBar(
         let p = pinned.get();
         if state.settings.with(|s| s.titlebar_pinned) != p {
             state.settings.update(|s| s.titlebar_pinned = p);
-            save_settings(&state.settings.get_untracked());
+            let _ = save_settings(&state.settings.get_untracked());
         }
     });
 
