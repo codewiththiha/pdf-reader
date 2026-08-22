@@ -310,7 +310,7 @@ pub fn PageCanvas(
                     {
                         remove_snapshots(&host);
                     }
-                    web_sys::console::log_1(
+                    web_sys::console::warn_1(
                         &format!("[page_canvas] render page {page_no}: {e}").into(),
                     );
                 }

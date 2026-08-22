@@ -31,7 +31,9 @@ pub async fn run_search(state: ReaderState) {
         match engine::build_search_index().await {
             Ok(_) => state.search.index_built.set(true),
             Err(e) => {
-                web_sys::console::log_1(&format!("[search] build index: {e}").into());
+                // Leave the bar up; the next keystroke retries. A toast
+                // would fire on every failed type-ahead.
+                web_sys::console::warn_1(&format!("[search] build index: {e}").into());
                 return;
             }
         }
@@ -54,7 +56,7 @@ pub async fn run_search(state: ReaderState) {
             engine::set_active_match(0, -1);
         }
         Err(e) => {
-            web_sys::console::log_1(&format!("[search] query: {e}").into());
+            web_sys::console::warn_1(&format!("[search] query: {e}").into());
         }
     }
 }

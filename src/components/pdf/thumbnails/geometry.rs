@@ -82,4 +82,22 @@ mod tests {
         assert!(row_height(842.0 / 595.0) > row_height(612.0 / 792.0));
         assert_eq!(row_height(1.0), CELL_W + ROW_GAP);
     }
+
+    // 1000 pages → 500 rows. Only the visible window + buffer should mount.
+    #[test]
+    fn thousand_page_grid_mounts_a_bounded_window() {
+        use pdf_core::layout::visible_grid_rows;
+
+        let rows = row_count(1_000);
+        assert_eq!(rows, 500);
+        let rh = row_height(792.0 / 612.0);
+        let (f, l) = visible_grid_rows(0.0, MIN_VIEWPORT_H, rows, rh, ROW_BUFFER)
+            .expect("top of the grid should have a window");
+        assert!(l - f + 1 < 20, "mounted {} rows", l - f + 1);
+
+        let (mf, ml) = visible_grid_rows(rh * 200.0, MIN_VIEWPORT_H, rows, rh, ROW_BUFFER)
+            .expect("mid-grid should have a window");
+        assert!(ml - mf + 1 < 20);
+        assert!(mf > 0 && ml < rows - 1);
+    }
 }

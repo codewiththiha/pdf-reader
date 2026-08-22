@@ -35,10 +35,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
-    // The ONE cached column layout for this reader session: every scroll,
-    // render-window, zoom-anchor and jump query borrows it instead of
-    // rebuilding the strip's prefix sums from the raw heights.
-    let layout = Memo::new(move |_| DocumentLayout::new(&vs.document.metrics.css_heights.get(), PAGE_GAP));
+    // One cached column layout for the session. Borrow the heights so a
+    // zoom frame doesn't clone the whole vector just to rebuild prefix sums.
+    let layout = Memo::new(move |_| {
+        vs.document
+            .metrics
+            .css_heights
+            .with(|heights| DocumentLayout::new(heights, PAGE_GAP))
+    });
     fit_effect(vs, state.ui.sidebar, layout);
     zoom_system(vs, layout);
     navigation_sync(vs, layout);
