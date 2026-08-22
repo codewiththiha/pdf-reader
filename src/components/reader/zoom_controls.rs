@@ -1,6 +1,6 @@
 //! Zoom controls: zoom in/out (stepping through the presets in math::ZOOM_STEPS),
 //! fit width / fit page, and a percent readout + popover replacing the old preset
-//! Select. Any manual zoom clears the fit mode. The readout reads `viewer.scale`
+//! Select. Any manual zoom clears the fit mode. The readout reads `viewer.zoom.scale`
 //! directly, so a non-preset fit value like 137% shows correctly.
 //!
 //! The popover renders through the shared window-aware `Popover`, which owns
@@ -42,11 +42,12 @@ fn step_base(state: AppState) -> f64 {
     state
         .reader
         .viewer
-        .zoom_request
+        .zoom
+        .request
         .get_untracked()
         .filter(|_| state.reader.viewer.zoom_animating.get_untracked())
         .map(|(target, _, _)| target)
-        .unwrap_or_else(|| state.reader.viewer.display_scale.get_untracked())
+        .unwrap_or_else(|| state.reader.viewer.zoom.display.get_untracked())
 }
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
@@ -163,10 +164,10 @@ fn zoom_readout_entry(state: AppState) -> ToolbarItem {
 fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
-    let percent = move || format!("{}%", (state.reader.viewer.scale.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (state.reader.viewer.zoom.scale.get() * 100.0).round() as u32);
     let zoom_title = move || {
-        let shown = state.reader.viewer.scale.get();
-        let desired = state.reader.viewer.desired_scale.get();
+        let shown = state.reader.viewer.zoom.scale.get();
+        let desired = state.reader.viewer.zoom.desired.get();
         let (cw, ch) = state.reader.viewer.container_size.get();
         let held_back = state
             .reader
@@ -253,7 +254,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                     children=move |z| {
                         let row_class = move || {
                             let base = "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm";
-                            if (state.reader.viewer.scale.get() - z).abs() < 1e-9 {
+                            if (state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9 {
                                 format!("{base} bg-accent-soft text-accent")
                             } else {
                                 format!("{base} text-ink hover:bg-line")
@@ -269,7 +270,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                                 class=row_class
                             >
                                 <span>{format!("{}%", (z * 100.0).round() as u32)}</span>
-                                {move || ((state.reader.viewer.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                                {move || ((state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
                             </button>
                         }
                     }

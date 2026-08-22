@@ -453,6 +453,39 @@ impl Strip {
         self.window_with_sticky(scroll_top, viewport, budget, &[])
     }
 
+    /// [`Strip::window`] using a hinted overlap search (amortized O(1) when
+    /// `hint` is the previous frame's first mounted index).
+    pub fn window_hinted(
+        &self,
+        scroll_top: f64,
+        viewport: f64,
+        budget: Budget,
+        hint: &mut usize,
+    ) -> Option<Window> {
+        if self.is_empty() {
+            return None;
+        }
+        let vh = viewport.max(0.0);
+        let look = budget.look_frac.max(0.0) * vh;
+        let padded = self.overlapping_hinted(scroll_top - look, vh + 2.0 * look, hint)?;
+        let vis = self.visible(scroll_top, vh).unwrap_or(padded);
+        let max = budget.max_items.max(1);
+        let Window {
+            mut first,
+            mut last,
+        } = padded;
+        while last - first + 1 > max {
+            if first < vis.first {
+                first += 1;
+            } else if last > vis.last {
+                last -= 1;
+            } else {
+                break;
+            }
+        }
+        Some(Window { first, last })
+    }
+
     /// [`Strip::window`] with **sticky items** — indices that "pin" to the
     /// top of the viewport (CSS `position: sticky` semantics) and push the
     /// items below them downwards.
@@ -633,20 +666,18 @@ impl Strip {
         &self,
         scroll_top: f64,
         anchor_index: usize,
+        changed_index: usize,
         delta: f64,
     ) -> f64 {
         if anchor_index >= self.len() || delta == 0.0 {
             return scroll_top;
         }
-        let anchor_start = from_sub(self.starts[anchor_index]);
-        // The change has already been applied to the prefix-sum (we assume
-        // `set_size` ran first), so `anchor_start` already reflects the
-        // post-change position. The reader should still see `anchor_start` at
-        // the same on-screen offset they had before; the simplest invariant is
-        // "anchor_start aligned with scroll_top", which means scroll_top must
-        // equal the new anchor_start.
-        let _ = anchor_start; // documented for readers; not needed for the math.
-        scroll_top + delta
+        // Only items *above* the anchor shift its screen position.
+        if changed_index < anchor_index {
+            scroll_top + delta
+        } else {
+            scroll_top
+        }
     }
 
     // ---- internal helpers ------------------------------------------------
@@ -1019,7 +1050,7 @@ mod tests {
         let delta = s.set_size(5, 150.0);
         assert_eq!(delta, 50.0);
         // The reader's view must shift down by 50px to stay anchored on item 10.
-        let new_top = s.scroll_anchor_delta(scroll_top, 10, delta);
+        let new_top = s.scroll_anchor_delta(scroll_top, 10, 5, delta);
         assert_eq!(new_top, scroll_top + 50.0);
         // And item 10's start in the mutated strip should be the new top.
         assert_eq!(s.offset(10), new_top);
@@ -1032,11 +1063,8 @@ mod tests {
         // Item 15 (BELOW the viewport) grows: the reader's anchor is unaffected.
         let delta = s.set_size(15, 200.0);
         assert_eq!(delta, 100.0);
-        let new_top = s.scroll_anchor_delta(scroll_top, 10, delta);
-        // The caller's responsibility is to NOT call this helper for changes
-        // at or below the anchor. We still document the behaviour: delta != 0
-        // means the helper returns scroll_top + delta. The test pins that.
-        assert_eq!(new_top, scroll_top + 100.0);
+        let new_top = s.scroll_anchor_delta(scroll_top, 10, 15, delta);
+        assert_eq!(new_top, scroll_top);
     }
 
     #[test]

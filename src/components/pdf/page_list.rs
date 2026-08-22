@@ -50,23 +50,28 @@ pub fn PageList(
     // anchor and reintroduce the very drift this fixes.
     Effect::new(move || {
         let n = state.document.num_pages.get() as usize;
-        let scale = state.viewer.render_scale.get();
+        let scale = state.viewer.zoom.render.get();
         // Borrow-only guard: this effect also re-runs per zoom commit
         // (render_scale is tracked), and cloning every page size on each
         // commit just to hit the early return is pure waste.
-        let empty = state.document.page_sizes.with(|sizes| sizes.is_empty());
+        let empty = state.document.metrics.intrinsic.with(|sizes| sizes.is_empty());
         let fallback = state.document.page1_size.get().map(|s| s.height).unwrap_or(0.0);
         if n == 0 || scale <= 0.0 || (empty && fallback <= 0.0) {
             return;
         }
-        state.document.page_heights.update(|v| {
+        state.document.metrics.css_heights.update(|v| {
             if v.len() == n {
                 return; // already laid out for this document
             }
-            *v = state.document.page_sizes.with(|sizes| {
+            *v = state.document.metrics.intrinsic.with(|sizes| {
                 (0..n)
                     .map(|i| {
-                        sizes.get(i).copied().filter(|h| *h > 0.0).unwrap_or(fallback) * scale
+                        sizes
+                            .get(i)
+                            .map(|s| s.height)
+                            .filter(|h| *h > 0.0)
+                            .unwrap_or(fallback)
+                            * scale
                     })
                     .collect()
             });
@@ -90,10 +95,13 @@ pub fn PageList(
     // stale/empty selection. Pinning the selected pages keeps them — and
     // their text layers — mounted so the selection's DOM nodes stay valid
     // and copy of multi-page selections works through any scroll.
+    let window_hint = StoredValue::new(0usize);
     let visible = Memo::new(move |_| {
         let scroll_top = state.viewer.scroll_top.get();
         let vh = state.viewer.container_size.get().1;
-        let mut range = layout.with(|l| l.window(scroll_top, vh, RENDER_BUDGET));
+        let mut hint = window_hint.get_value();
+        let mut range = layout.with(|l| l.window_hinted(scroll_top, vh, RENDER_BUDGET, &mut hint));
+        window_hint.set_value(hint);
         // INVARIANT — pin the dominant page during a layout animation. During
         // sidebar slide, `scroll_top` is re-anchored by `relayout_to()` AND
         // clamped back by the browser's own scroll clamp (the spacer height
@@ -150,7 +158,7 @@ pub fn PageList(
     // and the canvases CSS-stretch to follow it; `render_scale` (what the
     // bitmaps were rasterised at) is read by PageCanvas itself and only changes
     // once, when the gesture settles.
-    let display_scale = state.viewer.display_scale.read_only();
+    let display_scale = state.viewer.zoom.display.read_only();
 
     // Store the real rendered height back into page_heights (0-based index).
     let on_geometry = Callback::new(move |(p, _w, h): (u32, f64, f64)| {
@@ -164,7 +172,7 @@ pub fn PageList(
             return;
         }
         let idx = p.saturating_sub(1) as usize;
-        state.document.page_heights.update(|v| {
+        state.document.metrics.css_heights.update(|v| {
             while v.len() <= idx {
                 v.push(0.0);
             }
@@ -217,7 +225,7 @@ pub fn PageList(
                             <PageCanvas
                                 page={(i + 1) as u32}
                                 scale=display_scale
-                                render_scale=state.viewer.render_scale
+                                render_scale=state.viewer.zoom.render
                                 zoom_animating=state.viewer.zoom_animating
                                 texture=texture
                                 canvas_id=format!("cont-{i}-cv")

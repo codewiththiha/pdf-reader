@@ -51,6 +51,11 @@ stage = "pre_build"
 command = "node"
 command_arguments = ["./node_modules/@tailwindcss/cli/dist/index.mjs", "-i", "styles/input.css", "-o", "styles.css", "--minify"]
 
+[tools]
+# Release WASM shrink (~10–15% on top of LTO + opt-level=z).
+# Trunk 0.21 expects a level string, not an argv list.
+wasm_opt = "z"
+
 [serve]
 port = 1420
 open = false

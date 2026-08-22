@@ -102,8 +102,8 @@ pub fn reveal_match(state: ReaderState, m: &SearchMatch) {
     // One-shot wrapper is fine here: a cold path (one call per match
     // activation), so rebuilding the layout once per click costs nothing the
     // user can feel. Every hot path holds a cached `DocumentLayout`.
-    let scale = state.viewer.render_scale.get_untracked();
-    let page_top = state.document.page_heights.with_untracked(|heights| {
+    let scale = state.viewer.zoom.render.get_untracked();
+    let page_top = state.document.metrics.css_heights.with_untracked(|heights| {
         page_top_css(m.page.saturating_sub(1) as usize, heights, PAGE_GAP)
     });
 

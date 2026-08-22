@@ -6,8 +6,8 @@ import { bakeInto } from "./bake";
 import { blitInto, el } from "../canvas";
 import {
   dropRawIfIdle,
-  setScrubbing,
-  scrubbing,
+  setThemeScrubActive,
+  themeScrubActive,
   stateByCanvasId,
   thumbCache,
   thumbLive,
@@ -26,7 +26,7 @@ export async function rebakeTheme(): Promise<void> {
 
 /** Blit every cached thumb onto its live DOM canvas (and any stray `.thumb-canvas`). */
 async function refreshThemeInternal(): Promise<void> {
-  if (scrubbing) return;
+  if (themeScrubActive) return;
   const pipeline = readPipeline();
 
   for (const st of stateByCanvasId.values()) {
@@ -39,7 +39,7 @@ async function refreshThemeInternal(): Promise<void> {
 
   for (const entry of thumbCache.values()) {
     await ensureEntryCurrent(entry);
-    if (scrubbing) return;
+    if (themeScrubActive) return;
   }
 
   paintAllVisibleThumbs();
@@ -54,7 +54,7 @@ export async function applyScrubMode(on: boolean): Promise<void> {
 }
 async function setScrubModeInternal(on: boolean): Promise<void> {
   if (on) {
-    setScrubbing(true);
+    setThemeScrubActive(true);
     // Restore UNBAKED pixels first. Adding the CSS class while the canvas
     // still holds a baked Dark/Dim raster double-applies invert/brightness
     // (the "flash to light" / "goes dimmer" glitch).
@@ -73,15 +73,15 @@ async function setScrubModeInternal(on: boolean): Promise<void> {
     return;
   }
 
-  if (!scrubbing) return;
-  setScrubbing(false);
+  if (!themeScrubActive) return;
+  setThemeScrubActive(false);
 
   const pipeline = readPipeline();
   for (const [canvasId, { page }] of thumbLive) {
     const entry = thumbCache.get(page);
     if (!entry) continue;
     if (!(await ensureEntryCurrent(entry))) continue;
-    if (scrubbing) return;
+    if (themeScrubActive) return;
   }
   for (const st of stateByCanvasId.values()) {
     if (st.dead || !st.canvas) continue;

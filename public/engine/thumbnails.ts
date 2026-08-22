@@ -14,7 +14,7 @@ import {
 import {
   pdf,
   releaseThumbEntry,
-  scrubbing,
+  themeScrubActive,
   THUMB_CACHE_MAX,
   thumbCache,
   thumbCancelled,
@@ -43,7 +43,7 @@ export function hasThumb(page: number, scale: number): boolean {
   return (
     !!hit &&
     Math.abs(hit.scale - scale) < 1e-9 &&
-    (scrubbing || hit.gen === pipelineCache.gen || !!hit.raw)
+    (themeScrubActive || hit.gen === pipelineCache.gen || !!hit.raw)
   );
 }
 
@@ -51,7 +51,7 @@ export function blitThumb(canvasId: string, page: number): boolean {
   const dst = el(canvasId) as HTMLCanvasElement | null;
   const entry = thumbCache.get(page);
   if (!dst || !entry) return false;
-  const src = scrubbing ? thumbRaw(entry) : thumbSource(entry);
+  const src = themeScrubActive ? thumbRaw(entry) : thumbSource(entry);
   if (!src) return false;
   if (dst.width <= 0 || dst.height <= 0) {
     dst.width = (src as ImageBitmap).width;
@@ -91,7 +91,7 @@ async function renderThumbInternal(
 
   const hit = thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
-    if (scrubbing) {
+    if (themeScrubActive) {
       if (blitInto(canvas, thumbRaw(hit))) {
         cachePut(page, hit);
         thumbLive.set(canvasId, { page });
@@ -157,7 +157,7 @@ async function renderThumbInternal(
     // createImageBitmap used to zero the only unthemed copy, so a theme
     // change could not update visible thumbs until a full pdf.js re-render.
     const raw = off;
-    let display: MaybeCanvas = scrubbing ? raw : bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = themeScrubActive ? raw : bakeRaster(raw, readPipeline());
     if (display === raw) {
       if (typeof createImageBitmap === "function") {
         try {
@@ -175,7 +175,7 @@ async function renderThumbInternal(
       cssW,
       cssH,
       scale,
-      gen: scrubbing ? -1 : pipelineCache.gen,
+      gen: themeScrubActive ? -1 : pipelineCache.gen,
       pending: null,
     };
     cachePut(page, entry);
@@ -229,10 +229,10 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
     await task.promise;
     pg.cleanup();
     const raw = off;
-    let display: MaybeCanvas = scrubbing ? raw : bakeRaster(raw, readPipeline());
+    let display: MaybeCanvas = themeScrubActive ? raw : bakeRaster(raw, readPipeline());
     if (display !== raw) display = await cacheDisplay({ display });
     cachePut(page, { raw, display, cssW: Math.floor(viewport.width),
                      cssH: Math.floor(viewport.height), scale,
-                     gen: scrubbing ? -1 : pipelineCache.gen, pending: null });
+                     gen: themeScrubActive ? -1 : pipelineCache.gen, pending: null });
   } catch (_) { /* prefetch is best-effort */ }
 }

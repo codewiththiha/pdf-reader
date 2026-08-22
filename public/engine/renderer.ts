@@ -12,7 +12,7 @@ import {
   CLEANUP_EVERY,
   pdf,
   releasePageSurfaces,
-  scrubbing,
+  themeScrubActive,
   stateByCanvasId,
   dropRawIfIdle,
   noteActivity,
@@ -175,8 +175,8 @@ export async function renderPageInternal(
   const pxW = Math.max(1, Math.floor(viewport.width * out));
   const pxH = Math.max(1, Math.floor(viewport.height * out));
 
-  const pipeline = scrubbing ? null : readPipeline();
-  const needsBake = !scrubbing && pipeline ? !pipelineIsIdentity(pipeline) : false;
+  const pipeline = themeScrubActive ? null : readPipeline();
+  const needsBake = !themeScrubActive && pipeline ? !pipelineIsIdentity(pipeline) : false;
   const target = needsBake ? document.createElement("canvas") : st.canvas;
   target.width = pxW;
   target.height = pxH;
@@ -223,7 +223,7 @@ export async function renderPageInternal(
     st.rawCanvas = target;
     dropRawIfIdle(st);
   } else {
-    // Identity / already-scrubbing: the live canvas IS the raw.
+    // Identity / already scrubbing: the live canvas IS the raw.
     st.rawCanvas = st.canvas;
   }
 

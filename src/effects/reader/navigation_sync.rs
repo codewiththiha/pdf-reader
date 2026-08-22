@@ -87,7 +87,7 @@ fn estimated_top(page: u32, state: ReaderState) -> f64 {
         .get_untracked()
         .map(|s| s.height)
         .unwrap_or(0.0)
-        * state.viewer.render_scale.get_untracked();
+        * state.viewer.zoom.render.get_untracked();
     (page.saturating_sub(1)) as f64 * (est + PAGE_GAP)
 }
 
@@ -103,7 +103,8 @@ pub fn navigation_sync(state: ReaderState, layout: Memo<DocumentLayout>) {
             let page = state.viewer.page.get_untracked();
             let empty = state
                 .document
-                .page_heights
+                .metrics
+                .css_heights
                 .with_untracked(|heights| heights.is_empty());
             let top = if empty {
                 estimated_top(page, state)
@@ -122,7 +123,7 @@ pub fn navigation_sync(state: ReaderState, layout: Memo<DocumentLayout>) {
     let mode = state.viewer.mode;
     let page = state.viewer.page;
     let scroll_top = state.viewer.scroll_top;
-    let heights = state.document.page_heights;
+    let heights = state.document.metrics.css_heights;
     let suppress_a = suppress.clone();
     Effect::new(move || {
         if mode.get() != ViewMode::Continuous {

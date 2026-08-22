@@ -38,7 +38,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The ONE cached column layout for this reader session: every scroll,
     // render-window, zoom-anchor and jump query borrows it instead of
     // rebuilding the strip's prefix sums from the raw heights.
-    let layout = Memo::new(move |_| DocumentLayout::new(&vs.document.page_heights.get(), PAGE_GAP));
+    let layout = Memo::new(move |_| DocumentLayout::new(&vs.document.metrics.css_heights.get(), PAGE_GAP));
     fit_effect(vs, state.ui.sidebar, layout);
     zoom_system(vs, layout);
     navigation_sync(vs, layout);

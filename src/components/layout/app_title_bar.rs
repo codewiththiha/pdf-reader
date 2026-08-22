@@ -48,9 +48,11 @@ pub fn AppTitleBar(
 /// [`TitleBar`] children so it can read the shared [`TitleBarCtx`].
 #[component]
 fn TrafficLights(state: AppState) -> impl IntoView {
-    let ctx = use_context::<TitleBarCtx>()
-        .expect("TrafficLights is mounted inside TitleBar children, which provides the context");
+    let ctx = use_context::<TitleBarCtx>();
     Effect::new(move |_| {
+        let Some(ctx) = ctx else {
+            return;
+        };
         let on = ctx.visible.get() || state.ui.sidebar.get() != SidebarMode::None;
         wasm_bindgen_futures::spawn_local(async move {
             pdf_engine::api::set_traffic_lights(on).await;

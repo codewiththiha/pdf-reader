@@ -36,9 +36,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "unregisterPage")]
     pub fn unregister_page(canvas_id: &str);
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "cancelPage")]
-    pub fn cancel_page(canvas_id: &str);
-
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "renderPage")]
     pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> JsValue;
 

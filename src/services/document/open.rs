@@ -16,7 +16,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::Event;
 
 use pdf_engine::api as engine;
-use pdf_engine::types::DocStatus;
+use pdf_engine::types::{DocStatus, PageSize};
 use pdf_core::filename::display_name;
 use crate::state::library::{self, CoverImage, RecentBook};
 use pdf_core::math::{fit_scale, FitMode};
@@ -116,10 +116,20 @@ pub fn open_path(state: AppState, path: String) {
                 let name = display_name(open.title.as_deref(), Some(&path));
                 // Document state.
                 state.reader.document.num_pages.set(num_pages);
-                // Intrinsic per-page sizes, straight from the engine. These
-                // replace the previous document's measured column outright.
-                state.reader.document.page_sizes.set(open.page_heights.clone());
-                state.reader.document.page_widths.set(open.page_widths.clone());
+                // Intrinsic per-page sizes, packed as one `PageSize` each.
+                let n = num_pages as usize;
+                let intrinsic: Vec<PageSize> = if open.page_widths.len() == n
+                    && open.page_heights.len() == n
+                {
+                    open.page_widths
+                        .iter()
+                        .zip(open.page_heights.iter())
+                        .map(|(&width, &height)| PageSize { width, height })
+                        .collect()
+                } else {
+                    vec![page1.clone(); n]
+                };
+                state.reader.document.metrics.intrinsic.set(intrinsic);
                 state.reader.document.title.set(open.title);
                 state.reader.document.author.set(open.author);
                 state.reader.document.outline.set(open.outline);
@@ -147,7 +157,7 @@ pub fn open_path(state: AppState, path: String) {
                 // them would have the zoom coordinator anchor against a stale
                 // column on the first gesture. PageList re-seeds them from
                 // `page_sizes` (intrinsic heights) at the current scale.
-                state.reader.document.page_heights.set(Vec::new());
+                state.reader.document.metrics.css_heights.set(Vec::new());
                 let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =
                     fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, 48.0, 1.0);
@@ -156,10 +166,10 @@ pub fn open_path(state: AppState, path: String) {
                 // to animate from and nothing to anchor to. All three scales
                 // must start in agreement.
                 state.reader.viewer.zoom_animating.set(false);
-                state.reader.viewer.zoom_request.set(None);
-                state.reader.viewer.scale.set(s);
-                state.reader.viewer.display_scale.set(s);
-                state.reader.viewer.render_scale.set(s);
+                state.reader.viewer.zoom.request.set(None);
+                state.reader.viewer.zoom.scale.set(s);
+                state.reader.viewer.zoom.display.set(s);
+                state.reader.viewer.zoom.render.set(s);
 
                 // Jump to the saved page once the view has mounted and seeded
                 // its page heights — the same `page.set()` path outline /

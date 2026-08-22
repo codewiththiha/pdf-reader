@@ -27,7 +27,7 @@ pub fn SinglePageView(state: ReaderState) -> impl IntoView {
     // App-provided texture context, resolved once per view and passed to the
     // PageCanvas as an explicit prop (same pattern as PageList).
     let texture = use_context::<TextureSignal>().unwrap_or_else(|| RwSignal::new(TextureMode::None));
-    let display_scale = state.viewer.display_scale.read_only();
+    let display_scale = state.viewer.zoom.display.read_only();
 
     // Previously shown page, for the direction-aware page-turn animation.
     // Non-reactive on purpose: reading it inside the render closure doesn't
@@ -79,7 +79,7 @@ pub fn SinglePageView(state: ReaderState) -> impl IntoView {
                                 <PageCanvas
                                     page=page
                                     scale=display_scale
-                                    render_scale=state.viewer.render_scale
+                                    render_scale=state.viewer.zoom.render
                                     zoom_animating=state.viewer.zoom_animating
                                     texture=texture
                                     canvas_id=format!("sp-{page}-cv")

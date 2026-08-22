@@ -23,11 +23,12 @@ use crate::state::ReaderState;
 fn zoom_by(state: ReaderState, dir: i32) {
     let cur = state
         .viewer
-        .zoom_request
+        .zoom
+        .request
         .get_untracked()
         .filter(|_| state.viewer.zoom_animating.get_untracked())
         .map(|(target, _, _)| target)
-        .unwrap_or_else(|| state.viewer.display_scale.get_untracked());
+        .unwrap_or_else(|| state.viewer.zoom.display.get_untracked());
     state.viewer.fit.set(FitMode::None);
     request_zoom(state, nearest_zoom(cur, dir), true);
 }

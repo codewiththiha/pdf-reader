@@ -56,7 +56,7 @@ import {
   highlightsByPage,
   setSearchQuery,
   setActiveMatchValue,
-  setScrubbing,
+  setThemeScrubActive,
 } from "./engine/state";
 
 declare global {
@@ -146,7 +146,7 @@ async function setScrubMode(on: boolean): Promise<void> {
   if (on) {
     // Produce unbaked raws BEFORE the CSS filter class goes on, otherwise
     // the first drag frame double-filters the baked Dark/Dim raster.
-    setScrubbing(true);
+    setThemeScrubActive(true);
     await preparePagesForScrub();
   }
   await applyScrubMode(on);

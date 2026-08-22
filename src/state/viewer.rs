@@ -26,13 +26,8 @@ pub struct DocumentState {
     pub outline: RwSignal<Vec<OutlineNode>>,
     /// CSS-px size of page 1 at scale 1 (used for fit modes before any render).
     pub page1_size: RwSignal<Option<PageSize>>,
-    /// Intrinsic (scale-1) height of every page, 0-based, from engine.open().
-    pub page_sizes: RwSignal<Vec<f64>>,
-    /// Intrinsic (scale-1) width of every page, 0-based, from engine.open().
-    pub page_widths: RwSignal<Vec<f64>>,
-    /// Rendered CSS-px heights per page, 0-based, seeded from `page_sizes` and
-    /// refined by on_geometry as pages actually render.
-    pub page_heights: RwSignal<Vec<f64>>,
+    /// Intrinsic + laid-out page geometry (one source of truth).
+    pub metrics: PageMetrics,
 }
 
 impl DocumentState {
@@ -48,9 +43,33 @@ impl DocumentState {
         self.author.set(None);
         self.outline.set(Vec::new());
         self.page1_size.set(None);
-        self.page_sizes.set(Vec::new());
-        self.page_widths.set(Vec::new());
-        self.page_heights.set(Vec::new());
+        self.metrics.reset();
+    }
+}
+
+/// Packed page geometry: one `PageSize` per page plus the CSS-px column.
+#[derive(Clone, Copy)]
+pub struct PageMetrics {
+    /// Intrinsic (scale-1) width/height of every page, 0-based.
+    pub intrinsic: RwSignal<Vec<PageSize>>,
+    /// Rendered CSS-px heights per page, seeded from `intrinsic` and refined
+    /// by `on_geometry` as pages actually render.
+    pub css_heights: RwSignal<Vec<f64>>,
+}
+
+impl PageMetrics {
+    pub fn reset(&self) {
+        self.intrinsic.set(Vec::new());
+        self.css_heights.set(Vec::new());
+    }
+}
+
+impl Default for PageMetrics {
+    fn default() -> Self {
+        Self {
+            intrinsic: RwSignal::new(Vec::new()),
+            css_heights: RwSignal::new(Vec::new()),
+        }
     }
 }
 
@@ -65,9 +84,35 @@ impl Default for DocumentState {
             author: RwSignal::new(None),
             outline: RwSignal::new(Vec::new()),
             page1_size: RwSignal::new(None),
-            page_sizes: RwSignal::new(Vec::new()),
-            page_widths: RwSignal::new(Vec::new()),
-            page_heights: RwSignal::new(Vec::new()),
+            metrics: PageMetrics::default(),
+        }
+    }
+}
+
+/// The five zoom-pipeline scales, one newtype so they cannot drift apart
+/// across modules (was a data clump of loose `f64` signals).
+#[derive(Clone, Copy)]
+pub struct ZoomState {
+    /// Committed scale (what the last render used after settle).
+    pub scale: RwSignal<f64>,
+    /// Scale the layout is painted at right now; drives CSS size, never render.
+    pub display: RwSignal<f64>,
+    /// Scale actually used for rasterising (equals `scale` after fit resolves).
+    pub render: RwSignal<f64>,
+    /// The zoom the READER asked for, independent of whether it currently fits.
+    pub desired: RwSignal<f64>,
+    /// `(target_scale, animate, token)` — token makes every request unique.
+    pub request: RwSignal<Option<(f64, bool, u64)>>,
+}
+
+impl Default for ZoomState {
+    fn default() -> Self {
+        Self {
+            scale: RwSignal::new(1.0),
+            display: RwSignal::new(1.0),
+            render: RwSignal::new(1.0),
+            desired: RwSignal::new(1.0),
+            request: RwSignal::new(None),
         }
     }
 }
@@ -78,23 +123,13 @@ pub struct ViewerSignals {
     pub mode: RwSignal<ViewMode>,
     /// 1-based current page.
     pub page: RwSignal<u32>,
-    pub scale: RwSignal<f64>,
     pub fit: RwSignal<FitMode>,
     pub scroll_top: RwSignal<f64>,
-    /// Scale actually used for rendering (equals `scale` after fit resolves).
-    pub render_scale: RwSignal<f64>,
+    pub zoom: ZoomState,
     /// (width, height) of the viewer content area in CSS px.
     pub container_size: RwSignal<(f64, f64)>,
-    /// Scale the layout is painted at right now; drives CSS size, never render.
-    pub display_scale: RwSignal<f64>,
     /// True while a zoom animation is in flight; renders/geometry are suspended.
     pub zoom_animating: RwSignal<bool>,
-    /// `(target_scale, animate, token)` — the token makes every request unique
-    /// so mashing `+` retargets the SAME animation instead of being swallowed.
-    pub zoom_request: RwSignal<Option<(f64, bool, u64)>>,
-    /// The zoom the READER asked for, independent of whether it currently fits
-    /// (the ceiling shrink-to-fit grows back to).
-    pub desired_scale: RwSignal<f64>,
     /// Inclusive `(first, last)` 1-based page range of the reader's current
     /// text selection, or `None` when no text is selected.
     ///
@@ -124,15 +159,11 @@ impl Default for ViewerSignals {
         Self {
             mode: RwSignal::new(ViewMode::Continuous),
             page: RwSignal::new(1),
-            scale: RwSignal::new(1.0),
             fit: RwSignal::new(FitMode::None),
             scroll_top: RwSignal::new(0.0),
-            render_scale: RwSignal::new(1.0),
+            zoom: ZoomState::default(),
             container_size: RwSignal::new((800.0, 600.0)),
-            display_scale: RwSignal::new(1.0),
             zoom_animating: RwSignal::new(false),
-            zoom_request: RwSignal::new(None),
-            desired_scale: RwSignal::new(1.0),
             selected_pages: RwSignal::new(None),
         }
     }

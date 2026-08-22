@@ -11,7 +11,7 @@ import {
   releasePooledCanvas,
   releaseScratch,
 } from "../canvas";
-import { scrubbing, thumbCache, thumbLive } from "../state";
+import { themeScrubActive, thumbCache, thumbLive } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
 import { pipelineCache, readPipeline } from "./pipeline";
 
@@ -70,7 +70,7 @@ async function snapshotRaster(src: HTMLCanvasElement): Promise<MaybeCanvas> {
   return clone;
 }
 export async function ensureEntryCurrent(entry: ThumbEntry): Promise<MaybeCanvas> {
-  if (scrubbing) {
+  if (themeScrubActive) {
     return rasterWidth(entry.display) > 0 ? entry.display : null;
   }
   if (entry.gen === pipelineCache.gen && rasterWidth(entry.display) > 0) {

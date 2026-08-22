@@ -51,6 +51,21 @@ pub fn page_intrinsic(
     (w.max(1.0), h.max(1.0))
 }
 
+/// Look up one page's intrinsic size from a packed `[PageSize]` column.
+pub fn page_size_at(
+    page: u32,
+    pages: &[(f64, f64)],
+    fallback_w: f64,
+    fallback_h: f64,
+) -> (f64, f64) {
+    let i = page.saturating_sub(1) as usize;
+    match pages.get(i) {
+        Some(&(w, h)) if w > 0.0 && h > 0.0 => (w.max(1.0), h.max(1.0)),
+        Some(&(w, h)) => (if w > 0.0 { w } else { fallback_w }.max(1.0), if h > 0.0 { h } else { fallback_h }.max(1.0)),
+        None => (fallback_w.max(1.0), fallback_h.max(1.0)),
+    }
+}
+
 /// Scale that fits a page (base CSS-px size `page_w` x `page_h`) into a
 /// container of `container_w` x `container_h`, leaving `padding` px of air.
 /// `FitMode::None` should never call this — it returns the caller's current scale.

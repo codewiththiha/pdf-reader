@@ -71,7 +71,7 @@ pub fn request_zoom(state: ReaderState, target: f64, animate: bool) {
     // without destroying the choice, and what gives the page a definite place
     // to stop growing when the space returns. A resize deliberately does NOT
     // write this.
-    state.viewer.desired_scale.set(target);
+    state.viewer.zoom.desired.set(target);
     // Claim the layout for this gesture, so `fit_effect` stops writing
     // `display_scale` underneath the animation. Released by `commit_scale`.
     set_gesture_owns_layout(true);
@@ -82,7 +82,7 @@ pub fn request_zoom(state: ReaderState, target: f64, animate: bool) {
         t.set(n);
         n
     });
-    state.viewer.zoom_request.set(Some((target, animate, token)));
+    state.viewer.zoom.request.set(Some((target, animate, token)));
 }
 
 thread_local! {
@@ -131,18 +131,24 @@ pub fn relayout_to(state: ReaderState, factor: f64, layout: Memo<DocumentLayout>
     let st = state.viewer.scroll_top.get_untracked();
     let anchor = vh * ANCHOR_FRAC;
     let new_st = layout.with(|l| l.anchored_scroll(st, vh, factor, anchor));
-    let scaled: Vec<f64> = state
-        .document
-        .page_heights
-        .with_untracked(|heights| heights.iter().map(|h| h * factor).collect());
-    if scaled.is_empty() {
+    let (n, old_total) = layout.with(|l| (l.strip_len(), l.total()));
+    if n == 0 {
         return;
     }
-
-    // Heights first, then scroll: the wrappers' `top:` values are derived from
-    // heights, so this order means the scroll write always lands in a column
-    // that is already the right size.
-    state.document.page_heights.set(scaled);
+    // In-place scale: no Vec alloc and no prefix-sum rebuild on this tick.
+    // The layout Memo rebuilds once after this write; spacer height is
+    // computed analytically so the scroll write is not clamped.
+    state.document.metrics.css_heights.update(|v| {
+        for h in v.iter_mut() {
+            *h *= factor;
+        }
+    });
+    let gap = pdf_core::layout::PAGE_GAP;
+    let new_total = if n == 0 {
+        0.0
+    } else {
+        (old_total - (n as f64 - 1.0) * gap) * factor + (n as f64 - 1.0) * gap
+    };
 
     if let Some(new_st) = new_st {
         state.viewer.scroll_top.set(new_st);
@@ -169,8 +175,7 @@ pub fn relayout_to(state: ReaderState, factor: f64, layout: Memo<DocumentLayout>
                 .first_element_child()
                 .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
             {
-                let total = layout.with(|l| l.total());
-                _ = spacer.style().set_property("height", &format!("{total}px"));
+                _ = spacer.style().set_property("height", &format!("{new_total}px"));
             }
             list.set_scroll_top(new_st.round() as i32);
         }
@@ -192,7 +197,7 @@ pub fn zoom_system(state: ReaderState, layout: Memo<DocumentLayout>) {
     let live_token = StoredValue::new_local(Rc::new(Cell::new(0u64)));
 
     Effect::new(move |_| {
-        let Some((target, animate, token)) = state.viewer.zoom_request.get() else {
+        let Some((target, animate, token)) = state.viewer.zoom.request.get() else {
             return;
         };
 
@@ -204,7 +209,7 @@ pub fn zoom_system(state: ReaderState, layout: Memo<DocumentLayout>) {
         // Start from where the layout actually IS, not from the committed
         // `scale`. Mid-flight this is a partway value, which is exactly what
         // makes mashing `+` retarget fluidly rather than restart or queue.
-        let from = state.viewer.display_scale.get_untracked();
+        let from = state.viewer.zoom.display.get_untracked();
         if (target - from).abs() < 1e-9 {
             // Nothing to move, but still commit so `scale`/render agree.
             //
@@ -242,11 +247,11 @@ pub fn zoom_system(state: ReaderState, layout: Memo<DocumentLayout>) {
             let t = ((js_sys::Date::now() - start) / ZOOM_ANIM_MS).clamp(0.0, 1.0);
             let eased = ease_out_cubic(t);
             let want = from + (target - from) * eased;
-            let cur = state.viewer.display_scale.get_untracked();
+            let cur = state.viewer.zoom.display.get_untracked();
 
             // Per-frame delta, applied to layout + scroll together.
             relayout_to(state, want / cur, layout);
-            state.viewer.display_scale.set(want);
+            state.viewer.zoom.display.set(want);
 
             if t >= 1.0 {
                 commit(target);
@@ -272,8 +277,8 @@ pub(super) fn commit_scale(state: ReaderState, s: f64) {
     // space actually available.
     set_gesture_owns_layout(false);
     COMMIT_ECHO.with(|c| c.set(true));
-    state.viewer.display_scale.set(s);
-    state.viewer.scale.set(s);
-    state.viewer.render_scale.set(s);
+    state.viewer.zoom.display.set(s);
+    state.viewer.zoom.scale.set(s);
+    state.viewer.zoom.render.set(s);
     state.viewer.zoom_animating.set(false);
 }

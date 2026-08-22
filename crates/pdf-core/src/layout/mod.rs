@@ -5,25 +5,27 @@
 //!   * `document`      — the cached [`DocumentLayout`] (structure + queries)
 //!   * `anchor`        — the anchored-scroll zoom math
 //!   * `viewport`      — which thumbnail-grid rows overlap the viewport
-//!   * `render_window` — which pages to keep mounted (read-ahead budget)
 //!   * here            — the shared constants/types and the one-shot
 //!     convenience wrappers over [`DocumentLayout`] for cold callers
 
 mod anchor;
 mod document;
-mod render_window;
 mod viewport;
 
 pub use document::DocumentLayout;
 pub use virtual_list::{Budget, Strip};
-pub use render_window::render_range;
+pub(crate) use document::render_range;
 pub use viewport::visible_grid_rows;
 
 pub const PAGE_GAP: f64 = 24.0;
 
 /// Height of the glass toolbar, in CSS px. The viewer scrollport spans the
 /// full window height so pages travel under the translucent header; each view
-/// offsets its content by this inset. Keep in sync with `h-12` on `#toolbar-row`.
+/// offsets its content by this inset.
+///
+/// MUST stay in sync with Tailwind `h-12` / `mt-12` on the title bar
+/// (`src/components/layout/title_bar.rs`) and the page-list offset
+/// (`src/components/pdf/page_list.rs`).
 pub const TOOLBAR_H: f64 = 48.0;
 
 /// Read-ahead budget in screenfuls, not pages: a fixed page count means a
@@ -50,7 +52,8 @@ pub fn page_top_css(page0: usize, heights: &[f64], gap: f64) -> f64 {
 }
 
 /// Total scrollable height of the whole column (pages + gaps).
-pub fn total_height_css(heights: &[f64], gap: f64) -> f64 {
+/// Cold wrapper — app code should use a cached [`DocumentLayout`].
+pub(crate) fn total_height_css(heights: &[f64], gap: f64) -> f64 {
     DocumentLayout::new(heights, gap).total()
 }
 
@@ -58,7 +61,7 @@ pub fn total_height_css(heights: &[f64], gap: f64) -> f64 {
 /// of the viewport, NOT the one clipping the top edge. Ties go to the lower
 /// page number. Falls back to 1 when nothing is measured or the viewport has
 /// no height yet.
-pub fn dominant_page(scroll_top: f64, viewport_h: f64, heights: &[f64], gap: f64) -> u32 {
+pub(crate) fn dominant_page(scroll_top: f64, viewport_h: f64, heights: &[f64], gap: f64) -> u32 {
     if heights.is_empty() {
         return 1;
     }

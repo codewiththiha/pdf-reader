@@ -12,7 +12,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use pdf_core::layout::{DocumentLayout, TOOLBAR_H};
-use pdf_core::math::{constrained_scale, fit_scale, page_intrinsic, FitMode};
+use pdf_core::math::{constrained_scale, fit_scale, FitMode};
 use crate::state::{ReaderState, SidebarMode};
 
 use super::zoom::{commit_scale, gesture_owns_layout, relayout_to, take_commit_echo};
@@ -95,11 +95,12 @@ pub fn fit_effect(
         // The page under the eyes, not page 1. A landscape insert is cropped
         // (and a following portrait page stays over-shrunk) if we keep using
         // the first sheet's size for every page.
-        let (pw, ph) = state.document.page_widths.with(|widths| {
-            state
-                .document
-                .page_sizes
-                .with_untracked(|intrins_h| page_intrinsic(page, widths, intrins_h, p1.width, p1.height))
+        let (pw, ph) = state.document.metrics.intrinsic.with(|pages| {
+            let i = page.saturating_sub(1) as usize;
+            match pages.get(i) {
+                Some(s) if s.width > 0.0 && s.height > 0.0 => (s.width, s.height),
+                _ => (p1.width, p1.height),
+            }
         });
         let prev_page = last_fit_page.get_value();
         let page_changed = prev_page != 0 && prev_page != page;
@@ -145,12 +146,12 @@ pub fn fit_effect(
                 pw,
                 ph,
                 48.0,
-                state.viewer.scale.get_untracked(),
+                state.viewer.zoom.scale.get_untracked(),
             );
             // A fit mode IS a deliberate choice, so it owns the ceiling too.
             // Without this, leaving fit mode would resurrect a `desired_scale`
             // from some earlier gesture and the page would jump to it.
-            state.viewer.desired_scale.set(t);
+            state.viewer.zoom.desired.set(t);
             t
         } else if cw > 1.0 {
             // NO FIT MODE: the reader picked this zoom by hand.
@@ -176,9 +177,9 @@ pub fn fit_effect(
                 pw,
                 ph,
                 48.0,
-                state.viewer.scale.get_untracked(),
+                state.viewer.zoom.scale.get_untracked(),
             );
-            let desired = state.viewer.desired_scale.get_untracked();
+            let desired = state.viewer.zoom.desired.get_untracked();
             constrained_scale(desired, fit_w)
         } else {
             // Container not measured yet: a zero width would "fit" nothing and
@@ -222,11 +223,11 @@ pub fn fit_effect(
         // mixed-size book would zoom on every row boundary. Those wait for
         // the debounce below, which fires once the reader pauses.
         if !first_run && !page_changed {
-            let cur = state.viewer.display_scale.get_untracked();
+            let cur = state.viewer.zoom.display.get_untracked();
             if (target - cur).abs() >= 0.0005 {
                 state.viewer.zoom_animating.set(true);
                 relayout_to(state, target / cur, layout);
-                state.viewer.display_scale.set(target);
+                state.viewer.zoom.display.set(target);
             }
         }
 
@@ -245,8 +246,8 @@ pub fn fit_effect(
         // constant flicker. A zoom click "fixed" it only because a gesture ends
         // in `commit_scale`, whose echo makes the next run return early and
         // breaks the cycle.
-        let settled = (target - state.viewer.render_scale.get_untracked()).abs() < 0.0005
-            && (target - state.viewer.display_scale.get_untracked()).abs() < 0.0005;
+        let settled = (target - state.viewer.zoom.render.get_untracked()).abs() < 0.0005
+            && (target - state.viewer.zoom.display.get_untracked()).abs() < 0.0005;
         if settled && !state.viewer.zoom_animating.get_untracked() {
             return;
         }
@@ -265,12 +266,12 @@ pub fn fit_effect(
                 // scrolling a mixed-size book does not zoom on every row).
                 // Do that relayout NOW, before the crisp render, or the
                 // heights stay at the old scale and the scroll teleports.
-                let cur = state.viewer.display_scale.get_untracked();
+                let cur = state.viewer.zoom.display.get_untracked();
                 if (target - cur).abs() >= 0.0005 {
                     relayout_to(state, target / cur, layout);
-                    state.viewer.display_scale.set(target);
+                    state.viewer.zoom.display.set(target);
                 }
-                let prev = state.viewer.render_scale.get_untracked();
+                let prev = state.viewer.zoom.render.get_untracked();
                 if (target - prev).abs() >= 0.0005 {
                     commit_scale(state, target);
                 } else if state.viewer.zoom_animating.get_untracked() {
