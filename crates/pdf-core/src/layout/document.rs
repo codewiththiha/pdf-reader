@@ -60,7 +60,7 @@ impl DocumentLayout {
         self.strip.dominant(scroll_top, viewport_h) as u32 + 1
     }
 
-    /// 0-based inclusive range of pages to keep mounted (see `render_range`).
+    /// 0-based inclusive range of pages to keep mounted.
     pub fn window(
         &self,
         scroll_top: f64,
@@ -85,20 +85,14 @@ impl DocumentLayout {
     }
 }
 
-/// Cold wrapper: 0-based inclusive mounted range for a one-shot heights slice.
-pub(crate) fn render_range(
-    scroll_top: f64,
-    viewport_h: f64,
-    heights: &[f64],
-    gap: f64,
-    budget: RenderBudget,
-) -> Option<(usize, usize)> {
-    DocumentLayout::new(heights, gap).window(scroll_top, viewport_h, budget)
-}
 
 #[cfg(test)]
 mod dominant_page_tests {
-    use crate::layout::{anchored_scroll, dominant_page, page_top_css, PAGE_GAP};
+    use crate::layout::{anchored_scroll, page_top_css, DocumentLayout, PAGE_GAP};
+
+    fn dominant(scroll_top: f64, viewport_h: f64, heights: &[f64], gap: f64) -> u32 {
+        DocumentLayout::new(heights, gap).dominant(scroll_top, viewport_h)
+    }
 
     /// The basic contract: the page covering most of the viewport wins, a tall
     /// page filling it wins outright, and degenerate inputs fall back to
@@ -108,14 +102,14 @@ mod dominant_page_tests {
         // Straddling the boundary at 1000 with an 800-tall viewport.
         let h = [1000.0, 1000.0];
         // scroll 700 -> page 1 covers 300, page 2 covers 476 (after the gap).
-        assert_eq!(dominant_page(700.0, 800.0, &h, 24.0), 2);
+        assert_eq!(dominant(700.0, 800.0, &h, 24.0), 2);
         // scroll 400 -> page 1 covers 600, page 2 covers 176.
-        assert_eq!(dominant_page(400.0, 800.0, &h, 24.0), 1);
+        assert_eq!(dominant(400.0, 800.0, &h, 24.0), 1);
         // One tall page fills the viewport outright (page 2 spans 2024..4024).
-        assert_eq!(dominant_page(2500.0, 800.0, &[2000.0; 3], 24.0), 2);
+        assert_eq!(dominant(2500.0, 800.0, &[2000.0; 3], 24.0), 2);
         // Nothing measured -> 1. No viewport height yet -> top-edge answer.
-        assert_eq!(dominant_page(0.0, 800.0, &[], 24.0), 1);
-        assert_eq!(dominant_page(900.0, 0.0, &[800.0, 800.0], 24.0), 2);
+        assert_eq!(dominant(0.0, 800.0, &[], 24.0), 1);
+        assert_eq!(dominant(900.0, 0.0, &[800.0, 800.0], 24.0), 2);
     }
 
     /// A jump that aligns page P's top with the viewport top reports P, even
@@ -125,7 +119,7 @@ mod dominant_page_tests {
         let h = vec![400.0; 10];
         for target in 1..=8u32 {
             let top = page_top_css(target as usize - 1, &h, 24.0);
-            assert_eq!(dominant_page(top, 800.0, &h, 24.0), target, "target {target}");
+            assert_eq!(dominant(top, 800.0, &h, 24.0), target, "target {target}");
         }
     }
 
@@ -139,14 +133,14 @@ mod dominant_page_tests {
         // Reading page 11: park the viewport centre in the middle of it.
         let idx = 10usize;
         let mut st = page_top_css(idx, &base, gap) + base[idx] / 2.0 - vh / 2.0;
-        let start = dominant_page(st, vh, &base, gap);
+        let start = dominant(st, vh, &base, gap);
         assert_eq!(start, 11);
         let mut heights = base;
         for f in [0.93, 0.857, 0.833, 0.8] {
             st = anchored_scroll(st, vh, &heights, gap, f, vh * 0.5).unwrap();
             heights = heights.iter().map(|x| x * f).collect();
             assert_eq!(
-                dominant_page(st, vh, &heights, gap),
+                dominant(st, vh, &heights, gap),
                 start,
                 "counter drifted while zooming out"
             );
@@ -177,7 +171,7 @@ mod dominant_page_tests {
         let mut heights = at(scale);
         // Park the viewport centre inside page 256.
         let mut scroll = page_top_css(255, &heights, PAGE_GAP) + heights[255] * 0.5 - anchor;
-        let start_page = dominant_page(scroll, vh, &heights, PAGE_GAP);
+        let start_page = dominant(scroll, vh, &heights, PAGE_GAP);
         assert_eq!(start_page, 256, "test setup should start on page 256");
 
         // Out to 25%, back in to 175%, then home — the user's gesture.
@@ -190,7 +184,7 @@ mod dominant_page_tests {
         }
 
         assert_eq!(
-            dominant_page(scroll, vh, &heights, PAGE_GAP),
+            dominant(scroll, vh, &heights, PAGE_GAP),
             start_page,
             "a zoom round-trip must not move the reader off their page"
         );
@@ -218,12 +212,11 @@ mod tests {
     const H: [f64; 3] = [100.0, 200.0, 100.0];
 
     #[test]
-    fn render_range_expands_and_clamps() {
+    fn window_expands_and_clamps() {
         let b = RenderBudget { look_frac: 1.0, max_items: 7 };
-        assert_eq!(render_range(124.0, 200.0, &H, 24.0, b), Some((0, 2)));
-        // No look-ahead at all == exactly what is on screen.
+        assert_eq!(DocumentLayout::new(&H, 24.0).window(124.0, 200.0, b), Some((0, 2)));
         let none = RenderBudget { look_frac: 0.0, max_items: 7 };
-        assert_eq!(render_range(124.0, 200.0, &H, 24.0, none), Some((1, 1)));
+        assert_eq!(DocumentLayout::new(&H, 24.0).window(124.0, 200.0, none), Some((1, 1)));
     }
 }
 
@@ -232,6 +225,16 @@ mod tests {
 mod render_range_tests {
     use super::*;
     use crate::layout::{page_top_css, PAGE_GAP, RenderBudget, Strip};
+
+    fn window(
+        scroll_top: f64,
+        viewport_h: f64,
+        heights: &[f64],
+        gap: f64,
+        budget: RenderBudget,
+    ) -> Option<(usize, usize)> {
+        DocumentLayout::new(heights, gap).window(scroll_top, viewport_h, budget)
+    }
 
     fn span_overlapping(
         top: f64,
@@ -265,7 +268,7 @@ mod render_range_tests {
         let count_at = |page_h: f64| {
             let h = uniform(40, page_h);
             let st = scroll_into(10, 0.5, &h, vh);
-            let (f, l) = render_range(st, vh, &h, GAP, b).unwrap();
+            let (f, l) = window(st, vh, &h, GAP, b).unwrap();
             l - f + 1
         };
         let zoomed_out = count_at(396.0); // 50%
@@ -295,13 +298,13 @@ mod render_range_tests {
 
         // Mid-page: neighbours are far away, so just this page.
         let mid = scroll_into(idx, 0.5, &h, vh);
-        assert_eq!(render_range(mid, vh, &h, GAP, b), Some((idx, idx)));
+        assert_eq!(window(mid, vh, &h, GAP, b), Some((idx, idx)));
 
         // Scrolled so the page bottom is within one screenful: next is mounted
         // and ready, BEFORE any of it is on screen.
         let page_bottom = page_top_css(idx, &h, GAP) + h[idx];
         let near = page_bottom - vh - 10.0; // bottom is 10px beyond the viewport
-        let (f, l) = render_range(near, vh, &h, GAP, b).unwrap();
+        let (f, l) = window(near, vh, &h, GAP, b).unwrap();
         assert!(l >= idx + 1, "next page should be mounted early, got {f}..={l}");
         // ...and it is genuinely not visible yet, i.e. this is real read-ahead.
         let (vf, vl) = span_overlapping(near, vh, &h, GAP).unwrap();
@@ -318,11 +321,11 @@ mod render_range_tests {
         let top = page_top_css(idx, &h, GAP);
         // Just past the top of page 10: page 9 is still within a screenful.
         let just_in = top + 100.0;
-        let (f, _) = render_range(just_in, vh, &h, GAP, b).unwrap();
+        let (f, _) = window(just_in, vh, &h, GAP, b).unwrap();
         assert_eq!(f, idx - 1, "the page just behind should still be warm");
         // Well into page 10: page 9 is now more than a screenful behind.
         let deep = top + vh * 1.5;
-        let (f2, _) = render_range(deep, vh, &h, GAP, b).unwrap();
+        let (f2, _) = window(deep, vh, &h, GAP, b).unwrap();
         assert_eq!(f2, idx, "the page behind should have been evicted");
     }
 
@@ -340,7 +343,7 @@ mod render_range_tests {
             ] {
                 for step in 0..40 {
                     let st = step as f64 * page_h * 0.37;
-                    let Some((f, l)) = render_range(st, vh, &h, GAP, budget) else {
+                    let Some((f, l)) = window(st, vh, &h, GAP, budget) else {
                         continue;
                     };
                     if let Some((vf, vl)) = span_overlapping(st, vh, &h, GAP) {
@@ -363,7 +366,7 @@ mod render_range_tests {
         for max_items in [1usize, 3, 5, 7, 12] {
             let b = RenderBudget { look_frac: 2.0, max_items };
             let st = 1000.0;
-            let (f, l) = render_range(st, vh, &h, GAP, b).unwrap();
+            let (f, l) = window(st, vh, &h, GAP, b).unwrap();
             let n = l - f + 1;
             let visible_n = span_overlapping(st, vh, &h, GAP)
                 .map(|(a, b)| b - a + 1)
@@ -379,18 +382,18 @@ mod render_range_tests {
     #[test]
     fn degenerate_inputs() {
         let b = RenderBudget::default();
-        assert_eq!(render_range(0.0, 800.0, &[], GAP, b), None);
+        assert_eq!(window(0.0, 800.0, &[], GAP, b), None);
         // Zero-height viewport: still mounts the page under the scroll point.
         let h = uniform(5, 500.0);
-        assert!(render_range(1100.0, 0.0, &h, GAP, b).is_some());
+        assert!(window(1100.0, 0.0, &h, GAP, b).is_some());
         // Past the end of the document: `None`, exactly as `visible_range`
         // answers, so the caller's existing "nothing to render" path is
         // reached rather than a surprise last-page mount.
-        assert_eq!(render_range(99_999.0, 800.0, &h, GAP, b), None);
+        assert_eq!(window(99_999.0, 800.0, &h, GAP, b), None);
         assert_eq!(span_overlapping(99_999.0, 800.0, &h, GAP), None);
         // A zero max_items is treated as 1 rather than producing an empty range.
         let bad = RenderBudget { look_frac: 0.0, max_items: 0 };
-        let (f, l) = render_range(1100.0, 800.0, &h, GAP, bad).unwrap();
+        let (f, l) = window(1100.0, 800.0, &h, GAP, bad).unwrap();
         assert!(l >= f);
     }
 
@@ -401,7 +404,7 @@ mod render_range_tests {
         let h = [100.0, 200.0, 100.0];
         // 100..124 is the gap after page 0; a 15px viewport sits inside it.
         let b = RenderBudget { look_frac: 1.0, max_items: 7 };
-        let got = render_range(104.0, 15.0, &h, GAP, b);
+        let got = window(104.0, 15.0, &h, GAP, b);
         assert!(got.is_some(), "a gap position must still mount something");
         let (f, l) = got.unwrap();
         assert!(f == 0 && l >= 1, "expected the pages either side, got {f}..={l}");

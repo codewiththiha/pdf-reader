@@ -5,8 +5,8 @@
 //!   * `document`      — the cached [`DocumentLayout`] (structure + queries)
 //!   * `anchor`        — the anchored-scroll zoom math
 //!   * `viewport`      — which thumbnail-grid rows overlap the viewport
-//!   * here            — the shared constants/types and the one-shot
-//!     convenience wrappers over [`DocumentLayout`] for cold callers
+//!   * here            — shared constants/types plus the one-shot
+//!     [`page_top_css`] / [`anchored_scroll`] wrappers for cold callers
 
 mod anchor;
 mod document;
@@ -14,7 +14,6 @@ mod viewport;
 
 pub use document::DocumentLayout;
 pub use virtual_list::{Budget, Strip};
-pub(crate) use document::render_range;
 pub use viewport::visible_grid_rows;
 
 pub const PAGE_GAP: f64 = 24.0;
@@ -51,23 +50,6 @@ pub fn page_top_css(page0: usize, heights: &[f64], gap: f64) -> f64 {
     DocumentLayout::new(heights, gap).page_top(page0)
 }
 
-/// Total scrollable height of the whole column (pages + gaps).
-/// Cold wrapper — app code should use a cached [`DocumentLayout`].
-pub(crate) fn total_height_css(heights: &[f64], gap: f64) -> f64 {
-    DocumentLayout::new(heights, gap).total()
-}
-
-/// 1-based page the reader is actually looking at: the page occupying the most
-/// of the viewport, NOT the one clipping the top edge. Ties go to the lower
-/// page number. Falls back to 1 when nothing is measured or the viewport has
-/// no height yet.
-pub(crate) fn dominant_page(scroll_top: f64, viewport_h: f64, heights: &[f64], gap: f64) -> u32 {
-    if heights.is_empty() {
-        return 1;
-    }
-    DocumentLayout::new(heights, gap).dominant(scroll_top, viewport_h)
-}
-
 /// Scroll offset that keeps the document point currently at `anchor_screen_y`
 /// (viewport coordinates, from the top of the scrollport) pinned to the same
 /// screen position after every page height is multiplied by `factor`.
@@ -100,8 +82,8 @@ mod tests {
         assert_eq!(page_top_css(0, &H, 24.0), 0.0);
         assert_eq!(page_top_css(1, &H, 24.0), 124.0);
         assert_eq!(page_top_css(2, &H, 24.0), 348.0);
-        assert_eq!(total_height_css(&H, 24.0), 448.0);
-        assert_eq!(total_height_css(&[], 24.0), 0.0);
+        assert_eq!(DocumentLayout::new(&H, 24.0).total(), 448.0);
+        assert_eq!(DocumentLayout::new(&[], 24.0).total(), 0.0);
     }
 }
 
