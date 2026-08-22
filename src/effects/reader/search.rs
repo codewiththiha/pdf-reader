@@ -7,6 +7,7 @@ use leptos::prelude::*;
 use pdf_engine::api as engine;
 use pdf_core::layout::{page_top_css, ViewMode, PAGE_GAP, TOOLBAR_H};
 use pdf_core::search::{scroll_to_reveal, SearchMatch};
+use crate::report;
 use crate::state::ReaderState;
 use crate::components::pdf::dom::page_list;
 
@@ -31,7 +32,9 @@ pub async fn run_search(state: ReaderState) {
         match engine::build_search_index().await {
             Ok(_) => state.search.index_built.set(true),
             Err(e) => {
-                web_sys::console::log_1(&format!("[search] build index: {e}").into());
+                // Diagnostic-only: the bar stays up and the next keystroke
+                // retries. A toast would nag on every failed type-ahead.
+                report::diagnostic("search", format!("build index: {e}"));
                 return;
             }
         }
@@ -54,7 +57,7 @@ pub async fn run_search(state: ReaderState) {
             engine::set_active_match(0, -1);
         }
         Err(e) => {
-            web_sys::console::log_1(&format!("[search] query: {e}").into());
+            report::diagnostic("search", format!("query: {e}"));
         }
     }
 }

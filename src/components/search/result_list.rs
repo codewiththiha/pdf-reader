@@ -1,6 +1,14 @@
 //! Search results list: one row per match plus the "No results" empty
 //! state. Shared by the floating-search results dropdown (and any future
 //! search surface) so the list markup lives in exactly one place.
+//!
+//! The match set is projected into a memoized display list. `<For>` then
+//! iterates cheap indices — it never clones `Vec<SearchMatch>` on a reactive
+//! rebuild (active-match highlight, overlay visibility, …). The full
+//! `SearchMatch` (rects + full snippet text) stays in the search signal and
+//! is only borrowed when a row is first built.
+
+use std::sync::Arc;
 
 use leptos::prelude::*;
 
@@ -8,9 +16,14 @@ use pdf_core::search::SearchMatch;
 use crate::effects::reader::search::activate_match;
 use crate::state::ReaderState;
 
-// Search results list. Used by FloatingSearch overlay.
-
-
+/// One painted row. Built only when `matches` itself changes.
+#[derive(Clone, Debug, PartialEq)]
+struct ResultRowView {
+    index: usize,
+    page: u32,
+    ordinal: u32,
+    snippet: String,
+}
 
 fn snippet(text: &str) -> String {
     if text.chars().count() > 80 {
@@ -21,18 +34,38 @@ fn snippet(text: &str) -> String {
     }
 }
 
-/// Stable `For` key for a match. The list index is unique on its own (matches
-/// are a flat, ordered list), and including page + ordinal keeps the key
-/// meaningful when the list is rebuilt for the same query.
-pub fn result_key(m: &SearchMatch, index: usize) -> String {
-    format!("{}-{}-{}", m.page, m.index, index)
+/// Project the engine match list into the rows the UI actually paints.
+///
+/// Pure: the component wraps this in a `Memo` so it runs only when `matches`
+/// changes, not on every ResultList rebuild.
+fn display_rows(matches: &[SearchMatch]) -> Arc<Vec<ResultRowView>> {
+    Arc::new(
+        matches
+            .iter()
+            .enumerate()
+            .map(|(index, m)| ResultRowView {
+                index,
+                page: m.page,
+                ordinal: m.index,
+                snippet: snippet(&m.text),
+            })
+            .collect(),
+    )
+}
+
+/// Stable `For` key for a display row. The list index is unique on its own
+/// (matches are a flat, ordered list), and including page + ordinal keeps the
+/// key meaningful when the list is rebuilt for the same query.
+fn result_key(row: &ResultRowView) -> String {
+    format!("{}-{}-{}", row.page, row.ordinal, row.index)
 }
 
 /// One result row: page badge + snippet, with the current match highlighted.
 #[component]
-pub fn ResultRow(state: ReaderState, result: SearchMatch, index: usize) -> impl IntoView {
-    let page = result.page;
-    let snippet_text = snippet(&result.text);
+fn ResultRow(state: ReaderState, row: ResultRowView) -> impl IntoView {
+    let index = row.index;
+    let page = row.page;
+    let snippet_text = row.snippet;
     // Compare by list index: `active` indexes `matches`, so this stays exact
     // even when a page holds several identical snippets.
     let is_active = move || state.search.active.get() == Some(index);
@@ -65,33 +98,82 @@ pub fn ResultRow(state: ReaderState, result: SearchMatch, index: usize) -> impl 
 /// markup lives in exactly one place.
 #[component]
 pub fn ResultList(state: ReaderState) -> impl IntoView {
+    // Materialize display rows only when the match set itself changes —
+    // never when the active index, query text, or overlay visibility ticks.
+    // The Memo holds an Arc so a For rebuild is a refcount bump, not a copy
+    // of every snippet.
+    let rows = Memo::new(move |_| state.search.matches.with(|m| display_rows(m)));
+
     view! {
         {move || {
-            if state.search.matches.with(|m| m.is_empty()) {
+            let rows = rows.get();
+            if rows.is_empty() {
                 view! {
                     <div class="p-4 text-sm text-muted">No results</div>
                 }
                 .into_any()
             } else {
+                // Three cheap Arc clones so each/key/children can all
+                // borrow the same display list without moving it twice.
+                let each_rows = rows.clone();
+                let key_rows = rows.clone();
                 view! {
                     <For
-                        each=move || {
-                            state
-                                .search
-                                .matches
-                                .get()
-                                .into_iter()
-                                .enumerate()
-                                .collect::<Vec<_>>()
+                        each=move || 0..each_rows.len()
+                        key=move |i| {
+                            key_rows.get(*i).map(result_key).unwrap_or_default()
                         }
-                        key=move |(index, m): &(usize, SearchMatch)| result_key(m, *index)
-                        children=move |(index, m): (usize, SearchMatch)| {
-                            view! { <ResultRow state=state result=m index=index /> }
+                        children=move |i| {
+                            rows.get(i).cloned().map(|row| {
+                                view! { <ResultRow state=state row=row /> }
+                            })
                         }
                     />
                 }
                 .into_any()
             }
         }}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pdf_core::search::SearchMatch;
+
+    fn m(page: u32, index: u32, text: &str) -> SearchMatch {
+        SearchMatch {
+            page,
+            index,
+            text: text.to_string(),
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+        }
+    }
+
+    #[test]
+    fn display_rows_project_page_ordinal_and_truncated_snippet() {
+        let long = "a".repeat(100);
+        let rows = display_rows(&[
+            m(3, 0, "short"),
+            m(3, 1, &long),
+        ]);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].index, 0);
+        assert_eq!(rows[0].page, 3);
+        assert_eq!(rows[0].ordinal, 0);
+        assert_eq!(rows[0].snippet, "short");
+        assert_eq!(rows[1].ordinal, 1);
+        assert_eq!(rows[1].snippet.chars().count(), 81); // 80 + ellipsis
+        assert!(rows[1].snippet.ends_with('…'));
+        // Keys stay unique even for two hits on the same page.
+        assert_ne!(result_key(&rows[0]), result_key(&rows[1]));
+    }
+
+    #[test]
+    fn display_rows_empty_is_empty() {
+        assert!(display_rows(&[]).is_empty());
     }
 }

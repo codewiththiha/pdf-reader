@@ -82,4 +82,31 @@ mod tests {
         assert!(row_height(842.0 / 595.0) > row_height(612.0 / 792.0));
         assert_eq!(row_height(1.0), CELL_W + ROW_GAP);
     }
+
+    /// A 1,000-page PDF (500 grid rows) must not mount the whole grid.
+    /// This is the math half of the sidebar-open / 1k-page thumbnail
+    /// profile: only the visible window + `ROW_BUFFER` each side is live.
+    #[test]
+    fn thousand_page_grid_mounts_a_bounded_window() {
+        use pdf_core::layout::visible_grid_rows;
+
+        let pages = 1_000usize;
+        let rows = row_count(pages);
+        assert_eq!(rows, 500);
+        let rh = row_height(792.0 / 612.0);
+        // Default panel floor, parked at the top.
+        let top = visible_grid_rows(0.0, MIN_VIEWPORT_H, rows, rh, ROW_BUFFER);
+        let (f, l) = top.expect("top of a 1k-page grid must resolve a window");
+        let mounted = l - f + 1;
+        assert!(
+            mounted < 20,
+            "virtualization must not mount the whole grid, got {mounted} rows"
+        );
+        // Mid-document: still a handful of rows, never hundreds.
+        let mid_scroll = rh * 200.0;
+        let mid = visible_grid_rows(mid_scroll, MIN_VIEWPORT_H, rows, rh, ROW_BUFFER);
+        let (mf, ml) = mid.expect("mid-grid window");
+        assert!(ml - mf + 1 < 20);
+        assert!(mf > 0 && ml < rows - 1, "mid window should not touch the ends");
+    }
 }

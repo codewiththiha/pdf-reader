@@ -11,3 +11,7 @@ serde_json = "1"
 virtual-list = { path = "../virtual-list" }
 
 [dev-dependencies]
+
+[[bench]]
+name = "large_doc"
+harness = false

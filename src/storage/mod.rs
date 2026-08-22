@@ -11,8 +11,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use wasm_bindgen::JsValue;
-
+use crate::report;
 use crate::state::library::{sanitize as sanitize_library, CoverImage, RecentBook};
 use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
 
@@ -35,7 +34,7 @@ pub struct StorageError {
 impl StorageError {
     /// Surface the failure on the console without interrupting the UI.
     pub fn report(&self) {
-        web_sys::console::warn_1(&JsValue::from_str(&format!("[storage] {self}")));
+        report::diagnostic("storage", self);
     }
 }
 
@@ -46,7 +45,7 @@ impl fmt::Display for StorageError {
 }
 
 fn warn(op: &'static str, detail: &str) {
-    web_sys::console::warn_1(&JsValue::from_str(&format!("[storage] {op}: {detail}")));
+    report::diagnostic("storage", format!("{op}: {detail}"));
 }
 
 fn local() -> Option<web_sys::Storage> {

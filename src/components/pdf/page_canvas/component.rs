@@ -310,8 +310,9 @@ pub fn PageCanvas(
                     {
                         remove_snapshots(&host);
                     }
-                    web_sys::console::log_1(
-                        &format!("[page_canvas] render page {page_no}: {e}").into(),
+                    crate::report::diagnostic(
+                        "page_canvas",
+                        format!("render page {page_no}: {e}"),
                     );
                 }
             }

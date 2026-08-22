@@ -38,7 +38,16 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The ONE cached column layout for this reader session: every scroll,
     // render-window, zoom-anchor and jump query borrows it instead of
     // rebuilding the strip's prefix sums from the raw heights.
-    let layout = Memo::new(move |_| DocumentLayout::new(&vs.document.metrics.css_heights.get(), PAGE_GAP));
+    // Borrow the heights: `.get()` would clone the whole column on every
+    // zoom frame just to hand a slice to `DocumentLayout::new`. The Memo
+    // still rebuilds the prefix sums (necessary); it just doesn't also
+    // copy the source vector.
+    let layout = Memo::new(move |_| {
+        vs.document
+            .metrics
+            .css_heights
+            .with(|heights| DocumentLayout::new(heights, PAGE_GAP))
+    });
     fit_effect(vs, state.ui.sidebar, layout);
     zoom_system(vs, layout);
     navigation_sync(vs, layout);

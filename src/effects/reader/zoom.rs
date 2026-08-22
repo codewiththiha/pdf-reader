@@ -121,6 +121,10 @@ pub(super) fn take_commit_echo() -> bool {
 ///
 /// This is what a "relayout" means here — pure arithmetic on already-known
 /// geometry. No render is involved, and none is waited for.
+///
+/// Per-frame work is still O(n) (in-place scale + prefix-sum rebuild). That
+/// is measured, not redesigned: `cargo bench -p pdf-core --bench large_doc`.
+/// If a 5k-page frame stays under 16 ms, leave this function alone.
 pub fn relayout_to(state: ReaderState, factor: f64, layout: Memo<DocumentLayout>) {
     if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
         return;

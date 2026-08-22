@@ -189,8 +189,9 @@ pub fn ThumbCell(
                     // aborts an in-flight render while scrolling); the skeleton
                     // is the intended fallback, so only genuine failures log.
                     if e.name != "cancelled" {
-                        web_sys::console::log_1(
-                            &format!("[thumbnails] render page {page}: {e}").into(),
+                        crate::report::diagnostic(
+                            "thumbnails",
+                            format!("render page {page}: {e}"),
                         );
                     }
                 }
