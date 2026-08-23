@@ -11,24 +11,30 @@ use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
 use pdf_core::layout::{DocumentLayout, PAGE_GAP, ViewMode};
-use crate::components::layout::adaptive_toolbar::AdaptiveToolbar;
-use crate::components::shared::button::{Button, ButtonVariant};
-use crate::components::shared::icon::{Icon, IconName};
-use crate::components::shared::tooltip::Tooltip;
-use crate::components::sidebar::Sidebar;
-use crate::components::layout::document_title::FloatingDocumentTitle;
-use crate::components::layout::app_title_bar::AppTitleBar;
-use crate::components::layout::document_title::DocumentTitle;
-use crate::components::reader::page_indicator::PageIndicator;
-use crate::components::reader::bottom_bar::ReaderBottomBar;
+use crate::components::chrome::adaptive_toolbar::AdaptiveToolbar;
+use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::tooltip::Tooltip;
+use crate::components::panels::book_info::BookInfo;
+use crate::components::panels::outline_host::SidebarOutline;
+use crate::components::panels::panel_switcher::PanelSwitcher;
+use crate::components::panels::sidebar_header::SidebarHeader;
+use crate::components::panels::Sidebar;
+use crate::components::panels::sidebar_shell::{request_reveal_active, sidebar_paint};
+use crate::components::panels::thumbnail_host::SidebarThumbs;
+use crate::components::chrome::document_title::FloatingDocumentTitle;
+use crate::components::chrome::app_title_bar::AppTitleBar;
+use crate::components::chrome::document_title::DocumentTitle;
+use crate::components::reader_controls::page_indicator::PageIndicator;
+use crate::components::reader_controls::bottom_bar::ReaderBottomBar;
 use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::effects::reader::reading_progress::reading_progress;
-use crate::effects::reader::fit::fit_effect;
+use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::zoom::zoom_system;
 use crate::state::SidebarMode;
-use super::toolbar::reader_toolbar_entries;
+use super::toolbar_entries::reader_toolbar_entries;
 
 #[component]
 pub fn ReaderPage(state: AppState) -> impl IntoView {
@@ -50,8 +56,8 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let status = state.reader.document.status;
     let mode = state.reader.viewer.mode;
-    let state_sidebar = state;
     let is_ready = move || status.get() == DocStatus::Ready;
+    let paint = sidebar_paint(state.ui.sidebar);
 
     let appearance_open = RwSignal::new(false);
     let collapsed_ids = RwSignal::new(Vec::<&'static str>::new());
@@ -149,16 +155,38 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             // so it can never leak a phantom scrollbar onto the window.
             <div class="relative flex h-full w-full flex-col overflow-hidden bg-paper text-ink">
                 <div class="flex min-h-0 flex-1">
-                    <Sidebar state=state_sidebar />
+                    <Sidebar
+                        mode=state.ui.sidebar
+                        header=move || view! { <SidebarHeader reader=vs sidebar=state.ui.sidebar /> }
+                        info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
+                        panels=move || view! {
+                            <SidebarOutline state=vs sidebar=state.ui.sidebar shown=paint.show_outline outro=paint.is_closed />
+                            <SidebarThumbs
+                                state=vs
+                                sidebar=state.ui.sidebar
+                                live=paint.thumbs_live
+                                shown=paint.show_thumbs
+                                outro=paint.is_closed
+                            />
+                        }
+                        footer=move || view! {
+                            <PanelSwitcher
+                                mode=state.ui.sidebar
+                                thumbs_active=paint.thumbs_active
+                                outline_active=paint.outline_active
+                                on_reveal=request_reveal_active
+                            />
+                        }
+                    />
                     <main id="viewer-slot" class="relative min-w-0 flex-1 overflow-hidden">
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {
-                                    <crate::components::pdf::SinglePageView state=vs />
+                                    <crate::components::document::SinglePageView state=vs />
                                 }
                                 .into_any(),
                                 ViewMode::Continuous => view! {
-                                    <crate::components::pdf::ContinuousView state=vs layout=layout />
+                                    <crate::components::document::ContinuousView state=vs layout=layout />
                                 }
                                 .into_any(),
                             }}
@@ -172,10 +200,8 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
                             </div>
                         </Show>
-                        <ReaderBottomBar state=state layout=layout />
-                        // Floating search overlay (U4): mounted at the viewer
-                        // slot; its top-14 offset clears the titlebar.
-                        <crate::components::search::floating::FloatingSearch state=vs />
+                        <ReaderBottomBar reader=vs layout=layout />
+                        <crate::components::search::floating_search::FloatingSearch state=vs />
                     </main>
                 </div>
             </div>

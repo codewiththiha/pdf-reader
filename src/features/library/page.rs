@@ -4,13 +4,13 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::button::{Button, ButtonVariant};
-use crate::components::shared::icon::{Icon, IconName};
-use crate::components::shared::tooltip::Tooltip;
-use crate::components::layout::app_title_bar::AppTitleBar;
+use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::tooltip::Tooltip;
+use crate::components::chrome::app_title_bar::AppTitleBar;
 use crate::components::menus::appearance::AppearanceMenu;
-use crate::components::layout::document_title::DocumentTitle;
-use crate::components::menus::more::MoreMenu;
+use crate::components::chrome::document_title::DocumentTitle;
+use crate::components::menus::more_menu::MoreMenu;
 use crate::state::AppState;
 use crate::features::library::LibraryShelf;
 

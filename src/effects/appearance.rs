@@ -14,7 +14,6 @@ use leptos::prelude::*;
 
 use pdf_core::appearance::Appearance;
 use pdf_core::settings::Settings;
-use crate::state::AppState;
 use crate::storage::save_settings;
 
 use crate::effects::app::theme::paint_appearance_now;
@@ -78,7 +77,7 @@ thread_local! {
     static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };
     static COMMIT_GEN: Cell<u64> = const { Cell::new(0) };
     static COMMIT_TIMER: RefCell<Option<TimeoutHandle>> = const { RefCell::new(None) };
-    static COMMIT_PAYLOAD: Cell<Option<(AppState, AppearanceScrub)>> = const { Cell::new(None) };
+    static COMMIT_PAYLOAD: Cell<Option<(RwSignal<Settings>, AppearanceScrub)>> = const { Cell::new(None) };
     static SAVE_TIMER: RefCell<Option<TimeoutHandle>> = const { RefCell::new(None) };
 }
 
@@ -134,8 +133,8 @@ pub fn flush_appearance_commit() {
     // The scrub's own timer never fires; re-bake at the scrub's final values
     // (already painted live) before the structural change repaints on top.
     leave_scrub();
-    if let Some((state, patch)) = payload {
-        state.settings.update(|s| {
+    if let Some((settings, patch)) = payload {
+        settings.update(|s| {
             apply_scrub(&mut s.appearance, patch);
             s.touch_appearance();
         });
@@ -153,7 +152,7 @@ fn patch_needs_canvas_scrub(p: AppearanceScrub) -> bool {
 /// Live-preview a slider: paint CSS this frame, write Settings once the
 /// gesture pauses. Does NOT notify `settings` on the way, so PageCanvas /
 /// presets / localStorage stay quiet for the whole drag.
-pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
+pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) {
     // The theme variables change every frame from here on; switch the engine
     // to raw rasters + live CSS so the PAGE tracks a tint drag. Overlay
     // sliders (noise / texture) must not enter canvas scrub.
@@ -161,12 +160,12 @@ pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
         enter_scrub();
     }
 
-    let mut a = state.settings.get_untracked().appearance;
+    let mut a = settings.get_untracked().appearance;
     apply_scrub(&mut a, patch);
     paint_appearance(a);
 
     let commit_gen = bump_commit_gen();
-    COMMIT_PAYLOAD.with(|p| p.set(Some((state, patch))));
+    COMMIT_PAYLOAD.with(|p| p.set(Some((settings, patch))));
     clear_commit_timer();
     let handle = set_timeout_with_handle(
         move || {
@@ -180,7 +179,7 @@ pub fn preview_appearance(state: AppState, patch: AppearanceScrub) {
             if patch_needs_canvas_scrub(patch) {
                 leave_scrub();
             }
-            state.settings.update(|s| {
+            settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();
             });

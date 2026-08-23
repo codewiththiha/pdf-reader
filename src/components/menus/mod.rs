@@ -1,4 +1,4 @@
-//! App menus, all built on the shared window-aware `Popover`.
+//! App menus, all built on the window-aware `Popover`.
 
 pub mod appearance;
-pub mod more;
+pub mod more_menu;

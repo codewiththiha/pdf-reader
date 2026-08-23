@@ -19,13 +19,16 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::shared::icon::{Icon, IconName};
-use crate::components::shared::separator::Separator;
-use crate::components::layout::adaptive_toolbar::{OverflowRow, ToolbarItem};
-use crate::components::shared::popover::Popover;
+use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::section_label::SectionLabel;
+use crate::components::primitives::separator::Separator;
+use crate::components::chrome::adaptive_toolbar::ToolbarItem;
+use crate::components::chrome::OverflowRow;
+use crate::components::primitives::popover::Popover;
 use crate::state::AppState;
 
 mod base;
+mod hue_picker;
 mod noise;
 mod presets;
 mod texture;
@@ -34,13 +37,6 @@ use base::BaseSection;
 use noise::NoiseSection;
 use presets::PresetSection;
 use texture::TextureSection;
-
-#[component]
-fn SectionLabel(#[prop(into)] text: String) -> impl IntoView {
-    view! {
-        <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">{text}</p>
-    }
-}
 
 #[component]
 pub fn AppearanceMenu(

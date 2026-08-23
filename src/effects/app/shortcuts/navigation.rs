@@ -8,7 +8,7 @@ use wasm_bindgen::JsCast;
 use std::cell::Cell;
 
 use pdf_core::layout::ViewMode;
-use crate::components::pdf::dom::page_list;
+use crate::components::document::dom_helpers::page_list;
 use crate::state::ReaderState;
 
 use super::is_chrome_scroll_target;
@@ -37,6 +37,9 @@ pub(crate) fn page_scroll_px(viewport_h: f64) -> f64 {
 const HOLD_DELAY_MS: f64 = 350.0;
 const HOLD_PX_PER_SEC: f64 = 1000.0;
 
+// thread_local, not StoredValue: the hold engine is driven from window
+// keydown/keyup listeners that do not share a reactive owner, so the
+// rAF loop has to outlive any one effect.
 thread_local! {
     static HOLD_DIR: Cell<f64> = const { Cell::new(0.0) };
     static HOLD_DOWN_AT: Cell<f64> = const { Cell::new(0.0) };

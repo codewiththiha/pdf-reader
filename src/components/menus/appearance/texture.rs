@@ -8,10 +8,10 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::icon::{Icon, IconName};
-use crate::components::shared::slider::Slider;
+use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::slider::Slider;
 use pdf_core::appearance::TextureMode;
-use crate::components::shared::option_button::OptionButton;
+use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;
 use crate::effects::appearance::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,
@@ -78,9 +78,12 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                 step=1.0
                 unit="%"
                 on_change=move |v| {
+                    if current() == TextureMode::None {
+                        return;
+                    }
                     let v = v.round().clamp(0.0, 100.0);
                     set_opacity.set(v);
-                    preview_appearance(state, AppearanceScrub::TextureOpacity(v as u8));
+                    preview_appearance(state.settings, AppearanceScrub::TextureOpacity(v as u8));
                 }
                 label="Texture opacity"
             />
@@ -91,9 +94,12 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                 step=5.0
                 unit="%"
                 on_change=move |v| {
+                    if current() == TextureMode::None {
+                        return;
+                    }
                     let v = v.round().clamp(25.0, 400.0);
                     set_tscale.set(v);
-                    preview_appearance(state, AppearanceScrub::TextureScale(v as u16));
+                    preview_appearance(state.settings, AppearanceScrub::TextureScale(v as u16));
                 }
                 label="Texture scale"
             />

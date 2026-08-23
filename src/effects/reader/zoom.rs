@@ -23,7 +23,7 @@ use wasm_bindgen::JsCast;
 use pdf_core::layout::DocumentLayout;
 use pdf_core::math::clamp_scale;
 use crate::state::ReaderState;
-use crate::components::pdf::dom::page_list;
+use crate::components::document::dom_helpers::page_list;
 
 /// Duration of the zoom layout animation. Long enough to read as motion,
 /// short enough that the crisp render feels immediate.

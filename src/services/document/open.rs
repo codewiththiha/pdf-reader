@@ -20,7 +20,7 @@ use pdf_engine::types::{DocStatus, PageSize};
 use pdf_core::filename::display_name;
 use crate::state::library::{self, CoverImage, RecentBook};
 use pdf_core::math::{fit_scale, FitMode};
-use crate::state::{AppState, Toast, ToastKind};
+use crate::state::{AppState, Toast};
 use crate::storage::{save_covers, save_library};
 
 /// Wire OS-level file opening (double-click / "Open with" / default-app
@@ -83,7 +83,6 @@ pub fn open_dialog(state: AppState) {
                     state.reader.document.error.set(Some(msg.clone()));
                     state.reader.document.status.set(DocStatus::Error);
                     state.ui.toast.set(Some(Toast {
-                        kind: ToastKind::Error,
                         message: format!("Could not open PDF: {}", msg),
                     }));
                 }
@@ -252,7 +251,6 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.document.error.set(Some(e.message.clone()));
                 state.reader.document.status.set(DocStatus::Error);
                 state.ui.toast.set(Some(Toast {
-                    kind: ToastKind::Error,
                     message: format!("Could not open PDF: {}", e.message),
                 }));
             }

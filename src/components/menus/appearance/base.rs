@@ -9,11 +9,11 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::hue_picker::HuePicker;
-use crate::components::shared::icon::{Icon, IconName};
-use crate::components::shared::slider::Slider;
+use crate::components::menus::appearance::hue_picker::HuePicker;
+use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::slider::Slider;
 use pdf_core::appearance::BaseMode;
-use crate::components::shared::option_button::OptionButton;
+use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;
 use crate::effects::appearance::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,
@@ -90,7 +90,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                         set_strength.set(35.0);
                     }
                     preview_appearance(
-                        state,
+                        state.settings,
                         AppearanceScrub::Tint { hue: v as u16, strength: st },
                     );
                 }
@@ -111,7 +111,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                     // committed yet.
                     let hue = hue.get_untracked().round().clamp(0.0, 359.0) as u16;
                     preview_appearance(
-                        state,
+                        state.settings,
                         AppearanceScrub::Tint { hue, strength: v as u8 },
                     );
                 }

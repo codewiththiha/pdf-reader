@@ -8,7 +8,7 @@ use pdf_engine::api as engine;
 use pdf_core::layout::{page_top_css, ViewMode, PAGE_GAP, TOOLBAR_H};
 use pdf_core::search::{scroll_to_reveal, SearchMatch};
 use crate::state::ReaderState;
-use crate::components::pdf::dom::page_list;
+use crate::components::document::dom_helpers::page_list;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs
 /// over the top-right of the viewer, so a match revealed underneath it would be

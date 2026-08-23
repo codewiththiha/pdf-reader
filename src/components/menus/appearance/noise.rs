@@ -6,9 +6,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::slider::Slider;
+use crate::components::primitives::slider::Slider;
 use pdf_core::appearance::NoiseMode;
-use crate::components::shared::option_button::OptionButton;
+use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;
 use crate::effects::appearance::{
     flush_appearance_commit, preview_appearance, AppearanceScrub,
@@ -71,7 +71,7 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                 on_change=move |v| {
                     let v = v.round().clamp(0.0, 100.0);
                     set_intensity.set(v);
-                    preview_appearance(state, AppearanceScrub::NoiseIntensity(v as u8));
+                    preview_appearance(state.settings, AppearanceScrub::NoiseIntensity(v as u8));
                 }
                 label="Grain intensity"
             />

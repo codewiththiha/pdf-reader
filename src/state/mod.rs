@@ -5,9 +5,9 @@
 
 pub mod app;
 pub mod library;
+pub mod reader;
 pub mod ui;
-pub mod viewer;
 
-pub use app::{AppState, Toast, ToastKind};
+pub use app::{AppState, Toast};
+pub use reader::{ReaderState, TextureSignal};
 pub use ui::SidebarMode;
-pub use viewer::{ReaderState, TextureSignal};

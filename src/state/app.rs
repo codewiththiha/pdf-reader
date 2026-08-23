@@ -6,19 +6,11 @@ use leptos::prelude::RwSignal;
 
 use crate::state::library::LibraryState;
 use crate::state::ui::SidebarMode;
-use crate::state::viewer::ReaderState;
+use crate::state::reader::ReaderState;
 use pdf_core::settings::Settings;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToastKind {
-    /// Only errors are emitted so far; an `Info` variant comes back when an
-    /// information toast actually exists.
-    Error,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Toast {
-    pub kind: ToastKind,
     pub message: String,
 }
 

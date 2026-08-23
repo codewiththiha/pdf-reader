@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::shared::icon::{Icon, IconName};
+use crate::components::primitives::icon::{Icon, IconName};
 use crate::services::document;
 use crate::state::library::RecentBook;
 use crate::state::AppState;

@@ -4,7 +4,6 @@
 
 use leptos::prelude::*;
 
-use pdf_core::appearance::TextureMode;
 use crate::state::TextureSignal;
 use crate::state::AppState;
 use crate::storage::{load_covers, load_library, load_settings};
@@ -25,11 +24,9 @@ pub(crate) fn create_app_state() -> AppState {
 /// the viewer slice of it, and the texture signal the page hosts need
 /// (derived from settings; the viewer never touches settings itself).
 pub(crate) fn provide_app_contexts(state: AppState) {
-    let texture = RwSignal::new(TextureMode::None);
-    Effect::new(move || {
-        let t = state.settings.with(|s| s.appearance.texture);
-        texture.set(t);
+    let texture: TextureSignal = Memo::new(move |_| {
+        state.settings.with(|s| s.appearance.texture)
     });
     provide_context(state.reader);
-    provide_context(texture as TextureSignal);
+    provide_context(texture);
 }
