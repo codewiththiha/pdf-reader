@@ -7,10 +7,6 @@
 //! `pdf_core::layout::TOOLBAR_H` (`h-12`), and the sidebar width lives
 //! with the sidebar chrome (`w-72`).
 
-/// Left inset reserved for the native traffic lights
-/// (`pl-[88px]` on the titlebar row when the sidebar is closed).
-pub const TRAFFIC_LIGHT_INSET: f64 = 88.0;
-
 /// Space the document title must not enter on the right: `pr-2` + the
 /// 36px pin button + a gap (the pin lives outside `#toolbar-right`).
 pub const PIN_RESERVE: f64 = 48.0;
