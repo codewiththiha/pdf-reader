@@ -28,6 +28,8 @@ use std::sync::Mutex;
 
 use tauri::{Emitter, Manager, RunEvent};
 
+mod ai;
+
 /// The OS-opened PDF path the frontend has not collected yet.
 struct PendingFile(Mutex<Option<String>>);
 
