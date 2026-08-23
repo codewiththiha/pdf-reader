@@ -101,8 +101,6 @@ pub(crate) fn sidebar_is_present(mode: SidebarMode, collapsing: bool) -> bool {
 pub struct SidebarChromeCtx {
     /// Sidebar open, or its close slide still running.
     pub present: Signal<bool>,
-    /// Close slide running right now.
-    pub collapsing: Signal<bool>,
 }
 
 /// Paint flags derived from the open/close slide. The page composes
@@ -121,9 +119,6 @@ pub struct SidebarPaint {
     /// Opacity-intro class for the panel hosts. This mirrors `opening`: the
     /// wrapper is transparent during the gate, then fades in when cells mount.
     pub intro: Signal<bool>,
-    /// True while the close slide is running: `mode` is already `None` but
-    /// the aside (and its chrome row) is still painted.
-    pub collapsing: Signal<bool>,
     /// The sidebar still occupies chrome space: open OR mid-close-slide.
     /// Title-bar inset and native traffic lights derive from this so they
     /// release when the slide lands, not on the first frame of the close.
@@ -255,7 +250,6 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
         thumbs_active: Signal::derive(move || mode.get() == SidebarMode::Thumbs),
         opening: opening.into(),
         intro: opening.into(),
-        collapsing: collapsing.into(),
         present: Signal::derive(move || sidebar_is_present(mode.get(), collapsing.get())),
     }
 }

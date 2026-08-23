@@ -64,16 +64,15 @@
    The moment the gesture pauses, the baked rasters come back and these
    rules stop matching. The texture layer returns to z-index 0 (behind the
    blending canvas) for the same duration. */
-html.appearance-scrubbing .pdf-page canvas {
+html.appearance-scrubbing .pdf-page canvas,
+.pdf-page canvas.canvas-raw,
+html.appearance-scrubbing .thumb-canvas,
+.thumb-canvas.thumb-raw {
   filter: var(--canvas-filter, none);
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 html.appearance-scrubbing .pdf-page::before {
   z-index: 0;
-}
-html.appearance-scrubbing .thumb-canvas {
-  filter: var(--canvas-filter, none);
-  mix-blend-mode: var(--canvas-blend, multiply);
 }
 
 /* Thumbnail card backdrop — ONE permanent themed backdrop shared by the

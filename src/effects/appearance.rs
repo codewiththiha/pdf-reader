@@ -130,14 +130,19 @@ pub fn flush_appearance_commit() {
     clear_commit_timer();
     let payload = COMMIT_PAYLOAD.with(|p| p.take());
     bump_commit_gen();
-    // The scrub's own timer never fires; re-bake at the scrub's final values
-    // (already painted live) before the structural change repaints on top.
-    leave_scrub();
     if let Some((settings, patch)) = payload {
+        // Update final values first: the theme effect queues its refresh at
+        // those values, then leaving scrub queues behind it and cannot cause a
+        // stale first rebake followed by a second one.
         settings.update(|s| {
             apply_scrub(&mut s.appearance, patch);
             s.touch_appearance();
         });
+        if patch_needs_canvas_scrub(patch) {
+            leave_scrub();
+        }
+    } else {
+        leave_scrub();
     }
 }
 
@@ -173,16 +178,16 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
                 return;
             }
             COMMIT_PAYLOAD.with(|p| p.set(None));
-            // The drag has paused: re-bake the rasters at the final values
-            // (the scrub already painted them live, so the re-bake reads the
-            // same variables) and drop the live-CSS pipeline.
-            if patch_needs_canvas_scrub(patch) {
-                leave_scrub();
-            }
+            // Commit final variables first so its refresh queues before the
+            // scrub exit. The serialized engine then rebakes once at the
+            // final values and only afterwards drops live CSS.
             settings.update(|s| {
                 apply_scrub(&mut s.appearance, patch);
                 s.touch_appearance();
             });
+            if patch_needs_canvas_scrub(patch) {
+                leave_scrub();
+            }
         },
         Duration::from_millis(COMMIT_MS),
     )

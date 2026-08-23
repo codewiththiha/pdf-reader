@@ -221,10 +221,12 @@ export async function renderPageInternal(
       releaseCanvas(st.rawCanvas);
     }
     st.rawCanvas = target;
+    st.canvas.classList.remove("canvas-raw");
     dropRawIfIdle(st);
   } else {
     // Identity / already scrubbing: the live canvas IS the raw.
     st.rawCanvas = st.canvas;
+    st.canvas.classList.toggle("canvas-raw", themeScrubActive);
   }
 
   if (renderText && st.host && st.textLayerEl) {

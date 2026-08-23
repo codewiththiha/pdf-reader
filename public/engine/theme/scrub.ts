@@ -3,7 +3,7 @@
 // the appearance sliders are being dragged.
 
 import { bakeInto } from "./bake";
-import { blitInto, el } from "../canvas";
+import { blitInto } from "../canvas";
 import {
   dropRawIfIdle,
   setThemeScrubActive,
@@ -13,19 +13,10 @@ import {
   thumbLive,
 } from "../state";
 import { readPipeline } from "./pipeline";
-import { ensureEntryCurrent, paintAllVisibleThumbs, thumbRaw } from "./thumbnails";
+import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
+import { preparePagesForScrub, rerenderLivePages } from "../renderer";
 
 export async function rebakeTheme(): Promise<void> {
-  try {
-    await refreshThemeInternal();
-  } catch (e) {
-    const msg = (e as { message?: string })?.message ?? e;
-    console.warn("[pdfEngine] refreshTheme failed:", msg);
-  }
-}
-
-/** Blit every cached thumb onto its live DOM canvas (and any stray `.thumb-canvas`). */
-async function refreshThemeInternal(): Promise<void> {
   if (themeScrubActive) return;
   const pipeline = readPipeline();
 
@@ -34,6 +25,7 @@ async function refreshThemeInternal(): Promise<void> {
     // pixels may already be themed; baking again double-filters.
     if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
     bakeInto(st.canvas, st.rawCanvas, pipeline);
+    st.canvas.classList.remove("canvas-raw");
     dropRawIfIdle(st);
   }
 
@@ -42,54 +34,47 @@ async function refreshThemeInternal(): Promise<void> {
     if (themeScrubActive) return;
   }
 
+  // `paintCached` selects baked displays while scrub is off, retaining the
+  // stale baked canvas until each async replacement is ready.
   paintAllVisibleThumbs();
 }
-export async function applyScrubMode(on: boolean): Promise<void> {
-  try {
-    await setScrubModeInternal(on);
-  } catch (e) {
-    const msg = (e as { message?: string })?.message ?? e;
-    console.warn("[pdfEngine] setScrubMode failed:", msg);
-  }
-}
-async function setScrubModeInternal(on: boolean): Promise<void> {
+
+/**
+ * Enter and leave the live-CSS appearance pipeline as one atomic operation.
+ * This function is called only through pdfEngine's serialized theme queue.
+ */
+export async function setScrubModeInternal(on: boolean): Promise<void> {
+  if (themeScrubActive === on) return;
+
   if (on) {
+    // The class must precede both raw page renders and raw thumbnail blits.
+    // That preserves `(raw pixels) ⇔ (live CSS)` for every visible frame.
+    document.documentElement.classList.add("appearance-scrubbing");
     setThemeScrubActive(true);
-    // Restore UNBAKED pixels first. Adding the CSS class while the canvas
-    // still holds a baked Dark/Dim raster double-applies invert/brightness
-    // (the "flash to light" / "goes dimmer" glitch).
+    await preparePagesForScrub();
+    // `preparePagesForScrub` only renders pages that no longer retain a
+    // distinct raw backing. Restore existing raws as well, but only after
+    // the class is active so no raw frame can reach the compositor unthemed.
     for (const st of stateByCanvasId.values()) {
       if (st.dead || !st.canvas) continue;
       const raw = st.rawCanvas;
-      if (raw && raw !== st.canvas) blitInto(st.canvas, raw);
+      if (raw && raw !== st.canvas) {
+        blitInto(st.canvas, raw);
+      }
+      st.canvas.classList.add("canvas-raw");
     }
-    for (const [canvasId, { page }] of thumbLive) {
-      const entry = thumbCache.get(page);
-      const live = el(canvasId) as HTMLCanvasElement | null;
-      const raw = entry ? thumbRaw(entry) : null;
-      if (live && raw) blitInto(live, raw);
-    }
-    document.documentElement.classList.add("appearance-scrubbing");
+    paintAllVisibleThumbs();
     return;
   }
 
-  if (!themeScrubActive) return;
+  // Keep the class up while async bakes replace raw rasters. A page whose
+  // live canvas became its only raw backing during scrub cannot be baked in
+  // place without double-filtering, so re-render it before releasing CSS.
+  const needsRerender = [...stateByCanvasId.values()].some(
+    (st) => !st.dead && !!st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas),
+  );
   setThemeScrubActive(false);
-
-  const pipeline = readPipeline();
-  for (const [canvasId, { page }] of thumbLive) {
-    const entry = thumbCache.get(page);
-    if (!entry) continue;
-    if (!(await ensureEntryCurrent(entry))) continue;
-    if (themeScrubActive) return;
-  }
-  for (const st of stateByCanvasId.values()) {
-    if (st.dead || !st.canvas) continue;
-    const raw = st.rawCanvas;
-    if (!raw) continue;
-    bakeInto(st.canvas, raw, pipeline);
-    dropRawIfIdle(st);
-  }
-  paintAllVisibleThumbs();
+  await rebakeTheme();
+  if (needsRerender) await rerenderLivePages();
   document.documentElement.classList.remove("appearance-scrubbing");
 }

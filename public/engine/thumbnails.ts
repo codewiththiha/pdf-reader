@@ -51,8 +51,10 @@ export function blitThumb(canvasId: string, page: number): boolean {
   const dst = el(canvasId) as HTMLCanvasElement | null;
   const entry = thumbCache.get(page);
   if (!dst || !entry) return false;
-  const src = themeScrubActive ? thumbRaw(entry) : thumbSource(entry);
+  const raw = themeScrubActive ? thumbRaw(entry) : null;
+  const src = raw ?? thumbSource(entry);
   if (!src) return false;
+  dst.classList.toggle("thumb-raw", !!raw);
   if (dst.width <= 0 || dst.height <= 0) {
     dst.width = (src as ImageBitmap).width;
     dst.height = (src as ImageBitmap).height;

@@ -65,7 +65,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // instead of snapping them on the first frame.
     provide_context(SidebarChromeCtx {
         present: paint.present,
-        collapsing: paint.collapsing,
     });
 
     let appearance_open = RwSignal::new(false);

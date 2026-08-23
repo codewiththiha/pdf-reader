@@ -140,8 +140,13 @@ export function paintCached(
   dst: HTMLCanvasElement | null,
   entry: ThumbEntry | null
 ): { width: number; height: number } | null {
-  const src = thumbSource(entry);
+  const raw = themeScrubActive ? thumbRaw(entry) : null;
+  const src = raw ?? thumbSource(entry);
   if (!dst || !src) return null;
+  // Tag the raster itself, not just the global gesture state. A raw thumb
+  // therefore keeps its CSS filter/blend even if another theme mutation is
+  // queued around this paint.
+  dst.classList.toggle("thumb-raw", !!raw);
   const srcW = (src as ImageBitmap).width;
   const srcH = (src as ImageBitmap).height;
   dst.width = srcW;
