@@ -2,8 +2,6 @@
 //! appearance. The route composes the toolbar; this module owns the item
 //! definitions so `page.rs` stays a coordinator, not a toolbar factory.
 
-use std::sync::Arc;
-
 use leptos::html;
 use leptos::prelude::*;
 
@@ -21,41 +19,33 @@ use crate::state::AppState;
 fn view_mode_entry(state: AppState) -> ToolbarItem {
     let mode = state.reader.viewer.mode;
 
-    // ── inline (what the bar shows) ──────────────────────────────
-    // Compact icon-only segmented — same as before.
-    let inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
-        view! {
-            <Tooltip text="View mode">
-                <Segmented
-                    options=vec![
-                        SegmentOption {
-                            value: ViewMode::Single,
-                            label: SegmentedLabel::Icon(IconName::SinglePage),
-                            title: "Single page view",
-                        },
-                        SegmentOption {
-                            value: ViewMode::Continuous,
-                            label: SegmentedLabel::Icon(IconName::Continuous),
-                            title: "Continuous scroll view",
-                        },
-                    ]
-                    value={mode.read_only()}
-                    on_change=move |m: ViewMode| state.reader.viewer.mode.set(m)
-                />
-            </Tooltip>
-        }
-        .into_any()
-    });
-
-    ToolbarItem {
-        id: "view-mode",
-        // collapses AFTER fit (70), BEFORE zoom-step (80)
-        priority: 75,
-        keep_mounted: false,
-        inline: inline.clone(),
-        sizer: inline,
-        // Menu: full-width segmented WITH text labels; picking one closes the menu.
-        collapsed: Arc::new(move |done| {
+    ToolbarItem::pair(
+        "view-mode",
+        75,
+        move || {
+            view! {
+                <Tooltip text="View mode">
+                    <Segmented
+                        options=vec![
+                            SegmentOption {
+                                value: ViewMode::Single,
+                                label: SegmentedLabel::Icon(IconName::SinglePage),
+                                title: "Single page view",
+                            },
+                            SegmentOption {
+                                value: ViewMode::Continuous,
+                                label: SegmentedLabel::Icon(IconName::Continuous),
+                                title: "Continuous scroll view",
+                            },
+                        ]
+                        value={mode.read_only()}
+                        on_change=move |m: ViewMode| state.reader.viewer.mode.set(m)
+                    />
+                </Tooltip>
+            }
+            .into_any()
+        },
+        move |done| {
             view! {
                 <div class="w-full px-1 py-1">
                     <Segmented
@@ -81,46 +71,40 @@ fn view_mode_entry(state: AppState) -> ToolbarItem {
                 </div>
             }
             .into_any()
-        }),
-    }
+        },
+    )
 }
 
 fn fit_entry(state: AppState) -> ToolbarItem {
-    let inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
-        view! {
-            <div class="flex items-center gap-1">
-                <Tooltip text="Fit width (Cmd/Ctrl+0)">
-                    <Button
-                        on_click=move |_| state.reader.viewer.fit.set(FitMode::Width)
-                        variant=ButtonVariant::Ghost
-                        title="Fit width (Cmd/Ctrl+0)"
-                    >
-                        <Icon name=IconName::FitWidth size=18 />
-                    </Button>
-                </Tooltip>
-                <Tooltip text="Fit page">
-                    <Button
-                        on_click=move |_| state.reader.viewer.fit.set(FitMode::Page)
-                        variant=ButtonVariant::Ghost
-                        title="Fit page"
-                    >
-                        <Icon name=IconName::FitPage size=18 />
-                    </Button>
-                </Tooltip>
-            </div>
-        }
-        .into_any()
-    });
-
-    ToolbarItem {
-        id: "fit",
-        // collapses FIRST of the layout trio
-        priority: 70,
-        keep_mounted: false,
-        inline: inline.clone(),
-        sizer: inline,
-        // Menu: two equal-half buttons; clicking closes the menu.
-        collapsed: Arc::new(move |done| {
+    ToolbarItem::pair(
+        "fit",
+        70,
+        move || {
+            view! {
+                <div class="flex items-center gap-1">
+                    <Tooltip text="Fit width (Cmd/Ctrl+0)">
+                        <Button
+                            on_click=move |_| state.reader.viewer.fit.set(FitMode::Width)
+                            variant=ButtonVariant::Ghost
+                            title="Fit width (Cmd/Ctrl+0)"
+                        >
+                            <Icon name=IconName::FitWidth size=18 />
+                        </Button>
+                    </Tooltip>
+                    <Tooltip text="Fit page">
+                        <Button
+                            on_click=move |_| state.reader.viewer.fit.set(FitMode::Page)
+                            variant=ButtonVariant::Ghost
+                            title="Fit page"
+                        >
+                            <Icon name=IconName::FitPage size=18 />
+                        </Button>
+                    </Tooltip>
+                </div>
+            }
+            .into_any()
+        },
+        move |done| {
             view! {
                 <div class="flex w-full items-center gap-1 px-1 py-1">
                     <button type="button"
@@ -146,8 +130,8 @@ fn fit_entry(state: AppState) -> ToolbarItem {
                 </div>
             }
             .into_any()
-        }),
-    }
+        },
+    )
 }
 
 /// The reader bar's entries, in collapse-priority order: view mode, fit,

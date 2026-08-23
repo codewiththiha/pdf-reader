@@ -53,42 +53,38 @@ fn step_base(state: AppState) -> f64 {
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
 pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
-    let zoom_step_inline: Arc<dyn Fn() -> AnyView + Send + Sync> = Arc::new(move || {
-        view! {
-            <div class="flex items-center gap-1">
-                <Tooltip text="Zoom out (-)">
-                    <Button
-                        on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), -1))
-                        variant=ButtonVariant::Ghost
-                        title="Zoom out (-)"
-                    >
-                        <Icon name=IconName::ZoomOut size=18 />
-                    </Button>
-                </Tooltip>
-                <Tooltip text="Zoom in (+)">
-                    <Button
-                        on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), 1))
-                        variant=ButtonVariant::Ghost
-                        title="Zoom in (+)"
-                    >
-                        <Icon name=IconName::ZoomIn size=18 />
-                    </Button>
-                </Tooltip>
-            </div>
-        }
-        .into_any()
-    });
-
     vec![
         // Zoom out + zoom in are one entry so they collapse together and stay
         // on one horizontal row in both the bar and the overflow menu.
-        ToolbarItem {
-            id: "zoom-step",
-            priority: 80,
-            keep_mounted: false,
-            inline: zoom_step_inline.clone(),
-            sizer: zoom_step_inline,
-            collapsed: Arc::new(move |_done| {
+        ToolbarItem::pair(
+            "zoom-step",
+            80,
+            move || {
+                view! {
+                    <div class="flex items-center gap-1">
+                        <Tooltip text="Zoom out (-)">
+                            <Button
+                                on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), -1))
+                                variant=ButtonVariant::Ghost
+                                title="Zoom out (-)"
+                            >
+                                <Icon name=IconName::ZoomOut size=18 />
+                            </Button>
+                        </Tooltip>
+                        <Tooltip text="Zoom in (+)">
+                            <Button
+                                on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), 1))
+                                variant=ButtonVariant::Ghost
+                                title="Zoom in (+)"
+                            >
+                                <Icon name=IconName::ZoomIn size=18 />
+                            </Button>
+                        </Tooltip>
+                    </div>
+                }
+                .into_any()
+            },
+            move |_done| {
                 view! {
                     <div class="flex w-full items-center gap-1 px-1 py-0.5">
                         <button
@@ -117,8 +113,8 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
                     </div>
                 }
                 .into_any()
-            }),
-        },
+            },
+        ),
         // fit-width and fit-page entries live in `fit_entry` (features/reader/page.rs)
         zoom_readout_entry(state),
     ]

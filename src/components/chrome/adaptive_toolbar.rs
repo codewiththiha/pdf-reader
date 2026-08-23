@@ -10,7 +10,6 @@ use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::document::dom_helpers::by_id;
 use crate::components::primitives::popover::Popover;
-use super::overflow_row::OverflowRow;
 use super::toolbar_layout::compute_collapsed;
 
 pub const TB_GAP: f64 = 4.0;          // gap-1
@@ -34,30 +33,21 @@ pub struct ToolbarItem {
 }
 
 impl ToolbarItem {
-    /// Inline and sizer share the same view; overflow uses a simple row.
-    pub fn simple(
+    /// Bar and sizer share one view. Overflow supplies its own row.
+    pub fn pair(
         id: &'static str,
         priority: u32,
-        icon: IconName,
-        label: &'static str,
         view: impl Fn() -> AnyView + Send + Sync + 'static,
-        on_overflow: impl Fn() + Send + Sync + 'static,
+        collapsed: impl Fn(Callback<()>) -> AnyView + Send + Sync + 'static,
     ) -> Self {
         let v = Arc::new(view);
-        let on_overflow = Arc::new(on_overflow);
         Self {
             id,
             priority,
             keep_mounted: false,
             inline: v.clone(),
             sizer: v,
-            collapsed: Arc::new(move |done| {
-                let click = on_overflow.clone();
-                view! {
-                    <OverflowRow icon=icon label=label done=done on_click=move || click() />
-                }
-                .into_any()
-            }),
+            collapsed: Arc::new(collapsed),
         }
     }
 }
@@ -211,19 +201,11 @@ pub fn AdaptiveToolbar(
 #[cfg(test)]
 mod tests {
     use super::ToolbarItem;
-    use crate::components::primitives::icon::IconName;
     use leptos::prelude::IntoAny;
 
     #[test]
-    fn simple_shares_inline_and_sizer() {
-        let item = ToolbarItem::simple(
-            "demo",
-            50,
-            IconName::More,
-            "More",
-            || ().into_any(),
-            || {},
-        );
+    fn pair_shares_inline_and_sizer() {
+        let item = ToolbarItem::pair("demo", 50, || ().into_any(), |_| ().into_any());
         assert_eq!(item.id, "demo");
         assert!(!item.keep_mounted);
         assert_eq!(item.priority, 50);
