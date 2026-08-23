@@ -59,6 +59,20 @@ body {
   user-select: none;
 }
 
+/* --- sidebar aside containment -----------------------------------------
+   Scope layout recalculation to the aside itself. Without this, every
+   frame of the 300ms width transition reflows the viewer, the toolbar
+   and the bottom bar as well (the aside is a flex sibling of the
+   flex-1 viewer, so each width tween invalidates the whole row).
+   `layout style` (NOT `content`): paint containment would create a new
+   clipping context — the panels inside are position:absolute; inset:0
+   and rely on the aside's overflow:hidden clip, and paint containment
+   can subtly change how that clip interacts with the backdrop-filter
+   toolbar above. `layout style` scopes layout without touching paint. */
+.sidebar-aside {
+  contain: layout style;
+}
+
 /* --- adaptive toolbar measurement twin -------------------------------
    visibility:hidden (NOT display:none) so children keep layout width. */
 .tb-sizer {

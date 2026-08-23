@@ -22,6 +22,15 @@
 //! the backing stores. A reopen inside that window never unmounts, never
 //! re-renders, never reallocates.
 //!
+//! OPEN is the expensive direction: the width transition reflows the
+//! `flex-1` viewer every frame for 300ms while the thumbnail grid mounts
+//! its whole first window (≈20–30 pdf.js rasterisations) and the fit
+//! effect rescales every page. `SidebarPaint::opening` marks that first
+//! 300ms window so the page can defer the cell mounts until the layout
+//! has settled — the skeleton shows for the slide, then the grid mounts.
+//! On later opens the engine's thumb cache is warm (`starts_cached`), so
+//! the gate costs nothing while still keeping the slide jank-free.
+//!
 //! Tab switches (Thumbs ↔ Outline) still use `invisible` on the inactive
 //! panel so the virtualization window stays engine-bound and a switch back
 //! is instant. `hidden` (`display:none`) is still forbidden: its height
@@ -83,16 +92,35 @@ pub struct SidebarPaint {
     pub is_closed: Signal<bool>,
     pub outline_active: Signal<bool>,
     pub thumbs_active: Signal<bool>,
+    /// True for the first SIDEBAR_SLIDE_MS after the sidebar opens.
+    /// Gate expensive mounts (thumbnail cells) on this so they don't
+    /// compete with the width animation.
+    pub opening: Signal<bool>,
 }
 
-/// Drive the close-slide bookkeeping and return the paint flags.
+/// Drive the open/close slide bookkeeping and return the paint flags.
+///
+/// `collapsing` gates the CLOSE slide (keep the last panel painted while
+/// the aside shrinks). `opening` is its mirror for the OPEN slide: it marks
+/// the 300 ms window in which the width transition is reflowing the viewer
+/// every frame, so the page can defer the thumbnail `<For>` window — 20–30
+/// `render_thumb` rasterisations — until the layout has settled.
 pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
     let last_mode = RwSignal::new(SidebarMode::Thumbs);
     let collapsing = RwSignal::new(false);
+    let opening = RwSignal::new(false);
     let collapse_timer = StoredValue::new_local(None::<TimeoutHandle>);
+    let opening_timer = StoredValue::new_local(None::<TimeoutHandle>);
+    // Whether the sidebar was closed the last time `mode` changed. An open
+    // transition (None → panel) only counts as "opening" when it actually
+    // came from closed; a Thumbs ↔ Outline tab switch must not re-arm the
+    // gate or every tab switch would flash the grid off for 300 ms.
+    let was_closed = StoredValue::new_local(true);
 
     Effect::new(move |_| {
         let now = mode.get();
+        let was = was_closed.get_value();
+
         if now != SidebarMode::None {
             last_mode.set(now);
             collapsing.set(false);
@@ -100,7 +128,29 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
                 h.clear();
                 collapse_timer.set_value(None);
             }
+
+            // Mark the opening window so the page can hold back the
+            // thumbnail cells while the width animation is running.
+            if was {
+                opening.set(true);
+                if let Some(h) = opening_timer.get_value() {
+                    h.clear();
+                }
+                match set_timeout_with_handle(
+                    move || opening.set(false),
+                    Duration::from_millis(SIDEBAR_SLIDE_MS),
+                ) {
+                    Ok(h) => opening_timer.set_value(Some(h)),
+                    // No timer available (should not happen): fall back to
+                    // the pre-fix behaviour — mount immediately — rather
+                    // than gating the thumbs off forever.
+                    Err(_) => opening.set(false),
+                }
+            }
+            was_closed.set_value(false);
         } else {
+            was_closed.set_value(true);
+            opening.set(false);
             collapsing.set(true);
             if let Some(h) = collapse_timer.get_value() {
                 h.clear();
@@ -127,6 +177,7 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
         is_closed: Signal::derive(move || mode.get() == SidebarMode::None),
         outline_active: Signal::derive(move || mode.get() == SidebarMode::Outline),
         thumbs_active: Signal::derive(move || mode.get() == SidebarMode::Thumbs),
+        opening: opening.into(),
     }
 }
 
@@ -157,7 +208,7 @@ pub fn Sidebar(
 ) -> impl IntoView {
     view! {
         <aside
-            class="flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
+            class="sidebar-aside flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
             class=("w-72", move || matches!(mode.get(), SidebarMode::Thumbs | SidebarMode::Outline))
             class=("w-0", move || mode.get() == SidebarMode::None)
             class=("border-r-0", move || mode.get() == SidebarMode::None)

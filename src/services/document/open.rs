@@ -246,6 +246,27 @@ pub fn open_path(state: AppState, path: String) {
                         Err(_) => { /* stylised fallback cover */ }
                     }
                 });
+
+                // Pre-warm the thumbnail cache so the FIRST sidebar open is
+                // all cache blits instead of 20+ concurrent pdf.js renders
+                // fighting the width animation (same call the auto-center
+                // idle prefetch uses). Deferred ~600ms so the reader has
+                // settled first (fit_effect, first paint, cover render);
+                // sequential awaits keep the engine queue from bursting.
+                // 0.25 mirrors THUMB_SCALE (panels/thumbnails/geometry.rs).
+                let warm_state = state;
+                _ = set_timeout_with_handle(
+                    move || {
+                        spawn_local(async move {
+                            let n = warm_state.reader.document.num_pages.get_untracked();
+                            let pages = n.min(16); // first two grid rows + buffer
+                            for p in 1..=pages {
+                                engine::prefetch_thumb(p, 0.25).await;
+                            }
+                        });
+                    },
+                    std::time::Duration::from_millis(600),
+                );
             }
             Err(e) => {
                 state.reader.document.error.set(Some(e.message.clone()));
