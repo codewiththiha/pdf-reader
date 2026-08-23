@@ -86,6 +86,25 @@ pub(crate) fn panel_is_shown(
     mode == panel || (mode == SidebarMode::None && collapsing && last == panel)
 }
 
+/// Whether the rail is still painted and therefore still owns title-bar
+/// chrome space. This stays true through the close slide after raw `mode`
+/// has changed to `None`.
+pub(crate) fn sidebar_is_present(mode: SidebarMode, collapsing: bool) -> bool {
+    mode != SidebarMode::None || collapsing
+}
+
+/// Chrome-facing view of the open/close slide. The page that runs
+/// [`sidebar_paint`] provides this; the title bar above the sidebar reads it
+/// so its chrome (left inset, native traffic lights) follows the paint, not
+/// the raw mode.
+#[derive(Clone, Copy)]
+pub struct SidebarChromeCtx {
+    /// Sidebar open, or its close slide still running.
+    pub present: Signal<bool>,
+    /// Close slide running right now.
+    pub collapsing: Signal<bool>,
+}
+
 /// Paint flags derived from the open/close slide. The page composes
 /// the panel hosts with these; the shell itself only owns the aside.
 pub struct SidebarPaint {
@@ -102,6 +121,13 @@ pub struct SidebarPaint {
     /// Opacity-intro class for the panel hosts. This mirrors `opening`: the
     /// wrapper is transparent during the gate, then fades in when cells mount.
     pub intro: Signal<bool>,
+    /// True while the close slide is running: `mode` is already `None` but
+    /// the aside (and its chrome row) is still painted.
+    pub collapsing: Signal<bool>,
+    /// The sidebar still occupies chrome space: open OR mid-close-slide.
+    /// Title-bar inset and native traffic lights derive from this so they
+    /// release when the slide lands, not on the first frame of the close.
+    pub present: Signal<bool>,
 }
 
 /// Drive the open/close slide bookkeeping and return the paint flags.
@@ -183,7 +209,13 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
                 opening_timer.set_value(None);
             }
 
-            if cells_mounted.get_untracked() {
+            // Do not treat the initial closed state as a close transition.
+            // Every actual panel → None change, however, slides the rail for
+            // the full duration — even if the opening gate had not mounted
+            // thumbnail cells yet — so chrome must use the same hold.
+            if was {
+                collapsing.set(false);
+            } else {
                 collapsing.set(true);
                 if let Some(h) = collapse_timer.get_value() {
                     h.clear();
@@ -191,16 +223,14 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
                 let handle = set_timeout_with_handle(
                     move || {
                         collapsing.set(false);
+                        // This is a no-op for a pre-gate close, and releases
+                        // live thumbnail canvases after an ordinary close.
                         cells_mounted.set(false);
                     },
                     Duration::from_millis(SIDEBAR_SLIDE_MS),
                 )
                 .ok();
                 collapse_timer.set_value(handle);
-            } else {
-                // The opening gate never cleared: there are no cells to keep
-                // alive for an outro and no canvas backing stores to release.
-                collapsing.set(false);
             }
         }
     });
@@ -225,6 +255,8 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
         thumbs_active: Signal::derive(move || mode.get() == SidebarMode::Thumbs),
         opening: opening.into(),
         intro: opening.into(),
+        collapsing: collapsing.into(),
+        present: Signal::derive(move || sidebar_is_present(mode.get(), collapsing.get())),
     }
 }
 
@@ -290,7 +322,8 @@ pub fn Sidebar(
 #[cfg(test)]
 mod tests {
     use super::{
-        panel_is_shown, thumbnail_cells_are_live, thumbs_should_stay_mounted, SIDEBAR_SLIDE_MS,
+        panel_is_shown, sidebar_is_present, thumbnail_cells_are_live, thumbs_should_stay_mounted,
+        SIDEBAR_SLIDE_MS,
     };
     use crate::state::SidebarMode;
 
@@ -323,6 +356,15 @@ mod tests {
             false,
             SidebarMode::Thumbs
         ));
+    }
+
+    #[test]
+    fn chrome_space_is_held_until_the_close_slide_lands() {
+        assert!(sidebar_is_present(SidebarMode::Thumbs, false));
+        // Frame one of a close: raw mode is None, but the aside is still
+        // sliding and title-bar chrome must remain aligned with it.
+        assert!(sidebar_is_present(SidebarMode::None, true));
+        assert!(!sidebar_is_present(SidebarMode::None, false));
     }
 
     #[test]

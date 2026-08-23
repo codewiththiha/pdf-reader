@@ -20,7 +20,9 @@ use crate::components::panels::outline_host::SidebarOutline;
 use crate::components::panels::panel_switcher::PanelSwitcher;
 use crate::components::panels::sidebar_header::SidebarHeader;
 use crate::components::panels::Sidebar;
-use crate::components::panels::sidebar_shell::{request_reveal_active, sidebar_paint};
+use crate::components::panels::sidebar_shell::{
+    request_reveal_active, sidebar_paint, SidebarChromeCtx,
+};
 use crate::components::panels::thumbnail_host::SidebarThumbs;
 use crate::components::chrome::document_title::FloatingDocumentTitle;
 use crate::components::chrome::app_title_bar::AppTitleBar;
@@ -58,6 +60,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let mode = state.reader.viewer.mode;
     let is_ready = move || status.get() == DocStatus::Ready;
     let paint = sidebar_paint(state.ui.sidebar);
+    // Publish how far the open/close slide has progressed so the AppTitleBar
+    // above can hold its left inset and native traffic lights through a close
+    // instead of snapping them on the first frame.
+    provide_context(SidebarChromeCtx {
+        present: paint.present,
+        collapsing: paint.collapsing,
+    });
 
     let appearance_open = RwSignal::new(false);
     let collapsed_ids = RwSignal::new(Vec::<&'static str>::new());
