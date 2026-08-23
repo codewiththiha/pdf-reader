@@ -10,6 +10,8 @@ import {
   isSharedScratch,
   releasePooledCanvas,
   releaseScratch,
+  showBaked,
+  showRaw,
 } from "../canvas";
 import { themeScrubActive, thumbCache, thumbLive } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
@@ -143,16 +145,11 @@ export function paintCached(
   const raw = themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
   if (!dst || !src) return null;
-  // Tag the raster itself, not just the global gesture state. A raw thumb
-  // therefore keeps its CSS filter/blend even if another theme mutation is
-  // queued around this paint.
-  dst.classList.toggle("thumb-raw", !!raw);
-  const srcW = (src as ImageBitmap).width;
-  const srcH = (src as ImageBitmap).height;
-  dst.width = srcW;
-  dst.height = srcH;
-  const ctx = dst.getContext("2d", { alpha: false });
-  if (!ctx) return null;
-  ctx.drawImage(src as CanvasImageSource, 0, 0);
+  // Raster + tag are swapped by one synchronous primitive. Missing cache
+  // data deliberately leaves the previous canvas and its matching tag alone.
+  const shown = raw
+    ? showRaw(dst, raw, "thumb-raw")
+    : showBaked(dst, src, "thumb-raw");
+  if (!shown) return null;
   return { width: entry!.cssW, height: entry!.cssH };
 }

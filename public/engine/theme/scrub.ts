@@ -3,29 +3,48 @@
 // the appearance sliders are being dragged.
 
 import { bakeInto } from "./bake";
-import { blitInto } from "../canvas";
+import { showRaw } from "../canvas";
 import {
   dropRawIfIdle,
   setThemeScrubActive,
   themeScrubActive,
   stateByCanvasId,
   thumbCache,
-  thumbLive,
 } from "../state";
 import { readPipeline } from "./pipeline";
+import { paperInfo } from "./paper";
 import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
 import { preparePagesForScrub, rerenderLivePages } from "../renderer";
 
-export async function rebakeTheme(): Promise<void> {
+// A Settings commit after a scrub has the same final pipeline the scrub exit
+// just baked. Remember it by value rather than generation: invalidation bumps
+// generations even when the actual filter/paper output is unchanged.
+let lastBakedFingerprint: string | null = null;
+
+function pipelineFingerprint(): string {
+  const pipeline = readPipeline();
+  return `${pipeline.filter}|${pipeline.blend}|${paperInfo(pipeline).color}`;
+}
+
+export async function rebakeTheme(force = false): Promise<void> {
   if (themeScrubActive) return;
   const pipeline = readPipeline();
+  const fingerprint = pipelineFingerprint();
+  if (!force && fingerprint === lastBakedFingerprint) {
+    // The output is already current even though invalidatePipeline assigned a
+    // new generation. Align cache generations so lazy thumbnail paints do not
+    // schedule the same bake later.
+    for (const entry of thumbCache.values()) {
+      if (entry.display) entry.gen = pipeline.gen;
+    }
+    return;
+  }
 
   for (const st of stateByCanvasId.values()) {
     // Only re-bake from a DISTINCT raw raster. If raw === live canvas the
     // pixels may already be themed; baking again double-filters.
     if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
-    bakeInto(st.canvas, st.rawCanvas, pipeline);
-    st.canvas.classList.remove("canvas-raw");
+    bakeInto(st.canvas, st.rawCanvas, pipeline, "canvas-raw");
     dropRawIfIdle(st);
   }
 
@@ -37,6 +56,7 @@ export async function rebakeTheme(): Promise<void> {
   // `paintCached` selects baked displays while scrub is off, retaining the
   // stale baked canvas until each async replacement is ready.
   paintAllVisibleThumbs();
+  lastBakedFingerprint = fingerprint;
 }
 
 /**
@@ -47,23 +67,19 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
   if (themeScrubActive === on) return;
 
   if (on) {
-    // The class must precede both raw page renders and raw thumbnail blits.
-    // That preserves `(raw pixels) ⇔ (live CSS)` for every visible frame.
+    // The global class now controls only the texture stacking order. Canvas
+    // theming is attached to each raw raster by showRaw/showBaked, so a baked
+    // canvas remains unfiltered while another canvas changes asynchronously.
     document.documentElement.classList.add("appearance-scrubbing");
     setThemeScrubActive(true);
-    await preparePagesForScrub();
-    // `preparePagesForScrub` only renders pages that no longer retain a
-    // distinct raw backing. Restore existing raws as well, but only after
-    // the class is active so no raw frame can reach the compositor unthemed.
     for (const st of stateByCanvasId.values()) {
-      if (st.dead || !st.canvas) continue;
-      const raw = st.rawCanvas;
-      if (raw && raw !== st.canvas) {
-        blitInto(st.canvas, raw);
-      }
-      st.canvas.classList.add("canvas-raw");
+      if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
+      showRaw(st.canvas, st.rawCanvas, "canvas-raw");
     }
     paintAllVisibleThumbs();
+    // Pages without a retained raw are rendered into their live canvas by
+    // preparePagesForScrub; renderer tags that raw result before yielding.
+    await preparePagesForScrub();
     return;
   }
 
@@ -74,7 +90,7 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     (st) => !st.dead && !!st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas),
   );
   setThemeScrubActive(false);
-  await rebakeTheme();
+  await rebakeTheme(true);
   if (needsRerender) await rerenderLivePages();
   document.documentElement.classList.remove("appearance-scrubbing");
 }

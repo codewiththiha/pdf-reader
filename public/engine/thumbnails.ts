@@ -1,7 +1,7 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { blitInto, el, errorInfo, fail, releaseCanvas } from "./canvas";
+import { el, errorInfo, fail, releaseCanvas, showBaked, showRaw } from "./canvas";
 import { bakeRaster } from "./theme/bake";
 import { readPipeline, pipelineCache } from "./theme/pipeline";
 import {
@@ -54,19 +54,9 @@ export function blitThumb(canvasId: string, page: number): boolean {
   const raw = themeScrubActive ? thumbRaw(entry) : null;
   const src = raw ?? thumbSource(entry);
   if (!src) return false;
-  dst.classList.toggle("thumb-raw", !!raw);
-  if (dst.width <= 0 || dst.height <= 0) {
-    dst.width = (src as ImageBitmap).width;
-    dst.height = (src as ImageBitmap).height;
-  }
-  const ctx = dst.getContext("2d");
-  if (!ctx) return false;
-  try {
-    ctx.drawImage(src as CanvasImageSource, 0, 0, dst.width, dst.height);
-    return true;
-  } catch (_) {
-    return false;
-  }
+  return raw
+    ? showRaw(dst, raw, "thumb-raw")
+    : showBaked(dst, src, "thumb-raw");
 }
 
 export async function renderThumb(
@@ -94,7 +84,7 @@ async function renderThumbInternal(
   const hit = thumbCache.get(page);
   if (hit && Math.abs(hit.scale - scale) < 1e-9) {
     if (themeScrubActive) {
-      if (blitInto(canvas, thumbRaw(hit))) {
+      if (showRaw(canvas, thumbRaw(hit), "thumb-raw")) {
         cachePut(page, hit);
         thumbLive.set(canvasId, { page });
         return { ok: true, width: hit.cssW, height: hit.cssH, scale, cached: true };

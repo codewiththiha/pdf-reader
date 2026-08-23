@@ -55,6 +55,7 @@ import {
   highlightsByPage,
   setSearchQuery,
   setActiveMatchValue,
+  themeScrubActive,
 } from "./engine/state";
 
 declare global {
@@ -131,6 +132,10 @@ function enqueueTheme(work: () => Promise<void>): Promise<void> {
 
 async function refreshThemeInternal(): Promise<void> {
   invalidatePipeline();
+  // A slider commit arrives while scrub owns raw, individually tagged
+  // canvases. Exit performs the single final bake, so do not enqueue a second
+  // rebake (or page rerender) against that same pipeline here.
+  if (themeScrubActive) return;
   await rebakeTheme();
   // Pages without a distinct raw must re-render from pdf.js (never
   // double-filter). Thumbs were already refreshed in rebakeTheme.

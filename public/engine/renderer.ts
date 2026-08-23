@@ -4,7 +4,7 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { blitInto, el, errorInfo, fail, releaseCanvas, releasePooledCanvas } from "./canvas";
+import { el, errorInfo, fail, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import {
@@ -214,7 +214,7 @@ export async function renderPageInternal(
     // invert twice (flash to light) and Dim apply twice (go darker).
     const baked = bakeRaster(target, pipeline);
     if (baked !== st.canvas) {
-      blitInto(st.canvas, baked);
+      showBaked(st.canvas, baked, "canvas-raw");
       if (baked !== target) releasePooledCanvas(baked);
     }
     if (st.rawCanvas && st.rawCanvas !== st.canvas && st.rawCanvas !== target) {

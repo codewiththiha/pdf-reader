@@ -10,6 +10,8 @@ import {
   acquireScratch,
   blitInto,
   isSharedScratch,
+  showBaked,
+  type RasterThemeTag,
   releasePooledCanvas,
   releaseScratch,
 } from "../canvas";
@@ -206,14 +208,17 @@ export function bakeRaster(
 export function bakeInto(
   dst: HTMLCanvasElement,
   src: HTMLCanvasElement,
-  pipeline: PipelineCache
+  pipeline: PipelineCache,
+  visibleTag?: RasterThemeTag,
 ): void {
   const baked = bakeRaster(src, pipeline);
   if (baked !== dst) {
-    blitInto(dst, baked);
+    if (visibleTag) showBaked(dst, baked, visibleTag);
+    else blitInto(dst, baked);
     if (baked !== src) {
       if (isSharedScratch(baked)) releaseScratch(baked);
       else releasePooledCanvas(baked);
     }
   }
+  if (visibleTag) dst.classList.remove(visibleTag);
 }
