@@ -4,11 +4,13 @@ use super::types::{AiPhase, WordInfo};
 use super::word_info::{LoadingShimmer, WordInfoSections};
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
+use crate::services::ai::{AiChunkEvent, invoke_explain_word, listen_ai_chunks};
 use crate::state::AppState;
 
 /// The AI explanation popover. Renders as a "warp window" that starts at
-/// the selection's bounding box, glows with a rainbow animation during
-/// processing, then morphs into the full explanation card.
+/// the selection's bounding box, glows with a rainbow animation while the
+/// backend thinks, then morphs into the full explanation card as chunks
+/// of the streamed `WordInfo` arrive.
 ///
 /// Carries `data-ai-popover` so the engine's selection tracker treats
 /// presses inside it as AI-UI interaction and does not clear the
@@ -22,6 +24,24 @@ pub fn AiPopover(state: AppState) -> impl IntoView {
     let phase = RwSignal::new(AiPhase::Idle);
     let word_info = RwSignal::new(None::<WordInfo>);
     let error_msg = RwSignal::new(None::<String>);
+
+    // One listener for the component's life: every chunk lands in the
+    // signals; the open-effect below resets them before it starts a new
+    // run, and the signals are only read while the popover is open.
+    let _listener = listen_ai_chunks(move |chunk| match chunk {
+        AiChunkEvent::Snapshot(info) => {
+            // The first snapshot is what triggers the morph to the card.
+            if phase.get_untracked() == AiPhase::Processing {
+                phase.set(AiPhase::Streaming);
+            }
+            word_info.set(Some(info));
+        }
+        AiChunkEvent::Done => phase.set(AiPhase::Done),
+        AiChunkEvent::Error(msg) => {
+            error_msg.set(Some(msg));
+            phase.set(AiPhase::Error);
+        }
+    });
 
     // Shared close/reset; captures only Copy signals, so it is itself
     // `Copy` and can back both the backdrop press and the ✕ button.
@@ -86,43 +106,29 @@ pub fn AiPopover(state: AppState) -> impl IntoView {
         detail.get().map(|d| d.text).unwrap_or_default()
     });
 
-    // ── Effect: opening the popover starts the Processing phase ─────
-    // The real Tauri invoke + event stream replaces the simulated
-    // transitions below; they exist so the animation system can be
-    // exercised until then.
+    // ── Effect: opening the popover starts a backend run ────────────
     Effect::new(move |_| {
-        if popover_open.get() {
-            phase.set(AiPhase::Processing);
-            word_info.set(None);
-            error_msg.set(None);
-
-            // SIMULATED response: Processing → Streaming (with data) → Done.
-            set_timeout_with_handle(
-                move || {
-                    phase.set(AiPhase::Streaming);
-                    word_info.set(Some(WordInfo {
-                        pos: "noun".to_string(),
-                        meaning: "A simulated meaning will appear here once the AI backend is connected.".to_string(),
-                        synonyms: vec![
-                            "example".to_string(),
-                            "sample".to_string(),
-                            "instance".to_string(),
-                        ],
-                        usages: vec![
-                            "This is the first example sentence.".to_string(),
-                            "Here is another usage in context.".to_string(),
-                        ],
-                    }));
-                    set_timeout_with_handle(
-                        move || phase.set(AiPhase::Done),
-                        std::time::Duration::from_millis(300),
-                    )
-                    .ok();
-                },
-                std::time::Duration::from_millis(1200),
-            )
-            .ok();
+        if !popover_open.get() {
+            return;
         }
+        phase.set(AiPhase::Processing);
+        word_info.set(None);
+        error_msg.set(None);
+
+        let Some(sel) = detail.get_untracked() else {
+            return;
+        };
+
+        // Without the desktop backend there is nobody to answer the
+        // invoke; say so instead of shimmering forever (plain-browser
+        // `trunk serve` development).
+        if !pdf_engine::has_tauri() {
+            error_msg.set(Some("AI explanations are only available in the desktop app.".to_string()));
+            phase.set(AiPhase::Error);
+            return;
+        }
+
+        invoke_explain_word(sel.text, sel.context);
     });
 
     view! {

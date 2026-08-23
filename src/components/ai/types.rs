@@ -15,9 +15,7 @@ pub enum AiPhase {
     Streaming,
     /// All data received. Final state.
     Done,
-    /// Something went wrong. Only constructed once the backend stream is
-    /// wired up; the simulated flow never fails, so for now it's dead code.
-    #[allow(dead_code)]
+    /// Something went wrong.
     Error,
 }
 
