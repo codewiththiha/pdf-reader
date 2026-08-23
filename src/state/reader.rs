@@ -1,8 +1,9 @@
-//! Reader-level reactive state: the document, the viewer signals and the
-//! search state. Pure UI chrome (sidebar, toast) lives in `state/ui` +
-//! `state/app`; pure domain logic in `pdf-core`.
+//! Reader-level reactive state: the document, the viewer signals, the
+//! search state and the AI text-selection state. Pure UI chrome (sidebar,
+//! toast) lives in `state/ui` + `state/app`; pure domain logic in `pdf-core`.
 
 use leptos::prelude::{Memo, RwSignal, Set};
+use serde::Deserialize;
 
 use pdf_core::appearance::TextureMode;
 use pdf_core::layout::ViewMode;
@@ -213,6 +214,48 @@ impl Default for SearchState {
     }
 }
 
+/// Bounding rectangle of the selected text, in viewport CSS pixels — the
+/// "warp window" the AI selection menu anchors to.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct SelectionRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Everything the AI feature needs about the current text selection, as
+/// dispatched by the engine's `pdfreader:selection-detail` event.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SelectionDetail {
+    /// The exact text the user highlighted.
+    pub text: String,
+    /// Surrounding sentence (~120 chars from the same text layer) so the
+    /// model can disambiguate the word.
+    pub context: String,
+    /// Tight bounding box around the selection (the "warp window").
+    pub rect: SelectionRect,
+}
+
+/// Reactive state for the AI text-selection feature: what is selected and
+/// whether the explanation popover is open.
+#[derive(Clone, Copy)]
+pub struct AiSelectionState {
+    /// The current selection details, or `None` if nothing is selected.
+    pub detail: RwSignal<Option<SelectionDetail>>,
+    /// Whether the "Info" popover is currently open.
+    pub popover_open: RwSignal<bool>,
+}
+
+impl Default for AiSelectionState {
+    fn default() -> Self {
+        Self {
+            detail: RwSignal::new(None),
+            popover_open: RwSignal::new(false),
+        }
+    }
+}
+
 /// The reader's slice of app state: everything the PDF components and the
 /// reader effects read/write. Sidebar/UI chrome is deliberately NOT here —
 /// it is app chrome state, passed in explicitly where the reader needs it.
@@ -221,6 +264,7 @@ pub struct ReaderState {
     pub document: DocumentState,
     pub viewer: ViewerSignals,
     pub search: SearchState,
+    pub ai_selection: AiSelectionState,
 }
 
 impl Default for ReaderState {
@@ -229,6 +273,7 @@ impl Default for ReaderState {
             document: DocumentState::default(),
             viewer: ViewerSignals::default(),
             search: SearchState::default(),
+            ai_selection: AiSelectionState::default(),
         }
     }
 }

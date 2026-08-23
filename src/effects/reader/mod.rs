@@ -10,4 +10,5 @@ pub mod navigation_sync;
 pub mod page_selection;
 pub mod reading_progress;
 pub mod search;
+pub mod text_selection;
 pub mod zoom;

@@ -130,3 +130,27 @@
   }
 }
 
+
+/* ---------------------------------------------------------------------
+   14. AI selection menu entrance.
+   The floating "Info" button appears just below the highlighted text and
+   floats 4px up into place. The X translate stays -50% in BOTH keyframes
+   because the button is centered via translateX(-50%) — dropping it mid-
+   animation would make it jump sideways (same trap as toast-in above).
+   No per-rule reduced-motion guard: the §13 safety net already caps every
+   animation's duration.
+   --------------------------------------------------------------------- */
+@keyframes selection-menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.selection-menu-enter {
+  animation: selection-menu-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}

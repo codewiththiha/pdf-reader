@@ -1,6 +1,8 @@
 //! The application's component system, organized by what a component is
 //! used for:
 //!
+//!   * `ai`         — AI-assisted reading (selection-anchored menu,
+//!     explanation popover)
 //!   * `primitives` — generic UI (button, icon, popover, …); must never
 //!     know what a PDF reader is
 //!   * `chrome`     — reusable structural application chrome (title bar,
@@ -33,6 +35,7 @@
 //!   Guard writes that run in a loop or animation frame.
 
 mod conditional_class;
+pub mod ai;
 pub mod chrome;
 pub mod document;
 pub mod menus;
