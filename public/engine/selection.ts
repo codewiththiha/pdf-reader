@@ -14,6 +14,11 @@ let lastSelectionRangeKey: string | null = null;
 // (a `.set()` there always notifies, even on unchanged values).
 let detailDebounce: ReturnType<typeof setTimeout> | null = null;
 let lastDetailKey: string | null = null;
+// Plain clicks (no drag) produce NO selectionchange when the selection is
+// already collapsed — exactly the state the AI UI leaves behind after it
+// suppresses a clear. Any press outside the AI UI therefore schedules one
+// recheck, so a stale detail (ghost "Info" pill) cannot linger.
+let clickClearTimer: ReturnType<typeof setTimeout> | null = null;
 // Set by every mousedown: true when the press landed inside the AI UI
 // (selection menu / popover, marked [data-ai-popover]). Pressing the "Info"
 // button collapses the document selection, but that collapse must NOT clear
@@ -148,6 +153,10 @@ export function installSelectionTracker(): void {
       selDragging = true;
     }
     pointerDownInAiUi = !!(t && t.closest && t.closest("[data-ai-popover]"));
+    if (!pointerDownInAiUi) {
+      if (clickClearTimer) clearTimeout(clickClearTimer);
+      clickClearTimer = setTimeout(dispatchSelectionDetail, 200);
+    }
   });
 
   window.addEventListener("mouseup", () => {

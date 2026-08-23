@@ -328,6 +328,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             virtualizer=virtualizer_view
                         />
                         <crate::components::ai::selection_menu::SelectionMenu state=state />
+                        <crate::components::ai::popover::AiPopover state=state />
                     </main>
                 </div>
             </div>

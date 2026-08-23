@@ -1,0 +1,286 @@
+/* =====================================================================
+   AI Feature: warp window, rainbow glow, morph, and blur-fade text.
+   All animations are capped by the global reduced-motion net in
+   animations.css §13; only rules where motion carries meaning get a
+   bespoke reduced-motion treatment (§9 below).
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   1. Warp Window — the container that starts at the selection's bounding
+   box and morphs into the full popover.
+
+   The "border" is a 2px padding gap between this outer wrapper (which
+   carries the animated gradient) and the inner panel (solid surface
+   background) — no border-image compatibility issues, full control over
+   glow thickness and blur.
+
+   The window is a flex column so the inner panel can shrink below its
+   content height and scroll when the card hits its max-height.
+   --------------------------------------------------------------------- */
+.ai-warp-window {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  padding: 2px;
+  box-sizing: border-box;
+  pointer-events: auto;
+
+  /* The morph: every geometric property transitions smoothly.
+     cubic-bezier(0.22, 1, 0.36, 1) is a fast-start, soft-land curve
+     that feels like the window "settles" into place. */
+  transition:
+    top    0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    left   0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    width  0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.3s ease;
+}
+
+/* Inner content panel, inside the 2px gradient "border". min-height:0
+   lets it shrink within the flexed window and take over scrolling. */
+.ai-warp-inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--color-surface);
+  border-radius: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------------
+   2. Processing state — rainbow glow.
+
+   The outer wrapper's background is a wide linear gradient that shifts
+   position, creating a flowing rainbow border; a slow pulse on the
+   box-shadow makes the halo feel alive.
+   --------------------------------------------------------------------- */
+.ai-warp-window.ai-processing {
+  background: linear-gradient(
+    135deg,
+    #ff0040, #ff8800, #ffee00, #00ff66,
+    #0088ff, #8800ff, #ff0040
+  );
+  background-size: 400% 400%;
+  animation:
+    ai-gradient-flow 2.4s ease infinite,
+    ai-glow-pulse 1.8s ease-in-out infinite;
+  box-shadow:
+    0 0 12px 2px rgba(255, 0, 64, 0.25),
+    0 0 24px 4px rgba(0, 136, 255, 0.15);
+}
+
+@keyframes ai-gradient-flow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes ai-glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 10px 2px rgba(255, 0, 64, 0.2),
+      0 0 20px 4px rgba(0, 136, 255, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 0 16px 4px rgba(255, 136, 0, 0.3),
+      0 0 32px 8px rgba(136, 0, 255, 0.18);
+  }
+}
+
+/* While processing, the inner panel is semi-transparent so the rainbow
+   glow bleeds through slightly — an "energy" feel without obscuring the
+   selected text underneath. */
+.ai-warp-window.ai-processing .ai-warp-inner {
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+}
+
+/* ---------------------------------------------------------------------
+   3. Streaming / Done state — the glow settles.
+
+   The rainbow fades to a calm line-coloured border and the shadow
+   softens to standard card elevation. The .ai-warp-window transition
+   handles the geometric morph; these rules handle colour/shadow.
+   --------------------------------------------------------------------- */
+.ai-warp-window.ai-streaming,
+.ai-warp-window.ai-done {
+  background: var(--color-line);
+  animation: none;
+  box-shadow:
+    0 4px 16px -4px rgb(0 0 0 / 0.18),
+    0 1px 4px rgb(0 0 0 / 0.08);
+}
+
+/* ---------------------------------------------------------------------
+   4. Error state — a brief red flash on the border, then settle.
+   --------------------------------------------------------------------- */
+.ai-warp-window.ai-error {
+  background: color-mix(in srgb, #ef4444 60%, var(--color-line));
+  animation: none;
+  box-shadow: 0 0 12px 2px rgba(239, 68, 68, 0.3);
+}
+
+/* ---------------------------------------------------------------------
+   5. Blur-fade text reveal.
+
+   Each text block that arrives from the AI stream gets this class. It
+   transitions from blurred/transparent/slightly-shifted to full clarity
+   — like a photograph developing, NOT a typewriter.
+
+   Applied once per element via `both` fill: new nodes mounted later
+   (Leptos re-renders) replay it automatically.
+   --------------------------------------------------------------------- */
+.ai-text-reveal {
+  animation: ai-blur-fade-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes ai-blur-fade-in {
+  from {
+    filter: blur(8px);
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    filter: blur(0px);
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Staggered delays so the sections cascade rather than appearing at once. */
+.ai-reveal-delay-1 { animation-delay: 0.05s; }
+.ai-reveal-delay-2 { animation-delay: 0.15s; }
+.ai-reveal-delay-3 { animation-delay: 0.25s; }
+.ai-reveal-delay-4 { animation-delay: 0.35s; }
+
+/* ---------------------------------------------------------------------
+   6. Selection menu entrance — the "Info" pill floats up from below the
+   selection. The X translate stays -50% in both keyframes because the
+   pill is centered via translateX(-50%).
+   --------------------------------------------------------------------- */
+@keyframes ai-menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+.ai-selection-menu-enter {
+  animation: ai-menu-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---------------------------------------------------------------------
+   7. Popover content sections.
+   --------------------------------------------------------------------- */
+
+/* The selected word displayed prominently at the top. */
+.ai-word-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-ink);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+/* Part-of-speech badge. */
+.ai-pos-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+/* Synonym chips. */
+.ai-synonym-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  color: var(--color-ink);
+  background: var(--color-line);
+  border: 1px solid color-mix(in srgb, var(--color-line) 80%, var(--color-muted));
+  transition: background 0.15s ease;
+}
+.ai-synonym-chip:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-line));
+}
+
+/* Usage example sentences. */
+.ai-usage-item {
+  position: relative;
+  padding-left: 12px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+.ai-usage-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-accent);
+  opacity: 0.5;
+}
+
+/* Section labels inside the popover. */
+.ai-section-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+  margin-bottom: 4px;
+}
+
+/* ---------------------------------------------------------------------
+   8. Loading shimmer — shown inside the popover body while waiting for
+   the first AI chunk.
+   --------------------------------------------------------------------- */
+.ai-shimmer-line {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--color-line) 25%,
+    color-mix(in srgb, var(--color-line) 50%, var(--color-surface)) 50%,
+    var(--color-line) 75%
+  );
+  background-size: 200% 100%;
+  animation: ai-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes ai-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---------------------------------------------------------------------
+   9. Reduced motion. animations.css §13 already caps every animation and
+   transition globally; only the processing state gets a bespoke rule so
+   it still reads as "working" with zero motion: a static rainbow border
+   instead of a flowing one.
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .ai-warp-window.ai-processing {
+    background: linear-gradient(135deg, #ff0040, #0088ff, #8800ff);
+    box-shadow: 0 0 12px 2px rgba(0, 136, 255, 0.25);
+  }
+}
