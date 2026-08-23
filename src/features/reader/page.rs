@@ -160,7 +160,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         header=move || view! { <SidebarHeader reader=vs sidebar=state.ui.sidebar /> }
                         info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
                         panels=move || view! {
-                            <SidebarOutline state=vs sidebar=state.ui.sidebar shown=paint.show_outline outro=paint.is_closed />
+                            <SidebarOutline
+                                state=vs
+                                sidebar=state.ui.sidebar
+                                shown=paint.show_outline
+                                outro=paint.is_closed
+                                intro=paint.intro
+                            />
                             <SidebarThumbs
                                 state=vs
                                 sidebar=state.ui.sidebar
@@ -177,6 +183,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 })
                                 shown=paint.show_thumbs
                                 outro=paint.is_closed
+                                intro=paint.intro
                             />
                         }
                         footer=move || view! {

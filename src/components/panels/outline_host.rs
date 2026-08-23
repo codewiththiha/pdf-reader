@@ -14,12 +14,14 @@ pub(crate) fn SidebarOutline(
     sidebar: RwSignal<SidebarMode>,
     shown: Signal<bool>,
     outro: Signal<bool>,
+    intro: Signal<bool>,
 ) -> impl IntoView {
     view! {
         <div
             class="sidebar-panel absolute inset-0 flex flex-col"
             class=("invisible", move || !shown.get())
             class=("is-outro", move || outro.get())
+            class=("is-intro", move || intro.get())
         >
             <OutlinePanel state=state sidebar=sidebar />
         </div>

@@ -86,6 +86,11 @@
 .sidebar-panel.is-outro {
   opacity: 0;
 }
+/* Sidebar panel intro — mirrors .is-outro. The wrapper is transparent while
+   the opening gate is active; removing the class fades mounted content in. */
+.sidebar-panel.is-intro {
+  opacity: 0;
+}
 
 /* Rebuild the glass ONLY on the one frame a base mode swaps. Dropping the
    filter destroys WKWebView's cached backdrop layer; re-adding it next frame

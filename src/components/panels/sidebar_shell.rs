@@ -30,6 +30,9 @@
 //! has settled — the skeleton shows for the slide, then the grid mounts.
 //! On later opens the engine's thumb cache is warm (`starts_cached`), so
 //! the gate costs nothing while still keeping the slide jank-free.
+//! A close that beats that opening gate must not arm the close hold: no cells
+//! existed to preserve. `cells_mounted` guards that path, so toggle spam never
+//! mounts canvases during a close that interrupted the opening delay.
 //!
 //! Tab switches (Thumbs ↔ Outline) still use `invisible` on the inactive
 //! panel so the virtualization window stays engine-bound and a switch back
@@ -96,6 +99,9 @@ pub struct SidebarPaint {
     /// Gate expensive mounts (thumbnail cells) on this so they don't
     /// compete with the width animation.
     pub opening: Signal<bool>,
+    /// Opacity-intro class for the panel hosts. This mirrors `opening`: the
+    /// wrapper is transparent during the gate, then fades in when cells mount.
+    pub intro: Signal<bool>,
 }
 
 /// Drive the open/close slide bookkeeping and return the paint flags.
@@ -109,6 +115,11 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
     let last_mode = RwSignal::new(SidebarMode::Thumbs);
     let collapsing = RwSignal::new(false);
     let opening = RwSignal::new(false);
+    // True only while thumbnail cells actually exist. Besides preventing a
+    // pre-gate close from mounting them during its outro, this preserves the
+    // existing quick-reopen path: cells remain live until the close timer
+    // finishes and a reopen inside that window cancels the release.
+    let cells_mounted = RwSignal::new(false);
     let collapse_timer = StoredValue::new_local(None::<TimeoutHandle>);
     let opening_timer = StoredValue::new_local(None::<TimeoutHandle>);
     // Whether the sidebar was closed the last time `mode` changed. An open
@@ -130,37 +141,67 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
             }
 
             // Mark the opening window so the page can hold back the
-            // thumbnail cells while the width animation is running.
+            // thumbnail cells while the width animation is running. A quick
+            // reopen during a real close still has live cells, so it skips the
+            // gate and keeps the old canvases instead of remounting them.
             if was {
-                opening.set(true);
                 if let Some(h) = opening_timer.get_value() {
                     h.clear();
+                    opening_timer.set_value(None);
                 }
-                match set_timeout_with_handle(
-                    move || opening.set(false),
-                    Duration::from_millis(SIDEBAR_SLIDE_MS),
-                ) {
-                    Ok(h) => opening_timer.set_value(Some(h)),
-                    // No timer available (should not happen): fall back to
-                    // the pre-fix behaviour — mount immediately — rather
-                    // than gating the thumbs off forever.
-                    Err(_) => opening.set(false),
+                if cells_mounted.get_untracked() {
+                    opening.set(false);
+                } else {
+                    opening.set(true);
+                    match set_timeout_with_handle(
+                        move || {
+                            opening.set(false);
+                            cells_mounted.set(true);
+                        },
+                        Duration::from_millis(SIDEBAR_SLIDE_MS),
+                    ) {
+                        Ok(h) => opening_timer.set_value(Some(h)),
+                        // No timer available (should not happen): fall back to
+                        // the pre-fix behaviour — mount immediately — rather
+                        // than gating the thumbs off forever.
+                        Err(_) => {
+                            opening.set(false);
+                            cells_mounted.set(true);
+                        }
+                    }
                 }
             }
             was_closed.set_value(false);
         } else {
             was_closed.set_value(true);
             opening.set(false);
-            collapsing.set(true);
-            if let Some(h) = collapse_timer.get_value() {
+            // A close before the opening gate clears cancels that pending
+            // mount. Without this clear the stale callback would claim cells
+            // existed after the sidebar was already closed.
+            if let Some(h) = opening_timer.get_value() {
                 h.clear();
+                opening_timer.set_value(None);
             }
-            let handle = set_timeout_with_handle(
-                move || collapsing.set(false),
-                Duration::from_millis(SIDEBAR_SLIDE_MS),
-            )
-            .ok();
-            collapse_timer.set_value(handle);
+
+            if cells_mounted.get_untracked() {
+                collapsing.set(true);
+                if let Some(h) = collapse_timer.get_value() {
+                    h.clear();
+                }
+                let handle = set_timeout_with_handle(
+                    move || {
+                        collapsing.set(false);
+                        cells_mounted.set(false);
+                    },
+                    Duration::from_millis(SIDEBAR_SLIDE_MS),
+                )
+                .ok();
+                collapse_timer.set_value(handle);
+            } else {
+                // The opening gate never cleared: there are no cells to keep
+                // alive for an outro and no canvas backing stores to release.
+                collapsing.set(false);
+            }
         }
     });
 
@@ -172,13 +213,31 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
             panel_is_shown(SidebarMode::Thumbs, mode.get(), collapsing.get(), last_mode.get())
         }),
         thumbs_live: Signal::derive(move || {
-            thumbs_should_stay_mounted(mode.get(), collapsing.get(), last_mode.get())
+            thumbnail_cells_are_live(
+                cells_mounted.get(),
+                mode.get(),
+                collapsing.get(),
+                last_mode.get(),
+            )
         }),
         is_closed: Signal::derive(move || mode.get() == SidebarMode::None),
         outline_active: Signal::derive(move || mode.get() == SidebarMode::Outline),
         thumbs_active: Signal::derive(move || mode.get() == SidebarMode::Thumbs),
         opening: opening.into(),
+        intro: opening.into(),
     }
+}
+
+/// Final mount gate for thumbnail cells. Even if the panel state would
+/// normally preserve cells through an outro, there is nothing to preserve
+/// when a close arrives before the opening delay created any cells.
+pub(crate) fn thumbnail_cells_are_live(
+    cells_mounted: bool,
+    mode: SidebarMode,
+    collapsing: bool,
+    last: SidebarMode,
+) -> bool {
+    cells_mounted && thumbs_should_stay_mounted(mode, collapsing, last)
 }
 
 /// Whether the thumbnail grid should keep its cells mounted.
@@ -230,7 +289,9 @@ pub fn Sidebar(
 
 #[cfg(test)]
 mod tests {
-    use super::{panel_is_shown, thumbs_should_stay_mounted, SIDEBAR_SLIDE_MS};
+    use super::{
+        panel_is_shown, thumbnail_cells_are_live, thumbs_should_stay_mounted, SIDEBAR_SLIDE_MS,
+    };
     use crate::state::SidebarMode;
 
     #[test]
@@ -277,6 +338,32 @@ mod tests {
             SidebarMode::Outline,
             false,
             SidebarMode::Outline
+        ));
+    }
+
+    #[test]
+    fn a_pre_gate_close_cannot_make_thumbnail_cells_live() {
+        // The old close path made `collapsing` true even though the opening
+        // delay had not mounted anything. That state must not create cells.
+        assert!(!thumbnail_cells_are_live(
+            false,
+            SidebarMode::None,
+            true,
+            SidebarMode::Thumbs,
+        ));
+        // Once cells genuinely exist, the ordinary open and outro paths keep
+        // working as before.
+        assert!(thumbnail_cells_are_live(
+            true,
+            SidebarMode::Thumbs,
+            false,
+            SidebarMode::Thumbs,
+        ));
+        assert!(thumbnail_cells_are_live(
+            true,
+            SidebarMode::None,
+            true,
+            SidebarMode::Thumbs,
         ));
     }
 
