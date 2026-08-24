@@ -1,8 +1,12 @@
 use leptos::prelude::*;
 
-use crate::components::ai::anchor::{watch_page_anchor, MENU_EXIT_FRAC};
+use crate::components::ai::anchor::{
+    capture_selection_mark, watch_page_anchor, MENU_EXIT_FRAC,
+};
+use crate::components::ai::gloss::marks::request_gloss_open;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::state::AppState;
+use pdf_core::gloss::GlossMark;
 
 /// A small floating pill that appears near the user's text selection.
 /// Contains the "Info" button that opens the AI popover.
@@ -10,6 +14,13 @@ use crate::state::AppState;
 /// Position is re-derived from a page-space anchor on every scroll/zoom/mode
 /// change, so the pill travels with the word and disappears once the origin
 /// fully leaves the viewport.
+///
+/// The Info click does **not** flip `popover_open` and hope `detail` survives:
+/// it builds a self-contained [`GlossMark`] at click time and dispatches the
+/// same `pdfreader:gloss-open` event the persisted stroke uses. The popover's
+/// listener bumps `open_req` and sets `pending_mark`, so the open effect is
+/// guaranteed to run with a mark in hand — no race against the exit-watch
+/// clearing `detail`, and no stale-`true` suppression across documents.
 ///
 /// The root carries `data-ai-popover`: the engine's selection tracker
 /// treats mousedowns inside that attribute as AI-UI interaction and does
@@ -74,7 +85,36 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                     // button can never be unmounted by its own press.
                     on:mousedown=move |ev| ev.prevent_default()
                     on:click=move |_| {
-                        popover_open.set(true);
+                        let Some(sel) = detail.get_untracked() else {
+                            return;
+                        };
+                        let page = state.reader.viewer.page.get_untracked();
+                        let scale = state.reader.viewer.zoom.display.get_untracked();
+                        // Prefer the page-space anchor captured with the
+                        // selection; fall back to a live DOM capture.
+                        let mark = state
+                            .reader
+                            .ai_selection
+                            .anchor
+                            .get_untracked()
+                            .map(|pa| GlossMark {
+                                id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
+                                page: pa.page,
+                                word: sel.text.clone(),
+                                context: sel.context.clone(),
+                                rect: pa.rect,
+                            })
+                            .or_else(|| {
+                                capture_selection_mark(
+                                    page,
+                                    scale,
+                                    sel.text.clone(),
+                                    sel.context.clone(),
+                                )
+                            });
+                        if let Some(m) = mark {
+                            request_gloss_open(&m);
+                        }
                     }
                     class="flex min-h-11 items-center gap-1.5 rounded-full border border-line \
                            bg-surface px-5 text-sm font-medium tracking-wide text-ink \

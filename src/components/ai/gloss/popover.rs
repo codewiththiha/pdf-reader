@@ -28,16 +28,21 @@
 //!   without touching the backend. The spring is hard-reset onto the new
 //!   word's mark on every open so the morph never flies in from the previous
 //!   card's resting place.
+//!
+//! Open path is deterministic: both the Info pill and a saved stroke dispatch
+//! `pdfreader:gloss-open` with the mark in the event detail. The listener
+//! sets `pending_mark` and bumps `open_req` (which the open effect tracks),
+//! so the effect always runs with a mark in hand — never a race against
+//! `detail` being cleared or a stale `popover_open = true` no-op.
 
 use std::collections::HashMap;
 
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
 
-use pdf_core::gloss::{boxes_close, place_expanded, GlossBox, GlossMark};
+use pdf_core::gloss::{boxes_close, GlossBox, GlossMark};
 
 use crate::components::ai::anchor::{watch_page_anchor, PageAnchor, CARD_EXIT_FRAC};
-use crate::components::ai::gloss::anchor::capture_selection_mark;
 use crate::components::ai::gloss::marks::GLOSS_OPEN_EVENT;
 use crate::components::ai::gloss::spring::use_spring_box;
 use crate::components::ai::gloss::surface::GlossSurface;
@@ -47,8 +52,8 @@ use crate::components::ai::word_info::{LoadingShimmer, WordInfoSections};
 use crate::services::ai::{invoke_explain_word, listen_ai_chunks, AiChunkEvent};
 use crate::state::AppState;
 
-/// Expanded card geometry constants (same numbers as the reference).
-const CARD_WIDTH: f64 = 320.0;
+/// Expanded card geometry constants.
+const CARD_WIDTH: f64 = 360.0;
 const CARD_RADIUS: f64 = 18.0;
 /// Header + divider + close button + paddings: everything the measure twin
 /// does not contain. Height = measured content + this, never a fixed height.
@@ -56,6 +61,10 @@ const CARD_CHROME_H: f64 = 132.0;
 /// Per-document cap on persisted marks (oldest evicted). A reading session's
 /// worth of looked-up words, bounded so localStorage can't grow without end.
 const MARK_CAP: usize = 200;
+/// Gap between the highlighter stroke and the card's near edge.
+const CARD_GAP: f64 = 16.0;
+/// Viewport margin the expanded card must stay inside.
+const CARD_MARGIN: f64 = 12.0;
 
 #[component]
 pub fn GlossAiPopover(state: AppState) -> impl IntoView {
@@ -78,7 +87,10 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let pending_mark = RwSignal::new(None::<GlossMark>);
     let open_req = RwSignal::new(0u64);
 
-    let drag_box = RwSignal::new(None::<GlossBox>);
+    // Anchor-relative drag offset (dx, dy). Stored as an offset — not a screen
+    // box — so a dragged card still travels with the page when the anchor
+    // moves on scroll. Compact phase ignores it and morphs home to the mark.
+    let drag_offset = RwSignal::new(None::<(f64, f64)>);
     let dragging = RwSignal::new(false);
     let grab = StoredValue::new_local(None::<(f64, f64)>);
     let content_height = RwSignal::new(0.0_f64);
@@ -106,8 +118,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     );
     let anchor = watch.screen;
 
-    // Every stroke click bumps the nonce -> the open effect re-runs even when
-    // popover_open is already true. THIS is the "id" fix.
+    // Every open (stroke click OR Info pill) arrives as a CustomEvent that
+    // carries the mark and bumps the nonce. Tracking open_req is what makes
+    // a second open of an already-open popover re-run the effect.
     let open_handle = window_event_listener(
         leptos::ev::Custom::new(GLOSS_OPEN_EVENT),
         move |ev: web_sys::CustomEvent| {
@@ -167,7 +180,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         surface_visible.set(false);
         processing_id.set(None);
         mark_sig.set(None);
-        drag_box.set(None);
+        drag_offset.set(None);
         dragging.set(false);
         grab.set_value(None);
     };
@@ -179,7 +192,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         if gphase.get_untracked() != GlossPhase::Expanded || dragging.get_untracked() {
             return;
         }
-        drag_box.set(None);
+        drag_offset.set(None);
         gphase.set(GlossPhase::Compact);
     };
 
@@ -214,20 +227,46 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         m
     };
 
+    // Side-aware placement: put the card on whichever side of the highlight
+    // has more free space, never covering the stroke. Vertically centered on
+    // the mark and clamped into the viewport margin.
     let expanded_target = Memo::new(move |_| {
         let a = anchor.get()?;
         let (vw, vh) = viewport.get();
-        let w = CARD_WIDTH.min((vw - 32.0).max(260.0));
+        let w = CARD_WIDTH.min((vw - CARD_MARGIN * 2.0).max(260.0));
         let h = (content_height.get() + CARD_CHROME_H).clamp(140.0, vh * 0.8);
-        Some(place_expanded(a, w, h, vw, vh, CARD_RADIUS))
+        let space_right = vw - (a.x + a.w);
+        let x = if space_right >= a.x {
+            a.x + a.w + CARD_GAP
+        } else {
+            a.x - CARD_GAP - w
+        };
+        let x = x.clamp(CARD_MARGIN, (vw - w - CARD_MARGIN).max(CARD_MARGIN));
+        let y = (a.y + a.h * 0.5 - h * 0.5)
+            .clamp(CARD_MARGIN, (vh - h - CARD_MARGIN).max(CARD_MARGIN));
+        Some(GlossBox {
+            x,
+            y,
+            w,
+            h,
+            r: CARD_RADIUS,
+        })
     });
 
+    // Expanded box is always f(live_anchor) + stored_offset, so a dragged card
+    // still glides with the page on scroll. Compact/processing hug the mark.
     let target = Memo::new(move |_| {
         let a = anchor.get()?;
         match gphase.get() {
-            // Expanded: follow a manual drag, else the viewport-clamped card.
-            GlossPhase::Expanded => Some(drag_box.get().or(expanded_target.get()).unwrap_or(a)),
-            // Processing + compact both hug the word.
+            GlossPhase::Expanded => {
+                let mut e = expanded_target.get().unwrap_or(a);
+                if let Some((dx, dy)) = drag_offset.get() {
+                    let (vw, vh) = viewport.get();
+                    e.x = (e.x + dx).clamp(CARD_MARGIN, (vw - e.w - CARD_MARGIN).max(CARD_MARGIN));
+                    e.y = (e.y + dy).clamp(CARD_MARGIN, (vh - e.h - CARD_MARGIN).max(CARD_MARGIN));
+                }
+                Some(e)
+            }
             _ => Some(a),
         }
     });
@@ -254,7 +293,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         ((b.w - a.w) / (e.w - a.w).max(1.0)).clamp(0.0, 1.0)
     });
 
-    // ---- open effect: re-runs on EVERY request (nonce), retargets the mark
+    // ---- open effect: re-runs on EVERY request (nonce). The mark always
+    // arrives via pending_mark (Info pill and stroke click both dispatch
+    // GLOSS_OPEN_EVENT); the bare-selection arm is a defensive fallback.
     Effect::new(move |_| {
         let _ = open_req.get(); // tracked nonce
         if !popover_open.get() {
@@ -262,16 +303,16 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         }
         let clicked = pending_mark.get_untracked();
         let sel = detail.get_untracked();
-        let scale = state.reader.viewer.zoom.display.get_untracked();
-        let page_now = state.reader.viewer.page.get_untracked();
         let mark = match (clicked, sel) {
-            // Reopening an existing highlight: it already knows its word,
-            // context and rect.
-            (Some(m), _) => m,
-            // A fresh selection: prefer the page-space anchor captured when
-            // the selection happened; fall back to capturing the live DOM
-            // selection.
+            // Self-contained open: mark is already in hand (Info pill or
+            // stroke click). Persist it so re-open/re-explain reuse the id.
+            (Some(m), _) => add_mark(m),
+            // Defensive fallback: a bare popover_open=true with a live
+            // selection but no pending mark (should not happen after the
+            // Info pill switched to request_gloss_open).
             (None, Some(s)) => {
+                let scale = state.reader.viewer.zoom.display.get_untracked();
+                let page_now = state.reader.viewer.page.get_untracked();
                 let stored = state.reader.ai_selection.anchor.get_untracked().map(|pa| {
                     GlossMark {
                         id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
@@ -282,12 +323,15 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                     }
                 });
                 match stored.or_else(|| {
-                    capture_selection_mark(page_now, scale, s.text.clone(), s.context.clone())
+                    crate::components::ai::anchor::capture_selection_mark(
+                        page_now,
+                        scale,
+                        s.text.clone(),
+                        s.context.clone(),
+                    )
                 }) {
                     Some(m) => add_mark(m),
                     None => {
-                        // Don't leave a stale open flag: a later Info click
-                        // that only sets true-on-true would be a no-op.
                         popover_open.set(false);
                         return;
                     }
@@ -315,7 +359,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         word.set(mark.word.clone());
         viewport.set(viewport_size());
 
-        drag_box.set(None);
+        drag_offset.set(None);
         dragging.set(false);
 
         // Exactly one highlighter: the native tint goes the moment the stroke
@@ -419,7 +463,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 return;
             }
             if gphase.get_untracked() == GlossPhase::Expanded {
-                drag_box.set(None);
+                drag_offset.set(None);
                 gphase.set(GlossPhase::Compact);
             }
         });
@@ -441,6 +485,8 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     });
 
     // ── Effect: dragging the expanded card ───────────────────────────────
+    // Writes an anchor-relative offset so the card keeps gliding with the
+    // page on scroll (target = f(live_anchor) + offset).
     Effect::new(move |_| {
         if !dragging.get() {
             return;
@@ -454,9 +500,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 return;
             };
             let (vw, vh) = viewport_size();
-            let x = (me.client_x() as f64 - dx).clamp(12.0, vw - e.w - 12.0);
-            let y = (me.client_y() as f64 - dy).clamp(12.0, vh - e.h - 12.0);
-            drag_box.set(Some(GlossBox { x, y, ..e }));
+            let x = (me.client_x() as f64 - dx).clamp(CARD_MARGIN, vw - e.w - CARD_MARGIN);
+            let y = (me.client_y() as f64 - dy).clamp(CARD_MARGIN, vh - e.h - CARD_MARGIN);
+            drag_offset.set(Some((x - e.x, y - e.y)));
         });
         let end = move || {
             grab.set_value(None);

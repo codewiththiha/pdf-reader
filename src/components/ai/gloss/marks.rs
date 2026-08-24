@@ -19,7 +19,9 @@
 //! lives at the reader-page level, far above the page hosts, and threading a
 //! callback through `PageList`/`SinglePageView`/`PageCanvas` would couple
 //! three view layers to the AI feature for one message (the same reasoning as
-//! `pdfreader:navigate` in `effects::reader::link_navigation`).
+//! `pdfreader:navigate` in `effects::reader::link_navigation`). The Info pill
+//! uses the same public dispatcher so a fresh selection takes the identical
+//! self-contained path (mark in the event detail, `open_req` bumped).
 
 use leptos::prelude::*;
 use pdf_core::gloss::GlossMark;
@@ -81,7 +83,7 @@ pub fn GlossMarkLayer(
                             on:mousedown=move |ev| ev.prevent_default()
                             on:click=move |ev| {
                                 ev.stop_propagation();
-                                dispatch_open(&mark);
+                                request_gloss_open(&mark);
                             }
                         />
                     }
@@ -91,8 +93,11 @@ pub fn GlossMarkLayer(
     }
 }
 
-/// Tell the popover to re-open on `mark`.
-fn dispatch_open(mark: &GlossMark) {
+/// Tell the popover to open on `mark`. Used by both the persisted stroke
+/// click and the selection Info pill so every open is a self-contained
+/// CustomEvent (mark in the detail) that bumps `open_req` — never a bare
+/// `popover_open = true` that races against `detail` being cleared.
+pub fn request_gloss_open(mark: &GlossMark) {
     let Some(win) = web_sys::window() else {
         return;
     };
