@@ -261,6 +261,18 @@ impl Default for AiSelectionState {
     }
 }
 
+impl AiSelectionState {
+    /// Clear selection detail, page anchor and the open flag. Called on
+    /// document close so a card left open on PDF A cannot poison PDF B
+    /// (a stale `popover_open = true` would hide the Info button and make
+    /// the next open a no-op).
+    pub fn reset(&self) {
+        self.detail.set(None);
+        self.anchor.set(None);
+        self.popover_open.set(false);
+    }
+}
+
 /// The persisted gloss highlights of the OPEN document.
 ///
 /// One flat list rather than a per-page map: a document has a handful of

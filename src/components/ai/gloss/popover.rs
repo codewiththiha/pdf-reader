@@ -285,10 +285,20 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                     capture_selection_mark(page_now, scale, s.text.clone(), s.context.clone())
                 }) {
                     Some(m) => add_mark(m),
-                    None => return,
+                    None => {
+                        // Don't leave a stale open flag: a later Info click
+                        // that only sets true-on-true would be a no-op.
+                        popover_open.set(false);
+                        return;
+                    }
                 }
             }
-            (None, None) => return,
+            (None, None) => {
+                // Remount after a document switch (or any open with no
+                // pending mark/selection) must clear the flag, not sit on it.
+                popover_open.set(false);
+                return;
+            }
         };
 
         pending_mark.set(None);
