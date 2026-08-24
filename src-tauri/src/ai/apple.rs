@@ -2,6 +2,7 @@ use async_stream::stream;
 use fm_bridge::{Bridge, Request, StreamEvent};
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
+use std::time::Duration;
 
 use super::{
     prompts::{WORD_INFO_SYSTEM_PROMPT, WORD_INFO_USER_PROMPT},
@@ -15,11 +16,16 @@ pub struct AppleAiProvider {
 
 impl AppleAiProvider {
     pub fn new() -> Result<Self, String> {
-        // Reads FM_BRIDGE_BIN from the .env file
-        let bridge = Bridge::from_env().map_err(|e| e.to_string())?;
-
-        // Optional: Increase concurrency if you expect multiple lookups
-        let bridge = bridge.max_concurrency(2);
+        // Reads FM_BRIDGE_BIN from the .env file.
+        //
+        // Concurrency stays small on purpose: the on-device model is one
+        // shared resource and each slot is its own helper process. The
+        // timeout covers queue wait AND generation, so a stuck or saturated
+        // model surfaces as a retryable Timeout instead of hanging the UI.
+        let bridge = Bridge::from_env()
+            .map_err(|e| e.to_string())?
+            .max_concurrency(2)
+            .timeout(Duration::from_secs(90));
 
         Ok(Self { bridge })
     }

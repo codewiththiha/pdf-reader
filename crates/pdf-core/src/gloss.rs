@@ -87,34 +87,41 @@ pub fn boxes_close(a: GlossBox, b: GlossBox, epsilon: f64) -> bool {
         && (a.r - b.r).abs() < epsilon
 }
 
-/// Clamp an expanded card of intrinsic `size_w` x `size_h` into a viewport of
-/// `view_w` x `view_h`, hugging the anchor edge and keeping a 16px margin. The
-/// card never overflows the window or escapes its padding ring.
-pub fn place_expanded(
+/// Smallest the card may shrink to before content stops being readable.
+pub const MIN_CARD_W: f64 = 260.0;
+/// Minimum card body height.
+pub const MIN_CARD_H: f64 = 140.0;
+/// The card never grows taller than this fraction of the viewport.
+pub const MAX_CARD_H_FRAC: f64 = 0.8;
+
+/// Gap-aware, side-aware card placement: the card goes on whichever side of
+/// the anchor has more free space (never covering the stroke), is centered
+/// vertically on the mark, and clamped into the viewport margin. Shrinks the
+/// card when the viewport is too small to host it at the requested size.
+///
+/// Pure: unit-testable on the host via `cargo test -p pdf-core gloss`.
+#[allow(clippy::too_many_arguments)]
+pub fn place_card(
     anchor: GlossBox,
     size_w: f64,
     size_h: f64,
     view_w: f64,
     view_h: f64,
     radius: f64,
+    gap: f64,
+    margin: f64,
 ) -> GlossBox {
-    let pad = 16.0;
-    let w = size_w.min((view_w - pad * 2.0).max(240.0));
-    let h = size_h.min((view_h - pad * 2.0).max(200.0));
-    let mut x = anchor.x;
-    let mut y = anchor.y;
-    if x + w > view_w - pad {
-        x = view_w - pad - w;
-    }
-    if x < pad {
-        x = pad;
-    }
-    if y + h > view_h - pad {
-        y = view_h - pad - h;
-    }
-    if y < pad {
-        y = pad;
-    }
+    let w = size_w.min((view_w - margin * 2.0).max(MIN_CARD_W));
+    // Guard against min > max panics on degenerate viewports.
+    let h = size_h.clamp(MIN_CARD_H, (view_h * MAX_CARD_H_FRAC).max(MIN_CARD_H));
+    let space_right = view_w - (anchor.x + anchor.w);
+    let x = if space_right >= anchor.x {
+        anchor.x + anchor.w + gap
+    } else {
+        anchor.x - gap - w
+    };
+    let x = x.clamp(margin, (view_w - w - margin).max(margin));
+    let y = (anchor.y + anchor.h * 0.5 - h * 0.5).clamp(margin, (view_h - h - margin).max(margin));
     GlossBox { x, y, w, h, r: radius }
 }
 
@@ -175,25 +182,42 @@ mod tests {
     }
 
     #[test]
-    fn place_expanded_keeps_the_card_inside_the_viewport_margin() {
-        // Anchor pushed into the far corner: the card must slide inboard so its
-        // right/bottom edges never cross the 16px margin.
-        let anchor = GlossBox { x: 1900.0, y: 1000.0, w: 40.0, h: 20.0, r: 0.0 };
-        let card = place_expanded(anchor, 320.0, 420.0, 1920.0, 1080.0, 24.0);
-        assert!(card.x >= 16.0);
-        assert!(card.y >= 16.0);
-        assert!(card.x + card.w <= 1920.0 - 16.0 + 1e-6);
-        assert!(card.y + card.h <= 1080.0 - 16.0 + 1e-6);
-        assert!((card.r - 24.0).abs() < 1e-9);
+    fn place_card_prefers_the_roomier_side() {
+        // Anchor near the left edge: plenty of room on the right.
+        let anchor = GlossBox { x: 100.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        assert!((card.x - (anchor.x + anchor.w + 16.0)).abs() < 1e-9);
     }
 
     #[test]
-    fn place_expanded_shrinks_a_card_that_does_not_fit() {
-        // A card taller than the viewport is clamped to (vh - 2*pad), never cropped.
-        let anchor = GlossBox { x: 100.0, y: 100.0, w: 40.0, h: 20.0, r: 0.0 };
-        let card = place_expanded(anchor, 320.0, 2000.0, 800.0, 600.0, 24.0);
-        assert!(card.h <= 600.0 - 32.0 + 1e-6);
-        assert!(card.w <= 800.0 - 32.0 + 1e-6);
+    fn place_card_flips_left_when_the_right_edge_is_closer() {
+        // space_right = 1920 - 1860 = 60 < anchor.x = 1800 → left side.
+        let anchor = GlossBox { x: 1800.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        assert!((card.x - (anchor.x - 16.0 - card.w)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn place_card_stays_inside_the_viewport_margin_and_shrinks_to_fit() {
+        // Tiny viewport, oversized request: everything clamps inboard.
+        let anchor = GlossBox { x: 0.0, y: 0.0, w: 40.0, h: 12.0, r: 0.0 };
+        let card = place_card(anchor, 800.0, 2000.0, 500.0, 400.0, 18.0, 16.0, 12.0);
+        assert!(card.x >= 12.0 - 1e-9);
+        assert!(card.y >= 12.0 - 1e-9);
+        assert!(card.x + card.w <= 500.0 - 12.0 + 1e-6);
+        assert!(card.y + card.h <= 400.0 - 12.0 + 1e-6);
+        // Height caps at 80% of the viewport, width at viewport minus margins.
+        assert!((card.h - 400.0 * 0.8).abs() < 1e-9);
+        assert!((card.w - (500.0 - 24.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn place_card_centers_vertically_on_the_anchor() {
+        let anchor = GlossBox { x: 400.0, y: 500.0, w: 80.0, h: 20.0, r: 0.0 };
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        let anchor_mid = anchor.y + anchor.h * 0.5;
+        let card_mid = card.y + card.h * 0.5;
+        assert!((anchor_mid - card_mid).abs() < 1e-9);
     }
 
     #[test]

@@ -32,6 +32,7 @@ fn velocity_small(v: GlossBox) -> bool {
 
 /// Handle returned by [`use_spring_box`]: the live sprung box plus a way to
 /// hard-jump onto a new word's mark so the next morph starts from there.
+#[derive(Clone, Copy)]
 pub struct SpringBox {
     pub value: RwSignal<Option<GlossBox>>,
     /// Hard-jump to a box and zero the velocity. Called when a NEW word is

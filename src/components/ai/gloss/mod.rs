@@ -2,23 +2,27 @@
 //! into an explanation card and back down onto it, ported from the Gloss
 //! reference (with the Marginalia highlighter look for the mark itself).
 //!
-//! The three separable pieces that crossed over are the only things that did:
-//! the geometry + spring math (pure, in `pdf_core::gloss`), the anchor
-//! tracking (the PDF-specific replacement for the reference's `<mark>`), and
-//! the scroll-to-close capture-phase trick. The warm theme, Fraunces/
-//! Newsreader and the article/mark wrapping all stayed behind.
-//!
 //! Layout:
-//! * [`spring`] — the spring as a Leptos effect (the rAF loop), with a
-//!   per-word `reset_to` so a new open never flies in from the last card.
+//! * The geometry + spring math (pure) lives in `pdf_core::gloss`, including
+//!   the side-aware card placement ([`pdf_core::gloss::place_card`]).
 //! * Page-aware anchors live in [`crate::components::ai::anchor`] (shared
 //!   with the selection Info pill).
-//! * [`marks`]  — the persistent highlighter stroke layer painted inside each page.
-//! * [`util`]   — viewport helpers, capture-phase listener, reduced-motion.
-//! * [`surface`]— the morphing surface component.
-//! * [`popover`]— the orchestrating state machine (replaces `AiPopover`).
+//! * [`controller`]   — the state machine hub: signals, open/close, dedup.
+//! * [`placement`]    — the card's target memos (expanded box + drag offset).
+//! * [`drag`]         — pointer physics for dragging the expanded card.
+//! * [`interactions`] — window-level behaviour (Escape/outside, exit, flip).
+//! * [`hooks`]        — chunk ingestion and content measurement.
+//! * [`marks`]        — the persistent highlighter stroke layer per page.
+//! * [`spring`]       — the spring as a Leptos effect (the rAF loop).
+//! * [`surface`]      — the morphing surface component.
+//! * [`popover`]      — wiring + view.
 
+pub mod controller;
+pub mod drag;
+pub mod hooks;
+pub mod interactions;
 pub mod marks;
+pub mod placement;
 pub mod popover;
 pub mod spring;
 pub mod surface;
