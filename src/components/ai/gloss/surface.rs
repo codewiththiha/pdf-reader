@@ -3,6 +3,9 @@
 //! box-shadow/background` all come from the sprung box, with an inner content
 //! wrapper sized to the *expanded* card (not the current box) whose opacity and
 //! pointer-events are gated by morph progress.
+//!
+//! Dismiss is not a button on the card: Escape / outside-tap / origin-exit are
+//! owned by the popover's window listeners.
 
 use leptos::prelude::*;
 
@@ -68,8 +71,6 @@ pub fn GlossSurface(
     progress: Signal<f64>,
     /// The selected word, for the card header.
     word: Signal<String>,
-    /// Full dismiss (the Close button).
-    on_dismiss: Callback<()>,
     /// Begin dragging the expanded card.
     on_drag_start: Callback<(f64, f64, GlossBox)>,
     /// Card body: shimmer / word sections / error.
@@ -169,7 +170,7 @@ pub fn GlossSurface(
                 <div
                     data-gloss-scroll=""
                     class="flex h-full min-h-0 flex-col overflow-y-auto \
-                           overscroll-contain px-5 pb-3 pt-6"
+                           overscroll-contain px-5 pb-4 pt-6"
                 >
                     <header class="mb-4">
                         <h2 class="text-lg font-semibold leading-tight text-balance text-ink">
@@ -179,17 +180,6 @@ pub fn GlossSurface(
                     <div class="mb-4 h-px bg-line"></div>
 
                     {children()}
-
-                    <div class="mt-auto flex justify-end pt-1">
-                        <button
-                            type="button"
-                            class="min-h-11 px-1 text-sm text-muted transition-colors \
-                                   hover:text-ink active:scale-[0.96]"
-                            on:click=move |_| on_dismiss.run(())
-                        >
-                            "Close"
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>

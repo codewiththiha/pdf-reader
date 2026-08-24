@@ -88,10 +88,12 @@ pub fn listen_ai_chunks(
 /// re-broadcast every chunk as a window [`AI_CHUNK_EVENT`]. Survives every
 /// document switch; per-mount UI only adds/removes a plain window listener.
 ///
-/// The returned handle is intentionally forgotten — dropping it would free
-/// the Closure while Tauri still holds a JS reference to the same function.
+/// Must be called from inside the app reactive owner (e.g. [`App`]): the
+/// `StoredValue` that parks the JS Closure lives in that owner, so dropping
+/// the local Copy handle is fine — disposal only happens when the app unmounts.
+/// (`std::mem::forget` on a `Copy` type is a no-op and triggers a lint.)
 pub fn install_ai_chunk_bridge() {
-    let handle = listen_ai_chunks(move |chunk| {
+    let _handle = listen_ai_chunks(move |chunk| {
         let Some(win) = web_sys::window() else {
             return;
         };
@@ -106,8 +108,6 @@ pub fn install_ai_chunk_bridge() {
             let _ = win.dispatch_event(&ev);
         }
     });
-    // Intentional: the bridge outlives every reader mount.
-    std::mem::forget(handle);
 }
 
 #[cfg(test)]

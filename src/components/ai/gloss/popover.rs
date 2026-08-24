@@ -19,10 +19,10 @@
 //!   there is NO surface at all (the in-page stroke thinks via drift/sweep/halo);
 //!   and after the outro the surface unmounts once it has settled onto the
 //!   stroke, so a chip can never sit on top of the mark it came from.
-//! * **Every close is an outro, not a cut.** Close button, origin-exit,
-//!   Escape and outside clicks all run `collapse_to_mark`, and the spring is
-//!   NOT snapped while compact, so the card visibly morphs back down onto the
-//!   word before handing over to the persisted stroke.
+//! * **Every close is an outro, not a cut.** Origin-exit, Escape and outside
+//!   clicks all run `collapse_to_mark`, and the spring is NOT snapped while
+//!   compact, so the card visibly morphs back down onto the word before
+//!   handing over to the persisted stroke.
 //! * **Re-opening is recall, not a rescan.** Snapshots are cached by mark id,
 //!   so clicking a stroke morphs the card open on `AiPhase::Done` content
 //!   without touching the backend. The spring is hard-reset onto the new
@@ -55,9 +55,9 @@ use crate::state::AppState;
 /// Expanded card geometry constants.
 const CARD_WIDTH: f64 = 360.0;
 const CARD_RADIUS: f64 = 18.0;
-/// Header + divider + close button + paddings: everything the measure twin
-/// does not contain. Height = measured content + this, never a fixed height.
-const CARD_CHROME_H: f64 = 132.0;
+/// Header + divider + paddings: everything the measure twin does not contain.
+/// Height = measured content + this, never a fixed height.
+const CARD_CHROME_H: f64 = 100.0;
 /// Per-document cap on persisted marks (oldest evicted). A reading session's
 /// worth of looked-up words, bounded so localStorage can't grow without end.
 const MARK_CAP: usize = 200;
@@ -574,7 +574,6 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let expanded_sig = Signal::derive(move || expanded_target.get().unwrap_or_default());
     let progress_sig = Signal::derive(move || progress.get());
     let word_sig = Signal::derive(move || word.get());
-    let on_dismiss = Callback::new(move |_: ()| collapse_to_mark());
     let on_drag_start = Callback::new(move |(cx, cy, origin): (f64, f64, GlossBox)| {
         grab.set_value(Some((cx - origin.x, cy - origin.y)));
         dragging.set(true);
@@ -599,7 +598,6 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 expanded=expanded_sig
                 progress=progress_sig
                 word=word_sig
-                on_dismiss=on_dismiss
                 on_drag_start=on_drag_start
             >
                 {move || match phase.get() {

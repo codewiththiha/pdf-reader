@@ -11,14 +11,13 @@
 //! Layout:
 //! * [`spring`] — the spring as a Leptos effect (the rAF loop), with a
 //!   per-word `reset_to` so a new open never flies in from the last card.
-//! * [`anchor`] — re-export of the shared page-aware anchor
-//!   (`crate::components::ai::anchor`).
+//! * Page-aware anchors live in [`crate::components::ai::anchor`] (shared
+//!   with the selection Info pill).
 //! * [`marks`]  — the persistent highlighter stroke layer painted inside each page.
 //! * [`util`]   — viewport helpers, capture-phase listener, reduced-motion.
 //! * [`surface`]— the morphing surface component.
 //! * [`popover`]— the orchestrating state machine (replaces `AiPopover`).
 
-pub mod anchor;
 pub mod marks;
 pub mod popover;
 pub mod spring;
