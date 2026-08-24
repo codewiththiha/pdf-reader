@@ -6,7 +6,7 @@
 //! it without depending on the component layer.
 
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossBox, GlossMark, PageAnchor};
+use pdf_core::gloss::{GlossBox, GlossMark};
 use pdf_core::layout::ViewMode;
 use wasm_bindgen::JsCast;
 
@@ -14,6 +14,7 @@ use crate::components::ai::gloss::marks::MARK_RADIUS;
 use crate::components::ai::gloss::util::{add_window_capture_listener, viewport_size};
 use crate::components::document::dom_helpers::by_id;
 
+// Single public binding — do not also `use` PageAnchor above or rustc E0252s.
 pub use pdf_core::gloss::PageAnchor;
 
 /// The selection "Info" pill lives until its origin fully leaves the viewport.
