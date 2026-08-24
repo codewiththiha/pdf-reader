@@ -32,6 +32,10 @@ pub fn App() -> impl IntoView {
     link_navigation(state);
     page_selection(state);
     text_selection(state);
+    // ONE Tauri AI-chunk listener for the app's life; re-broadcasts as a
+    // window event so the gloss popover never stacks/drops handlers across
+    // document switches.
+    crate::services::ai::install_ai_chunk_bridge();
     // OS file opening: double-click / "Open with" / default-app launch.
     crate::services::document::init_open_file_handling(state);
 

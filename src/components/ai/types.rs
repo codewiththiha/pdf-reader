@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Geometry of the word card. Orthogonal to [`AiPhase`] (the AI data status):
 /// `AiPhase` says what the *data* is doing, `GlossPhase` says what the
@@ -39,7 +39,10 @@ pub enum AiPhase {
 
 /// The structured word information returned by the AI.
 /// Mirrors the backend `WordInfo` struct.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+///
+/// `Serialize` is required so the app-lifetime AI chunk bridge can
+/// re-broadcast snapshots as a window `CustomEvent` for the popover.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WordInfo {
     pub pos: String,
     pub meaning: String,

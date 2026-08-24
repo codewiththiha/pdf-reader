@@ -2,12 +2,15 @@
 //!
 //! Owns the wire protocol with the Tauri backend: [`invoke_explain_word`]
 //! starts a run (fire-and-forget — results never come back through the
-//! invoke) and [`listen_ai_chunks`] decodes the streamed `ai-stream-chunk`
-//! events back into typed chunks. Components never see a `JsValue`.
+//! invoke) and [`install_ai_chunk_bridge`] registers ONE app-lifetime Tauri
+//! listener that re-broadcasts each chunk as a window `CustomEvent`
+//! (`pdfreader:ai-chunk`). The gloss popover (and anything else) then
+//! listens on the window, so document switches never stack dead Tauri
+//! handlers or drop the live one.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
@@ -15,9 +18,16 @@ use web_sys::Event;
 
 use crate::components::ai::types::WordInfo;
 
+/// Window event the app-lifetime bridge re-broadcasts every AI chunk on.
+/// The gloss popover listens for this (not for the Tauri event directly).
+pub const AI_CHUNK_EVENT: &str = "pdfreader:ai-chunk";
+
 /// The wire format of one `ai-stream-chunk` payload. Mirrors `AiChunk` in
 /// `src-tauri/src/ai/traits.rs` (same `type`/`data` tagging) — keep in sync.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// `Serialize` lets the bridge park the same shape on a window CustomEvent
+/// detail so per-mount UI can subscribe without touching Tauri again.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum AiChunkEvent {
     Snapshot(WordInfo),
@@ -26,7 +36,7 @@ pub enum AiChunkEvent {
 }
 
 /// Starts an `explain_word` run on the backend. The streamed results arrive
-/// as `ai-stream-chunk` events picked up by [`listen_ai_chunks`].
+/// as `ai-stream-chunk` events, re-broadcast by [`install_ai_chunk_bridge`].
 pub fn invoke_explain_word(word: String, context: String) {
     spawn_local(async move {
         if let Err(e) = pdf_engine::api::explain_word(&word, &context).await {
@@ -36,6 +46,10 @@ pub fn invoke_explain_word(word: String, context: String) {
 }
 
 /// Subscribe to the backend's `ai-stream-chunk` events.
+///
+/// Prefer [`install_ai_chunk_bridge`] at app boot and a plain window listener
+/// in UI: calling this per mount stacks Tauri handlers whose closures die
+/// with the owner, so later document switches get a poisoned dispatch chain.
 ///
 /// The JS Closure is parked in the returned StoredValue: keep that value
 /// alive for as long as chunks should be received (it is disposed with the
@@ -68,6 +82,32 @@ pub fn listen_ai_chunks(
     });
     handle.set_value(Some(cb));
     handle
+}
+
+/// Register the Tauri `ai-stream-chunk` listener ONCE for the app's life and
+/// re-broadcast every chunk as a window [`AI_CHUNK_EVENT`]. Survives every
+/// document switch; per-mount UI only adds/removes a plain window listener.
+///
+/// The returned handle is intentionally forgotten — dropping it would free
+/// the Closure while Tauri still holds a JS reference to the same function.
+pub fn install_ai_chunk_bridge() {
+    let handle = listen_ai_chunks(move |chunk| {
+        let Some(win) = web_sys::window() else {
+            return;
+        };
+        let Ok(detail) = serde_wasm_bindgen::to_value(&chunk) else {
+            return;
+        };
+        let init = web_sys::CustomEventInit::new();
+        init.set_detail(&detail);
+        if let Ok(ev) =
+            web_sys::CustomEvent::new_with_event_init_dict(AI_CHUNK_EVENT, &init)
+        {
+            let _ = win.dispatch_event(&ev);
+        }
+    });
+    // Intentional: the bridge outlives every reader mount.
+    std::mem::forget(handle);
 }
 
 #[cfg(test)]

@@ -49,7 +49,7 @@ use crate::components::ai::gloss::surface::GlossSurface;
 use crate::components::ai::gloss::util::{reduced_motion_signal, viewport_size};
 use crate::components::ai::types::{AiPhase, GlossPhase, WordInfo};
 use crate::components::ai::word_info::{LoadingShimmer, WordInfoSections};
-use crate::services::ai::{invoke_explain_word, listen_ai_chunks, AiChunkEvent};
+use crate::services::ai::{invoke_explain_word, AiChunkEvent, AI_CHUNK_EVENT};
 use crate::state::AppState;
 
 /// Expanded card geometry constants.
@@ -136,37 +136,48 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     );
     on_cleanup(move || open_handle.remove());
 
-    // The surface is born ON the first chunk (or an error) — never on a timer,
-    // so it can never pop open empty. The same frame hands the "thinking"
-    // state off: the stroke calms as the card blooms.
-    let _listener = listen_ai_chunks(move |chunk| match chunk {
-        AiChunkEvent::Snapshot(info) => {
-            if let Some(m) = mark_sig.get_untracked() {
-                cache.update_value(|c| {
-                    c.insert(m.id.clone(), info.clone());
-                });
-            }
-            processing_id.set(None);
-            if phase.get_untracked() == AiPhase::Processing {
-                phase.set(AiPhase::Streaming);
-                if gphase.get_untracked() == GlossPhase::Processing {
-                    gphase.set(GlossPhase::Expanded);
+    // Chunks arrive via the app-lifetime Tauri bridge as a window event.
+    // Listening here (not on Tauri directly) means unmount cleans up a plain
+    // window listener and never stacks/drops dead Tauri handlers across
+    // document switches. The surface is born ON the first chunk (or an
+    // error) — never on a timer — so it can never pop open empty.
+    let chunk_handle = window_event_listener(
+        leptos::ev::Custom::new(AI_CHUNK_EVENT),
+        move |ev: web_sys::CustomEvent| {
+            let Ok(chunk) = serde_wasm_bindgen::from_value::<AiChunkEvent>(ev.detail()) else {
+                return;
+            };
+            match chunk {
+                AiChunkEvent::Snapshot(info) => {
+                    if let Some(m) = mark_sig.get_untracked() {
+                        cache.update_value(|c| {
+                            c.insert(m.id.clone(), info.clone());
+                        });
+                    }
+                    processing_id.set(None);
+                    if phase.get_untracked() == AiPhase::Processing {
+                        phase.set(AiPhase::Streaming);
+                        if gphase.get_untracked() == GlossPhase::Processing {
+                            gphase.set(GlossPhase::Expanded);
+                            surface_visible.set(true);
+                        }
+                    }
+                    word_info.set(Some(info));
+                }
+                AiChunkEvent::Done => phase.set(AiPhase::Done),
+                AiChunkEvent::Error(msg) => {
+                    error_msg.set(Some(msg));
+                    phase.set(AiPhase::Error);
+                    processing_id.set(None);
+                    if gphase.get_untracked() == GlossPhase::Processing {
+                        gphase.set(GlossPhase::Expanded);
+                    }
                     surface_visible.set(true);
                 }
             }
-            word_info.set(Some(info));
-        }
-        AiChunkEvent::Done => phase.set(AiPhase::Done),
-        AiChunkEvent::Error(msg) => {
-            error_msg.set(Some(msg));
-            phase.set(AiPhase::Error);
-            processing_id.set(None);
-            if gphase.get_untracked() == GlossPhase::Processing {
-                gphase.set(GlossPhase::Expanded);
-            }
-            surface_visible.set(true);
-        }
-    });
+        },
+    );
+    on_cleanup(move || chunk_handle.remove());
 
     // Full dismiss back to Idle. NOTE: the mark itself is intentionally kept —
     // the highlight is the point, and it is what reopens this card later.

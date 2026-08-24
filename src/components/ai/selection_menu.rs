@@ -113,7 +113,12 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                                 )
                             });
                         if let Some(m) = mark {
+                            // Self-contained open: bumps open_req with the
+                            // mark in hand. Never races detail being cleared.
                             request_gloss_open(&m);
+                        } else {
+                            // Don't leave a stale open flag if capture failed.
+                            popover_open.set(false);
                         }
                     }
                     class="flex min-h-11 items-center gap-1.5 rounded-full border border-line \
