@@ -77,18 +77,6 @@ pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// Pad a box outward by `(pad_x, pad_y)`, rounding the corners to at most half
-/// the new height so it stays a pill when it is short (the chip case).
-pub fn pad_box(b: GlossBox, pad_x: f64, pad_y: f64) -> GlossBox {
-    GlossBox {
-        x: b.x - pad_x,
-        y: b.y - pad_y,
-        w: b.w + pad_x * 2.0,
-        h: b.h + pad_y * 2.0,
-        r: (18.0_f64).min((b.h + pad_y * 2.0) / 2.0),
-    }
-}
-
 /// Whether two boxes are equal to within `epsilon` on all five fields — the
 /// spring's "settled" and "already snapped" tests.
 pub fn boxes_close(a: GlossBox, b: GlossBox, epsilon: f64) -> bool {
@@ -184,19 +172,6 @@ mod tests {
             assert!(s >= last, "non-monotonic at {t}: {s} < {last}");
             last = s;
         }
-    }
-
-    #[test]
-    fn pad_box_grows_outward_and_caps_radius_at_half_height() {
-        let b = GlossBox { x: 100.0, y: 50.0, w: 20.0, h: 14.0, r: 0.0 };
-        let p = pad_box(b, 5.0, 3.0);
-        // Outward by the exact padding on every side.
-        assert!((p.x - 95.0).abs() < 1e-9);
-        assert!((p.y - 47.0).abs() < 1e-9);
-        assert!((p.w - 30.0).abs() < 1e-9);
-        assert!((p.h - 20.0).abs() < 1e-9);
-        // Radius is half the padded height (pill) since that is < 18.
-        assert!((p.r - 10.0).abs() < 1e-9);
     }
 
     #[test]
