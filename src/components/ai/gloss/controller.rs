@@ -52,6 +52,11 @@ pub struct GlossController {
     /// outro morph the surface unmounts while the gloss stays "open" on its
     /// mark.
     pub surface_visible: RwSignal<bool>,
+    /// Whether the origin-exit watcher is armed for this open. A card opened
+    /// near the bottom edge starts unarmed (its origin is already past
+    /// CARD_EXIT_FRAC) so it is not instantly collapsed; it arms the first
+    /// time the origin is inside the band, and only then can the band close it.
+    pub exit_armed: RwSignal<bool>,
 
     // ── Drag state (the pointer physics live in [`super::drag`]) ──────
     pub drag_offset: RwSignal<Option<(f64, f64)>>,
@@ -90,6 +95,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
     let pending_mark = RwSignal::new(None::<GlossMark>);
     let open_req = RwSignal::new(0u64);
     let surface_visible = RwSignal::new(false);
+    let exit_armed = RwSignal::new(false);
     let drag_offset = RwSignal::new(None::<(f64, f64)>);
     let dragging = RwSignal::new(false);
     let grab = StoredValue::new_local(None::<(f64, f64)>);
@@ -105,6 +111,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         error.set(None);
         gphase.set(GlossPhase::Processing);
         surface_visible.set(false);
+        exit_armed.set(false);
         processing_id.set(None);
         mark_sig.set(None);
         drag_offset.set(None);
@@ -235,6 +242,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         pending_mark,
         open_req,
         surface_visible,
+        exit_armed,
         drag_offset,
         dragging,
         grab,
@@ -345,6 +353,7 @@ pub fn use_open_effect(
         viewport.set(viewport_size());
         ctrl.drag_offset.set(None);
         ctrl.dragging.set(false);
+        ctrl.exit_armed.set(false);
 
         // Exactly one highlighter: the native tint goes the moment the stroke
         // takes over (it would also fight the card's own text selection).

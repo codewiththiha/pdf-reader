@@ -58,12 +58,38 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
 /// Scrolling does not kill the card instantly: it tracks its anchor until the
 /// origin crosses CARD_EXIT_FRAC of the viewport height, leaves the top, or
 /// its page is virtualized away — then it collapses back onto the mark.
+///
+/// The band only closes a card whose origin was INSIDE the band at some point
+/// while open (`exit_armed`). A card opened near the bottom edge starts with
+/// its origin already past the band; collapsing it on spawn is what made low
+/// opens read as "the card can't decide where to spawn". Those cards get the
+/// hard exit instead: page unmounted, or origin fully out of the viewport.
 pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
     Effect::new(move |_| {
-        if !ctrl.surface_visible.get() {
+        if !ctrl.surface_visible.get() || ctrl.gphase.get() != GlossPhase::Expanded {
             return;
         }
-        if watch.exited.get() && ctrl.gphase.get() == GlossPhase::Expanded {
+
+        // Hard exit: the mark's page unmounted, or the origin fully left the
+        // viewport (top or bottom). Collapses no matter how the card opened.
+        let (_, vh) = viewport_size();
+        let gone = match watch.screen.get() {
+            None => true,
+            Some(b) => (b.y + b.h) < 0.0 || b.y > vh,
+        };
+        if gone {
+            ctrl.collapse_to_mark.run(());
+            return;
+        }
+
+        // Soft band: arm while the origin is inside; only an armed card is
+        // collapsed by the band. Opened low → unarmed → survives; scroll up
+        // (arms) then back down past the band → collapses, as designed.
+        if !watch.exited.get() {
+            ctrl.exit_armed.set(true);
+            return;
+        }
+        if ctrl.exit_armed.get_untracked() {
             ctrl.collapse_to_mark.run(());
         }
     });
