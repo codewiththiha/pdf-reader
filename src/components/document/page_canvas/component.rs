@@ -66,8 +66,8 @@ pub fn PageCanvas(
     /// no layer at all, so this host stays usable outside the reader.
     #[prop(optional)]
     gloss_marks: Option<Signal<Vec<pdf_core::gloss::GlossMark>>>,
-    /// Id of the gloss mark currently waiting on the model, so the pill can
-    /// wear the processing glow. Ignored unless `gloss_marks` is set too.
+    /// Id of the gloss mark currently waiting on the model, so the stroke can
+    /// wear the processing animation. Ignored unless `gloss_marks` is set too.
     #[prop(optional)]
     gloss_processing: Option<Signal<Option<String>>>,
 ) -> impl IntoView {

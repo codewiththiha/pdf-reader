@@ -1,14 +1,15 @@
 /* =====================================================================
-   Gloss word-card: the in-page pill (persisted highlight + the rainbow
-   "thinking" state) and the surface that springs open from it and morphs
-   back down onto it. A port of the Gloss reference's visual layer.
+   Gloss word-card: the in-page highlighter stroke (persisted mark + the
+   "thinking" drift/sweep/halo) and the surface that springs open from it
+   and morphs back down onto it. A port of the Gloss reference's visual
+   layer, with the Marginalia highlighter look for the mark itself.
 
    Position / size / radius are written PER FRAME by the spring effect in
    Rust, so the geometry properties deliberately carry NO transition — a
    transition here would fight the rAF loop and double-motion the card.
 
    Every colour is an existing theme token; --color-accent is whatever the
-   active appearance tint is, so the pill/chip/morph follow the reader's
+   active appearance tint is, so the stroke/chip/morph follow the reader's
    chosen hue automatically. Nothing here touches tokens.css or pdf-page.css.
    ===================================================================== */
 
@@ -19,6 +20,7 @@
   --gloss-shadow-card:
     0 0 0 1px var(--color-line),
     0 16px 40px rgb(0 0 0 / 0.42);
+  --gloss-sweep: color-mix(in oklab, var(--color-accent) 45%, white);
 }
 
 /* ---------------------------------------------------------------------
@@ -52,16 +54,17 @@
 .gloss-surface [data-gloss-scroll]::-webkit-scrollbar { display: none; }
 
 /* ---------------------------------------------------------------------
-   The persisted gloss pill. ONE highlight only: the native ::selection tint
-   is cleared when the gloss takes over, and the morphing surface unmounts
-   once it settles back onto this box, so nothing ever stacks on top of it.
-   Drawn with the same 3px/2px pad the anchor box uses, so the surface -> pill
-   hand-off at the end of the outro morph is invisible.
-
-   Same trade-off as the link layer: above the text layer, pointer-events only
-   on the pills themselves. Repainted from page-space rects on every page
-   mount, so a pill survives scroll, zoom, remounts and sessions.
-   --------------------------------------------------------------------- */
+Persisted gloss highlighter — one exact-fit stroke per mark in the
+glossLayer (same trade-off as the link layer: above the text layer,
+pointer-events only on the strokes). Two layers per mark, like a real
+highlighter pass:
+  the box   = a translucent multi-stop accent gradient, small radius,
+              canvas glyphs read straight through it;
+  ::before  = the halo, a blurred bleed of ink past the stroke;
+  ::after   = the light sweep, only alive while processing.
+Every colour is mixed from --color-accent, so the stroke suits whatever
+tint the reader chose, on any text.
+--------------------------------------------------------------------- */
 .pdf-page .glossLayer {
   position: absolute;
   inset: 0;
@@ -70,62 +73,76 @@
 }
 .pdf-page .glossLayer .gloss-mark {
   position: absolute;
+  z-index: 0;                 /* stacking context: keeps the halo inside */
   pointer-events: auto;
   cursor: pointer;
-  border-radius: 10px;
-  background: color-mix(in oklab, var(--color-accent) 22%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 35%, transparent);
-  mix-blend-mode: multiply;
-  transition: background 120ms ease;
-}
-.pdf-page .glossLayer .gloss-mark:hover,
-.pdf-page .glossLayer .gloss-mark:focus-visible {
-  background: color-mix(in oklab, var(--color-accent) 32%, transparent);
-  outline: none;
-}
-.pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
-:root.dark .pdf-page .glossLayer .gloss-mark {
-  mix-blend-mode: screen;
-  background: color-mix(in oklab, var(--color-accent) 26%, transparent);
-}
-
-/* ---------------------------------------------------------------------
-   Processing: rainbow MIXED WITH the active accent so it always matches the
-   chosen tint, and a much tighter glow than before (inset -20%, blur 5px).
-   --------------------------------------------------------------------- */
-.pdf-page .glossLayer .gloss-mark-processing,
-:root.dark .pdf-page .glossLayer .gloss-mark-processing {
+  border-radius: 3px;         /* exact-fit stroke, not a pill */
+  overflow: hidden;
   background-image: linear-gradient(
-    90deg,
-    color-mix(in oklab, var(--color-accent) 45%, #ff6b6b),
-    color-mix(in oklab, var(--color-accent) 45%, #ffc26b),
-    color-mix(in oklab, var(--color-accent) 45%, #6bde9b),
-    color-mix(in oklab, var(--color-accent) 45%, #6bc9ff),
-    color-mix(in oklab, var(--color-accent) 45%, #a06bff),
-    color-mix(in oklab, var(--color-accent) 45%, #ff6b6b)
+    100deg,
+    color-mix(in oklab, var(--color-accent) 34%, transparent),
+    color-mix(in oklab, var(--color-accent) 28%, transparent) 40%,
+    color-mix(in oklab, var(--color-accent) 24%, transparent) 70%,
+    color-mix(in oklab, var(--color-accent) 34%, transparent)
   );
   background-size: 300% 100%;
-  animation: gloss-rainbow 1.1s linear infinite;
-  box-shadow: none;
-  mix-blend-mode: normal;
-  opacity: 0.8;
+  mix-blend-mode: multiply;
+  transition: box-shadow 150ms ease;
+  animation: gloss-breathe 4.2s ease-in-out infinite;
 }
-.pdf-page .glossLayer .gloss-mark-processing::before {
+.pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
+:root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
+.pdf-page .glossLayer .gloss-mark:hover,
+.pdf-page .glossLayer .gloss-mark:focus-visible {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 40%, transparent);
+  outline: none;
+}
+/* Halo — the soft bleed around the stroke (the screenshot look). */
+.pdf-page .glossLayer .gloss-mark::before {
   content: "";
   position: absolute;
-  inset: -20%;
-  border-radius: inherit;
-  background-image: inherit;
-  background-size: inherit;
-  animation: inherit;
-  filter: blur(5px);
-  opacity: 0.5;
+  inset: -9px;
+  z-index: -1;
+  border-radius: 12px;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--color-accent) 50%, transparent),
+    color-mix(in oklab, var(--color-accent) 20%, transparent) 55%,
+    transparent 75%
+  );
+  filter: blur(6px);
+  opacity: 0.8;
   pointer-events: none;
 }
-@keyframes gloss-rainbow {
-  to { background-position: -300% 0; }
+/* Sweep band — parked off-stroke until processing runs it across. */
+.pdf-page .glossLayer .gloss-mark::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 32%, var(--gloss-sweep) 50%, transparent 68%);
+  background-size: 260% 100%;
+  background-position: 130% 0;
+  opacity: 0;
+  pointer-events: none;
 }
-@media (prefers-reduced-motion: reduce) {
-  .pdf-page .glossLayer .gloss-mark-processing { animation: none; }
-  .pdf-page .glossLayer .gloss-mark-processing::before { animation: none; }
+/* Processing: the stroke thinks. Gradient drifts, the sweep runs across,
+the halo pulses. This is the ONLY processing UI — the surface stays
+unmounted until the first chunk lands. */
+.pdf-page .glossLayer .gloss-mark-processing,
+:root.dark .pdf-page .glossLayer .gloss-mark-processing {
+  animation:
+    gloss-breathe 4.2s ease-in-out infinite,
+    gloss-drift 2.6s linear infinite;
 }
+.pdf-page .glossLayer .gloss-mark-processing::after {
+  opacity: 1;
+  animation: gloss-sweep 1.5s linear infinite;
+}
+.pdf-page .glossLayer .gloss-mark-processing::before {
+  animation: gloss-halo-pulse 1.3s ease-in-out infinite alternate;
+}
+@keyframes gloss-drift { from { background-position: 0% 0; } to { background-position: -200% 0; } }
+@keyframes gloss-sweep { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+@keyframes gloss-halo-pulse { from { opacity: 0.5; } to { opacity: 1; } }
+@keyframes gloss-breathe { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.7; } }

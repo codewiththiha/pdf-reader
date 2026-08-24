@@ -16,7 +16,7 @@ use crate::components::ai::types::GlossPhase;
 /// accent tint: both sit directly on top of page text. Expanded cross-fades
 /// from that fill to the opaque card as the morph completes — and the same
 /// mix run backwards is what makes the outro read as the card dissolving into
-/// the pill it is landing on.
+/// the stroke it is landing on.
 fn fill_for(phase: GlossPhase, progress: f64) -> String {
     match phase {
         GlossPhase::Processing => concat!(
@@ -79,8 +79,8 @@ pub fn GlossSurface(
         let b = box_.get();
         let p = phase.get();
         let pr = progress.get();
-        // Fade IN as the morph leaves the pill, fade OUT as it returns onto it.
-        // The mark pill underneath owns the fully-collapsed look, so the outro
+        // Fade IN as the morph leaves the stroke, fade OUT as it returns onto it.
+        // The mark stroke underneath owns the fully-collapsed look, so the outro
         // reads as "card shrinks AND dissolves back into the highlight".
         let opacity = smoothstep(pr, 0.05, 0.5);
         let pe = if p == GlossPhase::Expanded && pr > 0.4 {

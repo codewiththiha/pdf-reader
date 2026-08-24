@@ -265,11 +265,11 @@ impl Default for AiSelectionState {
 #[derive(Clone, Copy, Default)]
 pub struct GlossState {
     pub marks: RwSignal<Vec<GlossMark>>,
-    /// id of the mark whose rainbow "processing" glow is live, if any.
+    /// id of the mark whose "processing" highlighter animation is live, if any.
     ///
-    /// Lives here, not in the popover, because the glow is painted by the
+    /// Lives here, not in the popover, because the animation is painted by the
     /// in-page mark layer: while the model is working there is NO surface at
-    /// all, so the pill itself has to carry the thinking state.
+    /// all, so the stroke itself has to carry the thinking state.
     pub processing_id: RwSignal<Option<String>>,
 }
 

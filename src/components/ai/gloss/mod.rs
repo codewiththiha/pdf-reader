@@ -1,5 +1,6 @@
-//! Gloss word-card: a spring-driven morph from an in-page pill into an
-//! explanation card and back down onto it, ported from the Gloss reference.
+//! Gloss word-card: a spring-driven morph from an in-page highlighter stroke
+//! into an explanation card and back down onto it, ported from the Gloss
+//! reference (with the Marginalia highlighter look for the mark itself).
 //!
 //! The three separable pieces that crossed over are the only things that did:
 //! the geometry + spring math (pure, in `pdf_core::gloss`), the anchor

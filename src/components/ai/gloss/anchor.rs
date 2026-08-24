@@ -18,7 +18,7 @@
 use pdf_core::gloss::{GlossBox, GlossMark};
 use wasm_bindgen::JsCast;
 
-use crate::components::ai::gloss::marks::{MARK_PAD_X, MARK_PAD_Y};
+use crate::components::ai::gloss::marks::MARK_RADIUS;
 use crate::components::document::dom_helpers::by_id;
 
 /// Id of the `.pdf-page` host that currently renders `page`, per view mode.
@@ -104,18 +104,22 @@ pub fn capture_selection_mark(
 /// Screen box for a mark, looked up by host id so it works after remounts.
 /// `None` while that page is unmounted — the caller keeps the last box, so the
 /// chip freezes instead of jumping to the origin.
+///
+/// Exact-fit: the stroke is the stored union rect itself (no padding), with
+/// a small radius so the morph hand-off lands on the same geometry the
+/// highlighter stroke occupies.
 pub fn mark_screen_box(mark: &GlossMark, scale: f64, single: bool) -> Option<GlossBox> {
     if scale <= 0.0 {
         return None;
     }
     let hr = by_id(&host_id_for(mark.page, single))?.get_bounding_client_rect();
-    let h = mark.rect.h * scale + MARK_PAD_Y * 2.0;
+    let h = mark.rect.h * scale;
     Some(GlossBox {
-        x: hr.left() + mark.rect.x * scale - MARK_PAD_X,
-        y: hr.top() + mark.rect.y * scale - MARK_PAD_Y,
-        w: mark.rect.w * scale + MARK_PAD_X * 2.0,
+        x: hr.left() + mark.rect.x * scale,
+        y: hr.top() + mark.rect.y * scale,
+        w: mark.rect.w * scale,
         h,
-        // "slightly less rounded": soft rectangle, not a full capsule
-        r: 10.0_f64.min(h / 2.0),
+        // Exact-fit stroke radius (not a pill capsule).
+        r: MARK_RADIUS.min(h / 2.0),
     })
 }
