@@ -113,6 +113,7 @@ pub fn PageList(
                                     render_text=true
                                     on_geometry=on_geometry
                                     gloss_marks=state.gloss.marks.read_only().into()
+                                    gloss_processing=state.gloss.processing_id.read_only().into()
                                 />
                             </div>
                         }

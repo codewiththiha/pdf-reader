@@ -1,5 +1,5 @@
 //! The spring, as a Leptos effect. Springs `value` toward `target`; while
-//! `snap` is true (dragging / processing bloom / reduced-motion) it jumps
+//! `snap` is true (dragging / processing / reduced-motion) it jumps
 //! instead of wobbling.
 //!
 //! Mirrors the self-referencing rAF loop in `effects/reader/zoom.rs`: one

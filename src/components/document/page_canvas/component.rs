@@ -66,6 +66,10 @@ pub fn PageCanvas(
     /// no layer at all, so this host stays usable outside the reader.
     #[prop(optional)]
     gloss_marks: Option<Signal<Vec<pdf_core::gloss::GlossMark>>>,
+    /// Id of the gloss mark currently waiting on the model, so the pill can
+    /// wear the processing glow. Ignored unless `gloss_marks` is set too.
+    #[prop(optional)]
+    gloss_processing: Option<Signal<Option<String>>>,
 ) -> impl IntoView {
     // Texture is a prop, not context: this component is reusable without an
     // ambient provider. A Memo so only a real texture change rebuilds the
@@ -339,11 +343,14 @@ pub fn PageCanvas(
             // reason a mark survives scrolling, zooming and reopening the book.
             {gloss_marks
                 .map(|marks| {
+                    let processing = gloss_processing
+                        .unwrap_or_else(|| Signal::derive(|| None));
                     view! {
                         <crate::components::ai::gloss::marks::GlossMarkLayer
                             page=page
                             marks=marks
                             scale=scale
+                            processing=processing
                         />
                     }
                 })}

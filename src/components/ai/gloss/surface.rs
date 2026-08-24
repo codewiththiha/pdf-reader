@@ -8,14 +8,15 @@ use leptos::prelude::*;
 
 use pdf_core::gloss::{smoothstep, GlossBox};
 
-use crate::components::ai::types::{AiPhase, GlossPhase};
+use crate::components::ai::types::GlossPhase;
 
 /// Surface background by phase.
 ///
 /// Processing and compact are deliberately SURFACE-heavy rather than a bare
-/// accent tint: both sit directly on top of page text, and a translucent pill
-/// let the words underneath show through the scan line. Expanded cross-fades
-/// from the chip fill to the opaque card as the morph completes.
+/// accent tint: both sit directly on top of page text. Expanded cross-fades
+/// from that fill to the opaque card as the morph completes — and the same
+/// mix run backwards is what makes the outro read as the card dissolving into
+/// the pill it is landing on.
 fn fill_for(phase: GlossPhase, progress: f64) -> String {
     match phase {
         GlossPhase::Processing => concat!(
@@ -58,9 +59,6 @@ fn shadow_for(phase: GlossPhase) -> String {
 pub fn GlossSurface(
     /// The card's geometry phase (independent of the AI data phase).
     phase: Signal<GlossPhase>,
-    /// The AI data phase — the scan line only runs while the model is
-    /// actually working, so the pill never pretends to think.
-    ai_phase: Signal<AiPhase>,
     /// The current sprung box — written per-frame by the spring.
     box_: Signal<GlossBox>,
     /// The expanded target — the content wrapper is sized to THIS, not to the
@@ -70,8 +68,10 @@ pub fn GlossSurface(
     progress: Signal<f64>,
     /// The selected word, for the card header.
     word: Signal<String>,
-    /// Re-open the chip in place (hover/tap on the compact surface).
-    on_hover_expand: Callback<()>,
+    /// Re-open the card from the collapsed surface. CLICK only — hover
+    /// re-opening made the card ambush a reader who was merely moving the
+    /// pointer across the page.
+    on_compact_click: Callback<()>,
     /// Full dismiss (the Close button).
     on_dismiss: Callback<()>,
     /// Begin dragging the expanded card.
@@ -135,30 +135,13 @@ pub fn GlossSurface(
             data-phase=move || phase_str.get()
             role=move || role.get()
             aria-label=move || aria_label.get()
-            on:pointerenter=move |_| {
+            on:click=move |_| {
                 if phase.get_untracked() == GlossPhase::Compact {
-                    on_hover_expand.run(());
-                }
-            }
-            on:pointerdown=move |ev| {
-                if phase.get_untracked() == GlossPhase::Compact {
-                    ev.prevent_default();
-                    on_hover_expand.run(());
+                    on_compact_click.run(());
                 }
             }
             style=move || surface_style.get()
         >
-            // Processing bloom — the accent replaces the reference's amber glow.
-            {move || (phase.get() == GlossPhase::Processing)
-                .then(|| view! { <div class="gloss-bloom"></div> })}
-
-            // Scan line: the ENTIRE "thinking" UI. The card no longer pops
-            // open empty on a timer, so this pill is what the reader watches
-            // until the first chunk lands.
-            {move || (phase.get() == GlossPhase::Processing
-                && ai_phase.get() == AiPhase::Processing)
-                .then(|| view! { <div class="gloss-scan"></div> })}
-
             // Content wrapper: sized to the EXPANDED card, faded in by progress.
             <div
                 class="absolute left-0 top-0 overflow-hidden text-ink"

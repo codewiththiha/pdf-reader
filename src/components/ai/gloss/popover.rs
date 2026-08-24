@@ -5,7 +5,7 @@
 //! * the **geometry phase** ([`GlossPhase`]): pill → expanded card → chip;
 //! * the **data phase** ([`AiPhase`]): processing → streaming → done/error.
 //!
-//! Three things are load-bearing here and easy to undo by accident:
+//! Four things are load-bearing here and easy to undo by accident:
 //!
 //! * **The anchor is a [`GlossMark`], never a DOM node.** Every scroll, zoom,
 //!   page or mode change re-projects the mark's page-space rect through
@@ -14,16 +14,25 @@
 //!   localStorage at capture time and is deliberately NOT removed on dismiss:
 //!   closing the card leaves the word highlighted, and clicking that highlight
 //!   re-opens the card through the same spring.
-//! * **Expansion is data-driven.** There is no expand timer; the card blooms
-//!   out when the first snapshot (or an error) arrives, so it can never pop
-//!   open empty. Until then the pill's scan line is the whole processing UI.
-//! * **Only a scroll OUTSIDE the card collapses it.** Scroll/wheel/touch whose
-//!   target is the card's own scroller are the card scrolling itself.
+//! * **There is exactly one highlighter at a time.** The native `::selection`
+//!   tint is cleared the moment the gloss takes over; while the model works
+//!   there is NO surface at all (the in-page pill wears the rainbow glow); and
+//!   after the outro the surface unmounts once it has settled onto the pill,
+//!   so a chip can never sit on top of the mark it came from.
+//! * **Every close is an outro, not a cut.** Close button, document scroll,
+//!   Escape and outside clicks all run `collapse_to_mark`, and the spring is
+//!   NOT snapped while compact, so the card visibly morphs back down onto the
+//!   word before handing over to the persisted pill.
+//! * **Re-opening is recall, not a rescan.** Snapshots are cached by mark id,
+//!   so clicking a pill morphs the card open on `AiPhase::Done` content
+//!   without touching the backend.
+
+use std::collections::HashMap;
 
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
 
-use pdf_core::gloss::{place_expanded, GlossBox, GlossMark};
+use pdf_core::gloss::{boxes_close, place_expanded, GlossBox, GlossMark};
 use pdf_core::layout::ViewMode;
 
 use crate::components::ai::gloss::anchor::{capture_selection_mark, mark_screen_box};
@@ -56,6 +65,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let detail = state.reader.ai_selection.detail;
     let popover_open = state.reader.ai_selection.popover_open;
     let marks = state.reader.gloss.marks;
+    let processing_id = state.reader.gloss.processing_id;
 
     // ── Data phase + content ──────────────────────────────────────────────
     let phase = RwSignal::new(AiPhase::Idle);
@@ -78,6 +88,14 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let content_height = RwSignal::new(0.0_f64);
     let viewport = RwSignal::new(viewport_size());
     let reduced = reduced_motion_signal();
+    // Whether the morphing surface exists at all. Distinct from
+    // `popover_open`: during processing the pill IS the UI, and after the
+    // outro morph the surface unmounts while the gloss stays "open" on its
+    // mark.
+    let surface_visible = RwSignal::new(false);
+    // Answers already fetched this session, keyed by mark id. Re-opening a
+    // pill is recall, not a rescan.
+    let cache = StoredValue::new_local(HashMap::<String, WordInfo>::new());
 
     // Re-project the page-space mark onto the screen. Called on every scroll /
     // zoom / mode / page / resize tick — this is the "sticks to the text" part.
@@ -107,15 +125,23 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     );
     on_cleanup(move || open_handle.remove());
 
-    // Expand ONLY when the first chunk (or an error) arrives. The chip's scan
-    // line is the whole "thinking" UI; never pop an empty card.
+    // The surface is born ON the first chunk (or an error) — never on a timer,
+    // so it can never pop open empty. The same frame hands the "thinking"
+    // state off: the pill's rainbow glow goes out as the card blooms.
     let _listener = listen_ai_chunks(move |chunk| match chunk {
         AiChunkEvent::Snapshot(info) => {
+            if let Some(m) = mark_v.get_value() {
+                cache.update_value(|c| {
+                    c.insert(m.id.clone(), info.clone());
+                });
+            }
+            processing_id.set(None);
             if phase.get_untracked() == AiPhase::Processing {
                 phase.set(AiPhase::Streaming);
                 if gphase.get_untracked() == GlossPhase::Processing {
                     expand_scroll_y.set_value(current_scroll_y());
                     gphase.set(GlossPhase::Expanded);
+                    surface_visible.set(true);
                 }
             }
             word_info.set(Some(info));
@@ -124,9 +150,11 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         AiChunkEvent::Error(msg) => {
             error_msg.set(Some(msg));
             phase.set(AiPhase::Error);
+            processing_id.set(None);
             if gphase.get_untracked() == GlossPhase::Processing {
                 gphase.set(GlossPhase::Expanded);
             }
+            surface_visible.set(true);
         }
     });
 
@@ -139,6 +167,8 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         word_info.set(None);
         error_msg.set(None);
         gphase.set(GlossPhase::Processing);
+        surface_visible.set(false);
+        processing_id.set(None);
         mark_v.set_value(None);
         anchor.set(None);
         drag_box.set(None);
@@ -146,7 +176,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         grab.set_value(None);
     };
 
-    // Fold the expanded card back onto the word (scroll-to-close).
+    // The outro: fold the expanded card back down onto the word. Every close
+    // path funnels through here, and the settle watcher below unmounts the
+    // surface once the spring has actually landed on the pill.
     let collapse_to_mark = move || {
         if gphase.get_untracked() != GlossPhase::Expanded || dragging.get_untracked() {
             return;
@@ -155,37 +187,48 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         gphase.set(GlossPhase::Compact);
     };
 
-    // Record + persist a freshly captured mark (deduped against a re-explain
-    // of the same word at the same spot).
-    let add_mark = move |m: GlossMark| {
-        let Some(path) = state.reader.document.path.get_untracked() else {
-            return;
-        };
+    // Record + persist a freshly captured mark, and hand back the CANONICAL
+    // one: re-explaining the same word at the same spot reuses the existing
+    // mark rather than stacking a second pill on it. Returning it matters —
+    // the id is what keys the processing glow and the answer cache, so the
+    // caller must not go on holding the discarded duplicate.
+    let add_mark = move |m: GlossMark| -> GlossMark {
+        let existing = marks.with_untracked(|v| {
+            v.iter()
+                .find(|o| {
+                    o.page == m.page
+                        && o.word == m.word
+                        && (o.rect.x - m.rect.x).abs() < 1.0
+                        && (o.rect.y - m.rect.y).abs() < 1.0
+                })
+                .cloned()
+        });
+        if let Some(existing) = existing {
+            return existing;
+        }
         marks.update(|v| {
-            let duplicate = v.iter().any(|o| {
-                o.page == m.page
-                    && o.word == m.word
-                    && (o.rect.x - m.rect.x).abs() < 1.0
-                    && (o.rect.y - m.rect.y).abs() < 1.0
-            });
-            if duplicate {
-                return;
-            }
             v.push(m.clone());
             if v.len() > MARK_CAP {
                 v.remove(0);
             }
         });
-        crate::storage::persist_gloss(&path, &marks.get_untracked());
+        if let Some(path) = state.reader.document.path.get_untracked() {
+            crate::storage::persist_gloss(&path, &marks.get_untracked());
+        }
+        m
     };
 
-    // ── Effect: opening — from a fresh selection OR from a clicked mark ───
+    // ── Effect: opening — from a fresh selection OR from a clicked pill ───
+    // Both `popover_open` and `pending_mark` are tracked: a close no longer
+    // flips `popover_open` back to false (the gloss stays open on its mark),
+    // so a second pill click has to re-run this effect through the mark alone.
     Effect::new(move |_| {
-        if !popover_open.get() {
+        let open = popover_open.get();
+        let clicked = pending_mark.get();
+        if !open {
             return;
         }
         let sel = detail.get_untracked();
-        let clicked = pending_mark.get_untracked();
         let scale = state.reader.viewer.zoom.display.get_untracked();
         let page_now = state.reader.viewer.page.get_untracked();
         let mark = match (clicked, sel) {
@@ -195,10 +238,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
             // A fresh selection: capture it BEFORE the selection is cleared.
             (None, Some(s)) => {
                 match capture_selection_mark(page_now, scale, s.text.clone(), s.context.clone()) {
-                    Some(m) => {
-                        add_mark(m.clone());
-                        m
-                    }
+                    Some(m) => add_mark(m),
                     None => return,
                 }
             }
@@ -210,32 +250,51 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         word.set(mark.word.clone());
         viewport.set(viewport_size());
 
-        phase.set(AiPhase::Processing);
-        word_info.set(None);
-        error_msg.set(None);
-        gphase.set(GlossPhase::Processing);
         drag_box.set(None);
         dragging.set(false);
         expand_scroll_y.set_value(current_scroll_y());
 
-        // The native selection would fight the card's own text selection, and
-        // the persisted mark has already replaced its tint.
+        // Exactly one highlighter: the native tint goes the moment the pill
+        // takes over (it would also fight the card's own text selection).
         if let Some(Some(s)) = web_sys::window().and_then(|w| w.get_selection().ok()) {
             let _ = s.remove_all_ranges();
         }
         detail.set(None);
         pending_mark.set(None);
 
+        // Recall, not rescan: a pill whose answer is already cached morphs
+        // straight back open, with no request and no shimmer.
+        if let Some(info) = cache.with_value(|c| c.get(&mark.id).cloned()) {
+            word_info.set(Some(info));
+            phase.set(AiPhase::Done);
+            error_msg.set(None);
+            processing_id.set(None);
+            expand_scroll_y.set_value(current_scroll_y());
+            gphase.set(GlossPhase::Expanded);
+            surface_visible.set(true);
+            return;
+        }
+
+        word_info.set(None);
+        error_msg.set(None);
+        phase.set(AiPhase::Processing);
+        gphase.set(GlossPhase::Processing);
+        // No surface while thinking: the rainbow pill is the only processing
+        // UI, so nothing is stacked over the word.
+        surface_visible.set(false);
+        processing_id.set(Some(mark.id.clone()));
+
         if !pdf_engine::has_tauri() {
             error_msg.set(Some(
                 "AI explanations are only available in the desktop app.".into(),
             ));
             phase.set(AiPhase::Error);
+            processing_id.set(None);
             gphase.set(GlossPhase::Expanded);
+            surface_visible.set(true);
         } else {
             invoke_explain_word(mark.word, mark.context);
         }
-        // No expand timer on purpose: the pill + scan line IS the processing UI.
     });
 
     // ── Effect: stick to the text ────────────────────────────────────────
@@ -270,10 +329,11 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         }
     });
 
-    // The pill and the chip must track the word EXACTLY as it scrolls; only
-    // the expanded card is worth springing.
+    // Snapping while compact was what made closing read as a cut: the spring
+    // teleported the surface onto the anchor instead of morphing down to it.
+    // Only the processing phase (where no surface exists anyway) snaps.
     let snap = Signal::derive(move || {
-        dragging.get() || reduced.get() || gphase.get() != GlossPhase::Expanded
+        dragging.get() || reduced.get() || gphase.get() == GlossPhase::Processing
     });
     let sprung = use_spring_box(target.into(), snap);
 
@@ -285,7 +345,6 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     });
 
     // Surface prop signals (unwrapped — the surface only renders while open).
-    let phase_sig = Signal::derive(move || phase.get());
     let gphase_sig = Signal::derive(move || gphase.get());
     let box_sig = Signal::derive(move || sprung.get().unwrap_or_default());
     let expanded_sig = Signal::derive(move || expanded_target.get().unwrap_or_default());
@@ -293,26 +352,50 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let word_sig = Signal::derive(move || word.get());
 
     // ── Callbacks wired into the surface ─────────────────────────────────
-    let on_hover_expand = Callback::new(move |_: ()| {
-        if gphase.get_untracked() != GlossPhase::Compact
-            || phase.get_untracked() == AiPhase::Processing
-        {
+    let on_compact_click = Callback::new(move |_: ()| {
+        if gphase.get_untracked() != GlossPhase::Compact {
+            return;
+        }
+        // Nothing to show yet: leave the pill alone rather than open a card
+        // that would only shimmer.
+        if word_info.get_untracked().is_none() && error_msg.get_untracked().is_none() {
             return;
         }
         expand_scroll_y.set_value(current_scroll_y());
         gphase.set(GlossPhase::Expanded);
     });
-    let on_dismiss = Callback::new(move |_: ()| reset());
+    // The Close button is an outro like every other close path.
+    let on_dismiss = Callback::new(move |_: ()| collapse_to_mark());
     let on_drag_start = Callback::new(move |(cx, cy, origin): (f64, f64, GlossBox)| {
         grab.set_value(Some((cx - origin.x, cy - origin.y)));
         dragging.set(true);
+    });
+
+    // ── Effect: the outro's hand-off ─────────────────────────────────────
+    // Once the collapsing surface has morphed down onto the anchor, unmount it
+    // and let the in-page pill take over. Doing this on SETTLE rather than on
+    // a timer is what keeps the two from being visible at once (the pill is
+    // drawn on the same padded box the surface lands on).
+    Effect::new(move |_| {
+        if !surface_visible.get() || gphase.get() != GlossPhase::Compact {
+            return;
+        }
+        let Some(a) = anchor.get() else {
+            // The mark's page unmounted mid-morph: there is nothing left to
+            // land on, so drop the surface now.
+            surface_visible.set(false);
+            return;
+        };
+        if sprung.get().is_some_and(|b| boxes_close(b, a, 0.5)) {
+            surface_visible.set(false);
+        }
     });
 
     // ── Effect: scroll handling ──────────────────────────────────────────
     // Scrolling INSIDE the card never collapses it; scrolling the document
     // outside it does (expanded -> compact chip).
     Effect::new(move |_| {
-        if !popover_open.get() {
+        if !surface_visible.get() {
             return;
         }
         // Capture-phase scroll from ANY scroller (window, #page-list, the
@@ -359,7 +442,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
 
     // ── Effect: Escape / outside-tap ─────────────────────────────────────
     Effect::new(move |_| {
-        if !popover_open.get() {
+        if !surface_visible.get() {
             return;
         }
         let key = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
@@ -368,10 +451,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 return;
             }
             match gphase.get_untracked() {
-                GlossPhase::Expanded => {
-                    drag_box.set(None);
-                    gphase.set(GlossPhase::Compact);
-                }
+                // First Escape closes the card (with the outro); a second one
+                // on the bare chip gives up on the gloss entirely.
+                GlossPhase::Expanded => collapse_to_mark(),
                 _ => reset(),
             }
         });
@@ -450,12 +532,8 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // (which may now be off screen — the anchor still knows where it is).
     Effect::new(move |_| {
         let _ = state.reader.viewer.page.get();
-        if !popover_open.get_untracked() {
-            return;
-        }
-        if gphase.get_untracked() == GlossPhase::Expanded {
-            drag_box.set(None);
-            gphase.set(GlossPhase::Compact);
+        if surface_visible.get_untracked() {
+            collapse_to_mark();
         }
         recompute_anchor();
     });
@@ -484,15 +562,14 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
             {move || word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
         </div>
 
-        <Show when=move || popover_open.get() && phase.get() != AiPhase::Idle>
+        <Show when=move || surface_visible.get() && phase.get() != AiPhase::Idle>
             <GlossSurface
                 phase=gphase_sig
-                ai_phase=phase_sig
                 box_=box_sig
                 expanded=expanded_sig
                 progress=progress_sig
                 word=word_sig
-                on_hover_expand=on_hover_expand
+                on_compact_click=on_compact_click
                 on_dismiss=on_dismiss
                 on_drag_start=on_drag_start
             >

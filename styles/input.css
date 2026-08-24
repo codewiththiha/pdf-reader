@@ -31,6 +31,6 @@
 @import "./components/title_bar.css";    /* toolbar glass, sidebar outro, status bar */
 @import "./components/animations.css";  /* search/popover/page-turn/toast entrances, reduced motion */
 @import "./components/ai.css";         /* AI warp window, rainbow glow, blur-fade, shimmer */
-@import "./components/gloss.css";      /* word-card morph surface + accent bloom */
+@import "./components/gloss.css";      /* word-card morph surface + gloss pill */
 @import "./components/appearance.css";  /* hue strip, preset thumbnails, link layer */
 @import "./library.css";     /* bookshelf + drag overlay */
