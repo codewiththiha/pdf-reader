@@ -48,7 +48,7 @@ use crate::components::ai::gloss::placement::{CARD_WIDTH, expanded_target, sprin
 use crate::components::ai::gloss::spring::use_spring_box;
 use crate::components::ai::gloss::surface::GlossSurface;
 use crate::components::ai::gloss::util::{reduced_motion_signal, viewport_size};
-use crate::components::ai::types::{AiPhase, GlossPhase};
+use crate::components::ai::types::{AiError, AiPhase, GlossPhase};
 use crate::components::ai::word_info::{LoadingShimmer, WordInfoSections};
 use crate::state::AppState;
 
@@ -164,14 +164,28 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                         None => view! { <LoadingShimmer /> }.into_any(),
                     },
                     AiPhase::Error => {
-                        let msg = ctrl
-                            .error_msg
-                            .get()
-                            .unwrap_or_else(|| "Something went wrong.".into());
+                        let err = ctrl.error.get().unwrap_or_else(AiError::unknown);
+                        let msg = err.friendly().into_owned();
+                        let retryable = err.retryable;
                         view! {
-                            <div class="ai-text-reveal p-1 text-sm text-red-400">{msg}</div>
+                            <div class="ai-text-reveal flex flex-col gap-3 p-1">
+                                <p class="text-sm leading-relaxed text-ink/80">{msg}</p>
+                                <Show when=move || retryable>
+                                    <button
+                                        type="button"
+                                        on:click=move |_| ctrl.retry.run(())
+                                        class="self-start rounded-full border border-line bg-surface \
+                                               px-4 py-1.5 text-sm font-medium text-ink \
+                                               transition-[transform,background-color] duration-150 ease-out \
+                                               hover:bg-line active:scale-[0.96] \
+                                               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                    >
+                                        "Try again"
+                                    </button>
+                                </Show>
+                            </div>
                         }
-                            .into_any()
+                        .into_any()
                     }
                     AiPhase::Idle => ().into_any(),
                 }}

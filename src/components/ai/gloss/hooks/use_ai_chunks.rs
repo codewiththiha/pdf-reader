@@ -8,7 +8,7 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::types::{AiPhase, GlossPhase};
-use crate::services::ai::{AI_CHUNK_EVENT, AiChunkEvent};
+use crate::services::ai::{AiChunkEvent, AI_CHUNK_EVENT};
 use crate::state::AppState;
 
 pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
@@ -40,8 +40,16 @@ pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
                     ctrl.word_info.set(Some(info));
                 }
                 AiChunkEvent::Done => ctrl.phase.set(AiPhase::Done),
-                AiChunkEvent::Error(msg) => {
-                    ctrl.error_msg.set(Some(msg));
+                AiChunkEvent::Error(err) => {
+                    // A failed run must not leave a stale partial snapshot
+                    // behind: re-opening this mark has to re-request, not
+                    // recall the fragment as if it were the finished answer.
+                    if let Some(m) = ctrl.mark_sig.get_untracked() {
+                        ctrl.cache.update_value(|c| {
+                            c.remove(&m.id);
+                        });
+                    }
+                    ctrl.error.set(Some(err));
                     ctrl.phase.set(AiPhase::Error);
                     processing_id.set(None);
                     if ctrl.gphase.get_untracked() == GlossPhase::Processing {

@@ -16,7 +16,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
-use crate::components::ai::types::WordInfo;
+use crate::components::ai::types::{AiError, WordInfo};
 
 /// Window event the app-lifetime bridge re-broadcasts every AI chunk on.
 /// The gloss popover listens for this (not for the Tauri event directly).
@@ -32,7 +32,8 @@ pub const AI_CHUNK_EVENT: &str = "pdfreader:ai-chunk";
 pub enum AiChunkEvent {
     Snapshot(WordInfo),
     Done,
-    Error(String),
+    /// A typed failure; see [`AiError`] for the cause/retry contract.
+    Error(AiError),
 }
 
 /// Starts an `explain_word` run on the backend. The streamed results arrive
@@ -99,6 +100,7 @@ pub fn install_ai_chunk_bridge() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::ai::types::AiErrorKind;
 
     // The exact JSON shapes the backend's `app.emit("ai-stream-chunk",
     // &chunk)` produces from `AiChunk`'s serde tagging. If these parse, the
@@ -120,11 +122,29 @@ mod tests {
         let done: AiChunkEvent = serde_json::from_str(r#"{"type":"Done"}"#).unwrap();
         assert!(matches!(done, AiChunkEvent::Done));
 
-        let error: AiChunkEvent =
-            serde_json::from_str(r#"{"type":"Error","data":"model unavailable"}"#).unwrap();
+        let error: AiChunkEvent = serde_json::from_str(
+            r#"{"type":"Error","data":{"kind":"model_not_ready","message":"the on-device model is still downloading","retryable":true}}"#,
+        )
+        .unwrap();
         match error {
-            AiChunkEvent::Error(msg) => assert_eq!(msg, "model unavailable"),
+            AiChunkEvent::Error(err) => {
+                assert_eq!(err.kind, AiErrorKind::ModelNotReady);
+                assert!(err.retryable);
+            }
             other => panic!("expected Error, got {other:?}"),
+        }
+
+        // The escape-hatch variant carries its summary inline.
+        let other: AiChunkEvent = serde_json::from_str(
+            r#"{"type":"Error","data":{"kind":{"other":"helper crashed"},"message":"helper crashed","retryable":false}}"#,
+        )
+        .unwrap();
+        match other {
+            AiChunkEvent::Error(err) => {
+                assert_eq!(err.kind, AiErrorKind::Other("helper crashed".into()));
+                assert!(!err.retryable);
+            }
+            other => panic!("expected Error(Other), got {other:?}"),
         }
     }
 }

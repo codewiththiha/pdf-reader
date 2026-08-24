@@ -30,7 +30,8 @@ pub mod apple;
 // WordInfo itself travels inside AiChunk, hence the allow for now.
 #[allow(unused_imports)]
 pub use schema::WordInfo;
-pub use traits::{AiChunk, AiProvider};
+#[allow(unused_imports)]
+pub use traits::{AiChunk, AiError, AiErrorKind, AiProvider};
 
 #[cfg(all(feature = "ai", target_os = "macos", target_arch = "aarch64"))]
 pub fn create_provider() -> Box<dyn AiProvider> {

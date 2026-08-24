@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use serde::{Deserialize, Serialize};
 
 /// Geometry of the word card. Orthogonal to [`AiPhase`] (the AI data status):
@@ -48,4 +50,63 @@ pub struct WordInfo {
     pub meaning: String,
     pub synonyms: Vec<String>,
     pub usages: Vec<String>,
+}
+
+/// Mirror of the backend's `AiErrorKind` (`src-tauri/src/ai/traits.rs`) —
+/// keep the serde shapes in sync. Branch on `kind`, never on `message`
+/// wording: the prose may change between OS releases.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiErrorKind {
+    NotEnabled,
+    ModelNotReady,
+    DeviceNotEligible,
+    OsTooOld,
+    BlockedByGuardrail,
+    ContextTooLong,
+    Timeout,
+    Busy,
+    BadResponse,
+    Other(String),
+}
+
+/// Mirror of the backend's `AiError`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AiError {
+    pub kind: AiErrorKind,
+    pub message: String,
+    pub retryable: bool,
+}
+
+impl AiError {
+    /// Short, human explanation mapped once per kind so the wording stays
+    /// consistent everywhere it is shown. [`AiErrorKind::Other`] is the
+    /// escape hatch whose `message` was written to be user-facing (and is
+    /// bounded in length by whoever constructs it).
+    pub fn friendly(&self) -> Cow<'_, str> {
+        match &self.kind {
+            AiErrorKind::NotEnabled => "Apple Intelligence is turned off. Turn it on in System Settings → Apple Intelligence.".into(),
+            AiErrorKind::ModelNotReady => {
+                "The on-device model is still downloading. Try again in a little while.".into()
+            }
+            AiErrorKind::DeviceNotEligible => "This Mac doesn't support Apple Intelligence.".into(),
+            AiErrorKind::OsTooOld => "macOS 26 or newer is required for on-device explanations.".into(),
+            AiErrorKind::BlockedByGuardrail => "The model declined to answer this one.".into(),
+            AiErrorKind::ContextTooLong => "The selected passage is too long to analyze.".into(),
+            AiErrorKind::Timeout => "The model took too long to respond.".into(),
+            AiErrorKind::Busy => "The model is busy with another request right now.".into(),
+            AiErrorKind::BadResponse => "The response didn't match the expected format.".into(),
+            AiErrorKind::Other(_) => self.message.as_str().into(),
+        }
+    }
+
+    /// Fallback for render paths that must show *something* even if the
+    /// error signal was (impossibly) cleared between phase and paint.
+    pub fn unknown() -> Self {
+        Self {
+            kind: AiErrorKind::Other("unknown".into()),
+            message: "Something went wrong.".into(),
+            retryable: false,
+        }
+    }
 }

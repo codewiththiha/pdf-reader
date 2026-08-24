@@ -1,8 +1,8 @@
 //! The gloss state-machine hub: every signal the popover juggles plus the
-//! three behaviours all paths share — `reset` (full dismiss),
-//! `collapse_to_mark` (the outro), and `add_mark` (dedup + persist). Also
-//! owns the open-event listener and the open effect, so [`super::popover`]
-//! reads as wiring + view.
+//! behaviours all paths share — `reset` (full dismiss), `collapse_to_mark`
+//! (the outro), `add_mark` (dedup + persist) and `retry` (re-run a failed
+//! lookup). Also owns the open-event listener and the open effect, so
+//! [`super::popover`] reads as wiring + view.
 //!
 //! Open path is deterministic: both the Info pill and a saved stroke dispatch
 //! `pdfreader:gloss-open` with the mark in the event detail. The listener
@@ -19,7 +19,7 @@ use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::marks::GLOSS_OPEN_EVENT;
 use crate::components::ai::gloss::spring::SpringBox;
 use crate::components::ai::gloss::util::viewport_size;
-use crate::components::ai::types::{AiPhase, GlossPhase, WordInfo};
+use crate::components::ai::types::{AiError, AiErrorKind, AiPhase, GlossPhase, WordInfo};
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;
 
@@ -35,15 +35,14 @@ pub struct GlossController {
     pub phase: RwSignal<AiPhase>,
     pub word: RwSignal<String>,
     pub word_info: RwSignal<Option<WordInfo>>,
-    pub error_msg: RwSignal<Option<String>>,
+    /// The typed failure behind `AiPhase::Error`, if any. Drives both the
+    /// friendly message and the retry affordance in the surface.
+    pub error: RwSignal<Option<AiError>>,
 
     // ── Geometry phase ────────────────────────────────────────────────
     pub gphase: RwSignal<GlossPhase>,
 
     // ── Anchor: the persisted mark this card belongs to ───────────────
-    /// Reactive so `watch_page_anchor` re-derives the moment a new mark
-    /// opens; `StoredValue` alone would leave the watch looking at a stale
-    /// None.
     pub mark_sig: RwSignal<Option<GlossMark>>,
     pub pending_mark: RwSignal<Option<GlossMark>>,
     pub open_req: RwSignal<u64>,
@@ -55,9 +54,6 @@ pub struct GlossController {
     pub surface_visible: RwSignal<bool>,
 
     // ── Drag state (the pointer physics live in [`super::drag`]) ──────
-    /// Anchor-relative offset (dx, dy) — not a screen box — so a dragged
-    /// card still travels with the page when the anchor moves on scroll.
-    /// Compact phase ignores it and morphs home to the mark.
     pub drag_offset: RwSignal<Option<(f64, f64)>>,
     pub dragging: RwSignal<bool>,
     pub grab: StoredValue<Option<(f64, f64)>, LocalStorage>,
@@ -70,6 +66,7 @@ pub struct GlossController {
     pub reset: Callback<()>,
     pub collapse_to_mark: Callback<()>,
     pub add_mark: Callback<GlossMark, GlossMark>,
+    pub retry: Callback<()>,
 }
 
 pub fn use_gloss_controller(state: AppState) -> GlossController {
@@ -81,7 +78,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
     let phase = RwSignal::new(AiPhase::Idle);
     let word = RwSignal::new(String::new());
     let word_info = RwSignal::new(None::<WordInfo>);
-    let error_msg = RwSignal::new(None::<String>);
+    let error = RwSignal::new(None::<AiError>);
     let gphase = RwSignal::new(GlossPhase::Processing);
     let mark_sig = RwSignal::new(None::<GlossMark>);
     let pending_mark = RwSignal::new(None::<GlossMark>);
@@ -99,7 +96,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         phase.set(AiPhase::Idle);
         word.set(String::new());
         word_info.set(None);
-        error_msg.set(None);
+        error.set(None);
         gphase.set(GlossPhase::Processing);
         surface_visible.set(false);
         processing_id.set(None);
@@ -151,11 +148,30 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         m
     });
 
+    // Retry the current mark after a retryable failure: the same opening
+    // ritual minus persistence (the mark is already canonical), so the stroke
+    // thinks again and the surface is reborn on the first fresh chunk.
+    let retry = Callback::new(move |_| {
+        let Some(mark) = mark_sig.get_untracked() else {
+            return;
+        };
+        if !pdf_engine::has_tauri() {
+            return; // the environment cannot change mid-session
+        }
+        error.set(None);
+        word_info.set(None);
+        phase.set(AiPhase::Processing);
+        gphase.set(GlossPhase::Processing);
+        surface_visible.set(false);
+        processing_id.set(Some(mark.id.clone()));
+        invoke_explain_word(mark.word, mark.context);
+    });
+
     GlossController {
         phase,
         word,
         word_info,
-        error_msg,
+        error,
         gphase,
         mark_sig,
         pending_mark,
@@ -168,6 +184,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         reset,
         collapse_to_mark,
         add_mark,
+        retry,
     }
 }
 
@@ -254,7 +271,7 @@ pub fn use_open_effect(
         // straight back open, with no request and no shimmer.
         if let Some(info) = ctrl.cache.with_value(|c| c.get(&mark.id).cloned()) {
             ctrl.word_info.set(Some(info));
-            ctrl.error_msg.set(None);
+            ctrl.error.set(None);
             ctrl.phase.set(AiPhase::Done);
             processing_id.set(None);
             ctrl.gphase.set(GlossPhase::Expanded);
@@ -263,7 +280,7 @@ pub fn use_open_effect(
         }
 
         ctrl.word_info.set(None);
-        ctrl.error_msg.set(None);
+        ctrl.error.set(None);
         ctrl.phase.set(AiPhase::Processing);
         ctrl.gphase.set(GlossPhase::Processing);
         // No surface while thinking: the highlighter stroke is the only
@@ -272,9 +289,11 @@ pub fn use_open_effect(
         processing_id.set(Some(mark.id.clone()));
 
         if !pdf_engine::has_tauri() {
-            ctrl.error_msg.set(Some(
-                "AI explanations are only available in the desktop app.".into(),
-            ));
+            ctrl.error.set(Some(AiError {
+                kind: AiErrorKind::Other("desktop-only".into()),
+                message: "AI explanations are only available in the desktop app.".into(),
+                retryable: false,
+            }));
             ctrl.phase.set(AiPhase::Error);
             processing_id.set(None);
             ctrl.gphase.set(GlossPhase::Expanded);
