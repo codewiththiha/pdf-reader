@@ -14,17 +14,35 @@
 //! is working the stroke wears `gloss-mark-processing` (drift + sweep + pulsing
 //! halo) and no surface exists at all.
 //!
-//! Clicking a stroke re-opens the card for that word. The click travels as a
-//! `pdfreader:gloss-open` CustomEvent rather than a callback prop: the popover
-//! lives at the reader-page level, far above the page hosts, and threading a
-//! callback through `PageList`/`SinglePageView`/`PageCanvas` would couple
-//! three view layers to the AI feature for one message (the same reasoning as
-//! `pdfreader:navigate` in `effects::reader::link_navigation`). The Info pill
-//! uses the same public dispatcher so a fresh selection takes the identical
-//! self-contained path (mark in the event detail, `open_req` bumped).
+//! Interaction surface:
+//! * **Click** re-opens the card (toggle-to-close lives in the controller's
+//!   open effect) — or, in selection mode, toggles selection instead.
+//! * **Long-press** (≥ `LONG_PRESS_MS`, drift < `LONG_PRESS_SLOP_PX`) enters
+//!   multi-select mode with this mark already selected. The press uses
+//!   pointer capture so it survives drifting off the stroke; the click that
+//!   follows the gesture (and the synthetic `contextmenu` mobile fires after
+//!   it) are swallowed by one-shot suppression flags.
+//! * **Right-click** asks for the remove menu (`pdfreader:gloss-context`) —
+//!   or toggles selection when selection mode is already active.
+//!
+//! Clicking travels as a `pdfreader:gloss-open` CustomEvent rather than a
+//! callback prop: the popover lives at the reader-page level, far above the
+//! page hosts, and threading a callback through `PageList`/`SinglePageView`/
+//! `PageCanvas` would couple three view layers to the AI feature for one
+//! message. Selection state is the exception: it is shared reactive state on
+//! `state.reader.gloss`, threaded down like `marks` and `processing` because
+//! every stroke must repaint the moment it changes.
+
+use std::collections::HashSet;
 
 use leptos::prelude::*;
 use pdf_core::gloss::GlossMark;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
+
+use crate::components::ai::gloss::select_mode::{
+    dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
+};
 
 /// Name of the "a persisted mark was clicked" event.
 pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
@@ -33,6 +51,24 @@ pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one
 /// geometry. No hug-padding: the stroke is the stored union rect itself.
 pub const MARK_RADIUS: f64 = 3.0;
+
+/// Stop an in-flight long-press: the finger lifted, drifted past slop, or
+/// the gesture already completed. Clears the pending timer (harmless if it
+/// already fired) and drops the parked closure.
+fn cancel_long_press(
+    press_active: StoredValue<bool, LocalStorage>,
+    timer: StoredValue<Option<(i32, Closure<dyn FnMut()>)>, LocalStorage>,
+) {
+    press_active.set_value(false);
+    timer.with_value(|t| {
+        if let Some((handle, _)) = t {
+            if let Some(win) = web_sys::window() {
+                win.clear_timeout_with_handle(*handle);
+            }
+        }
+    });
+    timer.set_value(None);
+}
 
 #[component]
 pub fn GlossMarkLayer(
@@ -44,9 +80,17 @@ pub fn GlossMarkLayer(
     scale: ReadSignal<f64>,
     /// Id of the mark currently waiting on the model, if any.
     processing: Signal<Option<String>>,
+    /// Whether gloss multi-select mode is active (long-press initiated).
+    selecting: RwSignal<bool>,
+    /// Ids of the currently selected marks; strokes paint the selected tint.
+    selected: RwSignal<HashSet<String>>,
 ) -> impl IntoView {
     view! {
-        <div class="glossLayer" aria-hidden="false">
+        <div
+            class="glossLayer"
+            class=("glossLayer-selecting", move || selecting.get())
+            aria-hidden="false"
+        >
             <For
                 each=move || {
                     marks.get().into_iter().filter(|m| m.page == page).collect::<Vec<_>>()
@@ -69,21 +113,156 @@ pub fn GlossMarkLayer(
                         let id = m.id.clone();
                         move || processing.get().as_deref() == Some(id.as_str())
                     };
-                    let mark = m.clone();
+                    let is_selected = {
+                        let id = m.id.clone();
+                        move || selected.with(|s| s.contains(&id))
+                    };
+
+                    // ── Long-press gesture state (per mark) ───────────────
+                    let press_start: StoredValue<Option<(i32, i32)>, LocalStorage> =
+                        StoredValue::new_local(None);
+                    let press_active: StoredValue<bool, LocalStorage> =
+                        StoredValue::new_local(false);
+                    // One-shot flags: the click (and, on touch, the synthetic
+                    // contextmenu) that follow a completed long-press must be
+                    // swallowed, or the gesture would instantly re-open/toggle.
+                    let suppress_click: StoredValue<bool, LocalStorage> =
+                        StoredValue::new_local(false);
+                    let suppress_context: StoredValue<bool, LocalStorage> =
+                        StoredValue::new_local(false);
+                    // The pending timer + its parked closure.
+                    let timer: StoredValue<Option<(i32, Closure<dyn FnMut()>)>, LocalStorage> =
+                        StoredValue::new_local(None);
+                    // Reactive "currently pressing" tint (instant feedback
+                    // before the 450 ms complete).
+                    let pressing = RwSignal::new(false);
+
+                    // Each DOM handler owns its own mark/id clone. Event
+                    // closures are independent and may be called repeatedly.
+                    let aria_id = m.id.clone();
+                    let press_id = m.id.clone();
+                    let click_mark = m.clone();
+                    let context_id = m.id.clone();
+
                     view! {
                         <button
                             type="button"
                             class="gloss-mark"
                             class=("gloss-mark-processing", is_processing)
-                            title=mark.word.clone()
-                            aria-label=format!("Explain {}", mark.word)
+                            class=("gloss-mark-selected", is_selected)
+                            class=("gloss-mark-pressing", move || pressing.get())
+                            title=m.word.clone()
+                            aria-label=format!("Explain {}", m.word)
+                            aria-pressed=move || {
+                                selecting.get().then(|| {
+                                    if selected.with(|s| s.contains(&aria_id)) { "true" } else { "false" }
+                                })
+                            }
                             style=style
                             // Keep the document selection (and the page's own
-                            // press handling) out of a stroke click.
+                            // press handling) out of a stroke interaction.
                             on:mousedown=move |ev| ev.prevent_default()
+                            on:pointerdown=move |ev| {
+                                // Only the primary button starts a gesture —
+                                // right-click owns the context menu.
+                                if ev.button() != 0 {
+                                    return;
+                                }
+                                // Keep receiving move/up even when the finger
+                                // drifts off this 12-px stroke.
+                                if let Some(el) = ev
+                                    .target()
+                                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                                {
+                                    let _ = el.set_pointer_capture(ev.pointer_id());
+                                }
+                                if selecting.get_untracked() {
+                                    return; // toggling happens on click
+                                }
+                                press_active.set_value(true);
+                                pressing.set(true);
+                                suppress_click.set_value(false);
+                                suppress_context.set_value(false);
+                                press_start.set_value(Some((ev.client_x(), ev.client_y())));
+
+                                let Some(win) = web_sys::window() else {
+                                    return;
+                                };
+                                let id = press_id.clone();
+                                let cb = Closure::<dyn FnMut()>::new(move || {
+                                    if !press_active.get_value() {
+                                        return;
+                                    }
+                                    press_active.set_value(false);
+                                    pressing.set(false);
+                                    suppress_click.set_value(true);
+                                    suppress_context.set_value(true);
+                                    selecting.set(true);
+                                    selected.update(|s| {
+                                        s.insert(id.clone());
+                                    });
+                                });
+                                let f: js_sys::Function =
+                                    cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
+                                if let Ok(handle) = win
+                                    .set_timeout_with_callback_and_timeout_and_arguments_0(
+                                        &f,
+                                        LONG_PRESS_MS,
+                                    )
+                                {
+                                    timer.set_value(Some((handle, cb)));
+                                }
+                            }
+                            on:pointermove=move |ev| {
+                                if !press_active.get_value() {
+                                    return;
+                                }
+                                let Some((sx, sy)) = press_start.get_value() else {
+                                    return;
+                                };
+                                let dx = (ev.client_x() - sx) as f64;
+                                let dy = (ev.client_y() - sy) as f64;
+                                if dx * dx + dy * dy > LONG_PRESS_SLOP_PX * LONG_PRESS_SLOP_PX {
+                                    cancel_long_press(press_active, timer);
+                                    pressing.set(false);
+                                }
+                            }
+                            on:pointerup=move |_| {
+                                cancel_long_press(press_active, timer);
+                                pressing.set(false);
+                            }
+                            on:pointercancel=move |_| {
+                                cancel_long_press(press_active, timer);
+                                pressing.set(false);
+                            }
                             on:click=move |ev| {
                                 ev.stop_propagation();
-                                request_gloss_open(&mark);
+                                if suppress_click.get_value() {
+                                    suppress_click.set_value(false);
+                                    return; // this press became a long-press
+                                }
+                                if selecting.get_untracked() {
+                                    toggle_selected(selected, &click_mark.id);
+                                    return;
+                                }
+                                request_gloss_open(&click_mark);
+                            }
+                            on:contextmenu=move |ev| {
+                                ev.prevent_default();
+                                ev.stop_propagation();
+                                if suppress_context.get_value() {
+                                    suppress_context.set_value(false);
+                                    return; // synthetic, after a long-press
+                                }
+                                if selecting.get_untracked() {
+                                    toggle_selected(selected, &context_id);
+                                    return;
+                                }
+                                dispatch_gloss_context(
+                                    ev.client_x() as f64,
+                                    ev.client_y() as f64,
+                                    &context_id,
+                                );
                             }
                         />
                     }

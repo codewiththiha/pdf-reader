@@ -146,6 +146,8 @@ pub fn open_path(state: AppState, path: String) {
                     crate::storage::load_gloss().remove(&path).unwrap_or_default(),
                 );
                 state.reader.gloss.processing_id.set(None);
+                state.reader.gloss.selection_active.set(false);
+                state.reader.gloss.selected_marks.set(std::collections::HashSet::new());
 
                 // Resume point (clamped to the real count — a re-edited
                 // document may have fewer pages than remembered).

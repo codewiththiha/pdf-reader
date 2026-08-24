@@ -114,6 +114,8 @@ pub fn PageList(
                                     on_geometry=on_geometry
                                     gloss_marks=state.gloss.marks.read_only().into()
                                     gloss_processing=state.gloss.processing_id.read_only().into()
+                                    gloss_selecting=state.gloss.selection_active
+                                    gloss_selected=state.gloss.selected_marks
                                 />
                             </div>
                         }

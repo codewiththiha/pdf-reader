@@ -146,3 +146,80 @@ unmounted until the first chunk lands. */
 @keyframes gloss-sweep { from { background-position: 130% 0; } to { background-position: -130% 0; } }
 @keyframes gloss-halo-pulse { from { opacity: 0.5; } to { opacity: 1; } }
 @keyframes gloss-breathe { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.7; } }
+
+/* ---------------------------------------------------------------------
+   Multi-select mode (long-press initiated). No checkboxes: selection is
+   pure colour. Unselected marks dim and get a one-shot invitation pulse;
+   selected marks read as inked-in — solid accent pass, accent ring, soft
+   glow — with a 140 ms pop the moment they toggle. `pressing` is the
+   instant feedback while the long-press is still counting.
+--------------------------------------------------------------------- */
+.pdf-page .glossLayer .gloss-mark-pressing {
+    filter: brightness(1.18);
+}
+
+.pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected) {
+    opacity: 0.68;
+    animation: gloss-select-hint 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Defined AFTER the processing rules so it wins the animation tie. */
+.pdf-page .glossLayer .gloss-mark-selected,
+:root.dark .pdf-page .glossLayer .gloss-mark-selected {
+    background-image: none;
+    background-color: color-mix(in oklab, var(--color-accent) 58%, transparent);
+    box-shadow:
+        0 0 0 1.5px color-mix(in oklab, var(--color-accent) 75%, transparent),
+        0 0 12px color-mix(in oklab, var(--color-accent) 35%, transparent);
+    opacity: 1;
+    animation: gloss-select-pop 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes gloss-select-hint {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.06); }
+    100% { transform: scale(1); }
+}
+
+@keyframes gloss-select-pop {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.14); }
+    100% { transform: scale(1); }
+}
+
+/* Right-click menu, selection bar and undo toast entrances. */
+@keyframes gloss-menu-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.gloss-context-menu {
+    animation: gloss-menu-in 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes gloss-bar-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.gloss-select-bar {
+    animation: gloss-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* translateX(-50%) is baked in: the toast centers via `left: 50%` and the
+   keyframe owns the transform for its whole (fill-both) lifetime. */
+@keyframes gloss-toast-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.gloss-undo-toast {
+    animation: gloss-toast-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pdf-page .glossLayer-selecting .gloss-mark,
+    .pdf-page .glossLayer .gloss-mark-selected,
+    .gloss-context-menu,
+    .gloss-select-bar,
+    .gloss-undo-toast {
+        animation: none;
+    }
+}

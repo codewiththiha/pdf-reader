@@ -281,6 +281,10 @@ impl AiSelectionState {
 #[derive(Clone, Copy, Default)]
 pub struct GlossState {
     pub marks: RwSignal<Vec<GlossMark>>,
+    /// Gloss multi-select mode (long-press initiated on a mark).
+    pub selection_active: RwSignal<bool>,
+    /// Ids of the marks currently selected while in multi-select mode.
+    pub selected_marks: RwSignal<std::collections::HashSet<String>>,
     /// id of the mark whose "processing" highlighter animation is live, if any.
     ///
     /// Lives here, not in the popover, because the animation is painted by the

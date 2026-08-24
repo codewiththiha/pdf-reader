@@ -70,6 +70,13 @@ pub fn PageCanvas(
     /// wear the processing animation. Ignored unless `gloss_marks` is set too.
     #[prop(optional)]
     gloss_processing: Option<Signal<Option<String>>>,
+    /// Shared gloss multi-select mode. Optional with a local false fallback so
+    /// this page host remains reusable outside the reader.
+    #[prop(optional)]
+    gloss_selecting: Option<RwSignal<bool>>,
+    /// Shared ids selected in gloss multi-select mode.
+    #[prop(optional)]
+    gloss_selected: Option<RwSignal<std::collections::HashSet<String>>>,
 ) -> impl IntoView {
     // Texture is a prop, not context: this component is reusable without an
     // ambient provider. A Memo so only a real texture change rebuilds the
@@ -326,6 +333,10 @@ pub fn PageCanvas(
         });
     });
 
+    let gloss_selecting = gloss_selecting.unwrap_or_else(|| RwSignal::new(false));
+    let gloss_selected = gloss_selected
+        .unwrap_or_else(|| RwSignal::new(std::collections::HashSet::new()));
+
     view! {
         <div id=host_id class=host_class>
             <canvas id=canvas_id />
@@ -351,6 +362,8 @@ pub fn PageCanvas(
                             marks=marks
                             scale=scale
                             processing=processing
+                            selecting=gloss_selecting
+                            selected=gloss_selected
                         />
                     }
                 })}

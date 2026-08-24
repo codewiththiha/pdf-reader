@@ -66,6 +66,12 @@ pub struct GlossController {
     pub reset: Callback<()>,
     pub collapse_to_mark: Callback<()>,
     pub add_mark: Callback<GlossMark, GlossMark>,
+    /// Remove marks by id: persist, evict their cached answers, close the
+    /// card if it belonged to one of them. Returns the removed marks so the
+    /// caller can park them for undo.
+    pub remove_marks: Callback<Vec<String>, Vec<GlossMark>>,
+    /// Re-insert previously removed marks (the Undo path) and persist.
+    pub restore_marks: Callback<Vec<GlossMark>>,
     pub retry: Callback<()>,
 }
 
@@ -141,6 +147,65 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         m
     });
 
+    // The single removal path: context menu, selection bar, anything later.
+    // Persist first, evict the session cache, then close the card if it
+    // belonged to one of the removed marks. Hands the batch back for undo.
+    let remove_marks = Callback::new(move |ids: Vec<String>| -> Vec<GlossMark> {
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        let id_set: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+        let mut removed = Vec::new();
+        marks.update(|v| {
+            let mut keep = Vec::with_capacity(v.len());
+            for m in v.drain(..) {
+                if id_set.contains(m.id.as_str()) {
+                    removed.push(m);
+                } else {
+                    keep.push(m);
+                }
+            }
+            *v = keep;
+        });
+        if removed.is_empty() {
+            return removed;
+        }
+        if let Some(path) = doc_path.get_untracked() {
+            crate::storage::persist_gloss(&path, &marks.get_untracked());
+        }
+        cache.update_value(|c| {
+            for m in &removed {
+                c.remove(&m.id);
+            }
+        });
+        if mark_sig
+            .get_untracked()
+            .is_some_and(|open| id_set.contains(open.id.as_str()))
+        {
+            reset.run(());
+        }
+        removed
+    });
+
+    // Undo: re-insert (id-deduped) and persist. The session cache stays
+    // evicted — the next open of a restored mark re-fetches, which is the
+    // honest behaviour for a word whose answer might have improved.
+    let restore_marks = Callback::new(move |restored: Vec<GlossMark>| {
+        if restored.is_empty() {
+            return;
+        }
+        marks.update(|v| {
+            for m in restored {
+                if !v.iter().any(|o| o.id == m.id) {
+                    v.push(m);
+                }
+            }
+        });
+        if let Some(path) = doc_path.get_untracked() {
+            crate::storage::persist_gloss(&path, &marks.get_untracked());
+        }
+    });
+
     // Retry the current mark after a retryable failure: the same opening
     // ritual minus persistence (the mark is already canonical), so the stroke
     // thinks again and the surface is reborn on the first fresh chunk.
@@ -177,6 +242,8 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         reset,
         collapse_to_mark,
         add_mark,
+        remove_marks,
+        restore_marks,
         retry,
     }
 }

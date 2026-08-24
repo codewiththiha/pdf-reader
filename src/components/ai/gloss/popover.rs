@@ -34,6 +34,7 @@
 use leptos::prelude::*;
 
 use crate::components::ai::anchor::{watch_page_anchor, PageAnchor, CARD_EXIT_FRAC};
+use crate::components::ai::gloss::context_menu::GlossContextMenu;
 use crate::components::ai::gloss::controller::{
     use_gloss_controller, use_open_effect, use_open_listener,
 };
@@ -45,8 +46,11 @@ use crate::components::ai::gloss::interactions::{
     use_viewport_refresh, use_zoom_reset,
 };
 use crate::components::ai::gloss::placement::{CARD_WIDTH, expanded_target, spring_target};
+use crate::components::ai::gloss::select_bar::GlossSelectBar;
+use crate::components::ai::gloss::select_mode::use_select_mode;
 use crate::components::ai::gloss::spring::use_spring_box;
 use crate::components::ai::gloss::surface::GlossSurface;
+use crate::components::ai::gloss::undo_toast::GlossUndoToast;
 use crate::components::ai::gloss::util::{reduced_motion_signal, viewport_size};
 use crate::components::ai::types::{AiError, AiPhase, GlossPhase};
 use crate::components::ai::word_info::{LoadingShimmer, WordInfoSections};
@@ -120,6 +124,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // ── Drag physics ──────────────────────────────────────────────────
     let drag = use_card_drag(ctrl, expanded);
 
+    // ── Mark management (selection mode, context menu, undo) ──────────
+    let sm = use_select_mode(state, ctrl);
+
     // ── Surface props (unwrapped — it only renders while visible) ─────
     let phase_sig = Signal::derive(move || ctrl.gphase.get());
     let box_sig = Signal::derive(move || sprung.get().unwrap_or_default());
@@ -191,5 +198,12 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 }}
             </GlossSurface>
         </Show>
+
+        // Mark management chrome: the bottom-right selection bar, the
+        // right-click remove menu, and the undo toast. All three sit above
+        // the expanded surface (z 50): bar 60, menu/toast 70.
+        <GlossSelectBar state ctrl undo=sm.undo />
+        <GlossContextMenu state ctrl menu=sm.menu undo=sm.undo />
+        <GlossUndoToast state ctrl undo=sm.undo />
     }
 }
