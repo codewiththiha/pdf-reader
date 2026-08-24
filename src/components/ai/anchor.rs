@@ -49,10 +49,6 @@ pub fn screen_box(anchor: &PageAnchor, scale: f64, single: bool) -> Option<Gloss
     })
 }
 
-pub fn mark_screen_box(mark: &GlossMark, scale: f64, single: bool) -> Option<GlossBox> {
-    screen_box(&PageAnchor::from_mark(mark), scale, single)
-}
-
 /// Capture the current DOM selection as a page-space anchor.
 pub fn capture_selection(page: u32, scale: f64) -> Option<PageAnchor> {
     if scale <= 0.0 {
