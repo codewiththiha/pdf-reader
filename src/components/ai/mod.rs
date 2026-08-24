@@ -1,7 +1,7 @@
 //! AI-assisted reading: the floating menu anchored to the user's text
-//! selection and the explanation popover it opens.
+//! selection and the explanation card it opens.
 
-pub mod popover;
+pub mod gloss;
 pub mod selection_menu;
 pub mod types;
 pub mod word_info;

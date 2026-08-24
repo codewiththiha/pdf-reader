@@ -45,16 +45,17 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                     aria-label="Explain selected text with AI"
                     // Preventing the mousedown default keeps the document
                     // selection (and focus) alive, so the highlight stays
-                    // visible behind the popover this button opens — and the
+                    // visible behind the card this button opens — and the
                     // button can never be unmounted by its own press.
                     on:mousedown=move |ev| ev.prevent_default()
                     on:click=move |_| {
                         popover_open.set(true);
                     }
-                    class="flex items-center gap-1.5 rounded-full border border-line \
-                           bg-surface px-3 py-1.5 text-xs font-medium text-ink \
-                           shadow-lg backdrop-blur-sm \
-                           transition-colors hover:bg-line \
+                    class="flex min-h-11 items-center gap-1.5 rounded-full border border-line \
+                           bg-surface px-5 text-sm font-medium tracking-wide text-ink \
+                           shadow-[var(--gloss-shadow-menu)] \
+                           transition-[transform,background-color] duration-150 ease-out \
+                           active:scale-[0.96] \
                            focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <Icon name=IconName::More size=13 />

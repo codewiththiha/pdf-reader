@@ -1,0 +1,64 @@
+/* =====================================================================
+   Gloss word-card morph: bloom (processing) -> spring morph (expanded)
+   -> chip (compact). A port of the Gloss reference's visual layer.
+
+   Position / size / radius are written PER FRAME by the spring effect in
+   Rust, so the geometry properties deliberately carry NO transition — a
+   transition here would fight the rAF loop and double-motion the card.
+
+   Every colour is an existing theme token; --color-accent is whatever the
+   active appearance tint is, so the bloom/chip/morph follow the reader's
+   chosen hue automatically. Nothing here touches tokens.css or pdf-page.css.
+   ===================================================================== */
+
+:root {
+  --gloss-shadow-menu:
+    0 0 0 1px var(--color-line),
+    0 8px 24px rgb(0 0 0 / 0.30);
+  --gloss-shadow-card:
+    0 0 0 1px var(--color-line),
+    0 16px 40px rgb(0 0 0 / 0.42);
+}
+
+/* ---------------------------------------------------------------------
+   The morphing surface. Position/size/radius are written per-frame by the
+   spring effect; there is intentionally NO transition on geometry.
+   --------------------------------------------------------------------- */
+.gloss-surface {
+  position: fixed;
+  z-index: 40;
+  overflow: hidden;
+  box-sizing: border-box;
+  transform-origin: top left;
+  touch-action: none;
+}
+.gloss-surface[data-phase="processing"],
+.gloss-surface[data-phase="compact"] { z-index: 30; }
+.gloss-surface[data-phase="expanded"] { z-index: 50; }
+
+/* Processing bloom — the accent replaces the reference's amber glow. The
+   pulse reads as "thinking" for the ~340ms before the card blooms out. */
+.gloss-bloom {
+  pointer-events: none;
+  position: absolute;
+  inset: -22%;
+  border-radius: inherit;
+  background: var(--color-accent);
+  filter: blur(14px);
+  animation: gloss-pulse 340ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@keyframes gloss-pulse {
+  0%   { opacity: 0.15; }
+  45%  { opacity: 0.55; }
+  100% { opacity: 0.28; }
+}
+
+/* Usage-example lines inside the card (kept from the reference). */
+.gloss-quote {
+  border-left: 1px solid var(--color-line);
+  padding-left: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gloss-bloom { animation: none; opacity: 0.3; }
+}

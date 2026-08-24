@@ -1,128 +1,12 @@
 /* =====================================================================
-   AI Feature: warp window, rainbow glow, morph, and blur-fade text.
-   All animations are capped by the global reduced-motion net in
-   animations.css §13; only rules where motion carries meaning get a
-   bespoke reduced-motion treatment (§9 below).
+   AI Feature: content styling for the word card.
+   The warp-window container, rainbow processing glow, streaming/done and
+   error state styles, and their reduced-motion override have been REMOVED —
+   the card is now a spring-driven Gloss surface (see gloss.css) whose
+   processing beat is the accent bloom, not a rainbow. What remains here is
+   reused inside that surface: the blur-fade reveal, the Info-pill entrance,
+   the word/POS/synonym/usage/section styling, and the loading shimmer.
    ===================================================================== */
-
-/* ---------------------------------------------------------------------
-   1. Warp Window — the container that starts at the selection's bounding
-   box and morphs into the full popover.
-
-   The "border" is a 2px padding gap between this outer wrapper (which
-   carries the animated gradient) and the inner panel (solid surface
-   background) — no border-image compatibility issues, full control over
-   glow thickness and blur.
-
-   The window is a flex column so the inner panel can shrink below its
-   content height and scroll when the card hits its max-height.
-   --------------------------------------------------------------------- */
-.ai-warp-window {
-  position: fixed;
-  z-index: 90;
-  display: flex;
-  flex-direction: column;
-  border-radius: 10px;
-  padding: 2px;
-  box-sizing: border-box;
-  pointer-events: auto;
-
-  /* The morph: every geometric property transitions smoothly.
-     cubic-bezier(0.22, 1, 0.36, 1) is a fast-start, soft-land curve
-     that feels like the window "settles" into place. */
-  transition:
-    top    0.45s cubic-bezier(0.22, 1, 0.36, 1),
-    left   0.45s cubic-bezier(0.22, 1, 0.36, 1),
-    width  0.45s cubic-bezier(0.22, 1, 0.36, 1),
-    height 0.45s cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 0.45s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.3s ease;
-}
-
-/* Inner content panel, inside the 2px gradient "border". min-height:0
-   lets it shrink within the flexed window and take over scrolling. */
-.ai-warp-inner {
-  flex: 1 1 auto;
-  min-height: 0;
-  background: var(--color-surface);
-  border-radius: 8px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  box-sizing: border-box;
-}
-
-/* ---------------------------------------------------------------------
-   2. Processing state — rainbow glow.
-
-   The outer wrapper's background is a wide linear gradient that shifts
-   position, creating a flowing rainbow border; a slow pulse on the
-   box-shadow makes the halo feel alive.
-   --------------------------------------------------------------------- */
-.ai-warp-window.ai-processing {
-  background: linear-gradient(
-    135deg,
-    #ff0040, #ff8800, #ffee00, #00ff66,
-    #0088ff, #8800ff, #ff0040
-  );
-  background-size: 400% 400%;
-  animation:
-    ai-gradient-flow 2.4s ease infinite,
-    ai-glow-pulse 1.8s ease-in-out infinite;
-  box-shadow:
-    0 0 12px 2px rgba(255, 0, 64, 0.25),
-    0 0 24px 4px rgba(0, 136, 255, 0.15);
-}
-
-@keyframes ai-gradient-flow {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-@keyframes ai-glow-pulse {
-  0%, 100% {
-    box-shadow:
-      0 0 10px 2px rgba(255, 0, 64, 0.2),
-      0 0 20px 4px rgba(0, 136, 255, 0.12);
-  }
-  50% {
-    box-shadow:
-      0 0 16px 4px rgba(255, 136, 0, 0.3),
-      0 0 32px 8px rgba(136, 0, 255, 0.18);
-  }
-}
-
-/* While processing, the inner panel is semi-transparent so the rainbow
-   glow bleeds through slightly — an "energy" feel without obscuring the
-   selected text underneath. */
-.ai-warp-window.ai-processing .ai-warp-inner {
-  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
-}
-
-/* ---------------------------------------------------------------------
-   3. Streaming / Done state — the glow settles.
-
-   The rainbow fades to a calm line-coloured border and the shadow
-   softens to standard card elevation. The .ai-warp-window transition
-   handles the geometric morph; these rules handle colour/shadow.
-   --------------------------------------------------------------------- */
-.ai-warp-window.ai-streaming,
-.ai-warp-window.ai-done {
-  background: var(--color-line);
-  animation: none;
-  box-shadow:
-    0 4px 16px -4px rgb(0 0 0 / 0.18),
-    0 1px 4px rgb(0 0 0 / 0.08);
-}
-
-/* ---------------------------------------------------------------------
-   4. Error state — a brief red flash on the border, then settle.
-   --------------------------------------------------------------------- */
-.ai-warp-window.ai-error {
-  background: color-mix(in srgb, #ef4444 60%, var(--color-line));
-  animation: none;
-  box-shadow: 0 0 12px 2px rgba(239, 68, 68, 0.3);
-}
 
 /* ---------------------------------------------------------------------
    5. Blur-fade text reveal.
@@ -177,7 +61,7 @@
 }
 
 /* ---------------------------------------------------------------------
-   7. Popover content sections.
+   7. Card content sections.
    --------------------------------------------------------------------- */
 
 /* The selected word displayed prominently at the top. */
@@ -240,7 +124,7 @@
   opacity: 0.5;
 }
 
-/* Section labels inside the popover. */
+/* Section labels inside the card. */
 .ai-section-label {
   font-size: 0.65rem;
   font-weight: 700;
@@ -251,7 +135,7 @@
 }
 
 /* ---------------------------------------------------------------------
-   8. Loading shimmer — shown inside the popover body while waiting for
+   8. Loading shimmer — shown inside the card body while waiting for
    the first AI chunk.
    --------------------------------------------------------------------- */
 .ai-shimmer-line {
@@ -270,17 +154,4 @@
 @keyframes ai-shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
-}
-
-/* ---------------------------------------------------------------------
-   9. Reduced motion. animations.css §13 already caps every animation and
-   transition globally; only the processing state gets a bespoke rule so
-   it still reads as "working" with zero motion: a static rainbow border
-   instead of a flowing one.
-   --------------------------------------------------------------------- */
-@media (prefers-reduced-motion: reduce) {
-  .ai-warp-window.ai-processing {
-    background: linear-gradient(135deg, #ff0040, #0088ff, #8800ff);
-    box-shadow: 0 0 12px 2px rgba(0, 136, 255, 0.25);
-  }
 }
