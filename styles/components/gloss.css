@@ -62,3 +62,76 @@
 @media (prefers-reduced-motion: reduce) {
   .gloss-bloom { animation: none; opacity: 0.3; }
 }
+
+/* ---------------------------------------------------------------------
+   Scan line inside the processing pill: the ONLY "thinking" indicator.
+   The card no longer expands on a timer, so this runs from the moment the
+   request goes out until the first chunk lands.
+   --------------------------------------------------------------------- */
+.gloss-scan {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  border-radius: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-accent) 70%, white),
+    transparent
+  );
+  animation: gloss-scan 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes gloss-scan {
+  0%   { top: 18%; opacity: 0; }
+  12%  { opacity: 1; }
+  50%  { top: 78%; }
+  88%  { opacity: 1; }
+  100% { top: 18%; opacity: 0; }
+}
+
+/* The card scrolls but must never show a scrollbar — it is a floating
+   surface, not a pane, and a gutter would break the morph's silhouette. */
+.gloss-surface [data-gloss-scroll] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.gloss-surface [data-gloss-scroll]::-webkit-scrollbar { display: none; }
+
+/* ---------------------------------------------------------------------
+   Persisted gloss highlights: same trade-off as the link layer — above the
+   text layer, pointer-events only on the marks themselves. Repainted from
+   page-space rects on every page mount, so they survive scroll, zoom,
+   remounts and sessions.
+   --------------------------------------------------------------------- */
+.pdf-page .glossLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.pdf-page .glossLayer .gloss-mark {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--color-accent) 26%, transparent);
+  mix-blend-mode: multiply;
+  box-shadow: 0 1px 0 color-mix(in oklab, var(--color-accent) 60%, transparent);
+  transition: background 120ms ease;
+}
+.pdf-page .glossLayer .gloss-mark:hover,
+.pdf-page .glossLayer .gloss-mark:focus-visible {
+  background: color-mix(in oklab, var(--color-accent) 42%, transparent);
+  outline: none;
+}
+.pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
+:root.dark .pdf-page .glossLayer .gloss-mark {
+  mix-blend-mode: screen;
+  background: color-mix(in oklab, var(--color-accent) 32%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gloss-scan { animation: none; top: 50%; opacity: 0.6; }
+}

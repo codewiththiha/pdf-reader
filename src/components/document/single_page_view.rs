@@ -85,6 +85,7 @@ pub fn SinglePageView(state: ReaderState) -> impl IntoView {
                                     canvas_id=format!("sp-{page}-cv")
                                     host_id=format!("sp-{page}-pg")
                                     render_text=true
+                                    gloss_marks=state.gloss.marks.read_only().into()
                                 />
                             </div>
                         }

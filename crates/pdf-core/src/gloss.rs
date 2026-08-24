@@ -10,7 +10,10 @@
 //! box. Named `GlossBox` to avoid colliding with `std::boxed::Box`.
 
 /// A positioned, sized, rounded rectangle — the five fields the spring drives.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+///
+/// Serializable because [`GlossMark`] persists one of these to localStorage
+/// (and ships one through a `CustomEvent` detail when a mark is clicked).
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub struct GlossBox {
     pub x: f64,
     pub y: f64,
@@ -19,6 +22,26 @@ pub struct GlossBox {
     /// Corner radius — animated alongside the box so the chip's pill radius
     /// morphs into the card radius.
     pub r: f64,
+}
+
+/// A persisted gloss highlight: the word that was explained, plus WHERE it is
+/// on the page in a form that survives everything the viewport does to it.
+///
+/// The rect is deliberately in **page space** — unscaled CSS px measured from
+/// the `.pdf-page` host's origin — not in viewport space. A native
+/// `Selection` cannot be persisted (it is cleared when the card opens, it dies
+/// with the text-layer spans the virtualizer unmounts, and there is only ever
+/// one of it), so the mark is re-projected onto the screen as
+/// `host_rect.origin + rect * display_scale` every time the page mounts. That
+/// is what makes the highlight survive scroll, zoom, remounts and sessions.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GlossMark {
+    pub id: String,
+    pub page: u32,
+    pub word: String,
+    pub context: String,
+    /// Page space (unscaled CSS px from the page origin). Screen = rect * display_scale.
+    pub rect: GlossBox,
 }
 
 /// `f64::clamp` lifted to a free fn so call sites read as the reference.
@@ -175,6 +198,23 @@ mod tests {
         let card = place_expanded(anchor, 320.0, 2000.0, 800.0, 600.0, 24.0);
         assert!(card.h <= 600.0 - 32.0 + 1e-6);
         assert!(card.w <= 800.0 - 32.0 + 1e-6);
+    }
+
+    #[test]
+    fn a_gloss_mark_round_trips_through_json() {
+        // The persistence contract: what localStorage holds must come back
+        // byte-identical, because the rect IS the anchor. A silently dropped
+        // field would put the highlight on the wrong word after a restart.
+        let mark = GlossMark {
+            id: "g3-1700000000000".to_string(),
+            page: 3,
+            word: "palimpsest".to_string(),
+            context: "a manuscript page, a palimpsest, scraped clean".to_string(),
+            rect: GlossBox { x: 120.5, y: 44.25, w: 62.0, h: 13.5, r: 0.0 },
+        };
+        let json = serde_json::to_string(&mark).expect("serialize");
+        let back: GlossMark = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(mark, back);
     }
 
     #[test]

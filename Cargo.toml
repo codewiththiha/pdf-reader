@@ -50,6 +50,7 @@ web-sys = { version = "0.3", features = [
   "Storage",
   "MediaQueryList",
   "CustomEvent",
+  "CustomEventInit",
   "console",
 ] }
 serde = { version = "1", features = ["derive"] }

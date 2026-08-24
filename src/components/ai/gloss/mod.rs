@@ -9,13 +9,16 @@
 //!
 //! Layout:
 //! * [`spring`] — the spring as a Leptos effect (the rAF loop).
-//! * [`anchor`] — capturing the selected textLayer span and re-measuring it.
+//! * [`anchor`] — capturing the selection as a page-space rect and
+//!   re-projecting it onto the screen.
+//! * [`marks`]  — the persistent highlight layer painted inside each page.
 //! * [`util`]   — viewport/scroll helpers, capture-phase listener, scroller
-//!                 edge guards, reduced-motion.
+//!   edge guards, reduced-motion.
 //! * [`surface`]— the morphing surface component.
 //! * [`popover`]— the orchestrating state machine (replaces `AiPopover`).
 
 pub mod anchor;
+pub mod marks;
 pub mod popover;
 pub mod spring;
 pub mod surface;

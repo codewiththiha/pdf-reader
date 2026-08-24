@@ -8,17 +8,26 @@ use leptos::prelude::*;
 
 use pdf_core::gloss::{smoothstep, GlossBox};
 
-use crate::components::ai::types::GlossPhase;
+use crate::components::ai::types::{AiPhase, GlossPhase};
 
-/// Surface background by phase. Processing is a solid accent (the bloom sits
-/// on top); compact is a faint accent tint; expanded cross-fades from that
-/// tint to the opaque surface as the morph completes.
+/// Surface background by phase.
+///
+/// Processing and compact are deliberately SURFACE-heavy rather than a bare
+/// accent tint: both sit directly on top of page text, and a translucent pill
+/// let the words underneath show through the scan line. Expanded cross-fades
+/// from the chip fill to the opaque card as the morph completes.
 fn fill_for(phase: GlossPhase, progress: f64) -> String {
     match phase {
-        GlossPhase::Processing => "var(--color-accent)".into(),
-        GlossPhase::Compact => {
-            "color-mix(in oklab, var(--color-accent) 36%, transparent)".into()
-        }
+        GlossPhase::Processing => concat!(
+            "color-mix(in oklab, var(--color-surface) 78%, ",
+            "color-mix(in oklab, var(--color-accent) 34%, transparent))",
+        )
+        .into(),
+        GlossPhase::Compact => concat!(
+            "color-mix(in oklab, var(--color-surface) 70%, ",
+            "color-mix(in oklab, var(--color-accent) 30%, transparent))",
+        )
+        .into(),
         GlossPhase::Expanded => {
             let p = (progress.clamp(0.0, 1.0) * 100.0).round() as u32;
             format!(
@@ -49,6 +58,9 @@ fn shadow_for(phase: GlossPhase) -> String {
 pub fn GlossSurface(
     /// The card's geometry phase (independent of the AI data phase).
     phase: Signal<GlossPhase>,
+    /// The AI data phase — the scan line only runs while the model is
+    /// actually working, so the pill never pretends to think.
+    ai_phase: Signal<AiPhase>,
     /// The current sprung box — written per-frame by the spring.
     box_: Signal<GlossBox>,
     /// The expanded target — the content wrapper is sized to THIS, not to the
@@ -139,6 +151,13 @@ pub fn GlossSurface(
             // Processing bloom — the accent replaces the reference's amber glow.
             {move || (phase.get() == GlossPhase::Processing)
                 .then(|| view! { <div class="gloss-bloom"></div> })}
+
+            // Scan line: the ENTIRE "thinking" UI. The card no longer pops
+            // open empty on a timer, so this pill is what the reader watches
+            // until the first chunk lands.
+            {move || (phase.get() == GlossPhase::Processing
+                && ai_phase.get() == AiPhase::Processing)
+                .then(|| view! { <div class="gloss-scan"></div> })}
 
             // Content wrapper: sized to the EXPANDED card, faded in by progress.
             <div

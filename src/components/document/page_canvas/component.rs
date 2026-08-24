@@ -62,6 +62,10 @@ pub fn PageCanvas(
     /// The page texture mode (from the app shell, derived from settings).
     #[prop(into)]
     texture: Signal<TextureMode>,
+    /// The document's persisted gloss highlights. `None` (the default) renders
+    /// no layer at all, so this host stays usable outside the reader.
+    #[prop(optional)]
+    gloss_marks: Option<Signal<Vec<pdf_core::gloss::GlossMark>>>,
 ) -> impl IntoView {
     // Texture is a prop, not context: this component is reusable without an
     // ambient provider. A Memo so only a real texture change rebuilds the
@@ -330,6 +334,19 @@ pub fn PageCanvas(
             // and position (immediately after the canvas) in sync with
             // `renderPageInternal` in public/pdfEngine.js.
             <div class="textLayer" aria-hidden="true"></div>
+            // Persisted gloss highlights. Rendered by Leptos INSIDE the host,
+            // so every remount repaints them from the page-space rects — the
+            // reason a mark survives scrolling, zooming and reopening the book.
+            {gloss_marks
+                .map(|marks| {
+                    view! {
+                        <crate::components::ai::gloss::marks::GlossMarkLayer
+                            page=page
+                            marks=marks
+                            scale=scale
+                        />
+                    }
+                })}
         </div>
     }
 }

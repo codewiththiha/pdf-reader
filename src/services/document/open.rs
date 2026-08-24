@@ -139,6 +139,13 @@ pub fn open_path(state: AppState, path: String) {
                 // A successful open dismisses any stale error toast.
                 state.ui.toast.set(None);
 
+                // Gloss highlights for THIS document. Loaded here rather than
+                // lazily by the mark layer so the very first page mount already
+                // paints them (they are page-space rects, not DOM state).
+                state.reader.gloss.marks.set(
+                    crate::storage::load_gloss().remove(&path).unwrap_or_default(),
+                );
+
                 // Resume point (clamped to the real count — a re-edited
                 // document may have fewer pages than remembered).
                 let resume = saved_page.min(num_pages.max(1));

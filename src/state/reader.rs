@@ -6,6 +6,7 @@ use leptos::prelude::{Memo, RwSignal, Set};
 use serde::Deserialize;
 
 use pdf_core::appearance::TextureMode;
+use pdf_core::gloss::GlossMark;
 use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 use pdf_core::search::SearchMatch;
@@ -256,6 +257,16 @@ impl Default for AiSelectionState {
     }
 }
 
+/// The persisted gloss highlights of the OPEN document.
+///
+/// One flat list rather than a per-page map: a document has a handful of
+/// marks, every page host filters the list itself, and a `Vec` is what both
+/// localStorage and the `<For>` in the mark layer want.
+#[derive(Clone, Copy, Default)]
+pub struct GlossState {
+    pub marks: RwSignal<Vec<GlossMark>>,
+}
+
 /// The reader's slice of app state: everything the PDF components and the
 /// reader effects read/write. Sidebar/UI chrome is deliberately NOT here —
 /// it is app chrome state, passed in explicitly where the reader needs it.
@@ -265,6 +276,7 @@ pub struct ReaderState {
     pub viewer: ViewerSignals,
     pub search: SearchState,
     pub ai_selection: AiSelectionState,
+    pub gloss: GlossState,
 }
 
 impl Default for ReaderState {
@@ -274,6 +286,7 @@ impl Default for ReaderState {
             viewer: ViewerSignals::default(),
             search: SearchState::default(),
             ai_selection: AiSelectionState::default(),
+            gloss: GlossState::default(),
         }
     }
 }

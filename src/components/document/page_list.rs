@@ -80,6 +80,9 @@ pub fn PageList(
             class="h-full w-full overflow-y-auto outline-none"
             tabindex="0"
         >
+            // Inner column, offset by the toolbar height so the first page
+            // starts below the glass header while the scrollport itself still
+            // runs the full height of the window.
             <div class="relative mt-12">
                 <div
                     aria-hidden="true"
@@ -109,6 +112,7 @@ pub fn PageList(
                                     host_id=format!("cont-{index}-pg")
                                     render_text=true
                                     on_geometry=on_geometry
+                                    gloss_marks=state.gloss.marks.read_only().into()
                                 />
                             </div>
                         }

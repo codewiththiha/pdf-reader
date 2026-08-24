@@ -55,5 +55,8 @@ pub fn close_document(state: AppState) {
     state.reader.document.reset();
     state.reader.viewer.reset_position();
     state.reader.search.reset();
+    // The marks stay on disk under this path; only the in-memory copy goes,
+    // so the next open of this book paints them again.
+    state.reader.gloss.marks.set(Vec::new());
     state.ui.sidebar.set(SidebarMode::None);
 }
