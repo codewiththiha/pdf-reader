@@ -27,7 +27,7 @@ use pdf_core::gloss::GlossMark;
 /// Name of the "a persisted mark was clicked" event.
 pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
 
-/// Exact-fit stroke radius. Shared with `anchor::mark_screen_box` so the
+/// Exact-fit stroke radius. Shared with `ai::anchor::screen_box` so the
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one
 /// geometry. No hug-padding: the stroke is the stored union rect itself.
 pub const MARK_RADIUS: f64 = 3.0;

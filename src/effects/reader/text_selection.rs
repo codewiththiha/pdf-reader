@@ -8,12 +8,14 @@
 //! engine-side, so the "Info" button survives its own click.
 //!
 //! This effect is the single place that turns that event into writes on
-//! `state.reader.ai_selection`: `detail` positions the floating menu, and a
-//! genuine clear also closes an open popover.
+//! `state.reader.ai_selection`: `detail` carries the text/context, `anchor`
+//! is the page-space origin the floating menu follows, and a genuine clear
+//! also closes an open popover.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
+use crate::components::ai::anchor::capture_selection;
 use crate::state::reader::SelectionDetail;
 use crate::state::AppState;
 
@@ -35,11 +37,16 @@ pub fn text_selection(state: AppState) {
             let detail = ev.detail();
             match parse_selection_detail(&detail) {
                 Some(selection) => {
+                    let page = state.reader.viewer.page.get_untracked();
+                    let scale = state.reader.viewer.zoom.display.get_untracked();
+                    let anchor = capture_selection(page, scale);
+                    state.reader.ai_selection.anchor.set(anchor);
                     state.reader.ai_selection.detail.set(Some(selection));
                     // A new selection supersedes any open explanation.
                     state.reader.ai_selection.popover_open.set(false);
                 }
                 None => {
+                    state.reader.ai_selection.anchor.set(None);
                     state.reader.ai_selection.detail.set(None);
                     state.reader.ai_selection.popover_open.set(false);
                 }

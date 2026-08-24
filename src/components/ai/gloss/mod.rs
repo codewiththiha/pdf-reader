@@ -9,12 +9,12 @@
 //! Newsreader and the article/mark wrapping all stayed behind.
 //!
 //! Layout:
-//! * [`spring`] — the spring as a Leptos effect (the rAF loop).
-//! * [`anchor`] — capturing the selection as a page-space rect and
-//!   re-projecting it onto the screen.
-//! * [`marks`]  — the persistent highlight layer painted inside each page.
-//! * [`util`]   — viewport/scroll helpers, capture-phase listener, scroller
-//!   edge guards, reduced-motion.
+//! * [`spring`] — the spring as a Leptos effect (the rAF loop), with a
+//!   per-word `reset_to` so a new open never flies in from the last card.
+//! * [`anchor`] — re-export of the shared page-aware anchor
+//!   (`crate::components::ai::anchor`).
+//! * [`marks`]  — the persistent highlighter stroke layer painted inside each page.
+//! * [`util`]   — viewport helpers, capture-phase listener, reduced-motion.
 //! * [`surface`]— the morphing surface component.
 //! * [`popover`]— the orchestrating state machine (replaces `AiPopover`).
 

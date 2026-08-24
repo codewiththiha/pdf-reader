@@ -7,7 +7,8 @@
 //! closure holds a *weak* ref back to it to re-arm, and replacing the slot
 //! (when `target` changes) drops the old loop's only strong ref so it dies.
 //! `vel` and `last_ms` live outside the Effect so velocity survives a
-//! retarget, keeping the morph continuous.
+//! retarget, keeping the morph continuous — unless a caller hard-resets via
+//! [`SpringBox::reset_to`] when a *new* word opens.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,15 +30,31 @@ fn velocity_small(v: GlossBox) -> bool {
         && v.r.abs() < SETTLE_EPS
 }
 
+/// Handle returned by [`use_spring_box`]: the live sprung box plus a way to
+/// hard-jump onto a new word's mark so the next morph starts from there.
+pub struct SpringBox {
+    pub value: RwSignal<Option<GlossBox>>,
+    /// Hard-jump to a box and zero the velocity. Called when a NEW word is
+    /// opened so the next morph starts from exactly that word's mark instead
+    /// of wherever the previous card settled.
+    pub reset_to: Callback<GlossBox>,
+}
+
 /// Springs `value` toward `target`. Setting `target` to `None` clears the
-/// value and stops the loop. Returns the live box signal (`None` while clear).
-pub fn use_spring_box(target: Signal<Option<GlossBox>>, snap: Signal<bool>) -> RwSignal<Option<GlossBox>> {
+/// value and stops the loop.
+pub fn use_spring_box(target: Signal<Option<GlossBox>>, snap: Signal<bool>) -> SpringBox {
     let value = RwSignal::new(target.get_untracked());
     let vel = StoredValue::new_local(GlossBox::default());
     let last_ms = StoredValue::new_local(f64::NAN);
     // The owner-scoped holder for the current step closure, so it outlives the
     // rAF callbacks between Effect re-runs (same shape as zoom.rs's anim_slot).
     let anim_slot = StoredValue::new_local(None::<StepSlot>);
+
+    let reset_to = Callback::new(move |b: GlossBox| {
+        value.set(Some(b));
+        vel.set_value(GlossBox::default());
+        last_ms.set_value(f64::NAN);
+    });
 
     Effect::new(move |_| {
         // A new target. Reading it here both tracks it (so this re-runs) and
@@ -104,5 +121,5 @@ pub fn use_spring_box(target: Signal<Option<GlossBox>>, snap: Signal<bool>) -> R
         request_animation_frame(move || step());
     });
 
-    value
+    SpringBox { value, reset_to }
 }

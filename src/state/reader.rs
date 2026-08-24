@@ -6,7 +6,7 @@ use leptos::prelude::{Memo, RwSignal, Set};
 use serde::Deserialize;
 
 use pdf_core::appearance::TextureMode;
-use pdf_core::gloss::GlossMark;
+use pdf_core::gloss::{GlossMark, PageAnchor};
 use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 use pdf_core::search::SearchMatch;
@@ -244,6 +244,9 @@ pub struct SelectionDetail {
 pub struct AiSelectionState {
     /// The current selection details, or `None` if nothing is selected.
     pub detail: RwSignal<Option<SelectionDetail>>,
+    /// The selection's origin in page space, so the Info pill can follow
+    /// scroll and die when it leaves the viewport.
+    pub anchor: RwSignal<Option<PageAnchor>>,
     /// Whether the "Info" popover is currently open.
     pub popover_open: RwSignal<bool>,
 }
@@ -252,6 +255,7 @@ impl Default for AiSelectionState {
     fn default() -> Self {
         Self {
             detail: RwSignal::new(None),
+            anchor: RwSignal::new(None),
             popover_open: RwSignal::new(false),
         }
     }

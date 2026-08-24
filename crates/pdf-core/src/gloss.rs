@@ -44,6 +44,27 @@ pub struct GlossMark {
     pub rect: GlossBox,
 }
 
+/// A point of interest in *page* space (unscaled page coordinates). Unlike a
+/// screen rect it survives scroll, zoom and view-mode flips: the live screen
+/// box is re-derived from the page host element whenever anything moves.
+///
+/// Shared by the selection Info pill and the gloss card so both glue to the
+/// page without each inventing its own coordinate system.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct PageAnchor {
+    pub page: u32,
+    pub rect: GlossBox,
+}
+
+impl PageAnchor {
+    pub fn from_mark(m: &GlossMark) -> Self {
+        Self {
+            page: m.page,
+            rect: m.rect,
+        }
+    }
+}
+
 /// `f64::clamp` lifted to a free fn so call sites read as the reference.
 pub fn clamp(n: f64, min: f64, max: f64) -> f64 {
     n.clamp(min, max)
