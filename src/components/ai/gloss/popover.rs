@@ -45,12 +45,12 @@ use crate::components::ai::gloss::util::{
 };
 use crate::components::ai::types::{AiPhase, GlossPhase, WordInfo};
 use crate::components::ai::word_info::{LoadingShimmer, WordInfoSections};
-use crate::services::ai::{AiChunkEvent, invoke_explain_word, listen_ai_chunks};
+use crate::services::ai::{invoke_explain_word, listen_ai_chunks, AiChunkEvent};
 use crate::state::AppState;
 
 /// Expanded card geometry constants (same numbers as the reference).
 const CARD_WIDTH: f64 = 320.0;
-const CARD_RADIUS: f64 = 24.0;
+const CARD_RADIUS: f64 = 18.0;
 /// Header + divider + close button + paddings: everything the measure twin
 /// does not contain. Height = measured content + this, never a fixed height.
 const CARD_CHROME_H: f64 = 132.0;
@@ -80,6 +80,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let mark_v = StoredValue::new_local(None::<GlossMark>);
     let anchor = RwSignal::new(None::<GlossBox>);
     let pending_mark = RwSignal::new(None::<GlossMark>);
+    let open_req = RwSignal::new(0u64);
 
     let drag_box = RwSignal::new(None::<GlossBox>);
     let dragging = RwSignal::new(false);
@@ -111,7 +112,8 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         }
     };
 
-    // Clicking a persisted highlight reopens the card with the same animation.
+    // Every pill click bumps the nonce -> the open effect re-runs even when
+    // popover_open is already true. THIS is the "id" fix.
     let open_handle = window_event_listener(
         leptos::ev::Custom::new(GLOSS_OPEN_EVENT),
         move |ev: web_sys::CustomEvent| {
@@ -120,6 +122,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
             };
             detail.set(None);
             pending_mark.set(Some(m));
+            open_req.update(|n| *n += 1);
             popover_open.set(true);
         },
     );
@@ -218,16 +221,48 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         m
     };
 
-    // ── Effect: opening — from a fresh selection OR from a clicked pill ───
-    // Both `popover_open` and `pending_mark` are tracked: a close no longer
-    // flips `popover_open` back to false (the gloss stays open on its mark),
-    // so a second pill click has to re-run this effect through the mark alone.
+    // ---- spring BEFORE the open effect so we can seed it for cached re-opens
+    let expanded_target = Memo::new(move |_| {
+        let a = anchor.get()?;
+        let (vw, vh) = viewport.get();
+        let w = CARD_WIDTH.min((vw - 32.0).max(260.0));
+        // Height fits the measured content; the only clamp is the viewport.
+        let h = (content_height.get() + CARD_CHROME_H).clamp(140.0, vh * 0.8);
+        Some(place_expanded(a, w, h, vw, vh, CARD_RADIUS))
+    });
+
+    let target = Memo::new(move |_| {
+        let a = anchor.get()?;
+        match gphase.get() {
+            // Expanded: follow a manual drag, else the viewport-clamped card.
+            GlossPhase::Expanded => Some(drag_box.get().or(expanded_target.get()).unwrap_or(a)),
+            // Processing + compact both hug the word.
+            _ => Some(a),
+        }
+    });
+
+    // Snapping while compact was what made closing read as a cut: the spring
+    // teleported the surface onto the anchor instead of morphing down to it.
+    // Only the processing phase (where no surface exists anyway) snaps.
+    let snap = Signal::derive(move || {
+        dragging.get() || reduced.get() || gphase.get() == GlossPhase::Processing
+    });
+    let sprung = use_spring_box(target.into(), snap);
+
+    let progress = Memo::new(move |_| {
+        let (Some(b), Some(a), Some(e)) = (sprung.get(), anchor.get(), expanded_target.get()) else {
+            return if gphase.get() == GlossPhase::Expanded { 1.0 } else { 0.0 };
+        };
+        ((b.w - a.w) / (e.w - a.w).max(1.0)).clamp(0.0, 1.0)
+    });
+
+    // ---- open effect: re-runs on EVERY request (nonce), retargets the mark
     Effect::new(move |_| {
-        let open = popover_open.get();
-        let clicked = pending_mark.get();
-        if !open {
+        let _ = open_req.get(); // tracked nonce
+        if !popover_open.get() {
             return;
         }
+        let clicked = pending_mark.get_untracked();
         let sel = detail.get_untracked();
         let scale = state.reader.viewer.zoom.display.get_untracked();
         let page_now = state.reader.viewer.page.get_untracked();
@@ -245,6 +280,8 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
             (None, None) => return,
         };
 
+        pending_mark.set(None);
+        detail.set(None);
         mark_v.set_value(Some(mark.clone()));
         recompute_anchor();
         word.set(mark.word.clone());
@@ -259,17 +296,17 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         if let Some(Some(s)) = web_sys::window().and_then(|w| w.get_selection().ok()) {
             let _ = s.remove_all_ranges();
         }
-        detail.set(None);
-        pending_mark.set(None);
 
         // Recall, not rescan: a pill whose answer is already cached morphs
         // straight back open, with no request and no shimmer.
         if let Some(info) = cache.with_value(|c| c.get(&mark.id).cloned()) {
             word_info.set(Some(info));
-            phase.set(AiPhase::Done);
             error_msg.set(None);
+            phase.set(AiPhase::Done);
             processing_id.set(None);
-            expand_scroll_y.set_value(current_scroll_y());
+            if sprung.get_untracked().is_none() {
+                sprung.set(anchor.get_untracked()); // seed so we morph, not pop
+            }
             gphase.set(GlossPhase::Expanded);
             surface_visible.set(true);
             return;
@@ -307,68 +344,6 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         let _ = state.reader.viewer.page.get();
         let _ = state.reader.viewer.container_size.get();
         recompute_anchor();
-    });
-
-    // ── Derived geometry ─────────────────────────────────────────────────
-    let expanded_target = Memo::new(move |_| {
-        let a = anchor.get()?;
-        let (vw, vh) = viewport.get();
-        let w = CARD_WIDTH.min((vw - 32.0).max(260.0));
-        // Height fits the measured content; the only clamp is the viewport.
-        let h = (content_height.get() + CARD_CHROME_H).clamp(140.0, vh * 0.8);
-        Some(place_expanded(a, w, h, vw, vh, CARD_RADIUS))
-    });
-
-    let target = Memo::new(move |_| {
-        let a = anchor.get()?;
-        match gphase.get() {
-            // Expanded: follow a manual drag, else the viewport-clamped card.
-            GlossPhase::Expanded => Some(drag_box.get().or(expanded_target.get()).unwrap_or(a)),
-            // Processing + compact both hug the word.
-            _ => Some(a),
-        }
-    });
-
-    // Snapping while compact was what made closing read as a cut: the spring
-    // teleported the surface onto the anchor instead of morphing down to it.
-    // Only the processing phase (where no surface exists anyway) snaps.
-    let snap = Signal::derive(move || {
-        dragging.get() || reduced.get() || gphase.get() == GlossPhase::Processing
-    });
-    let sprung = use_spring_box(target.into(), snap);
-
-    let progress = Memo::new(move |_| {
-        let (Some(b), Some(a), Some(e)) = (sprung.get(), anchor.get(), expanded_target.get()) else {
-            return if gphase.get() == GlossPhase::Expanded { 1.0 } else { 0.0 };
-        };
-        ((b.w - a.w) / (e.w - a.w).max(1.0)).clamp(0.0, 1.0)
-    });
-
-    // Surface prop signals (unwrapped — the surface only renders while open).
-    let gphase_sig = Signal::derive(move || gphase.get());
-    let box_sig = Signal::derive(move || sprung.get().unwrap_or_default());
-    let expanded_sig = Signal::derive(move || expanded_target.get().unwrap_or_default());
-    let progress_sig = Signal::derive(move || progress.get());
-    let word_sig = Signal::derive(move || word.get());
-
-    // ── Callbacks wired into the surface ─────────────────────────────────
-    let on_compact_click = Callback::new(move |_: ()| {
-        if gphase.get_untracked() != GlossPhase::Compact {
-            return;
-        }
-        // Nothing to show yet: leave the pill alone rather than open a card
-        // that would only shimmer.
-        if word_info.get_untracked().is_none() && error_msg.get_untracked().is_none() {
-            return;
-        }
-        expand_scroll_y.set_value(current_scroll_y());
-        gphase.set(GlossPhase::Expanded);
-    });
-    // The Close button is an outro like every other close path.
-    let on_dismiss = Callback::new(move |_: ()| collapse_to_mark());
-    let on_drag_start = Callback::new(move |(cx, cy, origin): (f64, f64, GlossBox)| {
-        grab.set_value(Some((cx - origin.x, cy - origin.y)));
-        dragging.set(true);
     });
 
     // ── Effect: the outro's hand-off ─────────────────────────────────────
@@ -550,6 +525,18 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         }
     });
 
+    // Surface prop signals (unwrapped — the surface only renders while open).
+    let phase_sig = Signal::derive(move || gphase.get());
+    let box_sig = Signal::derive(move || sprung.get().unwrap_or_default());
+    let expanded_sig = Signal::derive(move || expanded_target.get().unwrap_or_default());
+    let progress_sig = Signal::derive(move || progress.get());
+    let word_sig = Signal::derive(move || word.get());
+    let on_dismiss = Callback::new(move |_: ()| collapse_to_mark());
+    let on_drag_start = Callback::new(move |(cx, cy, origin): (f64, f64, GlossBox)| {
+        grab.set_value(Some((cx - origin.x, cy - origin.y)));
+        dragging.set(true);
+    });
+
     view! {
         // Invisible measure twin at card width — the card height tracks the
         // real answer rather than a fixed guess (cf. the reference's MeasureCard).
@@ -564,12 +551,11 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
 
         <Show when=move || surface_visible.get() && phase.get() != AiPhase::Idle>
             <GlossSurface
-                phase=gphase_sig
+                phase=phase_sig
                 box_=box_sig
                 expanded=expanded_sig
                 progress=progress_sig
                 word=word_sig
-                on_compact_click=on_compact_click
                 on_dismiss=on_dismiss
                 on_drag_start=on_drag_start
             >

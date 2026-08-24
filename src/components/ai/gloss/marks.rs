@@ -27,12 +27,10 @@ use pdf_core::gloss::GlossMark;
 /// Name of the "a persisted mark was clicked" event.
 pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
 
-/// The same padding `anchor::mark_screen_box` puts around the stored rect.
-/// Both must agree: the surface's outro morph lands on the padded anchor box,
-/// and the pill underneath has to be exactly that box or the hand-off at the
-/// end of the morph visibly jumps.
-const PAD_X: f64 = 5.0;
-const PAD_Y: f64 = 3.0;
+/// Pill hug-padding. Shared with `anchor::mark_screen_box` so the morphing
+/// surface settles onto EXACTLY the box the pill occupies — one geometry.
+pub const MARK_PAD_X: f64 = 3.0;
+pub const MARK_PAD_Y: f64 = 2.0;
 
 #[component]
 pub fn GlossMarkLayer(
@@ -46,7 +44,7 @@ pub fn GlossMarkLayer(
     processing: Signal<Option<String>>,
 ) -> impl IntoView {
     view! {
-        <div class="glossLayer">
+        <div class="glossLayer" aria-hidden="false">
             <For
                 each=move || {
                     marks.get().into_iter().filter(|m| m.page == page).collect::<Vec<_>>()
@@ -58,10 +56,10 @@ pub fn GlossMarkLayer(
                         let s = scale.get();
                         format!(
                             "left:{}px;top:{}px;width:{}px;height:{}px",
-                            rect.x * s - PAD_X,
-                            rect.y * s - PAD_Y,
-                            rect.w * s + PAD_X * 2.0,
-                            rect.h * s + PAD_Y * 2.0,
+                            rect.x * s - MARK_PAD_X,
+                            rect.y * s - MARK_PAD_Y,
+                            rect.w * s + MARK_PAD_X * 2.0,
+                            rect.h * s + MARK_PAD_Y * 2.0,
                         )
                     };
                     let is_processing = {

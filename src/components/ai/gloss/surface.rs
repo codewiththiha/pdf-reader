@@ -68,10 +68,6 @@ pub fn GlossSurface(
     progress: Signal<f64>,
     /// The selected word, for the card header.
     word: Signal<String>,
-    /// Re-open the card from the collapsed surface. CLICK only — hover
-    /// re-opening made the card ambush a reader who was merely moving the
-    /// pointer across the page.
-    on_compact_click: Callback<()>,
     /// Full dismiss (the Close button).
     on_dismiss: Callback<()>,
     /// Begin dragging the expanded card.
@@ -83,16 +79,27 @@ pub fn GlossSurface(
         let b = box_.get();
         let p = phase.get();
         let pr = progress.get();
+        // Fade IN as the morph leaves the pill, fade OUT as it returns onto it.
+        // The mark pill underneath owns the fully-collapsed look, so the outro
+        // reads as "card shrinks AND dissolves back into the highlight".
+        let opacity = smoothstep(pr, 0.05, 0.5);
+        let pe = if p == GlossPhase::Expanded && pr > 0.4 {
+            "auto"
+        } else {
+            "none"
+        };
         format!(
             "left:{}px;top:{}px;width:{}px;height:{}px;border-radius:{}px;\
-             box-shadow:{};background:{};",
+             box-shadow:{};background:{};opacity:{};pointer-events:{};",
             b.x,
             b.y,
             b.w,
             b.h,
             b.r,
             shadow_for(p),
-            fill_for(p, pr)
+            fill_for(p, pr),
+            opacity,
+            pe
         )
     });
 
@@ -135,11 +142,6 @@ pub fn GlossSurface(
             data-phase=move || phase_str.get()
             role=move || role.get()
             aria-label=move || aria_label.get()
-            on:click=move |_| {
-                if phase.get_untracked() == GlossPhase::Compact {
-                    on_compact_click.run(());
-                }
-            }
             style=move || surface_style.get()
         >
             // Content wrapper: sized to the EXPANDED card, faded in by progress.

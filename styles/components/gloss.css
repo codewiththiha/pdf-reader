@@ -55,7 +55,7 @@
    The persisted gloss pill. ONE highlight only: the native ::selection tint
    is cleared when the gloss takes over, and the morphing surface unmounts
    once it settles back onto this box, so nothing ever stacks on top of it.
-   Drawn with the same 5px/3px pad the anchor box uses, so the surface -> pill
+   Drawn with the same 3px/2px pad the anchor box uses, so the surface -> pill
    hand-off at the end of the outro morph is invisible.
 
    Same trade-off as the link layer: above the text layer, pointer-events only
@@ -72,51 +72,54 @@
   position: absolute;
   pointer-events: auto;
   cursor: pointer;
-  border-radius: 9999px;
-  background: color-mix(in oklab, var(--color-accent) 20%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 40%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--color-accent) 22%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 35%, transparent);
   mix-blend-mode: multiply;
   transition: background 120ms ease;
 }
 .pdf-page .glossLayer .gloss-mark:hover,
 .pdf-page .glossLayer .gloss-mark:focus-visible {
-  background: color-mix(in oklab, var(--color-accent) 34%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 32%, transparent);
   outline: none;
 }
 .pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
 :root.dark .pdf-page .glossLayer .gloss-mark {
   mix-blend-mode: screen;
-  background: color-mix(in oklab, var(--color-accent) 24%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 26%, transparent);
 }
 
 /* ---------------------------------------------------------------------
-   Processing showcase: the pill itself runs a flowing rainbow gradient and
-   carries a blurred copy of it as a glow. This is the ONLY "thinking" UI —
-   the class is removed the frame the first chunk lands (the card pops open),
-   so the blur never survives into the readable state.
+   Processing: rainbow MIXED WITH the active accent so it always matches the
+   chosen tint, and a much tighter glow than before (inset -20%, blur 5px).
    --------------------------------------------------------------------- */
 .pdf-page .glossLayer .gloss-mark-processing,
 :root.dark .pdf-page .glossLayer .gloss-mark-processing {
   background-image: linear-gradient(
     90deg,
-    #ff6b6b, #ffc26b, #6bde9b, #6bc9ff, #a06bff, #ff6b6b
+    color-mix(in oklab, var(--color-accent) 45%, #ff6b6b),
+    color-mix(in oklab, var(--color-accent) 45%, #ffc26b),
+    color-mix(in oklab, var(--color-accent) 45%, #6bde9b),
+    color-mix(in oklab, var(--color-accent) 45%, #6bc9ff),
+    color-mix(in oklab, var(--color-accent) 45%, #a06bff),
+    color-mix(in oklab, var(--color-accent) 45%, #ff6b6b)
   );
   background-size: 300% 100%;
   animation: gloss-rainbow 1.1s linear infinite;
-  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.25);
+  box-shadow: none;
   mix-blend-mode: normal;
-  opacity: 0.75;
+  opacity: 0.8;
 }
 .pdf-page .glossLayer .gloss-mark-processing::before {
   content: "";
   position: absolute;
-  inset: -45%;
+  inset: -20%;
   border-radius: inherit;
   background-image: inherit;
   background-size: inherit;
   animation: inherit;
-  filter: blur(7px);
-  opacity: 0.8;
+  filter: blur(5px);
+  opacity: 0.5;
   pointer-events: none;
 }
 @keyframes gloss-rainbow {

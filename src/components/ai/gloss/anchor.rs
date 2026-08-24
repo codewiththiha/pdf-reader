@@ -15,9 +15,10 @@
 //! zooms and view-mode flips all just change the projection, exactly like the
 //! search highlight layer.
 
-use pdf_core::gloss::{pad_box, GlossBox, GlossMark};
+use pdf_core::gloss::{GlossBox, GlossMark};
 use wasm_bindgen::JsCast;
 
+use crate::components::ai::gloss::marks::{MARK_PAD_X, MARK_PAD_Y};
 use crate::components::document::dom_helpers::by_id;
 
 /// Id of the `.pdf-page` host that currently renders `page`, per view mode.
@@ -108,17 +109,13 @@ pub fn mark_screen_box(mark: &GlossMark, scale: f64, single: bool) -> Option<Glo
         return None;
     }
     let hr = by_id(&host_id_for(mark.page, single))?.get_bounding_client_rect();
-    // Padded like the reference (5, 3) so the chip hugs the word with the same
-    // breathing room the old span-based anchor had.
-    Some(pad_box(
-        GlossBox {
-            x: hr.left() + mark.rect.x * scale,
-            y: hr.top() + mark.rect.y * scale,
-            w: mark.rect.w * scale,
-            h: mark.rect.h * scale,
-            r: 0.0,
-        },
-        5.0,
-        3.0,
-    ))
+    let h = mark.rect.h * scale + MARK_PAD_Y * 2.0;
+    Some(GlossBox {
+        x: hr.left() + mark.rect.x * scale - MARK_PAD_X,
+        y: hr.top() + mark.rect.y * scale - MARK_PAD_Y,
+        w: mark.rect.w * scale + MARK_PAD_X * 2.0,
+        h,
+        // "slightly less rounded": soft rectangle, not a full capsule
+        r: 10.0_f64.min(h / 2.0),
+    })
 }
