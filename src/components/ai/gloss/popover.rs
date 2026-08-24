@@ -55,9 +55,6 @@ use crate::state::AppState;
 /// Expanded card geometry constants.
 const CARD_WIDTH: f64 = 360.0;
 const CARD_RADIUS: f64 = 18.0;
-/// Header + divider + paddings: everything the measure twin does not contain.
-/// Height = measured content + this, never a fixed height.
-const CARD_CHROME_H: f64 = 100.0;
 /// Per-document cap on persisted marks (oldest evicted). A reading session's
 /// worth of looked-up words, bounded so localStorage can't grow without end.
 const MARK_CAP: usize = 200;
@@ -245,7 +242,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         let a = anchor.get()?;
         let (vw, vh) = viewport.get();
         let w = CARD_WIDTH.min((vw - CARD_MARGIN * 2.0).max(260.0));
-        let h = (content_height.get() + CARD_CHROME_H).clamp(140.0, vh * 0.8);
+        // Measured height is the full scroll column (header + separator +
+        // body + paddings) — no chrome guess. See the measure twin below.
+        let h = content_height.get().clamp(140.0, vh * 0.8);
         let space_right = vw - (a.x + a.w);
         let x = if space_right >= a.x {
             a.x + a.w + CARD_GAP
@@ -530,10 +529,14 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
 
     // ── Effect: measure the real content so the card height fits the answer
     // (no minimum: a two-line answer gets a two-line card, and a later chunk
-    // growing the twin morphs the card open a little further).
+    // growing the twin morphs the card open a little further). The twin is a
+    // pixel-exact replica of the scroll column (same width, padding, header
+    // and separator), so wrap differences never leave the real column short
+    // and force flex to squash the 1px separator.
     let measure_ref: NodeRef<html::Div> = NodeRef::new();
     Effect::new(move |_| {
-        let _ = word_info.get(); // re-measure when data changes
+        let _ = word_info.get();
+        let _ = word.get(); // title wrap can change height independently of body
         if let Some(el) = measure_ref.get() {
             // Defer to the next frame so the twin reflects the new content.
             request_animation_frame(move || {
@@ -580,15 +583,24 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     });
 
     view! {
-        // Invisible measure twin at card width — the card height tracks the
-        // real answer rather than a fixed guess (cf. the reference's MeasureCard).
+        // Invisible measure twin — pixel-exact replica of the scroll column
+        // in GlossSurface (same width, px-5/pt-6/pb-4, header, separator),
+        // so the measured height already includes chrome and wrap.
         <div
             node_ref=measure_ref
             class="pointer-events-none invisible fixed left-0 top-0 z-0"
             style=format!("width:{CARD_WIDTH}px")
             aria-hidden="true"
         >
-            {move || word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
+            <div class="px-5 pb-4 pt-6">
+                <header class="mb-4">
+                    <h2 class="text-lg font-semibold leading-tight text-balance text-ink">
+                        {move || word.get()}
+                    </h2>
+                </header>
+                <div class="mb-4 h-px"></div>
+                {move || word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
+            </div>
         </div>
 
         <Show when=move || surface_visible.get() && phase.get() != AiPhase::Idle>

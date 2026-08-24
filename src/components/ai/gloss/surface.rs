@@ -172,14 +172,17 @@ pub fn GlossSurface(
                     class="flex h-full min-h-0 flex-col overflow-y-auto \
                            overscroll-contain px-5 pb-4 pt-6"
                 >
-                    <header class="mb-4">
+                    // shrink-0: flex must never squash header/separator/body
+                    // when content is a hair taller than the card — scroll
+                    // instead (scrollbar already hidden). The 1px separator
+                    // has min-content height 0 and was the first casualty.
+                    <header class="mb-4 shrink-0">
                         <h2 class="text-lg font-semibold leading-tight text-balance text-ink">
                             {move || word.get()}
                         </h2>
                     </header>
-                    <div class="mb-4 h-px bg-line"></div>
-
-                    {children()}
+                    <div class="mb-4 h-px shrink-0 bg-line"></div>
+                    <div class="shrink-0">{children()}</div>
                 </div>
             </div>
         </div>
