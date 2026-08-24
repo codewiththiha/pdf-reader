@@ -124,14 +124,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
     // caller must not go on holding the discarded duplicate.
     let add_mark = Callback::new(move |m: GlossMark| -> GlossMark {
         let existing = marks.with_untracked(|v| {
-            v.iter()
-                .find(|o| {
-                    o.page == m.page
-                        && o.word == m.word
-                        && (o.rect.x - m.rect.x).abs() < 1.0
-                        && (o.rect.y - m.rect.y).abs() < 1.0
-                })
-                .cloned()
+            v.iter().find(|o| o.same_spot(&m)).cloned()
         });
         if let Some(existing) = existing {
             return existing;
@@ -238,6 +231,31 @@ pub fn use_open_effect(
             popover_open.set(false);
             return;
         };
+
+        // Toggle knowledge lives here (and only here): marks stay dumb open
+        // dispatchers. A re-click on the active expanded card folds it down;
+        // a click while its model run is still processing is ignored. Compact
+        // or mid-outro re-clicks deliberately fall through to recall/reopen.
+        let same_spot = ctrl
+            .mark_sig
+            .with_untracked(|m| m.as_ref().is_some_and(|m| m.same_spot(&mark)));
+        if same_spot {
+            match (
+                ctrl.gphase.get_untracked(),
+                ctrl.surface_visible.get_untracked(),
+            ) {
+                (GlossPhase::Processing, _) => {
+                    ctrl.pending_mark.set(None);
+                    return;
+                }
+                (GlossPhase::Expanded, true) => {
+                    ctrl.pending_mark.set(None);
+                    ctrl.collapse_to_mark.run(());
+                    return;
+                }
+                _ => {}
+            }
+        }
 
         // Self-contained open: mark is already in hand (Info pill or stroke
         // click). Persist it so re-open/re-explain reuse the id.

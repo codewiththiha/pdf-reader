@@ -65,6 +65,40 @@ impl PageAnchor {
     }
 }
 
+impl GlossMark {
+    /// Whether two marks denote the same glossed spot: same page, same word,
+    /// and rects starting within a CSS px of each other. The single identity
+    /// definition shared by capture-time dedup and re-click toggle-to-close.
+    pub fn same_spot(&self, other: &GlossMark) -> bool {
+        self.page == other.page
+            && self.word == other.word
+            && (self.rect.x - other.rect.x).abs() < 1.0
+            && (self.rect.y - other.rect.y).abs() < 1.0
+    }
+}
+
+/// Longest selection still treated as a word lookup (chars, not bytes).
+/// This feature is a dictionary: a word or a short phrase. Beyond this, the
+/// single-POS / single-meaning `WordInfo` shape stops making sense.
+pub const MAX_GLOSS_CHARS: usize = 60;
+
+/// Soft edge of the length gate: selections up to twice [`MAX_GLOSS_CHARS`]
+/// still earn a (muted, explaining) Info pill; past this the menu hides.
+pub const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
+
+/// Whether `text` can be looked up as a word.
+pub fn is_glossable(text: &str) -> bool {
+    let t = text.trim();
+    !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS
+}
+
+/// Whether `text` stays inside the menu's visible range. Callers use
+/// [`is_glossable`] to distinguish the enabled pill from the muted hint band.
+pub fn is_hintable(text: &str) -> bool {
+    let t = text.trim();
+    !t.is_empty() && t.chars().count() <= MAX_GLOSS_HINT_CHARS
+}
+
 /// `f64::clamp` lifted to a free fn so call sites read as the reference.
 pub fn clamp(n: f64, min: f64, max: f64) -> f64 {
     n.clamp(min, max)
@@ -162,6 +196,56 @@ pub fn step_spring(cur: GlossBox, vel: GlossBox, target: GlossBox, dt: f64) -> (
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_glossable_gate_counts_chars_and_trims() {
+        assert!(is_glossable("palimpsest"));
+        assert!(is_glossable("  spaced  "));
+        assert!(is_glossable(&"a".repeat(MAX_GLOSS_CHARS)));
+        assert!(!is_glossable(""));
+        assert!(!is_glossable("   "));
+        assert!(!is_glossable(&"a".repeat(MAX_GLOSS_CHARS + 1)));
+        // Character count, not byte count: 60 emoji pass the gate.
+        assert!(is_glossable(&"🙂".repeat(MAX_GLOSS_CHARS)));
+    }
+
+    #[test]
+    fn the_hint_band_runs_to_twice_the_cap() {
+        let first_hint = "a".repeat(MAX_GLOSS_CHARS + 1);
+        assert!(!is_glossable(&first_hint));
+        assert!(is_hintable(&first_hint));
+        assert!(is_hintable(&"a".repeat(MAX_GLOSS_HINT_CHARS)));
+        assert!(!is_hintable(&"a".repeat(MAX_GLOSS_HINT_CHARS + 1)));
+        assert!(!is_hintable("   "));
+    }
+
+    #[test]
+    fn same_spot_tolerates_sub_pixel_drift_but_not_a_new_word() {
+        let base = GlossMark {
+            id: "g1".into(),
+            page: 1,
+            word: "palimpsest".into(),
+            context: String::new(),
+            rect: GlossBox { x: 100.0, y: 40.0, w: 60.0, h: 12.0, r: 0.0 },
+        };
+
+        let mut drifted = base.clone();
+        drifted.id = "g2".into();
+        drifted.rect.x += 0.4;
+        assert!(base.same_spot(&drifted), "sub-pixel drift is the same spot");
+
+        let mut other_word = base.clone();
+        other_word.word = "palimpsests".into();
+        assert!(!base.same_spot(&other_word));
+
+        let mut other_page = base.clone();
+        other_page.page = 2;
+        assert!(!base.same_spot(&other_page));
+
+        let mut moved = base.clone();
+        moved.rect.y += 2.0;
+        assert!(!base.same_spot(&moved));
+    }
 
     #[test]
     fn smoothstep_is_clamped_at_both_edges_and_smooth_between() {

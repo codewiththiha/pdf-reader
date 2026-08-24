@@ -1,4 +1,5 @@
 use leptos::prelude::*;
+use pdf_core::gloss::{is_glossable, is_hintable, GlossMark};
 
 use crate::components::ai::anchor::{
     capture_selection_mark, watch_page_anchor, MENU_EXIT_FRAC,
@@ -6,7 +7,6 @@ use crate::components::ai::anchor::{
 use crate::components::ai::gloss::marks::request_gloss_open;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::state::AppState;
-use pdf_core::gloss::GlossMark;
 
 /// A small floating pill that appears near the user's text selection.
 /// Contains the "Info" button that opens the AI popover.
@@ -14,6 +14,12 @@ use pdf_core::gloss::GlossMark;
 /// Position is re-derived from a page-space anchor on every scroll/zoom/mode
 /// change, so the pill travels with the word and disappears once the origin
 /// fully leaves the viewport.
+///
+/// Length gate: word lookup is for words and short phrases. Past
+/// `pdf_core::gloss::MAX_GLOSS_CHARS` the pill stays visible but MUTED
+/// (disabled, explaining tooltip) up to the hint band's edge, and vanishes
+/// beyond it — a disabled affordance reads as a rule, where a silently
+/// vanishing menu reads as a bug.
 ///
 /// The Info click does **not** flip `popover_open` and hope `detail` survives:
 /// it builds a self-contained [`GlossMark`] at click time and dispatches the
@@ -61,8 +67,15 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
              transform:translateX(-50%); z-index:80;"
         )
     });
+
+    // Selection past the word-lookup cap: the pill renders muted inside the
+    // hint band and not at all beyond it (see `visible` below).
+    let too_long = Signal::derive(move || {
+        detail.get().is_some_and(|s| !is_glossable(&s.text))
+    });
+
     let visible = Signal::derive(move || {
-        detail.get().is_some()
+        detail.get().is_some_and(|s| is_hintable(&s.text))
             && !popover_open.get()
             && !watch.exited.get()
             && watch.screen.get().is_some()
@@ -77,7 +90,14 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
             >
                 <button
                     type="button"
-                    title="Explain with AI"
+                    disabled=move || too_long.get()
+                    title=move || {
+                        if too_long.get() {
+                            "Selection too long for a word lookup"
+                        } else {
+                            "Explain with AI"
+                        }
+                    }
                     aria-label="Explain selected text with AI"
                     // Preventing the mousedown default keeps the document
                     // selection (and focus) alive, so the highlight stays
@@ -85,6 +105,10 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                     // button can never be unmounted by its own press.
                     on:mousedown=move |ev| ev.prevent_default()
                     on:click=move |_| {
+                        // Disabled buttons don't fire; belt and braces.
+                        if too_long.get_untracked() {
+                            return;
+                        }
                         let Some(sel) = detail.get_untracked() else {
                             return;
                         };
@@ -124,8 +148,9 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                     class="flex min-h-11 items-center gap-1.5 rounded-full border border-line \
                            bg-surface px-5 text-sm font-medium tracking-wide text-ink \
                            shadow-[var(--gloss-shadow-menu)] \
-                           transition-[transform,background-color] duration-150 ease-out \
+                           transition-[transform,background-color,opacity] duration-150 ease-out \
                            active:scale-[0.96] \
+                           disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 \
                            focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <Icon name=IconName::More size=13 />
