@@ -18,9 +18,19 @@ pub fn PageIndicator(
     current: Signal<u32>,
     #[prop(into)]
     total: Signal<u32>,
+    /// Fade out while a bottom overlay (gloss selection bar) is up, so the
+    /// two never stack over each other.
+    #[prop(optional, into)]
+    hidden: Option<Signal<bool>>,
 ) -> impl IntoView {
+    let hidden = hidden.unwrap_or_else(|| Signal::derive(|| false));
     view! {
-        <span class="rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium tabular-nums text-white/90 backdrop-blur-sm">
+        <span
+            class="rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-medium \
+                   tabular-nums text-white/90 backdrop-blur-sm \
+                   transition-opacity duration-150"
+            class=("opacity-0", move || hidden.get())
+        >
             {move || format!("{} / {}", current.get(), total.get())}
         </span>
     }

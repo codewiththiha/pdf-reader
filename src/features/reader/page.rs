@@ -295,7 +295,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             />
                         }
                     />
-                    <main id="viewer-slot" class="relative min-w-0 flex-1 overflow-hidden">
+                    <main id="viewer-slot" class="relative isolate min-w-0 flex-1 overflow-hidden">
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {
@@ -317,7 +317,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         // reusable UI with no knowledge of AppState.
                         <Show when=is_ready>
                             <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", crate::components::primitives::floating::types::z::CONTROLS)>
-                                <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
+                                <PageIndicator
+                                    current=state.reader.viewer.page
+                                    total=state.reader.document.num_pages
+                                    hidden=Signal::derive(move || state.reader.gloss.selection_active.get())
+                                />
                             </div>
                         </Show>
                         <ReaderBottomBar reader=vs virtualizer=virtualizer_view />
