@@ -1,11 +1,15 @@
 //! The right-click menu for a single mark. One action by design — Remove
-//! highlight — parked at the cursor (clamped into the viewport by
-//! [`super::select_mode::use_select_mode`]).
+//! highlight — composed on the generic [`ContextMenu`] primitive: the
+//! primitive places it at the cursor (clamped into the viewport), owns
+//! Escape/outside dismissal, and this module supplies only the payload type
+//! and the danger row (a [`MenuItem`] with `MenuItemTone::Danger`).
 
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::select_mode::{park_undo, ContextTarget, UndoBatch};
+use crate::components::primitives::floating::context_menu::ContextMenu;
+use crate::components::primitives::menu_item::{MenuItem, MenuItemTone};
 use crate::state::AppState;
 
 #[component]
@@ -15,39 +19,31 @@ pub fn GlossContextMenu(
     menu: RwSignal<Option<ContextTarget>>,
     undo: RwSignal<Option<UndoBatch>>,
 ) -> impl IntoView {
+    let remove = Callback::new(move |_| {
+        let Some(t) = menu.get_untracked() else {
+            return;
+        };
+        let removed = ctrl.remove_marks.run(vec![t.id]);
+        let path = state.reader.document.path.get_untracked();
+        park_undo(undo, removed, path);
+        menu.set(None);
+    });
+
     view! {
-        <Show when=move || menu.with(|m| m.is_some())>
-            {move || {
-                menu.get().map(|t| {
-                    let id = t.id.clone();
-                    view! {
-                        <div
-                            class="gloss-context-menu fixed z-[70] min-w-[176px] rounded-xl \
-                                   border border-line bg-surface p-1 \
-                                   shadow-[var(--gloss-shadow-menu)]"
-                            role="menu"
-                            style=format!("left:{}px;top:{}px", t.x, t.y)
-                        >
-                            <button
-                                type="button"
-                                role="menuitem"
-                                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 \
-                                       text-left text-sm text-red-400 transition-colors \
-                                       hover:bg-line \
-                                       focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                on:click=move |_| {
-                                    let removed = ctrl.remove_marks.run(vec![id.clone()]);
-                                    let path = state.reader.document.path.get_untracked();
-                                    park_undo(undo, removed, path);
-                                    menu.set(None);
-                                }
-                            >
-                                "Remove highlight"
-                            </button>
-                        </div>
-                    }
-                })
-            }}
-        </Show>
+        <ContextMenu
+            target=menu
+            position=|t: &ContextTarget| (t.x, t.y)
+            on_close=Callback::new(move |_| menu.set(None))
+            min_width=176
+            class="gloss-context-menu"
+        >
+            <MenuItem
+                icon=crate::components::primitives::icon::IconName::Close
+                label="Remove highlight"
+                tone=MenuItemTone::Danger
+                row_class="rounded-lg px-3 py-2"
+                on_click=move || remove.run(())
+            />
+        </ContextMenu>
     }
 }

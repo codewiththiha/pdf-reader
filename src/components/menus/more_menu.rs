@@ -16,7 +16,7 @@ use wasm_bindgen::JsValue;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::menu_item::MenuItem;
-use crate::components::primitives::popover::Popover;
+use crate::components::chrome::menu_popover::MenuPopover;
 use crate::components::primitives::shortcut_row::ShortcutRow;
 
 #[component]
@@ -72,7 +72,7 @@ pub fn MoreMenu() -> impl IntoView {
                 title="More"
                 on_click=move || open.set(!open.get())
             />
-            <Popover open=open anchor=root_ref width=256 hold_titlebar=false class="p-1".to_string()>
+            <MenuPopover open=open anchor=root_ref width=256 hold_titlebar=false class="p-1".to_string()>
                 <MenuItem
                     icon=IconName::Fullscreen
                     label="Fullscreen"
@@ -132,7 +132,7 @@ pub fn MoreMenu() -> impl IntoView {
                         }
                     }</span>
                 </div>
-            </Popover>
+            </MenuPopover>
         </div>
     }
 }

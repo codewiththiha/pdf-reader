@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use crate::components::primitives::form::text_input::TextInput;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
@@ -17,8 +18,9 @@ pub(super) fn PresetEditor(
     existing_groups: impl Fn() -> Vec<String> + Clone + Send + Sync + 'static,
 ) -> impl IntoView {
     let (saving, set_saving) = signal(false);
-    let (new_name, set_new_name) = signal(String::new());
-    let (new_group, set_new_group) = signal(String::new());
+    // RwSignals: the shared TextInput owns the value + input wiring.
+    let new_name = RwSignal::new(String::new());
+    let new_group = RwSignal::new(String::new());
 
     // The provider closure rides in an Arc so the outer view closure stays
     // `Fn` (it only captures the Arc) while the datalist closure below can
@@ -46,8 +48,8 @@ pub(super) fn PresetEditor(
             // at its look.
             s.active_preset = Some(id);
         });
-        set_new_name.set(String::new());
-        set_new_group.set(String::new());
+        new_name.set(String::new());
+        new_group.set(String::new());
         set_saving.set(false);
     };
 
@@ -68,39 +70,37 @@ pub(super) fn PresetEditor(
             }
         >
             <div class="mt-2 space-y-1.5 rounded-md border border-line p-2">
-                <input
-                    type="text"
+                <TextInput
+                    value=new_name
+                    on_input=Callback::new(move |v| new_name.set(v))
                     placeholder="Preset name"
-                    aria-label="Preset name"
-                    autofocus
-                    prop:value=move || new_name.get()
-                    on:input=move |ev| set_new_name.set(event_target_value(&ev))
-                    on:keydown=move |ev| {
+                    aria_label="Preset name"
+                    autofocus=true
+                    on_keydown=Callback::new(move |ev: leptos::ev::KeyboardEvent| {
                         if ev.key() == "Enter" {
                             commit();
                         } else if ev.key() == "Escape" {
                             set_saving.set(false);
                         }
-                    }
+                    })
                     class="w-full rounded border border-line bg-paper px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
                 />
                 // Free text WITH a datalist: users can type a brand new
                 // section or pick one they already made, without two
                 // separate controls for "new" and "existing".
-                <input
-                    type="text"
+                <TextInput
+                    value=new_group
+                    on_input=Callback::new(move |v| new_group.set(v))
                     list="preset-groups"
                     placeholder="Section (optional)"
-                    aria-label="Preset section"
-                    prop:value=move || new_group.get()
-                    on:input=move |ev| set_new_group.set(event_target_value(&ev))
-                    on:keydown=move |ev| {
+                    aria_label="Preset section"
+                    on_keydown=Callback::new(move |ev: leptos::ev::KeyboardEvent| {
                         if ev.key() == "Enter" {
                             commit();
                         } else if ev.key() == "Escape" {
                             set_saving.set(false);
                         }
-                    }
+                    })
                     class="w-full rounded border border-line bg-paper px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
                 />
                 <datalist id="preset-groups">

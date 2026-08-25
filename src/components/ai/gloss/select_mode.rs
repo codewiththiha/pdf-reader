@@ -1,24 +1,28 @@
 //! Multi-select management for gloss marks: the shared state helpers, the
-//! long-press gesture constants (the gesture itself lives in [`super::marks`]),
-//! the exit paths (Escape / clean tap outside), the right-click context-menu
+//! long-press gesture constants (the gesture itself lives in
+//! [`super::marks`], implemented by the primitive `long_press`), the exit
+//! paths (Escape / clean tap outside), the right-click context-menu
 //! listener, and the undo pipeline that every removal path parks through.
 //!
 //! Selection state itself lives on `state.reader.gloss` so every page's
 //! `GlossMarkLayer` and the reader-level bar share one source of truth.
 //! Marks mutate it directly (toggling is high-frequency); only the context
 //! menu travels as a CustomEvent, mirroring `GLOSS_OPEN_EVENT`.
+//!
+//! Dismissal (Escape / outside press) for selection mode and for the context
+//! menu comes from the primitive `use_dismiss`; this module owns only the
+//! semantics (exit selection, close menu, park undo).
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use leptos::prelude::*;
 use pdf_core::gloss::GlossMark;
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::gloss::util::viewport_size;
+use crate::components::primitives::floating::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
+use crate::components::primitives::hooks::use_custom_event::{dispatch_typed_event, use_typed_event};
 use crate::state::AppState;
 
 /// Name of the "right-clicked a mark" event (marks.rs → popover).
@@ -58,18 +62,14 @@ static UNDO_GEN: AtomicU64 = AtomicU64::new(1);
 
 /// Dispatch [`GLOSS_CONTEXT_EVENT`] (fired by a mark's contextmenu handler).
 pub fn dispatch_gloss_context(x: f64, y: f64, id: &str) {
-    let Some(win) = web_sys::window() else {
-        return;
-    };
-    let Ok(detail) = serde_wasm_bindgen::to_value(&ContextTarget { x, y, id: id.into() })
-    else {
-        return;
-    };
-    let init = web_sys::CustomEventInit::new();
-    init.set_detail(&detail);
-    if let Ok(ev) = web_sys::CustomEvent::new_with_event_init_dict(GLOSS_CONTEXT_EVENT, &init) {
-        let _ = win.dispatch_event(&ev);
-    }
+    dispatch_typed_event(
+        GLOSS_CONTEXT_EVENT,
+        &ContextTarget {
+            x,
+            y,
+            id: id.into(),
+        },
+    );
 }
 
 /// Toggle one id in the selection set.
@@ -115,31 +115,6 @@ pub fn use_select_mode(state: AppState, ctrl: GlossController) -> SelectMode {
     let menu = RwSignal::new(None::<ContextTarget>);
     let undo = RwSignal::new(None::<UndoBatch>);
 
-    // Replacing the parked batch replaces its timer. Cleanup cancels the old
-    // handle, while the generation guard makes a stale callback harmless even
-    // if it was already queued when replacement happened.
-    Effect::new(move |_| {
-        let Some(generation) = undo.get().map(|batch| batch.generation) else {
-            return;
-        };
-        let handle = set_timeout_with_handle(
-            move || {
-                undo.update(|current| {
-                    if current.as_ref().is_some_and(|batch| batch.generation == generation) {
-                        *current = None;
-                    }
-                });
-            },
-            Duration::from_millis(UNDO_WINDOW_MS as u64),
-        )
-        .ok();
-        on_cleanup(move || {
-            if let Some(handle) = handle {
-                handle.clear();
-            }
-        });
-    });
-
     // Entering selection mode folds any open card: selection is about the
     // strokes, and the bar wants its corner of the screen to itself.
     Effect::new(move |_| {
@@ -149,92 +124,31 @@ pub fn use_select_mode(state: AppState, ctrl: GlossController) -> SelectMode {
         }
     });
 
-    // Escape exits selection mode.
-    Effect::new(move |_| {
-        if !selecting.get() {
-            return;
-        }
-        let key = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
-            let ke = ev.unchecked_ref::<web_sys::KeyboardEvent>();
-            if ke.key() == "Escape" {
-                exit_selection(state);
-            }
-        });
-        on_cleanup(move || key.remove());
-    });
-
-    // A clean tap anywhere that is not a mark, the bar, or a menu exits.
-    // (Mark clicks stop propagation; drag-scrolls never synthesize clicks.)
-    Effect::new(move |_| {
-        if !selecting.get() {
-            return;
-        }
-        let h = window_event_listener_untyped("click", move |ev: web_sys::Event| {
-            let Some(el) = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-            else {
-                return;
-            };
-            if el.closest(".gloss-mark, .gloss-select-bar, .gloss-context-menu")
-                .ok()
-                .flatten()
-                .is_some()
-            {
-                return;
-            }
-            exit_selection(state);
-        });
-        on_cleanup(move || h.remove());
-    });
+    // Escape exits selection mode; a clean tap anywhere that is not a mark,
+    // the bar, or a menu exits too. (Mark clicks stop propagation;
+    // drag-scrolls never synthesize clicks.)
+    use_dismiss(
+        selecting.into(),
+        Callback::new(move |_| exit_selection(state)),
+        DismissPolicy {
+            escape: true,
+            outside: Some(DismissTrigger::Click),
+            exclude_selectors: vec![".gloss-mark", ".gloss-select-bar", ".gloss-context-menu"],
+            enabled: None,
+            topmost_only: false,
+        },
+        |_| false,
+    );
 
     // Right-click on a mark asks for the remove menu — only outside
     // selection mode; inside it, right-click toggles selection (marks.rs).
-    let ctx = window_event_listener(
-        leptos::ev::Custom::new(GLOSS_CONTEXT_EVENT),
-        move |ev: web_sys::CustomEvent| {
-            if selecting.get_untracked() {
-                return;
-            }
-            let Ok(t) = serde_wasm_bindgen::from_value::<ContextTarget>(ev.detail()) else {
-                return;
-            };
-            // Clamp into the viewport with room for the menu's own size.
-            let (vw, vh) = viewport_size();
-            menu.set(Some(ContextTarget {
-                x: t.x.clamp(8.0, (vw - 190.0).max(8.0)),
-                y: t.y.clamp(8.0, (vh - 60.0).max(8.0)),
-                id: t.id,
-            }));
-        },
-    );
-    on_cleanup(move || ctx.remove());
-
-    // The menu's own dismissal: Escape or a press anywhere outside it.
-    Effect::new(move |_| {
-        if menu.with(|m| m.is_none()) {
+    // Placement (cursor point) + viewport clamping + dismissal are the
+    // `ContextMenu` primitive's job; this listener only delivers the payload.
+    use_typed_event::<ContextTarget>(GLOSS_CONTEXT_EVENT, move |t| {
+        if selecting.get_untracked() {
             return;
         }
-        let key = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
-            let ke = ev.unchecked_ref::<web_sys::KeyboardEvent>();
-            if ke.key() == "Escape" {
-                menu.set(None);
-            }
-        });
-        let pd = window_event_listener_untyped("pointerdown", move |ev: web_sys::Event| {
-            if let Some(el) = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-                && el.closest(".gloss-context-menu").ok().flatten().is_some()
-            {
-                return;
-            }
-            menu.set(None);
-        });
-        on_cleanup(move || {
-            key.remove();
-            pd.remove();
-        });
+        menu.set(Some(t));
     });
 
     SelectMode { menu, undo }

@@ -3,7 +3,9 @@
 use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;
 
-use crate::components::document::dom_helpers::{PAGE_LIST_ID, observe_content_size};
+use crate::components::primitives::floating::types::z::CONTROLS;
+use crate::components::primitives::hooks::dom::PAGE_LIST_ID;
+use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
 use crate::state::ReaderState;
 
 #[component]
@@ -32,7 +34,11 @@ pub fn ContinuousView(
     view! {
         <div class="relative h-full w-full">
             <crate::components::document::PageList state=state virtualizer=virtualizer />
-            <div class="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-0.5">
+            <div
+                class=format!(
+                    "pointer-events-none absolute inset-x-0 bottom-0 {CONTROLS} h-0.5"
+                )
+            >
                 <div
                     class="h-full bg-accent/80 transition-[width] duration-100"
                     style:width=move || format!("{}%", progress() * 100.0)

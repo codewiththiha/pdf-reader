@@ -1,12 +1,14 @@
 //! Bottom icon-only rail: Thumbs / Outline panel toggles. Active state is a
-//! rounded filled chip, exactly like the reference's bookmark button.
+//! rounded filled chip, exactly like the reference's bookmark button. Rows
+//! are the shared [`ToggleButton`] primitive (size/shape via `variant_class`).
 
 use leptos::prelude::*;
 
 use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::toggle_button::ToggleButton;
 use crate::state::SidebarMode;
 
-/// One rail toggle.
+/// One rail toggle: the shared pressed/quiet shell + the rail's own size.
 #[component]
 fn RailToggle(
     icon: IconName,
@@ -15,23 +17,14 @@ fn RailToggle(
     on_click: impl Fn() + 'static,
 ) -> impl IntoView {
     view! {
-        <button
-            type="button"
-            title=title
-            aria-label=title
-            aria-pressed=move || active.get().to_string()
-            on:click=move |_| on_click()
-            class="inline-flex h-9 w-14 items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            // Repo rule: each conditional class carries ONE token. A
-            // space-separated value here throws a swallowed SyntaxError and
-            // the highlight silently never applies.
-            class=("bg-line", move || active.get())
-            class=("text-ink", move || active.get())
-            class=("text-muted", move || !active.get())
-            class=("hover:text-ink", move || !active.get())
+        <ToggleButton
+            active=active
+            on_click=on_click
+            title=title.to_string()
+            variant_class="h-9 w-14"
         >
             <Icon name=icon size=16 />
-        </button>
+        </ToggleButton>
     }
 }
 

@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod dev;
 mod effects;
 mod features;
 mod services;

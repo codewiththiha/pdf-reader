@@ -11,7 +11,7 @@ use leptos::prelude::*;
 
 use crate::components::menus::appearance::hue_picker::HuePicker;
 use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::slider::Slider;
+use crate::components::primitives::form::slider::Slider;
 use pdf_core::appearance::BaseMode;
 use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;

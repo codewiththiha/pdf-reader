@@ -13,6 +13,8 @@
 
 use leptos::prelude::*;
 
+use crate::components::primitives::form::range_input::RangeInput;
+
 /// Named landmarks on the hue circle. These are the hues behind the classic
 /// reading modes plus the obvious cool/neutral choices, so the presets are
 /// reachable in one click and hand-tuning starts from somewhere sensible.
@@ -43,20 +45,15 @@ pub fn HuePicker(
 
             // The track is painted with the actual hue circle so the control
             // previews its own output. `--tw-*` utilities cannot express this,
-            // so it is one inline gradient — the single place a colour value
-            // is written outside the theme tokens.
-            <input
-                type="range"
-                min="0"
-                max="359"
-                step="1"
-                aria-label="Tint colour"
-                prop:value=move || hue.get().to_string()
-                on:input=move |ev| {
-                    if let Ok(n) = event_target_value(&ev).parse::<f64>() {
-                        on_change_strip(n);
-                    }
-                }
+            // so the gradient rides the RangeInput's class pass-through — the
+            // single place a colour value is written outside the theme tokens.
+            <RangeInput
+                value=hue.into()
+                min=Signal::derive(|| 0.0)
+                max=Signal::derive(|| 359.0)
+                step=Signal::derive(|| 1.0)
+                on_input=on_change_strip
+                aria_label="Tint colour"
                 class="hue-strip h-4 w-full cursor-pointer appearance-none rounded-full border border-line"
             />
 

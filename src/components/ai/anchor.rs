@@ -11,8 +11,9 @@ use pdf_core::layout::ViewMode;
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::marks::MARK_RADIUS;
-use crate::components::ai::gloss::util::{add_window_capture_listener, viewport_size};
-use crate::components::document::dom_helpers::by_id;
+use crate::components::primitives::hooks::dom::by_id;
+use crate::components::primitives::hooks::use_viewport::viewport_size;
+use crate::components::primitives::hooks::use_window_event::add_window_capture_listener;
 
 // Single public binding — do not also `use` PageAnchor above or rustc E0252s.
 pub use pdf_core::gloss::PageAnchor;

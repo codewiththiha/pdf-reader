@@ -12,6 +12,8 @@ use leptos::task::spawn_local;
 use virtual_list_leptos::Virtualizer;
 
 use super::result_list::ResultList;
+use crate::components::primitives::floating::types::z::{BAR, POPOVER};
+use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::effects::reader::search::{
     activate_match, clear_search, dismiss_search, run_search, search_navigate,
@@ -19,11 +21,6 @@ use crate::effects::reader::search::{
 use crate::state::ReaderState;
 
 /// How long typing must pause before the query runs.
-///
-/// Results appear while the reader types, so this is the whole latency budget:
-/// long enough that a burst of keystrokes costs one search instead of one per
-/// character, short enough to feel immediate. Matches the 180 ms the appearance
-/// controls use to coalesce slider input.
 const SEARCH_DEBOUNCE_MS: u64 = 180;
 
 /// Compact icon-button class shared by the bar's raw `<button>`s.
@@ -36,15 +33,10 @@ pub fn FloatingSearch(
 ) -> impl IntoView {
     let (last_query, set_last_query) = signal(String::new());
     let (show_results, set_show_results) = signal(false);
-    // Monotonic id for the newest search; guards against out-of-order
-    // completions so only the latest query lands its results and its jump.
     let (search_gen, set_search_gen) = signal(0u64);
     let input_ref: NodeRef<html::Input> = NodeRef::new();
     let container_ref: NodeRef<html::Div> = NodeRef::new();
 
-    // Autofocus the query input whenever the overlay becomes visible. Deferred
-    // to a microtask so the input node exists by the time it runs (the Show
-    // mounts the bar in the same flush the visible flag flips).
     Effect::new(move |_| {
         if state.search.visible.get() {
             queue_microtask(move || {
@@ -55,10 +47,6 @@ pub fn FloatingSearch(
         }
     });
 
-    // Outside-click dismiss: while visible, any pointerdown landing outside the
-    // bar's DOM node closes it. The listener is re-registered on each
-    // visible-flip and removed on cleanup. Hiding the bar also closes an open
-    // results dropdown so reopening starts from a clean slate.
     Effect::new(move |_| {
         if state.search.visible.get() {
             let handle = window_event_listener(
@@ -70,9 +58,6 @@ pub fn FloatingSearch(
                         .as_ref()
                         .is_some_and(|c| c.contains(Some(&target)));
                     if !contains {
-                        // Leaves the muted highlights behind, like Escape.
-                        // The same pointerdown then ends the grace period
-                        // unless it landed on the search chrome.
                         dismiss_search(state);
                     }
                 },
@@ -83,29 +68,7 @@ pub fn FloatingSearch(
         }
     });
 
-    // --- Live search --------------------------------------------------
-    // Typing schedules a search; each keystroke cancels the pending one, so a
-    // burst costs a single query. Highlights therefore appear as the reader
-    // types, with no Enter required.
-    //
-    // The debounced pass deliberately does NOT scroll: moving the page under
-    // someone who is still typing is disorienting, and the hits they want are
-    // usually already on screen. It only paints. Enter (or the next/prev
-    // buttons) is what commits to a match and moves the view.
-    let debounce_timer = StoredValue::new_local(None::<TimeoutHandle>);
-    let cancel_pending = move || {
-        debounce_timer.update_value(|t| {
-            if let Some(h) = t.take() {
-                h.clear();
-            }
-        });
-    };
-
-    // Run the current query now, cancelling anything pending. `then` runs once
-    // the results land, and only if this call is still the newest one — a
-    // slower earlier search must not steal the view from a newer query.
-    let run_now = move |then: Option<Box<dyn Fn()>>| {
-        cancel_pending();
+    let fire_search = move |then: Option<Box<dyn Fn()>>| {
         let q = state.search.query.get_untracked();
         if q.trim().is_empty() {
             clear_search(state);
@@ -126,48 +89,40 @@ pub fn FloatingSearch(
         });
     };
 
-    let schedule = move || {
-        cancel_pending();
-        let handle = set_timeout_with_handle(
-            move || run_now(None),
-            Duration::from_millis(SEARCH_DEBOUNCE_MS),
-        )
-        .ok();
-        debounce_timer.set_value(handle);
-    };
-
-    // A pending search must not fire into a torn-down view.
-    on_cleanup(cancel_pending);
+    let debounce = use_debounce(Duration::from_millis(SEARCH_DEBOUNCE_MS), {
+        let fire = fire_search.clone();
+        move || fire(None)
+    });
+    let schedule = move || debounce.trigger();
+    on_cleanup(move || debounce.cancel());
 
     let on_input = move |ev: leptos::ev::Event| {
         state.search.query.set(event_target_value(&ev));
         schedule();
     };
 
-    // Enter commits: it selects a match and scrolls it into view. When the
-    // results for this query are already in hand it advances to the next match;
-    // on a query that has not run yet it searches first, then lands on the
-    // first hit (the last one, for Shift+Enter).
-    let commit = move |dir: i32| {
-        let q = state.search.query.get_untracked();
-        let fresh =
-            last_query.get_untracked() != q || state.search.matches.with_untracked(Vec::is_empty);
-        if !fresh {
-            virtualizer.with_value(|v| search_navigate(state, v, dir));
-            return;
-        }
-        run_now(Some(Box::new(move || {
-            let len = state.search.matches.with_untracked(Vec::len);
-            if len > 0 {
-                virtualizer
-                    .with_value(|v| activate_match(state, v, if dir < 0 { len - 1 } else { 0 }));
+    let commit = {
+        let fire = fire_search.clone();
+        move |dir: i32| {
+            let q = state.search.query.get_untracked();
+            let fresh = last_query.get_untracked() != q
+                || state.search.matches.with_untracked(Vec::is_empty);
+            if !fresh {
+                virtualizer.with_value(|v| search_navigate(state, v, dir));
+                return;
             }
-        })));
+            debounce.cancel();
+            fire(Some(Box::new(move || {
+                let len = state.search.matches.with_untracked(Vec::len);
+                if len > 0 {
+                    virtualizer.with_value(|v| {
+                        activate_match(state, v, if dir < 0 { len - 1 } else { 0 })
+                    });
+                }
+            })));
+        }
     };
 
-    // Enter = next match, Shift+Enter = previous, Escape = close.
-    // stopPropagation on Escape keeps the global shortcut from ALSO closing the
-    // sidebar in the same keystroke (the bar is the first dismiss step).
     let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
         let key = ev.key();
         if key == "Enter" {
@@ -183,15 +138,11 @@ pub fn FloatingSearch(
         <Show when=move || state.search.visible.get()>
             <div
                 node_ref=container_ref
-                // Opt out of discard-on-interaction: clicks inside the bar are
-                // part of searching, not the reader moving on.
                 data-search-chrome="true"
-                // top-14 == TOOLBAR_H (48px) + the old top-2 (8px) gap. The
-                // offset parent is now the full-height content row, which
-                // starts at the window top so pages can travel under the glass
-                // toolbar; without this the panel would render *behind* the
-                // z-50 header and be unclickable.
-                class="floating-search-enter absolute right-4 top-14 z-40 w-[min(560px,90vw)] rounded-xl border border-line bg-surface/90 shadow-xl backdrop-blur-md"
+                class=format!(
+                    "floating-search-enter absolute right-4 top-14 {BAR} w-[min(560px,90vw)] \
+                     rounded-xl border border-line bg-surface/90 shadow-xl backdrop-blur-md"
+                )
             >
                 <div class="flex items-center gap-1.5 p-1.5">
                     <button
@@ -211,9 +162,6 @@ pub fn FloatingSearch(
                         on:input=on_input
                         on:keydown=on_keydown
                     />
-                    // Counter. Before the reader commits to a match there is no
-                    // "current" one, but the total still tells them whether the
-                    // query hit anything — so show a bare count until then.
                     <span class="whitespace-nowrap px-1 text-xs text-muted tabular-nums">
                         {move || {
                             let total = state.search.total.get();
@@ -268,7 +216,10 @@ pub fn FloatingSearch(
 
                 <Show when=move || show_results.get()>
                     <div
-                        class="absolute right-0 top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
+                        class=format!(
+                            "absolute right-0 top-full {POPOVER} mt-1 w-full overflow-hidden \
+                             rounded-xl border border-line bg-surface shadow-xl"
+                        )
                         on:click=move |_| set_show_results.set(false)
                     >
                         <div class="max-h-72 overflow-y-auto">

@@ -1,25 +1,33 @@
-//! Window-level interactions: Escape/outside dismiss, origin-exit collapse,
-//! resize refresh, page-flip/zoom guards, and the outro's settle-unmount.
-//! Each is a small self-contained hook so the popover stays wiring + view.
+//! Window-level interactions: Escape handling, outside-press dismissal,
+//! origin-exit collapse, page-flip/zoom guards, and the outro's
+//! settle-unmount. Each is a small self-contained hook so the popover stays
+//! wiring + view; the generic part of dismissal (outside press, topmost
+//! Escape, exclusion selectors) is the primitive `use_dismiss`, and only the
+//! two-step gloss semantics (first Escape collapses, second gives up) stay
+//! here.
 
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossBox, boxes_close};
+use pdf_core::gloss::{boxes_close, GlossBox};
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::gloss::util::viewport_size;
+use crate::components::primitives::floating::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
+use crate::components::primitives::hooks::use_viewport::viewport_size;
 use crate::components::ai::types::GlossPhase;
 use crate::state::AppState;
 
 /// Escape collapses the expanded card; a second Escape on the bare chip gives
-/// up on the gloss entirely. Outside taps collapse too.
+/// up on the gloss entirely. Outside presses collapse too (only while
+/// expanded — a bare chip is reachable by design).
 pub fn use_dismiss_interactions(ctrl: GlossController) {
+    // Two-step Escape: the gloss owns its own meaning (collapse → reset), so
+    // the primitive is used for the outside-press half and the Escape half
+    // stays here as domain policy.
     Effect::new(move |_| {
         if !ctrl.surface_visible.get() {
             return;
         }
-
         let key = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
             let ke = ev.unchecked_ref::<web_sys::KeyboardEvent>();
             if ke.key() != "Escape" {
@@ -32,27 +40,23 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
                 _ => ctrl.reset.run(()),
             }
         });
-
-        let pd = window_event_listener_untyped("pointerdown", move |ev: web_sys::Event| {
-            // A press inside the surface is the card's own interaction.
-            if let Some(el) = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-                && el.closest(".gloss-surface").ok().flatten().is_some()
-            {
-                return;
-            }
-            if ctrl.gphase.get_untracked() == GlossPhase::Expanded {
-                ctrl.drag_offset.set(None);
-                ctrl.gphase.set(GlossPhase::Compact);
-            }
-        });
-
-        on_cleanup(move || {
-            key.remove();
-            pd.remove();
-        });
+        on_cleanup(move || key.remove());
     });
+
+    // A press inside the surface is the card's own interaction; anywhere else
+    // collapses an expanded card (compact chips stay put).
+    use_dismiss(
+        ctrl.surface_visible.into(),
+        ctrl.collapse_to_mark,
+        DismissPolicy {
+            escape: false,
+            outside: Some(DismissTrigger::PointerDown),
+            exclude_selectors: vec![".gloss-surface"],
+            enabled: None,
+            topmost_only: false,
+        },
+        |_| false,
+    );
 }
 
 /// Scrolling does not kill the card instantly: it tracks its anchor until the
@@ -102,7 +106,7 @@ pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
 pub fn use_settle_unmount(
     ctrl: GlossController,
     anchor: Signal<Option<GlossBox>>,
-    sprung: RwSignal<Option<GlossBox>>,
+    sprung: Signal<Option<GlossBox>>,
 ) {
     Effect::new(move |_| {
         if !ctrl.surface_visible.get() || ctrl.gphase.get() != GlossPhase::Compact {
@@ -117,20 +121,6 @@ pub fn use_settle_unmount(
         if sprung.get().is_some_and(|b| boxes_close(b, a, 0.5)) {
             ctrl.surface_visible.set(false);
         }
-    });
-}
-
-/// Keep the viewport size fresh while a surface exists, so placement clamps
-/// stay honest through window resizes.
-pub fn use_viewport_refresh(ctrl: GlossController, viewport: RwSignal<(f64, f64)>) {
-    Effect::new(move |_| {
-        if !ctrl.surface_visible.get() {
-            return;
-        }
-        let h = window_event_listener_untyped("resize", move |_| {
-            viewport.set(viewport_size());
-        });
-        on_cleanup(move || h.remove());
     });
 }
 

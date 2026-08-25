@@ -18,10 +18,11 @@
 //! * **Click** re-opens the card (toggle-to-close lives in the controller's
 //!   open effect) — or, in selection mode, toggles selection instead.
 //! * **Long-press** (≥ `LONG_PRESS_MS`, drift < `LONG_PRESS_SLOP_PX`) enters
-//!   multi-select mode with this mark already selected. The press uses
-//!   pointer capture so it survives drifting off the stroke; the click that
-//!   follows the gesture (and the synthetic `contextmenu` mobile fires after
-//!   it) are swallowed by one-shot suppression flags.
+//!   multi-select mode with this mark already selected. The gesture itself is
+//!   the generic [`use_long_press`] primitive; the press uses pointer capture
+//!   so it survives drifting off the stroke, and the click (plus the
+//!   synthetic `contextmenu` mobile fires after it) are swallowed by one-shot
+//!   suppression flags.
 //! * **Right-click** asks for the remove menu (`pdfreader:gloss-context`) —
 //!   or toggles selection when selection mode is already active.
 //!
@@ -37,12 +38,12 @@ use std::collections::HashSet;
 
 use leptos::prelude::*;
 use pdf_core::gloss::GlossMark;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::select_mode::{
     dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
 };
+use crate::components::primitives::hooks::use_custom_event::dispatch_typed_event;
+use crate::components::primitives::interactions::long_press::{use_long_press, LongPressOptions};
 
 /// Name of the "a persisted mark was clicked" event.
 pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
@@ -51,24 +52,6 @@ pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one
 /// geometry. No hug-padding: the stroke is the stored union rect itself.
 pub const MARK_RADIUS: f64 = 3.0;
-
-/// Stop an in-flight long-press: the finger lifted, drifted past slop, or
-/// the gesture already completed. Clears the pending timer (harmless if it
-/// already fired) and drops the parked closure.
-fn cancel_long_press(
-    press_active: StoredValue<bool, LocalStorage>,
-    timer: StoredValue<Option<(i32, Closure<dyn FnMut()>)>, LocalStorage>,
-) {
-    press_active.set_value(false);
-    timer.with_value(|t| {
-        if let Some((handle, _)) = t {
-            if let Some(win) = web_sys::window() {
-                win.clear_timeout_with_handle(*handle);
-            }
-        }
-    });
-    timer.set_value(None);
-}
 
 #[component]
 pub fn GlossMarkLayer(
@@ -118,29 +101,25 @@ pub fn GlossMarkLayer(
                         move || selected.with(|s| s.contains(&id))
                     };
 
-                    // ── Long-press gesture state (per mark) ───────────────
-                    let press_start: StoredValue<Option<(i32, i32)>, LocalStorage> =
-                        StoredValue::new_local(None);
-                    let press_active: StoredValue<bool, LocalStorage> =
-                        StoredValue::new_local(false);
-                    // One-shot flags: the click (and, on touch, the synthetic
-                    // contextmenu) that follow a completed long-press must be
-                    // swallowed, or the gesture would instantly re-open/toggle.
-                    let suppress_click: StoredValue<bool, LocalStorage> =
-                        StoredValue::new_local(false);
-                    let suppress_context: StoredValue<bool, LocalStorage> =
-                        StoredValue::new_local(false);
-                    // The pending timer + its parked closure.
-                    let timer: StoredValue<Option<(i32, Closure<dyn FnMut()>)>, LocalStorage> =
-                        StoredValue::new_local(None);
-                    // Reactive "currently pressing" tint (instant feedback
-                    // before the 450 ms complete).
-                    let pressing = RwSignal::new(false);
+                    // ── Long-press gesture (generic primitive) ─────────────
+                    let on_select = {
+                        let id = m.id.clone();
+                        Callback::new(move |_: ()| {
+                            selecting.set(true);
+                            selected.update(|s| {
+                                s.insert(id.clone());
+                            });
+                        })
+                    };
+                    let lp = use_long_press(LongPressOptions {
+                        press_ms: LONG_PRESS_MS,
+                        slop_px: LONG_PRESS_SLOP_PX,
+                        capture_pointer: true,
+                        enabled: Signal::derive(move || !selecting.get_untracked()),
+                        on_press: on_select,
+                    });
 
-                    // Each DOM handler owns its own mark/id clone. Event
-                    // closures are independent and may be called repeatedly.
                     let aria_id = m.id.clone();
-                    let press_id = m.id.clone();
                     let click_mark = m.clone();
                     let context_id = m.id.clone();
 
@@ -150,7 +129,7 @@ pub fn GlossMarkLayer(
                             class="gloss-mark"
                             class=("gloss-mark-processing", is_processing)
                             class=("gloss-mark-selected", is_selected)
-                            class=("gloss-mark-pressing", move || pressing.get())
+                            class=("gloss-mark-pressing", move || lp.pressing.get())
                             title=m.word.clone()
                             aria-label=format!("Explain {}", m.word)
                             aria-pressed=move || {
@@ -168,77 +147,14 @@ pub fn GlossMarkLayer(
                                 if ev.button() != 0 {
                                     return;
                                 }
-                                // Keep receiving move/up even when the finger
-                                // drifts off this 12-px stroke.
-                                if let Some(el) = ev
-                                    .target()
-                                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-                                {
-                                    let _ = el.set_pointer_capture(ev.pointer_id());
-                                }
-                                if selecting.get_untracked() {
-                                    return; // toggling happens on click
-                                }
-                                press_active.set_value(true);
-                                pressing.set(true);
-                                suppress_click.set_value(false);
-                                suppress_context.set_value(false);
-                                press_start.set_value(Some((ev.client_x(), ev.client_y())));
-
-                                let Some(win) = web_sys::window() else {
-                                    return;
-                                };
-                                let id = press_id.clone();
-                                let cb = Closure::<dyn FnMut()>::new(move || {
-                                    if !press_active.get_value() {
-                                        return;
-                                    }
-                                    press_active.set_value(false);
-                                    pressing.set(false);
-                                    suppress_click.set_value(true);
-                                    suppress_context.set_value(true);
-                                    selecting.set(true);
-                                    selected.update(|s| {
-                                        s.insert(id.clone());
-                                    });
-                                });
-                                let f: js_sys::Function =
-                                    cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
-                                if let Ok(handle) = win
-                                    .set_timeout_with_callback_and_timeout_and_arguments_0(
-                                        &f,
-                                        LONG_PRESS_MS,
-                                    )
-                                {
-                                    timer.set_value(Some((handle, cb)));
-                                }
+                                (lp.on_pointerdown)(&ev);
                             }
-                            on:pointermove=move |ev| {
-                                if !press_active.get_value() {
-                                    return;
-                                }
-                                let Some((sx, sy)) = press_start.get_value() else {
-                                    return;
-                                };
-                                let dx = (ev.client_x() - sx) as f64;
-                                let dy = (ev.client_y() - sy) as f64;
-                                if dx * dx + dy * dy > LONG_PRESS_SLOP_PX * LONG_PRESS_SLOP_PX {
-                                    cancel_long_press(press_active, timer);
-                                    pressing.set(false);
-                                }
-                            }
-                            on:pointerup=move |_| {
-                                cancel_long_press(press_active, timer);
-                                pressing.set(false);
-                            }
-                            on:pointercancel=move |_| {
-                                cancel_long_press(press_active, timer);
-                                pressing.set(false);
-                            }
+                            on:pointermove=move |ev| (lp.on_pointermove)(&ev)
+                            on:pointerup=move |ev| (lp.on_pointerup)(&ev)
+                            on:pointercancel=move |ev| (lp.on_pointercancel)(&ev)
                             on:click=move |ev| {
                                 ev.stop_propagation();
-                                if suppress_click.get_value() {
-                                    suppress_click.set_value(false);
+                                if (lp.swallow_click)() {
                                     return; // this press became a long-press
                                 }
                                 if selecting.get_untracked() {
@@ -250,8 +166,7 @@ pub fn GlossMarkLayer(
                             on:contextmenu=move |ev| {
                                 ev.prevent_default();
                                 ev.stop_propagation();
-                                if suppress_context.get_value() {
-                                    suppress_context.set_value(false);
+                                if (lp.swallow_context)() {
                                     return; // synthetic, after a long-press
                                 }
                                 if selecting.get_untracked() {
@@ -277,15 +192,5 @@ pub fn GlossMarkLayer(
 /// CustomEvent (mark in the detail) that bumps `open_req` — never a bare
 /// `popover_open = true` that races against `detail` being cleared.
 pub fn request_gloss_open(mark: &GlossMark) {
-    let Some(win) = web_sys::window() else {
-        return;
-    };
-    let Ok(detail) = serde_wasm_bindgen::to_value(mark) else {
-        return;
-    };
-    let init = web_sys::CustomEventInit::new();
-    init.set_detail(&detail);
-    if let Ok(ev) = web_sys::CustomEvent::new_with_event_init_dict(GLOSS_OPEN_EVENT, &init) {
-        let _ = win.dispatch_event(&ev);
-    }
+    dispatch_typed_event(GLOSS_OPEN_EVENT, mark);
 }

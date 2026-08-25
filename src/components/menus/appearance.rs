@@ -24,7 +24,7 @@ use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::separator::Separator;
 use crate::components::chrome::adaptive_toolbar::ToolbarItem;
 use crate::components::chrome::OverflowRow;
-use crate::components::primitives::popover::Popover;
+use crate::components::chrome::menu_popover::MenuPopover;
 use crate::state::AppState;
 
 mod base;
@@ -69,7 +69,7 @@ pub fn AppearanceMenu(
             >
                 <Icon name=IconName::Palette size=18 />
             </button>
-            <Popover
+            <MenuPopover
                 open=open
                 anchor=root_ref
                 fallback_anchor=fallback_anchor
@@ -87,7 +87,7 @@ pub fn AppearanceMenu(
                 <div class="my-3"><Separator vertical=false /></div>
                 <SectionLabel text="Film grain" />
                 <NoiseSection state=state />
-            </Popover>
+            </MenuPopover>
         </div>
     }
 }

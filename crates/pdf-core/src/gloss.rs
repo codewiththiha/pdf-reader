@@ -114,11 +114,7 @@ pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
 /// Whether two boxes are equal to within `epsilon` on all five fields — the
 /// spring's "settled" and "already snapped" tests.
 pub fn boxes_close(a: GlossBox, b: GlossBox, epsilon: f64) -> bool {
-    (a.x - b.x).abs() < epsilon
-        && (a.y - b.y).abs() < epsilon
-        && (a.w - b.w).abs() < epsilon
-        && (a.h - b.h).abs() < epsilon
-        && (a.r - b.r).abs() < epsilon
+    FloatBox::from(a).close(&FloatBox::from(b), epsilon)
 }
 
 /// Smallest the card may shrink to before content stops being readable.
@@ -162,35 +158,41 @@ pub fn place_card(
 /// Spring stiffness and damping for the morph. Stiffness 210 / damping 26 is
 /// mildly underdamped (critical ≈ 29 at mass 1): a confident pop with one small
 /// settle, matching the reference's feel.
-const STIFFNESS: f64 = 210.0;
-const DAMPING: f64 = 26.0;
+///
+/// The generic 1-D spring and the field-wise steer live in
+/// [`crate::floating`] (the primitive motion layer); `GlossBox` converts into
+/// `FloatBox` at this boundary so the domain type stays the single source of
+/// truth for persisted marks while the mechanics stay reusable.
+pub use crate::floating::{FloatBox, SPRING_DAMPING, SPRING_STIFFNESS};
 
-/// One explicit-Euler step of a 1-D spring toward `t` from `c` at velocity `v`.
-/// Returns `(position, velocity)`. The dt is clamped by the caller so long
-/// frames never blow the integrator past its stability bound (2 / sqrt(k) ≈ 0.138s).
-fn spring_axis(c: f64, v: f64, t: f64, dt: f64) -> (f64, f64) {
-    let force = STIFFNESS * (t - c) - DAMPING * v;
-    let nv = v + force * dt;
-    (c + nv * dt, nv)
+impl From<GlossBox> for FloatBox {
+    fn from(b: GlossBox) -> Self {
+        FloatBox {
+            x: b.x,
+            y: b.y,
+            w: b.w,
+            h: b.h,
+            r: b.r,
+        }
+    }
+}
+
+impl From<FloatBox> for GlossBox {
+    fn from(b: FloatBox) -> Self {
+        GlossBox {
+            x: b.x,
+            y: b.y,
+            w: b.w,
+            h: b.h,
+            r: b.r,
+        }
+    }
 }
 
 /// One spring step over all five box fields. Returns `(next_box, next_velocity)`.
 pub fn step_spring(cur: GlossBox, vel: GlossBox, target: GlossBox, dt: f64) -> (GlossBox, GlossBox) {
-    let (x, vx) = spring_axis(cur.x, vel.x, target.x, dt);
-    let (y, vy) = spring_axis(cur.y, vel.y, target.y, dt);
-    let (w, vw) = spring_axis(cur.w, vel.w, target.w, dt);
-    let (h, vh) = spring_axis(cur.h, vel.h, target.h, dt);
-    let (r, vr) = spring_axis(cur.r, vel.r, target.r, dt);
-    (
-        GlossBox { x, y, w, h, r },
-        GlossBox {
-            x: vx,
-            y: vy,
-            w: vw,
-            h: vh,
-            r: vr,
-        },
-    )
+    let (next, next_vel) = FloatBox::from(cur).step(&FloatBox::from(vel), &FloatBox::from(target), dt);
+    (GlossBox::from(next), GlossBox::from(next_vel))
 }
 
 #[cfg(test)]

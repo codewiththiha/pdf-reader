@@ -82,9 +82,7 @@ pub fn open_dialog(state: AppState) {
                 if msg != "Open cancelled" {
                     state.reader.document.error.set(Some(msg.clone()));
                     state.reader.document.status.set(DocStatus::Error);
-                    state.ui.toast.set(Some(Toast {
-                        message: format!("Could not open PDF: {}", msg),
-                    }));
+                    state.ui.toast.set(Some(Toast::new(format!("Could not open PDF: {}", msg))));
                 }
             }
         }
@@ -281,9 +279,7 @@ pub fn open_path(state: AppState, path: String) {
             Err(e) => {
                 state.reader.document.error.set(Some(e.message.clone()));
                 state.reader.document.status.set(DocStatus::Error);
-                state.ui.toast.set(Some(Toast {
-                    message: format!("Could not open PDF: {}", e.message),
-                }));
+                state.ui.toast.set(Some(Toast::new(format!("Could not open PDF: {}", e.message))));
             }
         }
     });

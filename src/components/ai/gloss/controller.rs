@@ -13,13 +13,13 @@
 use std::collections::HashMap;
 
 use leptos::prelude::*;
-use pdf_core::gloss::GlossMark;
+use pdf_core::gloss::{GlossBox, GlossMark};
 
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::marks::GLOSS_OPEN_EVENT;
-use crate::components::ai::gloss::spring::SpringBox;
-use crate::components::ai::gloss::util::viewport_size;
 use crate::components::ai::types::{AiError, AiErrorKind, AiPhase, GlossPhase, WordInfo};
+use crate::components::primitives::hooks::use_viewport::viewport_size;
+use crate::components::primitives::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;
 
@@ -287,7 +287,7 @@ pub fn use_open_effect(
     state: AppState,
     ctrl: GlossController,
     watch: AnchorWatch,
-    spring: SpringBox,
+    spring: SpringBox<GlossBox>,
     viewport: RwSignal<(f64, f64)>,
 ) {
     let popover_open = state.reader.ai_selection.popover_open;

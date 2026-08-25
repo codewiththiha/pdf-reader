@@ -19,7 +19,8 @@ use leptos::prelude::*;
 use crate::components::document::PageCanvas;
 use crate::state::TextureSignal;
 use crate::state::ReaderState;
-use crate::components::document::dom_helpers::{observe_content_size, SINGLE_PAGE_CONTAINER_ID};
+use crate::components::primitives::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
+use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
 
 #[component]
 pub fn SinglePageView(state: ReaderState) -> impl IntoView {

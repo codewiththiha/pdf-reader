@@ -8,8 +8,8 @@ use wasm_bindgen::JsCast;
 use web_sys::ResizeObserverEntry;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
-use crate::components::document::dom_helpers::by_id;
-use crate::components::primitives::popover::Popover;
+use crate::components::primitives::hooks::dom::by_id;
+use crate::components::chrome::menu_popover::MenuPopover;
 use super::toolbar_layout::compute_collapsed;
 
 pub const TB_GAP: f64 = 4.0;          // gap-1
@@ -146,7 +146,7 @@ pub fn AdaptiveToolbar(
                             title="More tools"
                             on_click=move || open.set(!open.get())
                         />
-                        <Popover open=open anchor=overflow_ref width=224 class="p-1".to_string()>
+                        <MenuPopover open=open anchor=overflow_ref width=224 coordinate_space="toolbar-row" class="p-1".to_string()>
                             <For
                                 each=move || collapsed_ids.get()
                                 key=|id| *id
@@ -160,7 +160,7 @@ pub fn AdaptiveToolbar(
                                         .unwrap_or_else(|| ().into_any())
                                 }
                             />
-                        </Popover>
+                        </MenuPopover>
                     </div>
                 </Show>
                 // Surviving entries AFTER the ⋯.

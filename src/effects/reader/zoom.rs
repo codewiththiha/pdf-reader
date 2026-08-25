@@ -26,13 +26,11 @@ type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 /// enough that the crisp render feels immediate.
 const ZOOM_ANIM_MS: f64 = 200.0;
 
-/// Standard decelerating ease. Fast off the mark, settles gently.
 fn ease_out_cubic(t: f64) -> f64 {
     let u = 1.0 - t.clamp(0.0, 1.0);
     1.0 - u * u * u
 }
 
-/// True when the OS asks for reduced motion.
 fn prefers_reduced_motion() -> bool {
     web_sys::window()
         .and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok())
@@ -41,7 +39,6 @@ fn prefers_reduced_motion() -> bool {
         .unwrap_or(false)
 }
 
-/// The single entry point for changing zoom.
 pub fn request_zoom(state: ReaderState, target: f64, animate: bool) {
     let target = clamp_scale(target);
     state.viewer.zoom.desired.set(target);
@@ -60,9 +57,7 @@ pub fn request_zoom(state: ReaderState, target: f64, animate: bool) {
 
 thread_local! {
     static ZOOM_TOKEN: Cell<u64> = const { Cell::new(0) };
-    /// True while a zoom gesture (not a resize/slide) owns the layout.
     static ZOOM_GESTURE: Cell<bool> = const { Cell::new(false) };
-    /// Set by `commit_scale`, consumed by the `fit_effect` run it triggers.
     static COMMIT_ECHO: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -78,7 +73,6 @@ pub(super) fn take_commit_echo() -> bool {
     COMMIT_ECHO.with(|c| c.replace(false))
 }
 
-/// Applies a scale change to the layout immediately and atomically.
 pub fn relayout_to(state: ReaderState, factor: f64, virtualizer: &Virtualizer) {
     if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
         return;
@@ -110,7 +104,6 @@ pub fn relayout_to(state: ReaderState, factor: f64, virtualizer: &Virtualizer) {
     }
 }
 
-/// The zoom coordinator. Must be called once from the app root (ReaderPage).
 pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
     let anim_slot = StoredValue::new_local(None::<StepSlot>);
     let live_token = StoredValue::new_local(Rc::new(Cell::new(0u64)));
@@ -179,7 +172,6 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
     });
 }
 
-/// Commit a settled scale: one crisp render at `s`, animation flag cleared.
 pub(super) fn commit_scale(state: ReaderState, scale: f64) {
     set_gesture_owns_layout(false);
     COMMIT_ECHO.with(|c| c.set(true));

@@ -318,7 +318,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         // positioned by the page; the indicator itself is
                         // reusable UI with no knowledge of AppState.
                         <Show when=is_ready>
-                            <div class="pointer-events-none absolute bottom-3 right-3 z-30">
+                            <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", crate::components::primitives::floating::types::z::CONTROLS)>
                                 <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
                             </div>
                         </Show>

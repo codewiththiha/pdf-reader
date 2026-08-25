@@ -85,3 +85,16 @@ body {
   pointer-events: none;
 }
 .tb-sizer > * { flex-shrink: 0; }
+
+/* --- stable floating surface classes ---------------------------------
+   The shared visual contract for menu/popover/context-menu/action-bar
+   surfaces: rounded, hairline border, surface fill, floating elevation.
+   Components compose these with their own layout utilities so every
+   floating surface reuses one look. */
+.surface-popover {
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+  padding: 0.25rem;
+}

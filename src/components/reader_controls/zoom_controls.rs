@@ -18,7 +18,7 @@ use crate::components::primitives::tooltip::Tooltip;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
 use crate::components::chrome::adaptive_toolbar::ToolbarItem;
 use crate::components::chrome::OverflowRow;
-use crate::components::primitives::popover::Popover;
+use crate::components::chrome::menu_popover::MenuPopover;
 use crate::state::AppState;
 use crate::effects::reader::zoom::request_zoom;
 
@@ -217,7 +217,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                     <path d="m6 9 6 6 6-6"/>
                 </svg>
             </button>
-            <Popover open=open anchor=root_ref width=176 class="p-1".to_string()>
+            <MenuPopover open=open anchor=root_ref width=176 class="p-1".to_string()>
                 <button
                     type="button"
                     on:click=move |_| {
@@ -272,7 +272,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                         }
                     }
                 />
-            </Popover>
+            </MenuPopover>
         </div>
     }
 }

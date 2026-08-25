@@ -86,7 +86,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
             <div
                 data-ai-popover=""
                 style=move || style.get()
-                class="ai-selection-menu-enter"
+                class=format!("ai-selection-menu-enter {}", crate::components::primitives::floating::types::z::AI_SELECTION)
             >
                 <button
                     type="button"

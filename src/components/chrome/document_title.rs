@@ -50,8 +50,8 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             } else {
                 format!("cont-{}-pg", page.saturating_sub(1))
             };
-            let Some(doc_el) = crate::components::document::dom_helpers::by_id(&host_id) else { return };
-            let Some(viewer) = crate::components::document::dom_helpers::by_id("viewer-slot") else { return };
+            let Some(doc_el) = crate::components::primitives::hooks::dom::by_id(&host_id) else { return };
+            let Some(viewer) = crate::components::primitives::hooks::dom::by_id("viewer-slot") else { return };
 
             let pr = doc_el.get_bounding_client_rect();
             let vr = viewer.get_bounding_client_rect();

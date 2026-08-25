@@ -43,18 +43,20 @@ use crate::components::ai::gloss::hooks::use_ai_chunks::use_ai_chunks;
 use crate::components::ai::gloss::hooks::use_content_measure::use_content_measure;
 use crate::components::ai::gloss::interactions::{
     use_dismiss_interactions, use_origin_exit_collapse, use_page_flip_collapse, use_settle_unmount,
-    use_viewport_refresh, use_zoom_reset,
+    use_zoom_reset,
 };
 use crate::components::ai::gloss::placement::{CARD_WIDTH, expanded_target, spring_target};
 use crate::components::ai::gloss::select_bar::GlossSelectBar;
 use crate::components::ai::gloss::select_mode::use_select_mode;
-use crate::components::ai::gloss::spring::use_spring_box;
 use crate::components::ai::gloss::surface::GlossSurface;
 use crate::components::ai::gloss::undo_toast::GlossUndoToast;
-use crate::components::ai::gloss::util::{reduced_motion_signal, viewport_size};
 use crate::components::ai::types::{AiError, AiPhase, GlossPhase};
 use crate::components::ai::word_info::{LoadingShimmer, WordInfoSections};
+use crate::components::primitives::hooks::use_viewport::use_viewport;
+use crate::components::primitives::motion::reduced_motion::reduced_motion_signal;
+use crate::components::primitives::motion::spring::{use_spring_box, SpringBox};
 use crate::state::AppState;
+use pdf_core::gloss::GlossBox;
 
 #[component]
 pub fn GlossAiPopover(state: AppState) -> impl IntoView {
@@ -74,7 +76,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     );
     let anchor = watch.screen;
 
-    let viewport = RwSignal::new(viewport_size());
+    // Reactive viewport (the shared primitive): resize-aware signal, owned by
+    // this reactive scope. Replaces the old local snapshot + refresh listener.
+    let viewport = use_viewport();
     let reduced = reduced_motion_signal();
 
     // ── Card targeting ────────────────────────────────────────────────
@@ -94,7 +98,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let snap = Signal::derive(move || {
         ctrl.dragging.get() || reduced.get() || ctrl.gphase.get() == GlossPhase::Processing
     });
-    let spring = use_spring_box(target.into(), snap);
+    let spring: SpringBox<GlossBox> = use_spring_box(target.into(), snap);
     let sprung = spring.value;
 
     let progress = Memo::new(move |_| {
@@ -116,8 +120,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // ── Window-level behaviour ────────────────────────────────────────
     use_dismiss_interactions(ctrl);
     use_origin_exit_collapse(watch, ctrl);
-    use_settle_unmount(ctrl, anchor.into(), sprung);
-    use_viewport_refresh(ctrl, viewport);
+    use_settle_unmount(ctrl, anchor.into(), sprung.into());
     use_page_flip_collapse(state, ctrl);
     use_zoom_reset(state, ctrl);
 
@@ -140,7 +143,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         // so the measured height already includes chrome and wrap.
         <div
             node_ref=measure_ref
-            class="pointer-events-none invisible fixed left-0 top-0 z-0"
+            class=format!("pointer-events-none invisible fixed left-0 top-0 {}", crate::components::primitives::floating::types::z::CONTENT)
             style=format!("width:{CARD_WIDTH}px")
             aria-hidden="true"
         >

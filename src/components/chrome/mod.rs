@@ -5,6 +5,7 @@
 pub mod adaptive_toolbar;
 pub mod app_title_bar;
 pub mod document_title;
+pub mod menu_popover;
 pub(crate) mod metrics;
 pub mod overflow_row;
 pub mod title_bar;

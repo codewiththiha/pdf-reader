@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::slider::Slider;
+use crate::components::primitives::form::slider::Slider;
 use pdf_core::appearance::NoiseMode;
 use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;

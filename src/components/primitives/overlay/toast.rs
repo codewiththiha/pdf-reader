@@ -1,0 +1,123 @@
+//! Toast data model + visual. The gloss undo toast and the app-global error
+//! toast used to be two separate shells with two separate timers; both are
+//! now `ToastData` through [`toast_host`](super::toast_host).
+//!
+//! Data is deliberately separate from the auto-dismiss controller: the gloss
+//! undo keeps its own *generation-guarded* timer (undo semantics — a steal
+//! must not clear a newer batch), while ordinary toasts use the host's timer.
+
+use std::time::Duration;
+
+use leptos::prelude::*;
+
+use crate::components::primitives::icon::{Icon, IconName};
+
+/// Visual tone of a toast.
+///
+/// `Info`/`Success` have no producer yet (error toasts + the gloss undo are
+/// the current surfaces); they are part of the shared contract as soon as
+/// the library/annotation flows land.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(dead_code)]
+pub enum ToastTone {
+    Info,
+    #[default]
+    Error,
+    Success,
+    /// The "removed X — Undo" style: neutral with an accent action.
+    Undo,
+}
+
+/// An optional action on a toast (Undo, Open, Save…).
+#[derive(Debug, Clone)]
+pub struct ToastAction {
+    pub label: String,
+    pub on_click: Callback<()>,
+}
+
+/// One toast. `id` is monotonic per producer so a stale timer can never wipe
+/// a newer toast (the host's equality guard).
+#[derive(Debug, Clone)]
+pub struct ToastData {
+    pub id: u64,
+    pub message: String,
+    pub tone: ToastTone,
+    /// How long the toast stays up. `None` = no auto-dismiss.
+    pub duration: Option<Duration>,
+    pub action: Option<ToastAction>,
+}
+
+impl ToastData {
+    pub fn new(id: u64, message: impl Into<String>, tone: ToastTone) -> Self {
+        Self {
+            id,
+            message: message.into(),
+            tone,
+            duration: Some(Duration::from_millis(3500)),
+            action: None,
+        }
+    }
+
+    #[allow(dead_code)] // builder for future callers; slot host arms the timer
+    pub fn with_duration(mut self, duration: Duration) -> Self {
+        self.duration = Some(duration);
+        self
+    }
+
+    #[allow(dead_code)] // builder for future callers; undo/annotations build inline
+    pub fn with_action(mut self, label: impl Into<String>, on_click: Callback<()>) -> Self {
+        self.action = Some(ToastAction {
+            label: label.into(),
+            on_click,
+        });
+        self
+    }
+}
+
+fn tone_classes(tone: ToastTone) -> (&'static str, IconName) {
+    match tone {
+        ToastTone::Info => ("border-line bg-surface text-ink", IconName::Search),
+        ToastTone::Error => (
+            "border-red-400/50 bg-red-950/95 text-red-100",
+            IconName::Close,
+        ),
+        ToastTone::Success => ("border-line bg-surface text-ink", IconName::Check),
+        ToastTone::Undo => (
+            "border-line bg-surface text-ink",
+            IconName::Close,
+        ),
+    }
+}
+
+/// The toast visual: message + optional action, no positioning, no timing.
+#[component]
+pub fn ToastPanel(toast: ToastData) -> impl IntoView {
+    let (tone_class, icon) = tone_classes(toast.tone);
+    let action = toast.action;
+    view! {
+        <div
+            class=format!(
+                "toast-enter flex max-w-[min(90vw,32rem)] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm shadow-xl {tone_class}"
+            )
+            role="status"
+        >
+            <Icon name=icon size=16 />
+            <span>{toast.message}</span>
+            {action.map(|a| {
+                let label = a.label;
+                let on_click = a.on_click;
+                view! {
+                    <button
+                        type="button"
+                        on:click=move |_| on_click.run(())
+                        class="rounded-full px-3 py-1 text-sm font-semibold text-accent \
+                               transition-colors hover:bg-line \
+                               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                        {label}
+                    </button>
+                }
+            })}
+        </div>
+    }
+}

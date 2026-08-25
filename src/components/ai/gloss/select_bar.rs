@@ -1,11 +1,14 @@
 //! The bottom-right selection action bar: count + This page / All /
-//! Remove (n) / Done. Rendered by the popover; visible exactly while
-//! selection mode is active.
+//! Remove (n) / Done. Rendered by the popover's `SelectMode` (its `undo`
+//! signal is the undo pipeline); visible exactly while selection mode is
+//! active. Position + elevation come from the `ActionBar` primitive; this
+//! file keeps only the actions.
 
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::select_mode::{exit_selection, park_undo};
+use crate::components::primitives::overlay::action_bar::ActionBar;
 use crate::state::AppState;
 
 /// Shared button styling for the quiet actions.
@@ -62,44 +65,41 @@ pub fn GlossSelectBar(
     let done = move |_| exit_selection(state);
 
     view! {
-        <Show when=move || selecting.get()>
-            <div
-                class="gloss-select-bar fixed bottom-5 right-5 z-[60] flex items-center gap-1 \
-                       rounded-full border border-line bg-surface py-1.5 pl-4 pr-1.5 \
-                       shadow-[var(--gloss-shadow-menu)]"
-                role="toolbar"
-                aria-label="Gloss mark selection"
+        <ActionBar
+            visible=Signal::derive(move || selecting.get())
+            role="toolbar"
+            aria_label="Gloss mark selection"
+            class="gloss-select-bar"
+        >
+            <span class="mr-1.5 text-xs font-medium tabular-nums text-muted">
+                {move || format!("{} selected", count.get())}
+            </span>
+            <button type="button" class=BAR_BTN on:click=select_page>
+                "This page"
+            </button>
+            <button type="button" class=BAR_BTN on:click=select_all>
+                "All"
+            </button>
+            <button
+                type="button"
+                disabled=move || count.get() == 0
+                aria-label=move || format!("Remove {} selected highlights", count.get())
+                class="rounded-full px-3 py-1.5 text-xs font-semibold text-red-400 \
+                       transition-colors hover:bg-line \
+                       disabled:cursor-not-allowed disabled:opacity-40 \
+                       focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                on:click=remove
             >
-                <span class="mr-1.5 text-xs font-medium tabular-nums text-muted">
-                    {move || format!("{} selected", count.get())}
-                </span>
-                <button type="button" class=BAR_BTN on:click=select_page>
-                    "This page"
-                </button>
-                <button type="button" class=BAR_BTN on:click=select_all>
-                    "All"
-                </button>
-                <button
-                    type="button"
-                    disabled=move || count.get() == 0
-                    aria-label=move || format!("Remove {} selected highlights", count.get())
-                    class="rounded-full px-3 py-1.5 text-xs font-semibold text-red-400 \
-                           transition-colors hover:bg-line \
-                           disabled:cursor-not-allowed disabled:opacity-40 \
-                           focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    on:click=remove
-                >
-                    {move || format!("Remove ({})", count.get())}
-                </button>
-                <button
-                    type="button"
-                    class=BAR_BTN
-                    aria-label="Done selecting"
-                    on:click=done
-                >
-                    "Done"
-                </button>
-            </div>
-        </Show>
+                {move || format!("Remove ({})", count.get())}
+            </button>
+            <button
+                type="button"
+                class=BAR_BTN
+                aria-label="Done selecting"
+                on:click=done
+            >
+                "Done"
+            </button>
+        </ActionBar>
     }
 }

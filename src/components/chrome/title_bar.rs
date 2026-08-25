@@ -10,12 +10,13 @@
 //! native traffic lights, sidebar insets and search holds are injected
 //! through props/callbacks (see `app_title_bar.rs`).
 
-use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::children::ViewFn;
 use leptos::prelude::*;
 
+use crate::components::primitives::floating::types::z::BAR;
+use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
@@ -49,42 +50,24 @@ pub fn TitleBar(
     #[prop(into)] right: ViewFn,
     children: Children,
 ) -> impl IntoView {
-    let hovered = RwSignal::new(false);
     let held_count = RwSignal::new(0usize);
     let is_held = Signal::derive(move || held_count.get() > 0);
+    // Show on enter, hide after a grace period unless something holds the bar
+    // open (an open popover, the floating search). The shared primitive owns
+    // the timer + re-check-both-ends semantics; the shell owns the hold
+    // definition.
+    let hover = use_hover_visibility(
+        Duration::from_millis(HIDE_DELAY_MS),
+        move || is_held.get() || extra_hold.get(),
+    );
+    let hovered = hover.visible;
     let visible = Signal::derive(move || pinned.get() || hovered.get());
     provide_context(TitleBarCtx { visible, held_count });
 
-    let timer = StoredValue::new_local(None::<TimeoutHandle>);
-    let show: Rc<dyn Fn()> = Rc::new(move || {
-        if let Some(h) = timer.get_value() {
-            h.clear();
-            timer.set_value(None);
-        }
-        hovered.set(true);
-    });
-    let hide_later = move || {
-        // An open popover or the floating search pins the bar open.
-        if is_held.get() || extra_hold.get() {
-            return;
-        }
-        if let Some(h) = timer.get_value() {
-            h.clear();
-        }
-        let h = set_timeout_with_handle(
-            move || {
-                if !is_held.get() && !extra_hold.get() {
-                    hovered.set(false);
-                }
-            },
-            Duration::from_millis(HIDE_DELAY_MS),
-        )
-        .ok();
-        timer.set_value(h);
-    };
-
-    let show_band = show.clone();
-    let show_bar = show;
+    let hide_later_band = hover.hide_later.clone();
+    let hide_later_bar = hover.hide_later;
+    let show_band = hover.show.clone();
+    let show_bar = hover.show;
     let sidebar_open = move || band_inset.get();
 
     view! {
@@ -93,12 +76,12 @@ pub fn TitleBar(
             // Hover band = the whole titlebar area (grab zone), but NEVER over
             // the sidebar: `left-72` while the sidebar is open.
             <div
-                class="absolute top-0 right-0 z-40 h-12"
+                class=format!("absolute top-0 right-0 {BAR} h-12")
                 class=("left-72", sidebar_open)
                 class=("left-0", move || !sidebar_open())
                 data-tauri-drag-region="true"
                 on:mouseenter=move |_| show_band()
-                on:mouseleave=move |_| hide_later()
+                on:mouseleave=move |_| hide_later_band()
             >
                 <div
                     // DocumentTitle measurement anchors MUST keep these ids.
@@ -106,7 +89,7 @@ pub fn TitleBar(
                     data-tauri-drag-region="true"
                     prop:inert=move || !visible.get()
                     on:mouseenter=move |_| show_bar()
-                    on:mouseleave=move |_| hide_later()
+                    on:mouseleave=move |_| hide_later_bar()
                     class="toolbar-glass flex h-full items-center gap-2 pr-2 transition-opacity duration-200"
                     // 88px clears the lights (x:20 + ~54px) + a real gap.
                     class=("pl-[88px]", move || !sidebar_open())

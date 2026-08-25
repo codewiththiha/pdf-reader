@@ -1,8 +1,13 @@
 //! The morphing surface component — a direct port of the Gloss reference's
-//! `gloss-surface`. One fixed `div` whose `left/top/width/height/border-radius/
-//! box-shadow/background` all come from the sprung box, with an inner content
-//! wrapper sized to the *expanded* card (not the current box) whose opacity and
-//! pointer-events are gated by morph progress.
+//! `gloss-surface`, composed on the generic [`FloatingCard`] primitive so the
+//! box morph mechanics, the no-reflow content wrapper and the drag-handle
+//! slot are shared with any future floating card.
+//!
+//! One fixed `div` whose `left/top/width/height/border-radius` come from the
+//! sprung box; the primitive owns that shell. This module keeps ONLY the
+//! gloss policy: phase fills/shadows/opacity (the `GlossBox` → `FloatBox`
+//! conversions happen here, at the primitive boundary), the drag-handle
+//! contents, and the header + scroll column.
 //!
 //! Dismiss is not a button on the card: Escape / outside-tap / origin-exit are
 //! owned by the popover's window listeners.
@@ -12,6 +17,8 @@ use leptos::prelude::*;
 use pdf_core::gloss::{smoothstep, GlossBox};
 
 use crate::components::ai::types::GlossPhase;
+use crate::components::primitives::floating::floating_card::FloatingCard;
+use crate::components::primitives::floating::types::FloatBox;
 
 /// Surface background by phase.
 ///
@@ -76,13 +83,20 @@ pub fn GlossSurface(
     /// Card body: shimmer / word sections / error.
     children: Children,
 ) -> impl IntoView {
+    // The primitive speaks FloatBox; the domain speaks GlossBox. Convert at
+    // the seam — one place, one From impl, math shared in pdf_core.
+    let box_f = Signal::derive(move || FloatBox::from(box_.get()));
+    let expanded_f = Signal::derive(move || FloatBox::from(expanded.get()));
+
+    // Gloss policy: fills, shadows, surface opacity/pointer-events. This is
+    // the `surface_style` extra the primitive appends after the geometry.
     let surface_style = Signal::derive(move || {
-        let b = box_.get();
         let p = phase.get();
         let pr = progress.get();
-        // Fade IN as the morph leaves the stroke, fade OUT as it returns onto it.
-        // The mark stroke underneath owns the fully-collapsed look, so the outro
-        // reads as "card shrinks AND dissolves back into the highlight".
+        // Fade IN as the morph leaves the stroke, fade OUT as it returns onto
+        // it. The mark stroke underneath owns the fully-collapsed look, so
+        // the outro reads as "card shrinks AND dissolves back into the
+        // highlight".
         let opacity = smoothstep(pr, 0.05, 0.5);
         let pe = if p == GlossPhase::Expanded && pr > 0.4 {
             "auto"
@@ -90,13 +104,7 @@ pub fn GlossSurface(
             "none"
         };
         format!(
-            "left:{}px;top:{}px;width:{}px;height:{}px;border-radius:{}px;\
-             box-shadow:{};background:{};opacity:{};pointer-events:{};",
-            b.x,
-            b.y,
-            b.w,
-            b.h,
-            b.r,
+            "box-shadow:{};background:{};opacity:{};pointer-events:{};",
             shadow_for(p),
             fill_for(p, pr),
             opacity,
@@ -104,24 +112,13 @@ pub fn GlossSurface(
         )
     });
 
-    let content_style = Signal::derive(move || {
-        let e = expanded.get();
-        let ph = phase.get();
-        let pr = progress.get();
-        let opacity = if ph == GlossPhase::Processing {
+    let content_opacity = Signal::derive(move || {        if phase.get() == GlossPhase::Processing {
             0.0
         } else {
-            smoothstep(pr, 0.18, 0.7)
-        };
-        let interactive = pr > 0.55;
-        format!(
-            "width:{}px;height:{}px;opacity:{};pointer-events:{};",
-            e.w,
-            e.h,
-            opacity,
-            if interactive { "auto" } else { "none" }
-        )
+            smoothstep(progress.get(), 0.18, 0.7)
+        }
     });
+    let content_interactive = Signal::derive(move || progress.get() > 0.55);
 
     let phase_str = Signal::derive(move || match phase.get() {
         GlossPhase::Processing => "processing",
@@ -137,54 +134,54 @@ pub fn GlossSurface(
         _ => String::new(),
     });
 
-    view! {
-        <div
-            class="gloss-surface"
-            data-phase=move || phase_str.get()
-            role=move || role.get()
-            aria-label=move || aria_label.get()
-            style=move || surface_style.get()
-        >
-            // Content wrapper: sized to the EXPANDED card, faded in by progress.
+    let word_h = word.clone();
+    let drag_handle: leptos::children::Children = Box::new(move || {
+        // Drag handle — only live when expanded (guarded in the callback).
+        view! {
             <div
-                class="absolute left-0 top-0 overflow-hidden text-ink"
-                style=move || content_style.get()
-            >
-                // Drag handle — only live when expanded (guarded in the callback).
-                <div
-                    class="absolute left-0 right-0 top-2.5 z-10 flex cursor-grab \
-                           justify-center active:cursor-grabbing"
-                    style:opacity=move || format!("{}", smoothstep(progress.get(), 0.5, 0.95))
-                    on:pointerdown=move |ev| {
-                        if phase.get_untracked() != GlossPhase::Expanded {
-                            return;
-                        }
-                        ev.prevent_default();
-                        ev.stop_propagation();
-                        on_drag_start.run((ev.client_x() as f64, ev.client_y() as f64, box_.get_untracked()));
+                class="absolute left-0 right-0 top-2.5 z-10 flex cursor-grab \
+                       justify-center active:cursor-grabbing"
+                style:opacity=move || format!("{}", smoothstep(progress.get(), 0.5, 0.95))
+                on:pointerdown=move |ev| {
+                    if phase.get_untracked() != GlossPhase::Expanded {
+                        return;
                     }
-                >
-                    <span class="block h-1 w-8 rounded-full bg-ink/15"></span>
-                </div>
-
-                <div
-                    data-gloss-scroll=""
-                    class="flex h-full min-h-0 flex-col overflow-y-auto \
-                           overscroll-contain px-5 pb-4 pt-6"
-                >
-                    // shrink-0: flex must never squash header/separator/body
-                    // when content is a hair taller than the card — scroll
-                    // instead (scrollbar already hidden). The 1px separator
-                    // has min-content height 0 and was the first casualty.
-                    <header class="mb-4 shrink-0">
-                        <h2 class="text-lg font-semibold leading-tight text-balance text-ink">
-                            {move || word.get()}
-                        </h2>
-                    </header>
-                    <div class="mb-4 h-px shrink-0 bg-line"></div>
-                    <div class="shrink-0">{children()}</div>
-                </div>
+                    ev.prevent_default();
+                    ev.stop_propagation();
+                    on_drag_start.run((ev.client_x() as f64, ev.client_y() as f64, box_.get_untracked()));
+                }
+            >
+                <span class="block h-1 w-8 rounded-full bg-ink/15"></span>
             </div>
-        </div>
+        }
+        .into_any()
+    });
+
+    view! {
+        <FloatingCard
+            box_=box_f
+            expanded=expanded_f
+            surface_style=surface_style
+            content_opacity=content_opacity
+            content_interactive=content_interactive
+            drag_handle=drag_handle
+            data_phase=phase_str
+            role=role
+            aria_label=aria_label
+            scroll_class="px-5 pb-4 pt-6"
+            class="gloss-surface"
+        >
+            // shrink-0: flex must never squash header/separator/body when
+            // content is a hair taller than the card — scroll instead
+            // (scrollbar already hidden). The 1px separator has min-content
+            // height 0 and was the first casualty.
+            <header class="mb-4 shrink-0">
+                <h2 class="text-lg font-semibold leading-tight text-balance text-ink">
+                    {move || word_h.get()}
+                </h2>
+            </header>
+            <div class="mb-4 h-px shrink-0 bg-line"></div>
+            <div class="shrink-0">{children()}</div>
+        </FloatingCard>
     }
 }

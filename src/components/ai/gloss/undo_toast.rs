@@ -1,13 +1,21 @@
-//! The "Removed n highlights — Undo" toast. Parking through
+//! The "Removed n highlights — Undo" toast, composed on the unified toast
+//! shell ([`ToastData`] + [`ToastPanel`]). Parking through
 //! [`super::select_mode::park_undo`] means EVERY removal path (context menu,
 //! bar) gets undo for free; the batch is pinned to its document path so an
 //! undo after a document switch drops instead of resurrecting marks into the
 //! wrong file.
+//!
+//! Auto-dismiss rides the host's id-guarded `use_toast_slot` (the toast id
+//! IS the batch generation): a second removal replaces the batch, and the
+//! first one's timer can never clear it. Position stays domain policy — this
+//! toast sits at the bottom center, above the selection bar's corner.
 
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::gloss::select_mode::UndoBatch;
+use crate::components::ai::gloss::select_mode::{UndoBatch, UNDO_WINDOW_MS};
+use crate::components::primitives::overlay::toast::{ToastData, ToastPanel, ToastTone};
+use crate::components::primitives::overlay::toast_host::use_toast_slot;
 use crate::state::AppState;
 
 #[component]
@@ -16,45 +24,71 @@ pub fn GlossUndoToast(
     ctrl: GlossController,
     undo: RwSignal<Option<UndoBatch>>,
 ) -> impl IntoView {
+    // The toast the batch projects to: id = generation, so the host's
+    // equality guard sees a replacement as a different toast.
+    use_toast_slot(
+        Signal::derive(move || {
+            undo.get().map(|batch| {
+                let n = batch.marks.len();
+                ToastData {
+                    id: batch.generation,
+                    message: format!("Removed {n} highlight{}", if n == 1 { "" } else { "s" }),
+                    tone: ToastTone::Undo,
+                    duration: Some(std::time::Duration::from_millis(UNDO_WINDOW_MS as u64)),
+                    action: None,
+                }
+            })
+        }),
+        move |id| {
+            undo.with_untracked(|u| {
+                u.as_ref()
+                    .is_some_and(|batch| batch.generation == id)
+            })
+        },
+        move |id| {
+            undo.update(|u| {
+                if u.as_ref().is_some_and(|batch| batch.generation == id) {
+                    *u = None;
+                }
+            });
+        },
+    );
+
     view! {
-        <Show when=move || undo.with(|u| u.is_some())>
-            {move || {
-                undo.get().map(|batch| {
-                    let n = batch.marks.len();
-                    let restored = batch.marks.clone();
-                    let batch_path = batch.path.clone();
-                    view! {
-                        <div
-                            class="gloss-undo-toast fixed bottom-5 left-1/2 z-[70] flex \
-                                   items-center gap-3 rounded-full border border-line \
-                                   bg-surface py-2 pl-4 pr-2 text-sm text-ink \
-                                   shadow-[var(--gloss-shadow-menu)]"
-                            role="status"
-                        >
-                            <span>
-                                {format!("Removed {n} highlight{}", if n == 1 { "" } else { "s" })}
-                            </span>
-                            <button
-                                type="button"
-                                class="rounded-full px-3 py-1 text-sm font-semibold text-accent \
-                                       transition-colors hover:bg-line \
-                                       focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                on:click=move |_| {
-                                    // A batch belongs to the document it came
-                                    // from; after a switch, drop it instead of
-                                    // resurrecting marks into the wrong file.
-                                    if state.reader.document.path.get_untracked() == batch_path {
-                                        ctrl.restore_marks.run(restored.clone());
-                                    }
-                                    undo.set(None);
-                                }
-                            >
-                                "Undo"
-                            </button>
-                        </div>
-                    }
-                })
-            }}
-        </Show>
+        {move || {
+            undo.get().map(|batch| {
+                let n = batch.marks.len();
+                let restored = batch.marks.clone();
+                let batch_path = batch.path.clone();
+                let toast = ToastData {
+                    id: batch.generation,
+                    message: format!("Removed {n} highlight{}", if n == 1 { "" } else { "s" }),
+                    tone: ToastTone::Undo,
+                    duration: Some(std::time::Duration::from_millis(UNDO_WINDOW_MS as u64)),
+                    action: Some(crate::components::primitives::overlay::toast::ToastAction {
+                        label: "Undo".into(),
+                        on_click: Callback::new(move |_| {
+                            // A batch belongs to the document it came from;
+                            // after a switch, drop it instead of resurrecting
+                            // marks into the wrong file.
+                            if state.reader.document.path.get_untracked() == batch_path {
+                                ctrl.restore_marks.run(restored.clone());
+                            }
+                            undo.set(None);
+                        }),
+                    }),
+                };
+                view! {
+                    // Bottom-center, clear of the selection bar's corner.
+                    <div
+                        class="gloss-undo-toast fixed bottom-5 left-1/2 z-[var(--z-toast)] \
+                               -translate-x-1/2"
+                        role="status"
+                    >
+                        <ToastPanel toast=toast />
+                    </div>
+                }
+            })
+        }}
     }
 }

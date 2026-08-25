@@ -296,7 +296,7 @@ pub struct GlossState {
 /// The reader's slice of app state: everything the PDF components and the
 /// reader effects read/write. Sidebar/UI chrome is deliberately NOT here —
 /// it is app chrome state, passed in explicitly where the reader needs it.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct ReaderState {
     pub document: DocumentState,
     pub viewer: ViewerSignals,
@@ -305,14 +305,3 @@ pub struct ReaderState {
     pub gloss: GlossState,
 }
 
-impl Default for ReaderState {
-    fn default() -> Self {
-        Self {
-            document: DocumentState::default(),
-            viewer: ViewerSignals::default(),
-            search: SearchState::default(),
-            ai_selection: AiSelectionState::default(),
-            gloss: GlossState::default(),
-        }
-    }
-}

@@ -34,7 +34,6 @@
 //! * A Leptos `.set()` always notifies, even when the value is unchanged.
 //!   Guard writes that run in a loop or animation frame.
 
-mod conditional_class;
 pub mod ai;
 pub mod chrome;
 pub mod document;

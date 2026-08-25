@@ -5,6 +5,7 @@
 
 pub mod appearance;
 pub mod filename;
+pub mod floating;
 pub mod gloss;
 pub mod layout;
 pub mod math;

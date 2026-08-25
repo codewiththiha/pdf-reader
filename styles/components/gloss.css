@@ -14,9 +14,8 @@
    ===================================================================== */
 
 :root {
-  --gloss-shadow-menu:
-    0 0 0 1px var(--color-line),
-    0 8px 24px rgb(0 0 0 / 0.30);
+  /* Aliased to the shared floating elevation token: one value, one source. */
+  --gloss-shadow-menu: var(--shadow-float);
   --gloss-shadow-card:
     0 0 0 1px var(--color-line),
     0 16px 40px rgb(0 0 0 / 0.42);
@@ -29,15 +28,17 @@
    --------------------------------------------------------------------- */
 .gloss-surface {
   position: fixed;
-  z-index: 40;
+  /* Layering aliases, one source: the token scale in tokens.css.
+     (Phase rules below always override this base value.) */
+  z-index: var(--z-popover);
   overflow: hidden;
   box-sizing: border-box;
   transform-origin: top left;
   touch-action: none;
 }
 .gloss-surface[data-phase="processing"],
-.gloss-surface[data-phase="compact"] { z-index: 30; }
-.gloss-surface[data-phase="expanded"] { z-index: 50; }
+.gloss-surface[data-phase="compact"] { z-index: var(--z-controls); }
+.gloss-surface[data-phase="expanded"] { z-index: var(--z-popover); }
 
 /* Usage-example lines inside the card (kept from the reference). */
 .gloss-quote {

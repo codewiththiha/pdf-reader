@@ -73,14 +73,6 @@ pub fn WordInfoSections(info: WordInfo) -> impl IntoView {
 }
 
 /// Placeholder shimmer lines shown while waiting for the first AI chunk.
-#[component]
-pub fn LoadingShimmer() -> impl IntoView {
-    view! {
-        <div class="flex flex-col gap-3 p-3" aria-label="Loading AI response">
-            <div class="ai-shimmer-line" style="width: 40%"></div>
-            <div class="ai-shimmer-line" style="width: 90%"></div>
-            <div class="ai-shimmer-line" style="width: 75%"></div>
-            <div class="ai-shimmer-line" style="width: 60%"></div>
-        </div>
-    }
-}
+/// The generic skeleton lives in `primitives::feedback::shimmer`; this is a
+/// re-export so AI call sites read the same as before.
+pub use crate::components::primitives::feedback::shimmer::LoadingShimmer;

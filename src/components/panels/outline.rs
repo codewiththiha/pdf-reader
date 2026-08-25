@@ -177,7 +177,7 @@ pub fn OutlinePanel(
                 match row {
                     // A row with no height is not laid out yet; keep waiting.
                     Some(row) if row.get_bounding_client_rect().height() > 0.0 => {
-                        crate::components::document::dom_helpers::reveal_in_scroll_parent(&row, &parent, 24.0);
+                        crate::components::primitives::hooks::dom::reveal_in_scroll_parent(&row, &parent, 24.0);
                     }
                     _ => {
                         let n = attempt.get();
@@ -224,7 +224,7 @@ pub fn OutlinePanel(
                     .ok()
                     .flatten()
                 {
-                    crate::components::document::dom_helpers::center_in_scroll_parent(&row, &parent);
+                    crate::components::primitives::hooks::dom::center_in_scroll_parent(&row, &parent);
                 }
             },
         );
