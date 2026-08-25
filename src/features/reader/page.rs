@@ -18,20 +18,18 @@ use crate::components::app_shell::adaptive_toolbar::AdaptiveToolbar;
 use crate::components::app_shell::app_title_bar::AppTitleBar;
 use crate::components::app_shell::document_title::DocumentTitle;
 use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
-use crate::components::panels::Sidebar;
-use crate::components::panels::book_info::BookInfo;
-use crate::components::panels::outline_host::SidebarOutline;
-use crate::components::panels::panel_switcher::PanelSwitcher;
-use crate::components::panels::sidebar_header::SidebarHeader;
-use crate::components::panels::sidebar_shell::{
-    SidebarChromeCtx, request_reveal_active, sidebar_paint,
-};
-use crate::components::panels::thumbnail_host::SidebarThumbs;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::tooltip::Tooltip;
 use crate::components::reader_controls::bottom_bar::ReaderBottomBar;
 use crate::components::reader_controls::page_indicator::PageIndicator;
+use crate::components::sidebar::Sidebar;
+use crate::components::sidebar::document_info::BookInfo;
+use crate::components::sidebar::header::SidebarHeader;
+use crate::components::sidebar::outline_view::SidebarOutline;
+use crate::components::sidebar::shell::{SidebarChromeCtx, request_reveal_active, sidebar_paint};
+use crate::components::sidebar::switcher::PanelSwitcher;
+use crate::components::sidebar::thumbnails_view::SidebarThumbs;
 use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;

@@ -6,7 +6,7 @@ use leptos::children::ViewFn;
 use leptos::prelude::*;
 
 use crate::components::app_shell::title_bar::TitleBar;
-use crate::components::panels::sidebar_shell::SidebarChromeCtx;
+use crate::components::sidebar::shell::SidebarChromeCtx;
 use crate::components::app_shell::traffic_lights::TrafficLights;
 use crate::state::AppState;
 use crate::state::SidebarMode;

@@ -23,8 +23,8 @@ use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 
 use super::auto_center::AutoCenter;
-use super::cell::ThumbCell;
 use super::geometry::{CELL_W, GAP_CROSS, MIN_VIEWPORT_H, PAD, ROW_BUFFER, row_height};
+use super::thumbnail_cell::ThumbCell;
 
 type DriveSlot = StoredValue<Option<Closure<dyn FnMut(web_sys::Event)>>, LocalStorage>;
 
