@@ -8,12 +8,33 @@
 //!
 //! Shown only when a document is open, the sidebar is OFF (its identity row
 //! already shows the name) AND the titlebar is not visible (the bar contains
-//! the name). Blend note: `mix-blend-difference` must reach the page pixels,
-//! so the wrapper carries NO z-index — a positioned wrapper with z-index forms
-//! a stacking context that isolates the blend (the old centered label read as
-//! plain white).
+//! the name).
+//!
+//! Blend contract: `mix-blend-difference` blends only against what is painted
+//! *inside the element's isolation group* (its nearest ancestor stacking
+//! context). The shell subtree creates such contexts freely (toolbar glass
+//! `backdrop-filter`, `opacity` fades, z-token wrappers, `prop:inert`
+//! toggling), and whenever the group happened to exclude the pages the
+//! backdrop read transparent — `white difference transparent = white` — with
+//! the blend snapping back only when an unrelated animation forced the
+//! compositor to re-invalidate the layer. So the label is PORTALED to
+//! `<body>` and `position: fixed`: its only ancestors are body/html, its
+//! isolation group is the root canvas group, and that group always contains
+//! the pages' pixels — deterministic, with no ancestor able to isolate it.
+//!
+//! Rules that keep it working forever:
+//! 1. The portal wrapper and the label's own wrapper must stay stacking
+//!    context-FREE: no z-index, opacity (other than the span's fade class),
+//!    transform, filter, backdrop-filter, isolation, contain or will-change.
+//!    Above/below is solved with DOM order, never z-index.
+//! 2. The fade stays on the span (the blending element). Mid-fade the span
+//!    isolates itself for ~200ms, so it may look un-blended mid-fade — brief
+//!    and normal.
+//! 3. If it ever reads white again: DevTools → span → walk the ancestors and
+//!    look for the properties in rule 1.
 
 use leptos::html;
+use leptos::portal::Portal;
 use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
@@ -95,25 +116,28 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     };
 
     view! {
-        // NO z-index on the wrapper: mix-blend-difference must reach page
-        // pixels. opacity-0 (not `hidden`) keeps the span measurable.
-        <div class="pointer-events-none absolute left-3 top-3">
-            <span
-                node_ref=label_ref
-                class="block truncate text-sm font-medium text-white mix-blend-difference transition-opacity duration-200"
-                class=("opacity-0", move || !shown())
-                style:max-width=move || match budget.get() {
-                    Some(b) if b >= MIN_LABEL_W => format!("{}px", b.max(0.0).floor()),
-                    Some(_) => "0px".to_string(),
-                    None => "none".to_string(),
-                }
-            >
-                {move || pdf_core::filename::display_name(
-                    state.reader.document.title.get().as_deref(),
-                    state.reader.document.path.get().as_deref(),
-                )
-                .unwrap_or_default()}
-            </span>
-        </div>
+        // Portal to <body>: root canvas group = pages + label, always.
+        // The wrapper must stay stacking-context-FREE (rule 1 above);
+        // opacity-0 (not `hidden`) keeps the span measurable.
+        <Portal>
+            <div class="pointer-events-none fixed left-3 top-3">
+                <span
+                    node_ref=label_ref
+                    class="block truncate text-sm font-medium text-white mix-blend-difference transition-opacity duration-200"
+                    class=("opacity-0", move || !shown())
+                    style:max-width=move || match budget.get() {
+                        Some(b) if b >= MIN_LABEL_W => format!("{}px", b.max(0.0).floor()),
+                        Some(_) => "0px".to_string(),
+                        None => "none".to_string(),
+                    }
+                >
+                    {move || pdf_core::filename::display_name(
+                        state.reader.document.title.get().as_deref(),
+                        state.reader.document.path.get().as_deref(),
+                    )
+                    .unwrap_or_default()}
+                </span>
+            </div>
+        </Portal>
     }
 }

@@ -295,7 +295,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             />
                         }
                     />
-                    <main id="viewer-slot" class="relative isolate min-w-0 flex-1 overflow-hidden">
+                    <main id="viewer-slot" class="relative min-w-0 flex-1 overflow-hidden">
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {
