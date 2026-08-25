@@ -13,7 +13,7 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::chrome::title_bar::TitleBarCtx;
+use crate::components::app_shell::title_bar::TitleBarCtx;
 use crate::components::primitives::floating::popover::Popover;
 use crate::components::primitives::floating::types::PlacementSide;
 

@@ -14,10 +14,10 @@ use virtual_list::Viewport;
 use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
 use super::toolbar_entries::reader_toolbar_entries;
-use crate::components::chrome::adaptive_toolbar::AdaptiveToolbar;
-use crate::components::chrome::app_title_bar::AppTitleBar;
-use crate::components::chrome::document_title::DocumentTitle;
-use crate::components::chrome::document_title::FloatingDocumentTitle;
+use crate::components::app_shell::adaptive_toolbar::AdaptiveToolbar;
+use crate::components::app_shell::app_title_bar::AppTitleBar;
+use crate::components::app_shell::document_title::DocumentTitle;
+use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
 use crate::components::panels::Sidebar;
 use crate::components::panels::book_info::BookInfo;
 use crate::components::panels::outline_host::SidebarOutline;

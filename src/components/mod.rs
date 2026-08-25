@@ -5,12 +5,12 @@
 //!     explanation popover)
 //!   * `primitives` — generic UI (button, icon, popover, …); must never
 //!     know what a PDF reader is
-//!   * `chrome`     — reusable structural application chrome (title bar,
-//!     adaptive toolbar, document titles)
+//!   * `app_shell` — reusable structural application shell (title bar,
+//!     adaptive toolbar, traffic lights, document titles)
 //!   * `menus`      — menu features (appearance, more)
 //!   * `overlays`   — transient UI (toast, drag feedback)
-//!   * `reader_controls` — reader-only controls (zoom, page indicator, …)
-//!   * `panels`     — the app sidebar (composition shell + panel hosts)
+//!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
+//!   * `sidebar`     — the app sidebar (composition shell + panel hosts)
 //!   * `document`   — UI whose purpose is displaying PDF documents
 //!   * `search`     — search presentation shared by reader surfaces
 //!
@@ -35,7 +35,7 @@
 //!   Guard writes that run in a loop or animation frame.
 
 pub mod ai;
-pub mod chrome;
+pub mod app_shell;
 pub mod document;
 pub mod menus;
 pub mod overlays;
@@ -43,3 +43,12 @@ pub mod panels;
 pub mod primitives;
 pub mod reader_controls;
 pub mod search;
+
+/// Deprecated transitional shim for the pre-Phase-6 module path. Use
+/// `components::app_shell` directly; this alias exists only so in-flight
+/// branches keep compiling.
+#[deprecated(note = "use components::app_shell")]
+#[allow(unused_imports)]
+pub mod chrome {
+    pub use crate::components::app_shell::*;
+}

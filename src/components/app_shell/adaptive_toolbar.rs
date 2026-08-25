@@ -9,13 +9,13 @@ use web_sys::ResizeObserverEntry;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::hooks::dom::by_id;
-use crate::components::chrome::menu_popover::MenuPopover;
-use super::toolbar_layout::compute_collapsed;
+use crate::components::app_shell::toolbar_popover::MenuPopover;
+use super::toolbar_overflow::compute_collapsed;
 
 pub const TB_GAP: f64 = 4.0;          // gap-1
 pub const TB_OVERFLOW_W: f64 = 36.0;  // h-9 w-9
-pub const TB_RIGHT_RESERVE: f64 = crate::components::chrome::metrics::PIN_RESERVE;
-pub const TB_TITLE_RESERVE: f64 = crate::components::chrome::metrics::MIN_DOC_TITLE_WIDTH;
+pub const TB_RIGHT_RESERVE: f64 = crate::components::app_shell::constants::PIN_RESERVE;
+pub const TB_TITLE_RESERVE: f64 = crate::components::app_shell::constants::MIN_DOC_TITLE_WIDTH;
 
 /// One control that can live in the bar or in the overflow menu.
 #[derive(Clone)]

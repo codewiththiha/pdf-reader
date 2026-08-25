@@ -16,9 +16,9 @@ use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::separator::Separator;
 use crate::components::primitives::tooltip::Tooltip;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
-use crate::components::chrome::adaptive_toolbar::ToolbarItem;
-use crate::components::chrome::OverflowRow;
-use crate::components::chrome::menu_popover::MenuPopover;
+use crate::components::app_shell::adaptive_toolbar::ToolbarItem;
+use crate::components::app_shell::OverflowRow;
+use crate::components::app_shell::toolbar_popover::MenuPopover;
 use crate::state::AppState;
 use crate::effects::reader::zoom::request_zoom;
 
