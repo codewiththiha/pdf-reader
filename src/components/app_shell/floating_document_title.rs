@@ -23,15 +23,22 @@
 //! the pages' pixels — deterministic, with no ancestor able to isolate it.
 //!
 //! Rules that keep it working forever:
-//! 1. The portal wrapper and the label's own wrapper must stay stacking
-//!    context-FREE: no z-index, opacity (other than the span's fade class),
-//!    transform, filter, backdrop-filter, isolation, contain or will-change.
-//!    Above/below is solved with DOM order, never z-index.
-//! 2. The fade stays on the span (the blending element). Mid-fade the span
-//!    isolates itself for ~200ms, so it may look un-blended mid-fade — brief
-//!    and normal.
-//! 3. If it ever reads white again: DevTools → span → walk the ancestors and
-//!    look for the properties in rule 1.
+//! 1. `mix-blend-difference` must sit on the SAME element that is
+//!    `position: fixed`. `fixed` creates a stacking context, so a fixed
+//!    wrapper around a blended child isolates the child against a transparent
+//!    backdrop (`white difference transparent = white`) — that exact shape is
+//!    what made the portaled label read white in the browser.
+//! 2. The blending node and its ancestors up to `<body>` must otherwise stay
+//!    stacking-context-FREE: no z-index, opacity, transform, filter,
+//!    backdrop-filter, isolation, contain or will-change. Above/below is
+//!    solved with DOM order, never z-index.
+//! 3. The fade (`opacity-0`) stays on the inner span, a DESCENDANT of the
+//!    blending node: a descendant's opacity never isolates the blend.
+//!    Mid-fade the text simply fades; the blend stays live.
+//! 4. If it ever reads white again: DevTools → blending node → walk the
+//!    ancestors to `<body>` and look for the properties in rule 2, and make
+//!    sure no `position: fixed|sticky` or stacking-context ancestor sits
+//!    BETWEEN the blend and `<body>` other than the blending node itself.
 
 use leptos::html;
 use leptos::portal::Portal;
@@ -52,7 +59,9 @@ const MIN_LABEL_W: f64 = 40.0;
 #[component]
 pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
-    let label_ref: NodeRef<html::Span> = NodeRef::new();
+    // The blending node is the positioned <div> (see the view's CRITICAL
+    // note); scroll_width() there is the natural text width, as before.
+    let label_ref: NodeRef<html::Div> = NodeRef::new();
     // Allowed total width in px, or None = hide.
     let budget = RwSignal::new(None::<f64>);
     // Natural (unclipped) width of the label; Infinity until first measured.
@@ -117,20 +126,25 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
 
     view! {
         // Portal to <body>: root canvas group = pages + label, always.
-        // The wrapper must stay stacking-context-FREE (rule 1 above);
-        // opacity-0 (not `hidden`) keeps the span measurable.
+        //
+        // CRITICAL: `mix-blend-difference` lives on the SAME node as
+        // `position: fixed`. `fixed` creates a stacking context, so a fixed
+        // *wrapper* around a blended child would isolate the child (its only
+        // backdrop would be the transparent wrapper -> white). On the fixed
+        // node itself, the backdrop is the portal/body group = the whole app.
+        // opacity-0 (not `hidden`) keeps the inner span measurable.
         <Portal>
-            <div class="pointer-events-none fixed left-3 top-3">
-                <span
-                    node_ref=label_ref
-                    class="block truncate text-sm font-medium text-white mix-blend-difference transition-opacity duration-200"
-                    class=("opacity-0", move || !shown())
-                    style:max-width=move || match budget.get() {
-                        Some(b) if b >= MIN_LABEL_W => format!("{}px", b.max(0.0).floor()),
-                        Some(_) => "0px".to_string(),
-                        None => "none".to_string(),
-                    }
-                >
+            <div
+                node_ref=label_ref
+                class="pointer-events-none fixed left-3 top-3 block truncate text-sm font-medium \
+                       text-white mix-blend-difference"
+                style:max-width=move || match budget.get() {
+                    Some(b) if b >= MIN_LABEL_W => format!("{}px", b.max(0.0).floor()),
+                    Some(_) => "0px".to_string(),
+                    None => "none".to_string(),
+                }
+            >
+                <span class="block transition-opacity duration-200" class=("opacity-0", move || !shown())>
                     {move || pdf_core::filename::display_name(
                         state.reader.document.title.get().as_deref(),
                         state.reader.document.path.get().as_deref(),
