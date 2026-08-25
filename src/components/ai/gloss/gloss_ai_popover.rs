@@ -46,9 +46,9 @@ use crate::components::ai::gloss::interactions::{
     use_zoom_reset,
 };
 use crate::components::ai::gloss::placement::{CARD_WIDTH, expanded_target, spring_target};
-use crate::components::ai::gloss::select_bar::GlossSelectBar;
-use crate::components::ai::gloss::select_mode::use_select_mode;
-use crate::components::ai::gloss::surface::GlossSurface;
+use crate::components::ai::gloss::selection_bar::GlossSelectBar;
+use crate::components::ai::gloss::selection_mode::use_select_mode;
+use crate::components::ai::gloss::gloss_surface::GlossSurface;
 use crate::components::ai::gloss::undo_toast::GlossUndoToast;
 use crate::components::ai::types::{AiError, AiPhase, GlossPhase};
 use crate::components::ai::word_info::{LoadingShimmer, WordInfoSections};

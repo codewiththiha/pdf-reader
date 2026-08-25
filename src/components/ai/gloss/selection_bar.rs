@@ -7,7 +7,7 @@
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::gloss::select_mode::{exit_selection, park_undo};
+use crate::components::ai::gloss::selection_mode::{exit_selection, park_undo};
 use crate::components::primitives::overlay::action_bar::ActionBar;
 use crate::state::AppState;
 
@@ -21,7 +21,7 @@ pub fn GlossSelectBar(
     state: AppState,
     ctrl: GlossController,
     /// Where removals are parked for undo.
-    undo: RwSignal<Option<crate::components::ai::gloss::select_mode::UndoBatch>>,
+    undo: RwSignal<Option<crate::components::ai::gloss::selection_mode::UndoBatch>>,
 ) -> impl IntoView {
     let selecting = state.reader.gloss.selection_active;
     let selected = state.reader.gloss.selected_marks;

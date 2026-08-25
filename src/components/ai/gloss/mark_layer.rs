@@ -39,7 +39,7 @@ use std::collections::HashSet;
 use leptos::prelude::*;
 use pdf_core::gloss::GlossMark;
 
-use crate::components::ai::gloss::select_mode::{
+use crate::components::ai::gloss::selection_mode::{
     dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
 };
 use crate::components::primitives::hooks::use_custom_event::dispatch_typed_event;

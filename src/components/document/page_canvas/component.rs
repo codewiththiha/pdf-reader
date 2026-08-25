@@ -357,7 +357,7 @@ pub fn PageCanvas(
                     let processing = gloss_processing
                         .unwrap_or_else(|| Signal::derive(|| None));
                     view! {
-                        <crate::components::ai::gloss::marks::GlossMarkLayer
+                        <crate::components::ai::gloss::mark_layer::GlossMarkLayer
                             page=page
                             marks=marks
                             scale=scale

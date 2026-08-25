@@ -1,6 +1,6 @@
 //! The "Removed n highlights — Undo" toast, composed on the unified toast
 //! shell ([`ToastData`] + [`ToastPanel`]). Parking through
-//! [`super::select_mode::park_undo`] means EVERY removal path (context menu,
+//! [`super::selection_mode::park_undo`] means EVERY removal path (context menu,
 //! bar) gets undo for free; the batch is pinned to its document path so an
 //! undo after a document switch drops instead of resurrecting marks into the
 //! wrong file.
@@ -13,7 +13,7 @@
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::gloss::select_mode::{UndoBatch, UNDO_WINDOW_MS};
+use crate::components::ai::gloss::selection_mode::{UndoBatch, UNDO_WINDOW_MS};
 use crate::components::primitives::overlay::toast::{ToastData, ToastPanel, ToastTone};
 use crate::components::primitives::overlay::toast_host::use_toast_slot;
 use crate::state::AppState;

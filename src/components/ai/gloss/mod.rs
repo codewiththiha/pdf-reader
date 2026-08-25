@@ -14,16 +14,16 @@
 //!   (thin domain wrapper over the primitive drag mechanics).
 //! * [`interactions`]   — window-level behaviour (Escape/outside, exit, flip).
 //! * [`hooks`]          — chunk ingestion (measurement is the generic hook).
-//! * [`select_mode`]    — multi-select mode: entry guards, exit paths, the
+//! * [`selection_mode`] — multi-select mode: entry guards, exit paths, the
 //!   context-menu listener, the undo pipeline.
-//! * [`marks`]          — the persistent highlighter stroke layer per page
+//! * [`mark_layer`]     — the persistent highlighter stroke layer per page
 //!   (incl. the long-press gesture + contextmenu).
-//! * [`select_bar`]     — the bottom-right selection action bar.
+//! * [`selection_bar`]  — the bottom-right selection action bar.
 //! * [`context_menu`]   — the right-click "Remove highlight" menu.
 //! * [`undo_toast`]     — the "Removed n highlights — Undo" toast.
-//! * [`surface`]        — the morphing surface component (composing the
+//! * [`gloss_surface`]  — the morphing surface component (composing the
 //!   primitive `FloatingCard` with the gloss phase styling).
-//! * [`popover`]        — wiring + view (the composition root).
+//! * [`gloss_ai_popover`] — wiring + view (the composition root).
 //!
 //! Generic mechanics (viewport, reduced motion, spring, drag, long press,
 //! dismissal, measurement, shimmer, context-menu/toast shells) live in
@@ -32,12 +32,12 @@
 pub mod context_menu;
 pub mod controller;
 pub mod drag;
+pub mod gloss_ai_popover;
+pub mod gloss_surface;
 pub mod hooks;
 pub mod interactions;
-pub mod marks;
+pub mod mark_layer;
 pub mod placement;
-pub mod popover;
-pub mod select_bar;
-pub mod select_mode;
-pub mod surface;
+pub mod selection_bar;
+pub mod selection_mode;
 pub mod undo_toast;

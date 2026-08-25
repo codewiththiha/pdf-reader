@@ -2,7 +2,7 @@
 //! behaviours all paths share — `reset` (full dismiss), `collapse_to_mark`
 //! (the outro), `add_mark` (dedup + persist) and `retry` (re-run a failed
 //! lookup). Also owns the open-event listener and the open effect, so
-//! [`super::popover`] reads as wiring + view.
+//! [`super::gloss_ai_popover`] reads as wiring + view.
 //!
 //! Open path is deterministic: both the Info pill and a saved stroke dispatch
 //! `pdfreader:gloss-open` with the mark in the event detail. The listener
@@ -16,7 +16,7 @@ use leptos::prelude::*;
 use pdf_core::gloss::{GlossBox, GlossMark};
 
 use crate::components::ai::anchor::AnchorWatch;
-use crate::components::ai::gloss::marks::GLOSS_OPEN_EVENT;
+use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
 use crate::components::ai::types::{AiError, AiErrorKind, AiPhase, GlossPhase, WordInfo};
 use crate::components::primitives::hooks::use_viewport::viewport_size;
 use crate::components::primitives::motion::spring::SpringBox;

@@ -4,7 +4,7 @@ use pdf_core::gloss::{is_glossable, is_hintable, GlossMark};
 use crate::components::ai::anchor::{
     capture_selection_mark, watch_page_anchor, MENU_EXIT_FRAC,
 };
-use crate::components::ai::gloss::marks::request_gloss_open;
+use crate::components::ai::gloss::mark_layer::request_gloss_open;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::state::AppState;
 

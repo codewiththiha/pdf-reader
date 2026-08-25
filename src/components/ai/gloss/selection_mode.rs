@@ -1,6 +1,6 @@
 //! Multi-select management for gloss marks: the shared state helpers, the
 //! long-press gesture constants (the gesture itself lives in
-//! [`super::marks`], implemented by the primitive `long_press`), the exit
+//! [`super::mark_layer`], implemented by the primitive `long_press`), the exit
 //! paths (Escape / clean tap outside), the right-click context-menu
 //! listener, and the undo pipeline that every removal path parks through.
 //!
