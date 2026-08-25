@@ -5,9 +5,7 @@
 
 use leptos::prelude::*;
 
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
-use web_sys::ResizeObserverEntry;
+use crate::components::primitives::hooks::use_resize_observer::observe_elements;
 
 use pdf_core::filename::display_name;
 use crate::state::AppState;
@@ -43,9 +41,6 @@ fn measure_available() -> Option<f64> {
 #[component]
 pub fn DocumentTitle(state: AppState) -> impl IntoView {
     let avail = RwSignal::new(None::<f64>);
-    let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
-    let callback_handle =
-        StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
 
     let remeasure = move || {
         request_animation_frame(move || {
@@ -57,58 +52,29 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
             }
         });
     };
-    let remeasure_for_ro = remeasure.clone();
 
-    // The route/page mount order may put this effect ahead of its anchor ids.
-    // Do not mark installation complete until at least one live anchor was
-    // observed; subsequent reactive runs then self-heal that initial miss.
-    let try_install = move || {
-        if callback_handle.with_value(|c| c.is_some()) {
-            return;
-        }
-        let callback: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> =
-            Closure::wrap(Box::new(move |_: Vec<ResizeObserverEntry>| {
-                remeasure_for_ro();
-            }) as Box<dyn FnMut(Vec<ResizeObserverEntry>)>);
-        let fn_ref: &js_sys::Function = callback.as_ref().unchecked_ref();
-        let Ok(observer) = web_sys::ResizeObserver::new(fn_ref) else {
-            return;
-        };
+    // The route/page mount order may put this effect ahead of its anchor
+    // ids; the primitive installs once with the first non-empty set and a
+    // later reactive run self-heals an initial miss.
+    Effect::new(move |_| {
         let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
             return;
         };
-
-        let mut observed = false;
+        let mut els = Vec::new();
         for id in ["toolbar-row", "toolbar-leading", "toolbar-trailing"] {
             if let Some(el) = doc.get_element_by_id(id) {
-                observer.observe(&el);
-                observed = true;
+                els.push(el);
             }
         }
         // The title row changes inset at the end of the close hold, whereas
         // this aside changes width during every frame of the 300ms slide.
         if let Some(aside) = doc.query_selector("aside.sidebar-aside").ok().flatten() {
-            observer.observe(&aside);
-            observed = true;
+            els.push(aside);
         }
-        if observed {
-            observer_handle.set_value(Some(observer));
-            callback_handle.set_value(Some(callback));
-        } else {
-            observer.disconnect();
-        }
-    };
-
-    on_cleanup(move || {
-        if let Some(observer) = observer_handle.try_get_value().flatten() {
-            observer.disconnect();
-        }
-        observer_handle.try_set_value(None);
-        callback_handle.try_set_value(None);
+        observe_elements(els, move |_| remeasure());
     });
 
     Effect::new(move |_| {
-        try_install();
         _ = state.reader.document.status.get();
         _ = state.reader.document.num_pages.get();
         _ = state.reader.document.title.get();

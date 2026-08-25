@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
-use web_sys::ResizeObserverEntry;
+
+use crate::components::primitives::hooks::use_resize_observer::observe_elements;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::hooks::dom::by_id;
@@ -98,39 +98,27 @@ pub fn AdaptiveToolbar(
         });
     };
 
-    let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);
-    let callback_handle = StoredValue::new_local(None::<Closure<dyn FnMut(Vec<ResizeObserverEntry>)>>);
+    // The shared resize-observer primitive owns the Closure/StoredValue
+    // dance; this effect collects the live element set (re-running as the
+    // sizer / row / slot nodes mount) and hands it over once.
     Effect::new(move |_| {
-        // Track the sizer node so this re-runs once it mounts.
         let Some(sizer) = sizer_ref.get() else { return };
-        if callback_handle.with_value(|c| c.is_some()) { return; }
-        let Some(row) = by_id("toolbar-row") else { return };
-        let cb: Closure<dyn FnMut(Vec<ResizeObserverEntry>)> =
-            Closure::wrap(Box::new(move |_: Vec<ResizeObserverEntry>| recalc())
-                as Box<dyn FnMut(Vec<ResizeObserverEntry>)>);
-        let fn_ref: &js_sys::Function = cb.as_ref().unchecked_ref();
-        let Ok(ro) = web_sys::ResizeObserver::new(fn_ref) else { return };
-        ro.observe(&row);
-        ro.observe(&sizer);
+        let mut els = vec![sizer.unchecked_into::<web_sys::Element>()];
+        if let Some(row) = by_id("toolbar-row") {
+            els.push(row);
+        }
         if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
             for id in ["toolbar-leading", "toolbar-trailing"] {
                 if let Some(el) = doc.get_element_by_id(id) {
-                    ro.observe(&el);
+                    els.push(el);
                 }
             }
         }
-        observer_handle.set_value(Some(ro));
-        callback_handle.set_value(Some(cb));
-        recalc();
+        observe_elements(els, move |_| recalc());
     });
     Effect::new(move |_| {
         let _ = refresh.get();
         recalc();
-    });
-    on_cleanup(move || {
-        if let Some(ro) = observer_handle.try_get_value().flatten() { ro.disconnect(); }
-        observer_handle.try_set_value(None);
-        callback_handle.try_set_value(None);
     });
 
     view! {

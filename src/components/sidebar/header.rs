@@ -6,6 +6,7 @@ use leptos::prelude::*;
 
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
 use crate::state::SidebarMode;
 use crate::components::menus::app_menu::MoreMenu;
@@ -33,27 +34,25 @@ pub(crate) fn SidebarHeader(
                     <Icon name=IconName::SidebarOpen size=18 />
                 </Button>
             </Tooltip>
-            // Floating-search toggle: raw button so pointerdown can
-            // stop propagation (the floating bar's outside-click
-            // dismiss listens on window pointerdown, which would
-            // otherwise close the bar and let the click re-open it —
-            // a one-way toggle).
-            <button
-                type="button"
-                data-search-chrome="true"
-                title="Search (Cmd/Ctrl+F)"
-                on:pointerdown=move |ev| ev.stop_propagation()
-                on:click=move |_| {
-                    if reader.search.visible.get() {
-                        crate::effects::reader::search::dismiss_search(reader);
-                    } else {
-                        crate::effects::reader::search::resume_search(reader);
+            // Floating-search toggle. data-search-chrome marks it for the
+            // floating bar's outside-dismiss exclusion, so pointerdown here
+            // cannot close the bar the following click is about to toggle —
+            // the one-way toggle the raw listener used to enforce via
+            // stop_propagation.
+            <Tooltip text="Search (Cmd/Ctrl+F)">
+                <IconButton
+                    icon=IconName::Search
+                    title="Search (Cmd/Ctrl+F)"
+                    data_search_chrome=true
+                    on_click=move || {
+                        if reader.search.visible.get() {
+                            crate::effects::reader::search::dismiss_search(reader);
+                        } else {
+                            crate::effects::reader::search::resume_search(reader);
+                        }
                     }
-                }
-                class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent bg-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-                <Icon name=IconName::Search size=18 />
-            </button>
+                />
+            </Tooltip>
             <MoreMenu />
         </div>
     }

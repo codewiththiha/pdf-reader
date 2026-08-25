@@ -6,6 +6,7 @@ use leptos::prelude::*;
 use pdf_core::gloss::{GlossBox, place_card};
 
 use crate::components::ai::types::GlossPhase;
+use crate::components::primitives::floating::types::{clamp_point_to_viewport, Point, Size};
 
 /// Preferred card width before viewport clamping.
 pub const CARD_WIDTH: f64 = 360.0;
@@ -59,8 +60,14 @@ pub fn spring_target(
                 let mut e = expanded.get().unwrap_or(a);
                 if let Some((dx, dy)) = drag_offset.get() {
                     let (vw, vh) = viewport.get();
-                    e.x = (e.x + dx).clamp(CARD_MARGIN, (vw - e.w - CARD_MARGIN).max(CARD_MARGIN));
-                    e.y = (e.y + dy).clamp(CARD_MARGIN, (vh - e.h - CARD_MARGIN).max(CARD_MARGIN));
+                    let p = clamp_point_to_viewport(
+                        Point::new(e.x + dx, e.y + dy),
+                        Size::new(e.w, e.h),
+                        Size::new(vw, vh),
+                        CARD_MARGIN,
+                    );
+                    e.x = p.x;
+                    e.y = p.y;
                 }
                 Some(e)
             }

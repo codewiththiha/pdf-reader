@@ -18,7 +18,10 @@ pub enum MenuItemTone {
 /// A menu row.
 #[component]
 pub fn MenuItem(
-    icon: IconName,
+    /// Leading icon, if any. `None` still renders the aligned w-4 slot so
+    /// rows in one menu line up whether or not they carry an icon.
+    #[prop(optional, into)]
+    icon: Option<IconName>,
     #[prop(into)] label: String,
     on_click: impl Fn() + 'static,
     /// Danger rows read in the destructive colour.
@@ -42,17 +45,20 @@ pub fn MenuItem(
 
     // Computed class string (the repo rule only restricts single-token
     // conditional tuples; a computed string is allowed and avoids two
-    // text-colour utilities fighting each other).
+    // text-colour utilities fighting each other). Selected uses the same
+    // accent-soft treatment as OptionButton/Segmented, so every
+    // selected/pressed row in the app speaks one visual language.
     let class = move || {
         let base = format!(
             "menu-item flex w-full items-center gap-2 {row_class} text-sm hover:bg-line \
              disabled:pointer-events-none disabled:opacity-50"
         );
-        let text = if danger { "text-red-400" } else { "text-ink" };
-        if selected_sig.get() {
-            format!("{base} {text} font-medium")
+        if selected_sig.get() && !danger {
+            format!("{base} bg-accent-soft font-medium text-accent")
+        } else if danger {
+            format!("{base} text-red-400")
         } else {
-            format!("{base} {text}")
+            format!("{base} text-ink")
         }
     };
 
@@ -66,9 +72,13 @@ pub fn MenuItem(
             class=class
         >
             <span class="inline-flex w-4 shrink-0 justify-center">
-                <span class=if danger { "text-red-400" } else { "text-muted" }>
-                    <Icon name=icon size=14 />
-                </span>
+                {icon.map(|i| {
+                    view! {
+                        <span class=if danger { "text-red-400" } else { "text-muted" }>
+                            <Icon name=i size=14 />
+                        </span>
+                    }
+                })}
             </span>
             <span>{label}</span>
             {children.map(|c| c())}

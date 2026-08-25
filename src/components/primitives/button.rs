@@ -34,7 +34,10 @@ pub fn Button(
     variant: ButtonVariant,
     #[prop(into, optional)] title: Option<String>,
     #[prop(default = false)] active: bool,
-    #[prop(default = false)] disabled: bool,
+    /// Reactive so callers can wire `Signal::derive(...)` from their state;
+    /// defaults to always-enabled.
+    #[prop(into, default = Signal::derive(|| false))]
+    disabled: Signal<bool>,
     #[prop(default = ButtonTone::Neutral)]
     tone: ButtonTone,
     /// Compact sizing (h-8, tighter padding, smaller text) for dense rows.
@@ -66,7 +69,7 @@ pub fn Button(
             type="button"
             on:click=on_click
             title=title
-            disabled=disabled
+            prop:disabled=move || disabled.get()
             class=[base, size_class, variant_class.as_str(), state_class].join(" ")
         >
             {children()}

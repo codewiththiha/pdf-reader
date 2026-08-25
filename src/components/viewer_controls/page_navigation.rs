@@ -8,7 +8,8 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::icon::IconName;
+use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
 use crate::state::ReaderState;
 
@@ -34,8 +35,6 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
     let next_state = state;
     let commit_state = state;
 
-    let base_btn = "inline-flex h-9 w-9 items-center justify-center rounded-lg border text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent border-line bg-surface text-ink hover:bg-line";
-
     // Named closures (avoids the view! macro terminating a `move ||` body at a
     // top-level `||` when comparing with `>=`).
     let prev_disabled = move || {
@@ -52,26 +51,17 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
     view! {
         <div class="flex items-center gap-1">
             <Tooltip text="Previous page (ArrowLeft)">
-                <button
-                    type="button"
+                <IconButton
+                    icon=IconName::Prev
                     title="Previous page (ArrowLeft)"
-                    disabled=prev_disabled
-                    on:click=move |_| {
+                    disabled=Signal::derive(prev_disabled)
+                    on_click=move || {
                         let p = prev_state.viewer.page.get();
                         if p > 1 {
                             prev_state.viewer.page.set(p - 1);
                         }
                     }
-                    class=move || {
-                        if prev_disabled() {
-                            format!("{base_btn} opacity-50")
-                        } else {
-                            base_btn.to_string()
-                        }
-                    }
-                >
-                    <Icon name=IconName::Prev size=16 />
-                </button>
+                />
             </Tooltip>
 
             <input
@@ -112,27 +102,18 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
             </span>
 
             <Tooltip text="Next page (ArrowRight)">
-                <button
-                    type="button"
+                <IconButton
+                    icon=IconName::Next
                     title="Next page (ArrowRight)"
-                    disabled=next_disabled
-                    on:click=move |_| {
+                    disabled=Signal::derive(next_disabled)
+                    on_click=move || {
                         let p = next_state.viewer.page.get();
                         let n = next_state.document.num_pages.get();
                         if n > 0 && p < n {
                             next_state.viewer.page.set(p + 1);
                         }
                     }
-                    class=move || {
-                        if next_disabled() {
-                            format!("{base_btn} opacity-50")
-                        } else {
-                            base_btn.to_string()
-                        }
-                    }
-                >
-                    <Icon name=IconName::Next size=16 />
-                </button>
+                />
             </Tooltip>
         </div>
     }

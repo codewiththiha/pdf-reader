@@ -13,6 +13,7 @@ use leptos::prelude::*;
 
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::menu_item::MenuItem;
 use crate::components::primitives::separator::Separator;
 use crate::components::primitives::tooltip::Tooltip;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
@@ -218,57 +219,48 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                 </svg>
             </button>
             <MenuPopover open=open anchor=root_ref width=176 class="p-1".to_string()>
-                <button
-                    type="button"
-                    on:click=move |_| {
+                <MenuItem
+                    label="Fit width"
+                    selected=Signal::derive(move || state.reader.viewer.fit.get() == FitMode::Width)
+                    on_click=move || {
                         state.reader.viewer.fit.set(FitMode::Width);
                         open.set(false);
                     }
-                    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
                 >
-                    <span class="inline-flex w-4 shrink-0 justify-center text-accent">
+                    <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
                         {move || (state.reader.viewer.fit.get() == FitMode::Width).then(|| view! { <Icon name=IconName::Check size=14/> })}
                     </span>
-                    <span>Fit width</span>
-                </button>
-                <button
-                    type="button"
-                    on:click=move |_| {
+                </MenuItem>
+                <MenuItem
+                    label="Fit page"
+                    selected=Signal::derive(move || state.reader.viewer.fit.get() == FitMode::Page)
+                    on_click=move || {
                         state.reader.viewer.fit.set(FitMode::Page);
                         open.set(false);
                     }
-                    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-line"
                 >
-                    <span class="inline-flex w-4 shrink-0 justify-center text-accent">
+                    <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
                         {move || (state.reader.viewer.fit.get() == FitMode::Page).then(|| view! { <Icon name=IconName::Check size=14/> })}
                     </span>
-                    <span>Fit page</span>
-                </button>
+                </MenuItem>
                 <Separator vertical=false />
                 <For
                     each=move || ZOOM_STEPS.iter().copied()
                     key=|z| z.to_bits()
                     children=move |z| {
-                        let row_class = move || {
-                            let base = "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm";
-                            if (state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9 {
-                                format!("{base} bg-accent-soft text-accent")
-                            } else {
-                                format!("{base} text-ink hover:bg-line")
-                            }
-                        };
                         view! {
-                            <button
-                                type="button"
-                                on:click=move |_| {
+                            <MenuItem
+                                label=format!("{}%", (z * 100.0).round() as u32)
+                                selected=Signal::derive(move || (state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9)
+                                on_click=move || {
                                     apply_zoom(state, z);
                                     open.set(false);
                                 }
-                                class=row_class
                             >
-                                <span>{format!("{}%", (z * 100.0).round() as u32)}</span>
-                                {move || ((state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
-                            </button>
+                                <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
+                                    {move || ((state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                                </span>
+                            </MenuItem>
                         }
                     }
                 />

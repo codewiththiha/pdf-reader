@@ -12,6 +12,9 @@ use leptos::task::spawn_local;
 use virtual_list_leptos::Virtualizer;
 
 use super::result_list::ResultList;
+use crate::components::primitives::floating::dismiss::{
+    DismissPolicy, DismissTrigger, use_dismiss,
+};
 use crate::components::primitives::floating::types::z::{BAR, POPOVER};
 use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::components::primitives::icon::{Icon, IconName};
@@ -20,10 +23,8 @@ use crate::effects::reader::search::{
 };
 use crate::state::ReaderState;
 
-/// How long typing must pause before the query runs.
 const SEARCH_DEBOUNCE_MS: u64 = 180;
 
-/// Compact icon-button class shared by the bar's raw `<button>`s.
 const ICON_BTN: &str = "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 #[component]
@@ -47,23 +48,25 @@ pub fn FloatingSearch(
         }
     });
 
+    use_dismiss(
+        state.search.visible.into(),
+        Callback::new(move |_| dismiss_search(state)),
+        DismissPolicy {
+            escape: false,
+            outside: Some(DismissTrigger::PointerDown),
+            exclude_selectors: vec!["[data-search-chrome='true']"],
+            enabled: None,
+            topmost_only: false,
+        },
+        move |node| {
+            container_ref
+                .get()
+                .as_ref()
+                .is_some_and(|c| c.contains(Some(node)))
+        },
+    );
     Effect::new(move |_| {
-        if state.search.visible.get() {
-            let handle = window_event_listener(
-                leptos::ev::pointerdown,
-                move |ev: leptos::ev::PointerEvent| {
-                    let target: web_sys::Node = event_target(&ev);
-                    let contains = container_ref
-                        .get()
-                        .as_ref()
-                        .is_some_and(|c| c.contains(Some(&target)));
-                    if !contains {
-                        dismiss_search(state);
-                    }
-                },
-            );
-            on_cleanup(move || handle.remove());
-        } else {
+        if !state.search.visible.get() {
             set_show_results.set(false);
         }
     });

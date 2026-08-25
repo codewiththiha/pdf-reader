@@ -19,6 +19,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
+use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 
@@ -66,35 +67,17 @@ pub fn ThumbnailsPanel(
     let total_size = v.total_size();
 
     let heal = RwSignal::new(0u64);
-    let heal_timer = StoredValue::new_local(None::<TimeoutHandle>);
+    let heal_debounce = use_debounce(Duration::from_millis(500), move || {
+        heal.update(|n| *n += 1);
+    });
     let v_heal = v.clone();
     Effect::new(move |_| {
         if !live.get() {
-            if let Some(handle) = heal_timer.get_value() {
-                handle.clear();
-                heal_timer.set_value(None);
-            }
+            heal_debounce.cancel();
             return;
         }
         _ = v_heal.scroll_offset().get();
-        if let Some(handle) = heal_timer.get_value() {
-            handle.clear();
-        }
-        let handle = set_timeout_with_handle(
-            move || {
-                heal_timer.set_value(None);
-                heal.update(|n| *n += 1);
-            },
-            Duration::from_millis(500),
-        )
-        .ok();
-        heal_timer.set_value(handle);
-    });
-    on_cleanup(move || {
-        if let Some(handle) = heal_timer.get_value() {
-            handle.clear();
-        }
-        heal_timer.set_value(None);
+        heal_debounce.trigger();
     });
 
     let generation = Arc::new(AtomicU32::new(0));
@@ -205,7 +188,7 @@ pub fn ThumbnailsPanel(
                                             heal=Signal::derive(move || heal.get())
                                         />
                                     }
-                                        .into_any()
+                                    .into_any()
                                 } else {
                                     ().into_any()
                                 }}

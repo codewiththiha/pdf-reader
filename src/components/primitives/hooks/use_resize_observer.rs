@@ -1,10 +1,10 @@
 //! ResizeObserver plumbing: one install, one teardown, no closure leaks.
 //!
-//! `ContinuousView` / `SinglePageView` / `DocumentTitle` / `AdaptiveToolbar`
-//! each carried an identical ~45-line block for this: two `StoredValue`s, a
-//! run-once guard, a `Closure::wrap`, a `ResizeObserver`, and an
-//! `on_cleanup` that MUST disconnect before the closure is dropped. Only the
-//! observed elements differed.
+//! `DocumentTitle` / `AdaptiveToolbar` / the thumbnail panel each carried an
+//! identical ~45-line block for this: two `StoredValue`s, a run-once guard, a
+//! `Closure::wrap`, a `ResizeObserver`, and an `on_cleanup` that MUST
+//! disconnect before the closure is dropped. Only the observed elements
+//! differed.
 //!
 //! The disconnect is load-bearing, not tidiness: unmounting the view removes
 //! the observed element, which queues a resize notification into a closure
@@ -79,7 +79,6 @@ pub fn observe_content_size(element_id: &'static str, sink: RwSignal<(f64, f64)>
 
 /// Observe a `NodeRef` element and forward each resize entry to `on_resize`.
 /// Re-arms when the node identity changes (remounts create a fresh element).
-#[allow(dead_code)] // consumed by the thumbnail-grid / sidebar adoptions (plan phase 5+)
 pub fn use_resize_observer(target: NodeRef<html::Div>, on_resize: impl Fn(ResizeObserverEntry) + 'static) {
     let on_resize = Rc::new(on_resize);
     let observer_handle = StoredValue::new_local(None::<web_sys::ResizeObserver>);

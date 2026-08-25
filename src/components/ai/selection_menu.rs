@@ -64,7 +64,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
         let top = b.y + b.h + 8.0;
         format!(
             "position:fixed; left:{left}px; top:{top}px; \
-             transform:translateX(-50%); z-index:80;"
+             transform:translateX(-50%);"
         )
     });
 
