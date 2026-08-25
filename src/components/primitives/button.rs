@@ -41,7 +41,7 @@ pub fn Button(
     #[prop(default = false)]
     compact: bool,
 ) -> impl IntoView {
-    let base = "inline-flex items-center justify-center gap-1.5 rounded-lg border font-medium \
+    let base = "btn inline-flex items-center justify-center gap-1.5 rounded-lg border font-medium \
                 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
                 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap";
     let size_class = if compact {

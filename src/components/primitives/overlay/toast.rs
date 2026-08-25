@@ -97,7 +97,7 @@ pub fn ToastPanel(toast: ToastData) -> impl IntoView {
     view! {
         <div
             class=format!(
-                "toast-enter flex max-w-[min(90vw,32rem)] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm shadow-xl {tone_class}"
+                "toast-enter surface-toast flex max-w-[min(90vw,32rem)] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm shadow-xl {tone_class}"
             )
             role="status"
         >

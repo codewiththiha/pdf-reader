@@ -45,7 +45,7 @@ pub fn MenuItem(
     // text-colour utilities fighting each other).
     let class = move || {
         let base = format!(
-            "flex w-full items-center gap-2 {row_class} text-sm hover:bg-line \
+            "menu-item flex w-full items-center gap-2 {row_class} text-sm hover:bg-line \
              disabled:pointer-events-none disabled:opacity-50"
         );
         let text = if danger { "text-red-400" } else { "text-ink" };

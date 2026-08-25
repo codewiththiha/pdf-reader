@@ -47,8 +47,8 @@ pub fn IconButton(
 ) -> impl IntoView {
     let pressed_sig = pressed.unwrap_or_else(|| Signal::derive(|| false));
     let box_class = match size_variant {
-        IconButtonSize::Md => "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-        IconButtonSize::Sm => "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+        IconButtonSize::Md => "btn-icon inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+        IconButtonSize::Sm => "btn-icon inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
     };
     let tone_class = match tone {
         IconButtonTone::Default => "",
