@@ -7,7 +7,7 @@
 //!     know what a PDF reader is
 //!   * `app_shell` — reusable structural application shell (title bar,
 //!     adaptive toolbar, traffic lights, document titles)
-//!   * `menus`      — menu features (appearance, more)
+//!   * `menus`      — menu features (appearance_menu, app_menu)
 //!   * `overlays`   — transient UI (toast, drag feedback)
 //!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
 //!   * `sidebar`     — the app sidebar (composition shell + panel hosts)
@@ -44,27 +44,5 @@ pub mod primitives;
 pub mod viewer_controls;
 pub mod search;
 
-/// Deprecated transitional shim for the pre-Phase-6 module path. Use
-/// `components::app_shell` directly; this alias exists only so in-flight
-/// branches keep compiling.
-#[deprecated(note = "use components::app_shell")]
-#[allow(unused_imports)]
-pub mod chrome {
-    pub use crate::components::app_shell::*;
-}
 
-/// Deprecated transitional shim for the pre-Phase-6 module path. Use
-/// `components::sidebar` directly.
-#[deprecated(note = "use components::sidebar")]
-#[allow(unused_imports)]
-pub mod panels {
-    pub use crate::components::sidebar::*;
-}
 
-/// Deprecated transitional shim for the pre-Phase-6 module path. Use
-/// `components::viewer_controls` directly.
-#[deprecated(note = "use components::viewer_controls")]
-#[allow(unused_imports)]
-pub mod reader_controls {
-    pub use crate::components::viewer_controls::*;
-}

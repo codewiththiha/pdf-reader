@@ -1,57 +1,13 @@
-//! Timeout / debounce / hide-delay primitives. The same three patterns —
-//! cancellable one-shot timers, debounced triggers, and hover-reveal +
-//! hide-after-grace — used to be re-implemented in the title bar, bottom bar,
-//! floating search, thumbnail panel and undo toast, each with its own
-//! `StoredValue<Option<TimeoutHandle>>` and cleanup dance.
+//! Timeout / debounce / hide-delay primitives. The two families in use —
+//! debounced triggers and hover-reveal + hide-after-grace — used to be
+//! re-implemented in the title bar, bottom bar, floating search and
+//! thumbnail panel, each with its own `StoredValue<Option<TimeoutHandle>>`
+//! and cleanup dance.
 
 use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::prelude::*;
-
-/// Owner-scoped controller for one cancellable timer.
-///
-/// Currently used indirectly (debounce, hover-visibility); the raw
-/// controller is the building block for the remaining one-shot timers
-/// (thumbnail lazy draw, page indicator settle).
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-pub struct TimeoutController {
-    handle: StoredValue<Option<TimeoutHandle>, LocalStorage>,
-}
-
-impl TimeoutController {
-    pub fn cancel(&self) {
-        if let Some(h) = self.handle.try_get_value().flatten() {
-            h.clear();
-        }
-        self.handle.try_set_value(None);
-    }
-
-    /// Whether a timer is currently armed.
-    #[allow(dead_code)] // introspection for future owners
-    pub fn pending(&self) -> bool {
-        self.handle.try_get_value().flatten().is_some()
-    }
-
-    /// Cancel any pending fire and (re)arm `on_fire` after `duration`.
-    pub fn restart(&self, duration: Duration, on_fire: impl Fn() + 'static) {
-        self.cancel();
-        let h = set_timeout_with_handle(move || on_fire(), duration).ok();
-        self.handle.set_value(h);
-    }
-}
-
-/// Arm a timer for the current owner; the timer is cancelled on cleanup.
-#[allow(dead_code)]
-pub fn use_timeout(duration: Duration, on_fire: impl Fn() + 'static) -> TimeoutController {
-    let ctl = TimeoutController {
-        handle: StoredValue::new_local(None),
-    };
-    ctl.restart(duration, on_fire);
-    on_cleanup(move || ctl.cancel());
-    ctl
-}
 
 /// A debounced trigger: calling it repeatedly postpones the fire; calling it
 /// after the last postponed window fires `on_fire` (or the pending fire is
@@ -122,33 +78,6 @@ pub fn use_debounce(duration: Duration, on_fire: impl Fn() + 'static) -> Debounc
         cleanup.clear_handle();
     });
     debouncer
-}
-
-/// Fire `on_hide` when `active` has been false for `delay`; re-entering
-/// `active` cancels the pending hide. The common title/bottom-bar auto-hide
-/// contract in one hook.
-#[allow(dead_code)] // hover-visibility covers the bars; auto-hide suits effect-driven surfaces
-pub fn use_auto_hide(active: Signal<bool>, delay: Duration, on_hide: impl Fn() + 'static) {
-    let on_hide = Rc::new(on_hide);
-    let handle = StoredValue::new_local(None::<TimeoutHandle>);
-    Effect::new(move |_| {
-        if active.get() {
-            if let Some(h) = handle.try_get_value().flatten() {
-                h.clear();
-            }
-            handle.try_set_value(None);
-        } else if handle.try_get_value().flatten().is_none() {
-            let f = Rc::clone(&on_hide);
-            let h = set_timeout_with_handle(move || f(), delay).ok();
-            handle.set_value(h);
-        }
-    });
-    on_cleanup(move || {
-        if let Some(h) = handle.try_get_value().flatten() {
-            h.clear();
-        }
-        let _ = handle.try_set_value(None);
-    });
 }
 
 /// The hover-reveal / hide-after-grace pair shared by the title bar and the

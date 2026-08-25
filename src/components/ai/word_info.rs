@@ -72,7 +72,3 @@ pub fn WordInfoSections(info: WordInfo) -> impl IntoView {
     }
 }
 
-/// Placeholder shimmer lines shown while waiting for the first AI chunk.
-/// The generic skeleton lives in `primitives::feedback::shimmer`; this is a
-/// re-export so AI call sites read the same as before.
-pub use crate::components::primitives::feedback::shimmer::LoadingShimmer;

@@ -14,16 +14,14 @@ use crate::components::primitives::icon::{Icon, IconName};
 
 /// Visual tone of a toast.
 ///
-/// `Info`/`Success` have no producer yet (error toasts + the gloss undo are
-/// the current surfaces); they are part of the shared contract as soon as
-/// the library/annotation flows land.
+/// `Error` is the app-global failure toast (open-flow, toolbar); `Undo` is
+/// the gloss "Removed n highlights — Undo" style (neutral with an accent
+/// action). That is the whole current surface; a new tone lands with its
+/// producer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)]
 pub enum ToastTone {
-    Info,
     #[default]
     Error,
-    Success,
     /// The "removed X — Undo" style: neutral with an accent action.
     Undo,
 }
@@ -57,31 +55,14 @@ impl ToastData {
             action: None,
         }
     }
-
-    #[allow(dead_code)] // builder for future callers; slot host arms the timer
-    pub fn with_duration(mut self, duration: Duration) -> Self {
-        self.duration = Some(duration);
-        self
-    }
-
-    #[allow(dead_code)] // builder for future callers; undo/annotations build inline
-    pub fn with_action(mut self, label: impl Into<String>, on_click: Callback<()>) -> Self {
-        self.action = Some(ToastAction {
-            label: label.into(),
-            on_click,
-        });
-        self
-    }
 }
 
 fn tone_classes(tone: ToastTone) -> (&'static str, IconName) {
     match tone {
-        ToastTone::Info => ("border-line bg-surface text-ink", IconName::Search),
         ToastTone::Error => (
             "border-red-400/50 bg-red-950/95 text-red-100",
             IconName::Close,
         ),
-        ToastTone::Success => ("border-line bg-surface text-ink", IconName::Check),
         ToastTone::Undo => (
             "border-line bg-surface text-ink",
             IconName::Close,
