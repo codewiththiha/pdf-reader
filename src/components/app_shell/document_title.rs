@@ -28,12 +28,12 @@ fn measure_available() -> Option<f64> {
     if row_rect.width() <= 0.0 {
         return None;
     }
-    let pre = doc.get_element_by_id("toolbar-left-pre")?;
+    let pre = doc.get_element_by_id("toolbar-leading")?;
     let pre_rect = pre.get_bounding_client_rect();
-    let right = doc.get_element_by_id("toolbar-right")?;
+    let right = doc.get_element_by_id("toolbar-trailing")?;
     let right_rect = right.get_bounding_client_rect();
 
-    // The pin button follows #toolbar-right inside its ml-auto parent. Using
+    // The pin button follows #toolbar-trailing inside its ml-auto parent. Using
     // the trailing group's left edge therefore reserves it automatically.
     let start = pre_rect.right() - row_rect.left() + GAP_LEFT;
     let end = right_rect.left() - row_rect.left() - GAP_RIGHT;
@@ -79,7 +79,7 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
         };
 
         let mut observed = false;
-        for id in ["toolbar-row", "toolbar-left-pre", "toolbar-right"] {
+        for id in ["toolbar-row", "toolbar-leading", "toolbar-trailing"] {
             if let Some(el) = doc.get_element_by_id(id) {
                 observer.observe(&el);
                 observed = true;

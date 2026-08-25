@@ -8,7 +8,7 @@
 //! with the sidebar chrome (`w-72`).
 
 /// Space the document title must not enter on the right: `pr-2` + the
-/// 36px pin button + a gap (the pin lives outside `#toolbar-right`).
+/// 36px pin button + a gap (the pin lives outside `#toolbar-trailing`).
 pub const PIN_RESERVE: f64 = 48.0;
 
 /// The document title is hidden below this width — a useless stub ("P…").

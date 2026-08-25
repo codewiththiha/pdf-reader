@@ -82,7 +82,7 @@ pub fn AdaptiveToolbar(
                 .collect();
             let priorities: Vec<u32> = list.iter().map(|e| e.priority).collect();
             let rr = row.get_bounding_client_rect();
-            let left_end = by_id("toolbar-left-pre")
+            let left_end = by_id("toolbar-leading")
                 .map(|e| e.get_bounding_client_rect().right())
                 .unwrap_or(rr.left());
             let title_reserve = if ready.get_untracked() {
@@ -113,7 +113,7 @@ pub fn AdaptiveToolbar(
         ro.observe(&row);
         ro.observe(&sizer);
         if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-            for id in ["toolbar-left-pre", "toolbar-right"] {
+            for id in ["toolbar-leading", "toolbar-trailing"] {
                 if let Some(el) = doc.get_element_by_id(id) {
                     ro.observe(&el);
                 }
@@ -135,7 +135,7 @@ pub fn AdaptiveToolbar(
 
     view! {
         <div class="relative shrink-0">
-            <div id="toolbar-right" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
+            <div id="toolbar-trailing" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
                 // ⋯ FIRST: it stands where the collapsed controls used to be.
                 // When nothing has collapsed the trigger stays hidden via `<Show>`,
                 // so this only occupies space once at least one entry was evicted.

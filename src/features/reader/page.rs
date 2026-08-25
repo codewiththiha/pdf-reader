@@ -195,7 +195,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         view! {
             <div class="flex min-w-0 items-center gap-1">
                 <div
-                    id="toolbar-left-pre"
+                    id="toolbar-leading"
                     data-tauri-drag-region="true"
                     class="flex shrink-0 items-center gap-1"
                 >
