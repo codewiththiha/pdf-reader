@@ -87,30 +87,17 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
             },
             move |_done| {
                 view! {
-                    <div class="flex w-full items-center gap-1 px-1 py-0.5">
-                        <button
-                            type="button"
-                            title="Zoom out"
-                            on:click=move |_| {
-                                apply_zoom(state, nearest_zoom(step_base(state), -1));
-                            }
-                            class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm text-ink hover:bg-line"
-                        >
-                            <Icon name=IconName::ZoomOut size=14 />
-                            <span>Out</span>
-                        </button>
-                        <span class="h-4 w-px shrink-0 bg-line"></span>
-                        <button
-                            type="button"
-                            title="Zoom in"
-                            on:click=move |_| {
-                                apply_zoom(state, nearest_zoom(step_base(state), 1));
-                            }
-                            class="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm text-ink hover:bg-line"
-                        >
-                            <Icon name=IconName::ZoomIn size=14 />
-                            <span>In</span>
-                        </button>
+                    <div class="flex w-full flex-col">
+                        <MenuItem
+                            icon=IconName::ZoomOut
+                            label="Out"
+                            on_click=move || apply_zoom(state, nearest_zoom(step_base(state), -1))
+                        />
+                        <MenuItem
+                            icon=IconName::ZoomIn
+                            label="In"
+                            on_click=move || apply_zoom(state, nearest_zoom(step_base(state), 1))
+                        />
                     </div>
                 }
                 .into_any()
@@ -131,19 +118,7 @@ fn zoom_readout_entry(state: AppState) -> ToolbarItem {
             view! {
                 <div class="inline-flex items-center justify-center gap-1.5 rounded-lg border h-9 px-2.5 text-sm font-medium border-line bg-surface text-ink">
                     <span>"100%"</span>
-                    <svg
-                        class="text-muted"
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <path d="m6 9 6 6 6-6"/>
-                    </svg>
+                    <Icon name=IconName::ChevronDown size=12 class="text-muted" />
                 </div>
             }
             .into_any()
@@ -186,38 +161,17 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
             "Zoom".to_string()
         }
     };
-    let trigger_class = move || {
-        let base = "inline-flex items-center justify-center gap-1.5 rounded-lg border h-9 px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent border-line bg-surface text-ink hover:bg-line";
-        if open.get() {
-            format!("{base} border-accent text-accent")
-        } else {
-            base.to_string()
-        }
-    };
     view! {
         <div node_ref=root_ref class="relative inline-flex">
-            <button
-                type="button"
-                data-zoom-readout="true"
-                title=zoom_title
-                on:click=move |_| open.set(!open.get())
-                class=trigger_class
+            <Button
+                on_click=move |_| open.set(!open.get())
+                variant=ButtonVariant::Toolbar
+                active=Signal::derive(move || open.get())
+                title=Signal::derive(zoom_title)
             >
                 <span>{percent}</span>
-                <svg
-                    class="text-muted"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <path d="m6 9 6 6 6-6"/>
-                </svg>
-            </button>
+                <Icon name=IconName::ChevronDown size=12 class="text-muted" />
+            </Button>
             <MenuPopover open=open anchor=root_ref width=176 class="p-1".to_string()>
                 <MenuItem
                     label="Fit width"

@@ -32,8 +32,14 @@ pub fn Button(
     children: Children,
     #[prop(default = ButtonVariant::Ghost)]
     variant: ButtonVariant,
-    #[prop(into, optional)] title: Option<String>,
-    #[prop(default = false)] active: bool,
+    /// Reactive so a dynamic title (e.g. the zoom readout's held-back
+    /// note) tracks state; static strings work unchanged.
+    #[prop(into, optional)]
+    title: Option<Signal<String>>,
+    /// Open/pressed state (reactive, so triggers derive it from their open
+    /// signal); renders the accent border+text toggle.
+    #[prop(into, default = Signal::derive(|| false))]
+    active: Signal<bool>,
     /// Reactive so callers can wire `Signal::derive(...)` from their state;
     /// defaults to always-enabled.
     #[prop(into, default = Signal::derive(|| false))]
@@ -43,6 +49,10 @@ pub fn Button(
     /// Compact sizing (h-8, tighter padding, smaller text) for dense rows.
     #[prop(default = false)]
     compact: bool,
+    /// Extra classes appended to the computed class string (callers may
+    /// override sizing/surface details; do not fork another button).
+    #[prop(optional, into)]
+    class: Option<String>,
 ) -> impl IntoView {
     let base = "btn inline-flex items-center justify-center gap-1.5 rounded-lg border font-medium \
                 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
@@ -62,15 +72,24 @@ pub fn Button(
         ButtonVariant::Ghost => format!("border-transparent bg-transparent {text_color} hover:bg-line"),
         ButtonVariant::Primary => "border-transparent bg-accent text-white hover:brightness-110".to_string(),
     };
-    let state_class = if active { "border-accent text-accent" } else { "" };
+    let class_extra = class;
+    let class = move || {
+        let state_class = if active.get() { "border-accent text-accent" } else { "" };
+        let extra = class_extra.as_deref().unwrap_or("");
+        [base, size_class, variant_class.as_str(), state_class, extra]
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
 
     view! {
         <button
             type="button"
             on:click=on_click
-            title=title
+            title=move || title.map(|t| t.get())
             prop:disabled=move || disabled.get()
-            class=[base, size_class, variant_class.as_str(), state_class].join(" ")
+            class=class
         >
             {children()}
         </button>

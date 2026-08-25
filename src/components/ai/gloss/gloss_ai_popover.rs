@@ -48,7 +48,7 @@ use crate::components::ai::gloss::interactions::{
 use crate::components::ai::gloss::placement::{CARD_WIDTH, expanded_target, spring_target};
 use crate::components::ai::gloss::selection_bar::GlossSelectBar;
 use crate::components::ai::gloss::selection_mode::use_select_mode;
-use crate::components::ai::gloss::gloss_surface::GlossSurface;
+use crate::components::ai::gloss::gloss_surface::{GlossBody, GlossSurface};
 use crate::components::ai::gloss::undo_toast::GlossUndoToast;
 use crate::components::ai::types::{AiError, AiPhase, GlossPhase};
 use crate::components::ai::word_info::WordInfoSections;
@@ -148,15 +148,9 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
             style=format!("width:{CARD_WIDTH}px")
             aria-hidden="true"
         >
-            <div class="px-5 pb-4 pt-6">
-                <header class="mb-4">
-                    <h2 class="text-lg font-semibold leading-tight text-balance text-ink">
-                        {move || ctrl.word.get()}
-                    </h2>
-                </header>
-                <div class="mb-4 h-px"></div>
+            <GlossBody word=ctrl.word>
                 {move || ctrl.word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
-            </div>
+            </GlossBody>
         </div>
 
         <Show when=move || ctrl.surface_visible.get() && ctrl.phase.get() != AiPhase::Idle>

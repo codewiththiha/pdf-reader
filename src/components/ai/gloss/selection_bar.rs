@@ -71,10 +71,10 @@ pub fn GlossSelectBar(
             <span class="mr-1.5 text-xs font-medium tabular-nums text-muted">
                 {move || format!("{} selected", count.get())}
             </span>
-            <Button on_click=select_page variant=ButtonVariant::Ghost compact=true>
+            <Button on_click=select_page variant=ButtonVariant::Ghost compact=true class="rounded-full px-3">
                 "This page"
             </Button>
-            <Button on_click=select_all variant=ButtonVariant::Ghost compact=true>
+            <Button on_click=select_all variant=ButtonVariant::Ghost compact=true class="rounded-full px-3">
                 "All"
             </Button>
             <Button
@@ -82,11 +82,12 @@ pub fn GlossSelectBar(
                 variant=ButtonVariant::Ghost
                 tone=ButtonTone::Danger
                 compact=true
+                class="rounded-full px-3"
                 disabled=Signal::derive(move || count.get() == 0)
             >
                 {move || format!("Remove ({})", count.get())}
             </Button>
-            <Button on_click=done variant=ButtonVariant::Ghost compact=true>
+            <Button on_click=done variant=ButtonVariant::Ghost compact=true class="rounded-full px-3">
                 "Done"
             </Button>
         </ActionBar>

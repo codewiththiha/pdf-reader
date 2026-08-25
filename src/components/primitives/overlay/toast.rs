@@ -33,9 +33,21 @@ pub struct ToastAction {
     pub on_click: Callback<()>,
 }
 
+/// Equality by label only: the callback is deliberately excluded (it is a
+/// new closure per batch). This exists so a `Memo<Option<ToastData>>` can
+/// dedupe identical batches without the callback identity entering the
+/// comparison.
+impl PartialEq for ToastAction {
+    fn eq(&self, other: &Self) -> bool {
+        self.label == other.label
+    }
+}
+
 /// One toast. `id` is monotonic per producer so a stale timer can never wipe
-/// a newer toast (the host's equality guard).
-#[derive(Debug, Clone)]
+/// a newer toast (the host's equality guard). `PartialEq` (via
+/// [`ToastAction`]'s label-only comparison) lets a memo dedupe identical
+/// batches.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToastData {
     pub id: u64,
     pub message: String,

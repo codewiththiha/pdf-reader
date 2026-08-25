@@ -3,6 +3,7 @@
 use leptos::prelude::*;
 
 use pdf_engine::types::OutlineNode;
+use crate::components::primitives::hooks::use_window_event::use_window_event;
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 
@@ -208,27 +209,23 @@ pub fn OutlinePanel(
     // — the reader explicitly asked to be moved, so doing nothing because the
     // row is technically one pixel on screen would feel broken.
     Effect::new(move |_| {
-        let handle = window_event_listener(
-            leptos::ev::Custom::new("pdfreader:reveal-active"),
-            move |_: web_sys::CustomEvent| {
-                if sidebar.get_untracked() != SidebarMode::Outline {
-                    return;
-                }
-                let outline = state.document.outline.get_untracked();
-                let page = state.viewer.page.get_untracked();
-                let Some(idx) = active_outline_index(&outline, page) else { return };
-                let Some(parent) = scroller.get_untracked() else { return };
-                let parent: web_sys::Element = parent.into();
-                if let Some(row) = parent
-                    .query_selector(&format!("button[data-outline-index=\"{idx}\"]"))
-                    .ok()
-                    .flatten()
-                {
-                    crate::components::primitives::hooks::dom::center_in_scroll_parent(&row, &parent);
-                }
-            },
-        );
-        on_cleanup(move || handle.remove());
+        use_window_event("pdfreader:reveal-active", move |_: web_sys::Event| {
+            if sidebar.get_untracked() != SidebarMode::Outline {
+                return;
+            }
+            let outline = state.document.outline.get_untracked();
+            let page = state.viewer.page.get_untracked();
+            let Some(idx) = active_outline_index(&outline, page) else { return };
+            let Some(parent) = scroller.get_untracked() else { return };
+            let parent: web_sys::Element = parent.into();
+            if let Some(row) = parent
+                .query_selector(&format!("button[data-outline-index=\"{idx}\"]"))
+                .ok()
+                .flatten()
+            {
+                crate::components::primitives::hooks::dom::center_in_scroll_parent(&row, &parent);
+            }
+        });
     });
 
     view! {

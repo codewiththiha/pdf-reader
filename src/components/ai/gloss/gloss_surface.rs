@@ -168,20 +168,38 @@ pub fn GlossSurface(
             data_phase=phase_str
             role=role
             aria_label=aria_label
-            scroll_class="px-5 pb-4 pt-6"
             class="gloss-surface"
         >
-            // shrink-0: flex must never squash header/separator/body when
-            // content is a hair taller than the card — scroll instead
-            // (scrollbar already hidden). The 1px separator has min-content
-            // height 0 and was the first casualty.
-            <header class="mb-4 shrink-0">
+            <GlossBody word=word_h>
+                {children()}
+            </GlossBody>
+        </FloatingCard>
+    }
+}
+
+/// The card body: padded header + separator + content column. ONE definition
+/// shared by the visible surface and the hidden measure twin in
+/// [`gloss_ai_popover`](super::gloss_ai_popover), so the twin's measured
+/// height can never drift from the real layout — that is what makes
+/// `content_height` correct. Block-flow container: the flex-squeeze
+/// protection lives on this root (`shrink-0`), so inner sections need none.
+#[component]
+pub(crate) fn GlossBody(
+    /// The word being explained (header title).
+    #[prop(into)]
+    word: Signal<String>,
+    /// Body content (word sections / shimmer / error row).
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div class="shrink-0 px-5 pb-4 pt-6">
+            <header class="mb-4">
                 <h2 class="text-lg font-semibold leading-tight text-balance text-ink">
-                    {move || word_h.get()}
+                    {move || word.get()}
                 </h2>
             </header>
-            <div class="mb-4 h-px shrink-0 bg-line"></div>
-            <div class="shrink-0">{children()}</div>
-        </FloatingCard>
+            <div class="mb-4 h-px bg-line"></div>
+            <div>{children()}</div>
+        </div>
     }
 }

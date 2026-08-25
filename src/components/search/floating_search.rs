@@ -18,14 +18,13 @@ use crate::components::primitives::floating::dismiss::{
 use crate::components::primitives::floating::types::z::{BAR, POPOVER};
 use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::icon_button::IconButton;
 use crate::effects::reader::search::{
     activate_match, clear_search, dismiss_search, run_search, search_navigate,
 };
 use crate::state::ReaderState;
 
 const SEARCH_DEBOUNCE_MS: u64 = 180;
-
-const ICON_BTN: &str = "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 #[component]
 pub fn FloatingSearch(
@@ -148,14 +147,13 @@ pub fn FloatingSearch(
                 )
             >
                 <div class="flex items-center gap-1.5 p-1.5">
-                    <button
-                        type="button"
+                    <IconButton
+                        icon=IconName::Search
+                        size=16
                         title="Search (Enter)"
-                        on:click=move |_| commit(1)
-                        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-muted transition-colors hover:bg-line hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                        <Icon name=IconName::Search size=16 />
-                    </button>
+                        class="text-muted hover:text-ink"
+                        on_click=move || commit(1)
+                    />
                     <input
                         node_ref=input_ref
                         type="text"
@@ -176,35 +174,27 @@ pub fn FloatingSearch(
                             }
                         }}
                     </span>
-                    <button
-                        type="button"
+                    <IconButton
+                        icon=IconName::ChevronUp
+                        size=14
                         title="Previous match (Shift+Enter)"
-                        on:click=move |_| commit(-1)
-                        class=ICON_BTN
-                    >
-                        <Icon name=IconName::ChevronUp size=14 />
-                    </button>
-                    <button
-                        type="button"
+                        on_click=move || commit(-1)
+                    />
+                    <IconButton
+                        icon=IconName::ChevronDown
+                        size=14
                         title="Next match (Enter)"
-                        on:click=move |_| commit(1)
-                        class=ICON_BTN
-                    >
-                        <Icon name=IconName::ChevronDown size=14 />
-                    </button>
-                    <button
-                        type="button"
+                        on_click=move || commit(1)
+                    />
+                    <IconButton
+                        icon=IconName::Close
+                        size=16
                         title="Close (Esc)"
-                        on:click=move |_| dismiss_search(state)
-                        class=ICON_BTN
-                    >
-                        <Icon name=IconName::Close size=16 />
-                    </button>
-                    <button
-                        type="button"
+                        on_click=move || dismiss_search(state)
+                    />
+                    <IconButton
                         title="Toggle results list"
-                        on:click=move |_| set_show_results.update(|v| *v = !*v)
-                        class=ICON_BTN
+                        on_click=move || set_show_results.update(|v| *v = !*v)
                     >
                         {move || {
                             let name = if show_results.get() {
@@ -214,7 +204,7 @@ pub fn FloatingSearch(
                             };
                             view! { <Icon name=name size=14 /> }
                         }}
-                    </button>
+                    </IconButton>
                 </div>
 
                 <Show when=move || show_results.get()>

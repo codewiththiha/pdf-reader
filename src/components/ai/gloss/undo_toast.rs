@@ -14,7 +14,7 @@ use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::selection_mode::{UndoBatch, UNDO_WINDOW_MS};
-use crate::components::primitives::overlay::toast::{ToastData, ToastPanel, ToastTone};
+use crate::components::primitives::overlay::toast::{ToastAction, ToastData, ToastPanel, ToastTone};
 use crate::components::primitives::overlay::toast_host::use_toast_slot;
 use crate::state::AppState;
 
@@ -24,21 +24,40 @@ pub fn GlossUndoToast(
     ctrl: GlossController,
     undo: RwSignal<Option<UndoBatch>>,
 ) -> impl IntoView {
-    // The toast the batch projects to: id = generation, so the host's
-    // equality guard sees a replacement as a different toast.
-    use_toast_slot(
-        Signal::derive(move || {
-            undo.get().map(|batch| {
+    // The toast the batch projects to, built ONCE per batch: id = generation
+    // (the host's equality guard sees a replacement as a different toast).
+    // The same value feeds the auto-dismiss slot and the render, so they can
+    // never disagree about the message or the action.
+    let toast = Memo::new(move |_| {
+        undo.with(|u| {
+            u.as_ref().map(|batch| {
                 let n = batch.marks.len();
+                let restored = batch.marks.clone();
+                let batch_path = batch.path.clone();
                 ToastData {
                     id: batch.generation,
                     message: format!("Removed {n} highlight{}", if n == 1 { "" } else { "s" }),
                     tone: ToastTone::Undo,
                     duration: Some(std::time::Duration::from_millis(UNDO_WINDOW_MS as u64)),
-                    action: None,
+                    action: Some(ToastAction {
+                        label: "Undo".into(),
+                        on_click: Callback::new(move |_| {
+                            // A batch belongs to the document it came from;
+                            // after a switch, drop it instead of resurrecting
+                            // marks into the wrong file.
+                            if state.reader.document.path.get_untracked() == batch_path {
+                                ctrl.restore_marks.run(restored.clone());
+                            }
+                            undo.set(None);
+                        }),
+                    }),
                 }
             })
-        }),
+        })
+    });
+
+    use_toast_slot(
+        Signal::derive(move || toast.get()),
         move |id| {
             undo.with_untracked(|u| {
                 u.as_ref()
@@ -56,38 +75,15 @@ pub fn GlossUndoToast(
 
     view! {
         {move || {
-            undo.get().map(|batch| {
-                let n = batch.marks.len();
-                let restored = batch.marks.clone();
-                let batch_path = batch.path.clone();
-                let toast = ToastData {
-                    id: batch.generation,
-                    message: format!("Removed {n} highlight{}", if n == 1 { "" } else { "s" }),
-                    tone: ToastTone::Undo,
-                    duration: Some(std::time::Duration::from_millis(UNDO_WINDOW_MS as u64)),
-                    action: Some(crate::components::primitives::overlay::toast::ToastAction {
-                        label: "Undo".into(),
-                        on_click: Callback::new(move |_| {
-                            // A batch belongs to the document it came from;
-                            // after a switch, drop it instead of resurrecting
-                            // marks into the wrong file.
-                            if state.reader.document.path.get_untracked() == batch_path {
-                                ctrl.restore_marks.run(restored.clone());
-                            }
-                            undo.set(None);
-                        }),
-                    }),
-                };
-                view! {
-                    // Bottom-center, clear of the selection bar's corner.
-                    <div
-                        class="gloss-undo-toast fixed bottom-5 left-1/2 z-[var(--z-toast)] \
-                               -translate-x-1/2"
-                        role="status"
-                    >
-                        <ToastPanel toast=toast />
-                    </div>
-                }
+            toast.get().map(|toast| view! {
+                // Bottom-center, clear of the selection bar's corner.
+                <div
+                    class="gloss-undo-toast fixed bottom-5 left-1/2 z-[var(--z-toast)] \
+                           -translate-x-1/2"
+                    role="status"
+                >
+                    <ToastPanel toast=toast />
+                </div>
             })
         }}
     }

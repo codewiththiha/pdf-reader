@@ -13,7 +13,7 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::components::primitives::icon::IconName;
+use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::menu_item::MenuItem;
 use crate::components::app_shell::toolbar_popover::MenuPopover;
@@ -94,19 +94,7 @@ pub fn MoreMenu() -> impl IntoView {
                     label="Keyboard Shortcuts"
                     on_click=move || set_show_keys.update(|v| *v = !*v)
                 >
-                    <svg
-                        class="ml-auto text-muted"
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <path d="m6 9 6 6 6-6"/>
-                    </svg>
+                    <Icon name=IconName::ChevronDown size=12 class="ml-auto text-muted" />
                 </MenuItem>
                 <Show when=move || show_keys.get()>
                     <div class="mt-1 max-h-56 overflow-y-auto border-t border-line pt-1">

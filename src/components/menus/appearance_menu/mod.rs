@@ -19,6 +19,7 @@ use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
 
+use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::separator::Separator;
@@ -49,26 +50,21 @@ pub fn AppearanceMenu(
     let hide_trigger = hide_trigger.unwrap_or_else(|| Signal::derive(|| false));
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
-    let trigger_class = move || {
-        let base = "inline-flex items-center justify-center rounded-lg border h-9 px-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent border-line bg-surface text-ink hover:bg-line";
-        if open.get() {
-            format!("{base} border-accent text-accent")
-        } else {
-            base.to_string()
-        }
-    };
-
     view! {
         <div node_ref=root_ref class="relative inline-flex">
-            <button
-                type="button"
-                title="Appearance"
-                on:click=move |_| open.set(!open.get())
-                class=trigger_class
-                class=("hidden", move || hide_trigger.get())
-            >
-                <Icon name=IconName::Palette size=18 />
-            </button>
+            // The toolbar-Button variant owns the trigger look (incl. the
+            // open accent state); `hidden` stays on a wrapper so the trigger
+            // stays mounted (the MenuPopover anchor is the outer div).
+            <div class=("hidden", move || hide_trigger.get())>
+                <Button
+                    on_click=move |_| open.set(!open.get())
+                    variant=ButtonVariant::Toolbar
+                    active=Signal::derive(move || open.get())
+                    title="Appearance"
+                >
+                    <Icon name=IconName::Palette size=18 />
+                </Button>
+            </div>
             <MenuPopover
                 open=open
                 anchor=root_ref

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use crate::components::primitives::form::text_input::TextInput;
+use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
@@ -115,20 +116,22 @@ pub(super) fn PresetEditor(
                     }}
                 </datalist>
                 <div class="flex gap-1">
-                    <button
-                        type="button"
-                        on:click=move |_| commit()
-                        class="flex-1 rounded border border-accent bg-accent-soft px-2 py-1 text-xs font-medium text-accent"
+                    <Button
+                        on_click=move |_| commit()
+                        variant=ButtonVariant::Primary
+                        compact=true
+                        class="flex-1 rounded"
                     >
                         "Save"
-                    </button>
-                    <button
-                        type="button"
-                        on:click=move |_| set_saving.set(false)
-                        class="rounded border border-line px-2 py-1 text-xs text-muted hover:text-ink"
+                    </Button>
+                    <Button
+                        on_click=move |_| set_saving.set(false)
+                        variant=ButtonVariant::Ghost
+                        compact=true
+                        class="flex-1 rounded border-line! text-muted! hover:text-ink!"
                     >
                         "Cancel"
-                    </button>
+                    </Button>
                 </div>
             </div>
         </Show>
