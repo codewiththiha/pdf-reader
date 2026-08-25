@@ -8,9 +8,9 @@ use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::tooltip::Tooltip;
 use crate::components::app_shell::app_title_bar::AppTitleBar;
-use crate::components::menus::appearance::AppearanceMenu;
+use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::app_shell::document_title::DocumentTitle;
-use crate::components::menus::more_menu::MoreMenu;
+use crate::components::menus::app_menu::MoreMenu;
 use crate::state::AppState;
 use crate::features::library::LibraryShelf;
 

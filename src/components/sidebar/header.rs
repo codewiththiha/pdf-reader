@@ -8,7 +8,7 @@ use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::tooltip::Tooltip;
 use crate::state::SidebarMode;
-use crate::components::menus::more_menu::MoreMenu;
+use crate::components::menus::app_menu::MoreMenu;
 use crate::state::ReaderState;
 
 #[component]

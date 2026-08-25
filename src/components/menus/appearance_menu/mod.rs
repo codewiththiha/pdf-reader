@@ -27,16 +27,16 @@ use crate::components::app_shell::OverflowRow;
 use crate::components::app_shell::toolbar_popover::MenuPopover;
 use crate::state::AppState;
 
-mod base;
 mod hue_picker;
-mod noise;
+mod mode_section;
+mod noise_section;
 mod presets;
-mod texture;
+mod texture_section;
 
-use base::BaseSection;
-use noise::NoiseSection;
+use mode_section::BaseSection;
+use noise_section::NoiseSection;
 use presets::PresetSection;
-use texture::TextureSection;
+use texture_section::TextureSection;
 
 #[component]
 pub fn AppearanceMenu(
