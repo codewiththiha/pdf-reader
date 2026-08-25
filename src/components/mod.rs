@@ -41,7 +41,7 @@ pub mod menus;
 pub mod overlays;
 pub mod sidebar;
 pub mod primitives;
-pub mod reader_controls;
+pub mod viewer_controls;
 pub mod search;
 
 /// Deprecated transitional shim for the pre-Phase-6 module path. Use
@@ -59,4 +59,12 @@ pub mod chrome {
 #[allow(unused_imports)]
 pub mod panels {
     pub use crate::components::sidebar::*;
+}
+
+/// Deprecated transitional shim for the pre-Phase-6 module path. Use
+/// `components::viewer_controls` directly.
+#[deprecated(note = "use components::viewer_controls")]
+#[allow(unused_imports)]
+pub mod reader_controls {
+    pub use crate::components::viewer_controls::*;
 }

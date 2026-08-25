@@ -16,7 +16,7 @@ use virtual_list_leptos::{ScrollMode, Virtualizer};
 use crate::components::primitives::floating::types::z::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
 use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
-use crate::components::reader_controls::page_navigation::PageNavigation;
+use crate::components::viewer_controls::page_navigation::PageNavigation;
 use crate::state::ReaderState;
 use pdf_core::layout::ViewMode;
 

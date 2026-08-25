@@ -21,8 +21,6 @@ use crate::components::app_shell::floating_document_title::FloatingDocumentTitle
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::tooltip::Tooltip;
-use crate::components::reader_controls::bottom_bar::ReaderBottomBar;
-use crate::components::reader_controls::page_indicator::PageIndicator;
 use crate::components::sidebar::Sidebar;
 use crate::components::sidebar::document_info::BookInfo;
 use crate::components::sidebar::header::SidebarHeader;
@@ -30,6 +28,8 @@ use crate::components::sidebar::outline_view::SidebarOutline;
 use crate::components::sidebar::shell::{SidebarChromeCtx, request_reveal_active, sidebar_paint};
 use crate::components::sidebar::switcher::PanelSwitcher;
 use crate::components::sidebar::thumbnails_view::SidebarThumbs;
+use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
+use crate::components::viewer_controls::page_indicator::PageIndicator;
 use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
