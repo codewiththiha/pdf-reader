@@ -44,6 +44,21 @@ pub fn expanded_target(
     })
 }
 
+/// The expanded box re-origined at `(x, y)` and clamped back inside the
+/// viewport margin — one definition shared by the spring target (which
+/// applies a drag OFFSET) and the drag pointer path (which applies an
+/// absolute pointer position), so the two can never disagree about where a
+/// dragged card is allowed to sit.
+pub(crate) fn clamped_origin(e: GlossBox, x: f64, y: f64, vw: f64, vh: f64) -> GlossBox {
+    let p = clamp_point_to_viewport(
+        Point::new(x, y),
+        Size::new(e.w, e.h),
+        Size::new(vw, vh),
+        CARD_MARGIN,
+    );
+    GlossBox { x: p.x, y: p.y, ..e }
+}
+
 /// Expanded box is always f(live_anchor) + stored_offset, so a dragged card
 /// still glides with the page on scroll. Compact/processing hug the mark.
 pub fn spring_target(
@@ -57,21 +72,58 @@ pub fn spring_target(
         let a = anchor.get()?;
         match gphase.get() {
             GlossPhase::Expanded => {
-                let mut e = expanded.get().unwrap_or(a);
-                if let Some((dx, dy)) = drag_offset.get() {
-                    let (vw, vh) = viewport.get();
-                    let p = clamp_point_to_viewport(
-                        Point::new(e.x + dx, e.y + dy),
-                        Size::new(e.w, e.h),
-                        Size::new(vw, vh),
-                        CARD_MARGIN,
-                    );
-                    e.x = p.x;
-                    e.y = p.y;
-                }
-                Some(e)
+                let e = expanded.get().unwrap_or(a);
+                let Some((dx, dy)) = drag_offset.get() else {
+                    return Some(e);
+                };
+                let (vw, vh) = viewport.get();
+                Some(clamped_origin(e, e.x + dx, e.y + dy, vw, vh))
             }
             _ => Some(a),
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn card() -> GlossBox {
+        GlossBox {
+            x: 200.0,
+            y: 300.0,
+            w: 360.0,
+            h: 240.0,
+            r: 18.0,
+        }
+    }
+
+    #[test]
+    fn an_in_bounds_origin_is_untouched() {
+        let e = card();
+        let moved = clamped_origin(e, e.x + 40.0, e.y + 30.0, 1440.0, 900.0);
+        assert_eq!((moved.x, moved.y), (240.0, 330.0));
+        // Size and radius are the expanded card's, never the drag's business.
+        assert_eq!((moved.w, moved.h, moved.r), (e.w, e.h, e.r));
+    }
+
+    #[test]
+    fn a_drag_past_the_edges_stops_at_the_margin() {
+        let e = card();
+        // Fully off the right/bottom: pinned to (vw - w - margin, vh - h - margin).
+        let far = clamped_origin(e, 5000.0, 5000.0, 1440.0, 900.0);
+        assert_eq!((far.x, far.y), (1440.0 - e.w - CARD_MARGIN, 900.0 - e.h - CARD_MARGIN));
+        // Fully off the left/top: pinned to the margin itself.
+        let near = clamped_origin(e, -5000.0, -5000.0, 1440.0, 900.0);
+        assert_eq!((near.x, near.y), (CARD_MARGIN, CARD_MARGIN));
+    }
+
+    #[test]
+    fn a_viewport_tighter_than_the_card_collapses_to_the_margin() {
+        // The clamp's max collapses to the margin instead of panicking on
+        // min > max — the card just can't go anywhere.
+        let e = card();
+        let pinned = clamped_origin(e, 0.0, 0.0, 200.0, 100.0);
+        assert_eq!((pinned.x, pinned.y), (CARD_MARGIN, CARD_MARGIN));
+    }
 }

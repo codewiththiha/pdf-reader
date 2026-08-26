@@ -61,6 +61,14 @@ fn cancel_press(
     timer.set_value(None);
 }
 
+/// Whether a pointer that started at the press origin has stayed within the
+/// slop radius. Both sides squared — no sqrt, and a slop of zero means any
+/// drift at all cancels the gesture. The boundary itself counts as inside,
+/// matching the strict `>` of the original inline cancel check.
+fn within_slop(dx: f64, dy: f64, slop_px: f64) -> bool {
+    dx * dx + dy * dy <= slop_px * slop_px
+}
+
 /// Build the long-press handlers, owned by the current reactive owner.
 pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
     let LongPressOptions {
@@ -127,7 +135,7 @@ pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
         };
         let dx = (ev.client_x() - sx) as f64;
         let dy = (ev.client_y() - sy) as f64;
-        if dx * dx + dy * dy > slop_px * slop_px {
+        if !within_slop(dx, dy, slop_px) {
             cancel_move();
             pressing.set(false);
         }
@@ -175,5 +183,28 @@ pub fn use_long_press(options: LongPressOptions) -> LongPressHandlers {
         pressing,
         swallow_click,
         swallow_context,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_slop_radius_keeps_a_steady_hold() {
+        assert!(within_slop(0.0, 0.0, 8.0));
+        // Diagonal drift counts its Euclidean length, not per-axis.
+        assert!(within_slop(5.0, 5.0, 8.0));
+        // Exactly on the boundary is still inside (the cancel is strict).
+        assert!(within_slop(8.0, 0.0, 8.0));
+        assert!(!within_slop(8.01, 0.0, 8.0));
+        assert!(!within_slop(-9.0, 0.0, 8.0));
+        assert!(!within_slop(6.0, 6.0, 8.0));
+    }
+
+    #[test]
+    fn a_zero_slop_only_tolerates_a_perfectly_still_hold() {
+        assert!(within_slop(0.0, 0.0, 0.0));
+        assert!(!within_slop(0.5, 0.0, 0.0));
     }
 }

@@ -175,3 +175,79 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
 
     SpringBox { value, reset_to }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gloss(x: f64, y: f64, w: f64, h: f64, r: f64) -> GlossBox {
+        GlossBox { x, y, w, h, r }
+    }
+
+    #[test]
+    fn gloss_zero_is_the_rest_state() {
+        let z = <GlossBox as SpringValue>::zero();
+        assert_eq!(z, GlossBox::default());
+        assert!(z.all_small(SETTLE_EPS));
+    }
+
+    #[test]
+    fn gloss_all_small_covers_every_field() {
+        // Each field above epsilon on its own must break "all small": the
+        // check is hand-rolled for GlossBox, and a dropped field would let
+        // a still-moving spring tear its rAF loop down early.
+        for above in [
+            gloss(1.0, 0.0, 0.0, 0.0, 0.0),
+            gloss(0.0, 1.0, 0.0, 0.0, 0.0),
+            gloss(0.0, 0.0, 1.0, 0.0, 0.0),
+            gloss(0.0, 0.0, 0.0, 1.0, 0.0),
+            gloss(0.0, 0.0, 0.0, 0.0, 1.0),
+        ] {
+            assert!(!above.all_small(0.6), "{above:?} read as small");
+        }
+        assert!(gloss(0.0, 0.0, 0.0, 0.0, 0.0).all_small(0.6));
+    }
+
+    #[test]
+    fn gloss_close_delegates_to_boxes_close() {
+        let a = gloss(0.0, 0.0, 10.0, 10.0, 0.0);
+        let b = gloss(0.4, 0.4, 10.0, 10.0, 0.0);
+        assert!(a.close(&b, 0.5));
+        assert!(!a.close(&b, 0.2));
+    }
+
+    #[test]
+    fn gloss_step_delegates_to_the_domain_spring() {
+        let cur = gloss(10.0, 20.0, 30.0, 40.0, 6.0);
+        let vel = gloss(1.0, -1.0, 0.5, 0.25, 0.0);
+        let target = gloss(200.0, 100.0, 360.0, 240.0, 18.0);
+        let dt = 1.0 / 60.0;
+        let (next, next_vel) = <GlossBox as SpringValue>::step(&cur, &vel, &target, dt);
+        let (domain_next, domain_vel) = pdf_core::gloss::step_spring(cur, vel, target, dt);
+        assert_eq!(next, domain_next);
+        assert_eq!(next_vel, domain_vel);
+    }
+
+    #[test]
+    fn float_step_through_the_trait_settles_on_the_target() {
+        // The adapter path end-to-end: a few hundred stable 60fps steps must
+        // land within the loop's settle epsilon with a dead velocity — the
+        // same condition use_spring_box uses to stop scheduling frames.
+        let mut cur = FloatBox::default();
+        let mut vel = FloatBox::default();
+        let target = FloatBox {
+            x: 40.0,
+            y: 400.0,
+            w: 360.0,
+            h: 240.0,
+            r: 18.0,
+        };
+        for _ in 0..600 {
+            let (next, next_vel) = cur.step(&vel, &target, 1.0 / 60.0);
+            cur = next;
+            vel = next_vel;
+        }
+        assert!(cur.close(&target, SETTLE_EPS), "did not settle: {cur:?}");
+        assert!(vel.all_small(SETTLE_EPS), "velocity survived: {vel:?}");
+    }
+}

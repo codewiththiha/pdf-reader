@@ -7,8 +7,7 @@ use leptos::prelude::*;
 use pdf_core::gloss::GlossBox;
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::gloss::placement::CARD_MARGIN;
-use crate::components::primitives::floating::types::{clamp_point_to_viewport, Point, Size};
+use crate::components::ai::gloss::placement::clamped_origin;
 use crate::components::primitives::hooks::use_viewport::viewport_size;
 use crate::components::primitives::interactions::drag::use_pointer_drag;
 
@@ -33,13 +32,11 @@ pub fn use_card_drag(ctrl: GlossController, expanded: Memo<Option<GlossBox>>) ->
                 return;
             };
             let (vw, vh) = viewport_size();
-            let p = clamp_point_to_viewport(
-                Point::new(mx - dx, my - dy),
-                Size::new(e.w, e.h),
-                Size::new(vw, vh),
-                CARD_MARGIN,
-            );
-            ctrl.drag.offset.set(Some((p.x - e.x, p.y - e.y)));
+            // Clamp the ABSOLUTE pointer-derived origin — the same clamp
+            // the spring target applies to the offset — then store the
+            // offset relative to the un-dragged expanded box.
+            let b = clamped_origin(e, mx - dx, my - dy, vw, vh);
+            ctrl.drag.offset.set(Some((b.x - e.x, b.y - e.y)));
         },
         move || {
             ctrl.drag.grab.set_value(None);
