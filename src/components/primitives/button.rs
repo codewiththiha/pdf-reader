@@ -18,7 +18,6 @@ pub enum ButtonVariant {
 
 /// Semantic tone overrides the neutral text/border colours.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)] // `Danger` lands with the destructive action sweep
 pub enum ButtonTone {
     #[default]
     Neutral,

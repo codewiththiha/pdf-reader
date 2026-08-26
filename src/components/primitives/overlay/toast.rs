@@ -77,7 +77,7 @@ fn tone_classes(tone: ToastTone) -> (&'static str, IconName) {
         ),
         ToastTone::Undo => (
             "border-line bg-surface text-ink",
-            IconName::Close,
+            IconName::Undo,
         ),
     }
 }
