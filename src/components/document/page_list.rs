@@ -45,11 +45,16 @@ pub fn PageList(
             };
             let el: web_sys::Element = div.clone().unchecked_into();
             v.bind_container(el);
+            // Re-seed the viewport + window so `items()` is non-empty right
+            // away. The virtualizer is created once in ReaderPage and its
+            // container binding goes stale whenever this view unmounts (a
+            // single → continuous switch): without re-measuring, the window
+            // would not re-seed and nothing would render.
+            v.remeasure_container();
 
             let page = state.viewer.page.get_untracked();
             if page > 0 {
                 v.scroll_to_index((page - 1) as usize, Align::Start, ScrollMode::Instant);
-                v.remeasure_container();
             }
         });
     }
