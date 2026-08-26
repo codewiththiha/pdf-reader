@@ -89,7 +89,16 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             if canvas_w <= 0.0 { return; } // not laid out yet: keep last budget
 
             let gap = (pr.left() - vr.left()).max(0.0);
-            let new_budget = gap + MAX_CANVAS_OVERLAP * canvas_w - SAFETY;
+            // Overlap allowance only when there is a real blank margin. When
+            // the page spans the viewer (fit-width, zoomed-in), the label
+            // would sit on the page and must disappear entirely instead of
+            // covering up to 25% of it.
+            let overlap = if gap > 1.0 {
+                MAX_CANVAS_OVERLAP * canvas_w
+            } else {
+                0.0
+            };
+            let new_budget = gap + overlap - SAFETY;
 
             // Only write on a real change — avoids class/style closure churn
             // every rAF during the sidebar slide.
