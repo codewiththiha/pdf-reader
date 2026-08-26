@@ -47,7 +47,7 @@ use leptos::prelude::*;
 use pdf_engine::types::DocStatus;
 use crate::state::SidebarMode;
 use crate::state::AppState;
-use crate::components::ai::anchor::host_id_for;
+use crate::components::ai::anchor::host_id_for_mode;
 use crate::components::app_shell::title_bar::TitleBarCtx;
 use crate::components::primitives::hooks::dom::{by_id, VIEWER_SLOT_ID};
 use crate::components::primitives::hooks::use_window_event::use_window_event;
@@ -80,12 +80,11 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             // page. The id format is the anchor module's; duplicating it here
             // once drifted from the single-page host convention.
             let page = state.reader.viewer.page.get_untracked().max(1);
-            let single = state.reader.viewer.mode.get_untracked()
-                == pdf_core::layout::ViewMode::Single;
+            let mode = state.reader.viewer.mode.get_untracked();
             // A missing host is the ordinary virtualization gap (the page
             // under the eyes is between mounts), so this stays a silent
             // `by_id` — but the viewer slot itself is chrome.
-            let Some(doc_el) = by_id(&host_id_for(page, single)) else { return };
+            let Some(doc_el) = by_id(&host_id_for_mode(page, mode)) else { return };
             let Some(viewer) = by_id(VIEWER_SLOT_ID) else { return };
 
             let pr = doc_el.get_bounding_client_rect();

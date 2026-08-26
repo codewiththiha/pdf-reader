@@ -192,6 +192,8 @@ pub struct ViewerSignals {
     /// window — otherwise scrolling evicts them, orphaning the selection's
     /// DOM nodes and breaking copy of multi-page selections.
     pub selected_pages: RwSignal<Option<(u32, u32)>>,
+    /// Continuous auto-scroll along the active strip (Continuous / Horizontal).
+    pub auto_scroll: RwSignal<bool>,
 }
 
 impl ViewerSignals {
@@ -201,6 +203,7 @@ impl ViewerSignals {
     pub fn reset_position(&self) {
         self.page.set(1);
         self.scroll_top.set(0.0);
+        self.auto_scroll.set(false);
     }
 }
 
@@ -215,6 +218,7 @@ impl Default for ViewerSignals {
             container_size: RwSignal::new((800.0, 600.0)),
             zoom_animating: RwSignal::new(false),
             selected_pages: RwSignal::new(None),
+            auto_scroll: RwSignal::new(false),
         }
     }
 }

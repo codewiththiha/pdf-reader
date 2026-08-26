@@ -21,8 +21,33 @@ pub const TOOLBAR_H: f64 = 48.0;
 /// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
 pub const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
     Single,
+    /// Two pages side by side, no gap (a "spread"). Paginated.
+    Dual,
+    #[default]
     Continuous,
+    /// All pages in one horizontal strip; wheel/keys scroll horizontally.
+    Horizontal,
+}
+
+impl ViewMode {
+    pub fn all() -> [ViewMode; 4] {
+        [
+            ViewMode::Single,
+            ViewMode::Dual,
+            ViewMode::Continuous,
+            ViewMode::Horizontal,
+        ]
+    }
+
+    /// Auto-scroll only makes sense on the two scrolling modes.
+    pub fn can_scroll(self) -> bool {
+        matches!(self, ViewMode::Continuous | ViewMode::Horizontal)
+    }
+
+    pub fn is_paginated(self) -> bool {
+        matches!(self, ViewMode::Single | ViewMode::Dual)
+    }
 }
