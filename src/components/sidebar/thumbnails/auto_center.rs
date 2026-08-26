@@ -86,13 +86,24 @@ impl AutoCenter {
         Effect::new(move |_| {
             let in_thumbs = sidebar.get() == SidebarMode::Thumbs;
             let page = state.viewer.page.get();
+            // Tracked: a real measurement writes the viewport signal, which
+            // re-arms this effect — so deferring here is safe.
             let vh = auto.virtualizer.viewport().get().main;
             let (was_open, _prev_page) = auto.centered.get_value();
             if !in_thumbs {
                 auto.centered.set_value((false, 0));
                 return;
             }
-            if vh <= 0.0 || page == 0 {
+            // Not ready yet: the container isn't bound or the viewport is
+            // still unmeasured (a zero-size element, or geometry that has
+            // not been reported). Returning keeps `centered = (false, _)`,
+            // so the run that follows a real measurement is treated as a
+            // fresh open and snaps — instead of silently dropping a scroll
+            // against a placeholder viewport.
+            if vh <= 1.0 {
+                return;
+            }
+            if page == 0 {
                 return;
             }
 

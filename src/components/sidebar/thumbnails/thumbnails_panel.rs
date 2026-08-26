@@ -114,6 +114,12 @@ pub fn ThumbnailsPanel(
         };
         let el: web_sys::Element = div.clone().unchecked_into();
         v_bind.bind_container(el.clone());
+        // Measure NOW so the auto-center glide has a true viewport on its
+        // first run. The container ResizeObserver only fires on size
+        // CHANGES, and the panel's height is constant across the sidebar
+        // slide, so a seed taken before layout settled would never
+        // self-correct and the glide would compute against a placeholder.
+        v_bind.remeasure_container();
         if drive_slot.with_value(|slot| slot.is_some()) {
             return;
         }
