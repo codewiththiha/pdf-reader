@@ -1,7 +1,9 @@
-//! The gloss popover: wiring + view. The state machine lives in
-//! [`controller`], targeting math in [`placement`], pointer physics in
-//! [`drag`], window behaviour in [`interactions`], and stream/measure hooks
-//! in [`hooks`].
+//! The gloss popover: the composition root. The state machine lives in
+//! [`controller`], card targeting in [`targeting`], placement math in
+//! [`placement`], pointer physics in [`drag`], window behaviour in
+//! [`interactions`], and stream/measure hooks in [`hooks`]. This module
+//! wires those together and renders: the measure twin, the morphing
+//! surface with its phase-driven content, and the mark-management chrome.
 //!
 //! Two orthogonal phases run together:
 //! * the **geometry phase** ([`GlossPhase`]): stroke → expanded card → chip;
@@ -33,125 +35,64 @@
 
 use leptos::prelude::*;
 
-use crate::components::ai::anchor::{watch_page_anchor, PageAnchor, CARD_EXIT_FRAC};
-use crate::components::ai::gloss::context_menu::GlossContextMenu;
 use crate::components::ai::gloss::controller::{
     use_gloss_controller, use_open_effect, use_open_listener,
 };
 use crate::components::ai::gloss::drag::use_card_drag;
+use crate::components::ai::gloss::gloss_surface::{GlossMeasureTwin, GlossSurface, GlossSurfaceContent};
 use crate::components::ai::gloss::hooks::use_ai_chunks::use_ai_chunks;
-use crate::components::ai::gloss::hooks::use_content_measure::use_content_measure;
 use crate::components::ai::gloss::interactions::{
     use_dismiss_interactions, use_origin_exit_collapse, use_page_flip_collapse, use_settle_unmount,
     use_zoom_reset,
 };
-use crate::components::ai::gloss::placement::{CARD_WIDTH, expanded_target, spring_target};
 use crate::components::ai::gloss::selection_bar::GlossSelectBar;
 use crate::components::ai::gloss::selection_mode::use_select_mode;
-use crate::components::ai::gloss::gloss_surface::{GlossBody, GlossSurface};
+use crate::components::ai::gloss::targeting::use_card_targeting;
+use crate::components::ai::gloss::context_menu::GlossContextMenu;
 use crate::components::ai::gloss::undo_toast::GlossUndoToast;
-use crate::components::ai::types::{AiError, AiPhase, GlossPhase};
-use crate::components::ai::word_info::WordInfoSections;
-use crate::components::primitives::feedback::shimmer::LoadingShimmer;
-use crate::components::primitives::hooks::use_viewport::use_viewport;
-use crate::components::primitives::motion::reduced_motion::reduced_motion_signal;
-use crate::components::primitives::motion::spring::{use_spring_box, SpringBox};
+use crate::components::ai::types::AiPhase;
 use crate::state::AppState;
-use pdf_core::gloss::GlossBox;
 
 #[component]
 pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // ── State machine hub ─────────────────────────────────────────────
     let ctrl = use_gloss_controller(state);
 
-    // ONE shared, page-aware anchor: follows scroll/zoom/mode/page, and
-    // flags `exited` once the origin passes CARD_EXIT_FRAC of the viewport
-    // height (or leaves the top, or its page unmounts).
-    let watch = watch_page_anchor(
-        Signal::derive(move || ctrl.open.mark.get().map(|m| PageAnchor::from_mark(&m))),
-        state.reader.viewer.zoom.display.into(),
-        state.reader.viewer.mode.into(),
-        state.reader.viewer.scroll_top.into(),
-        state.reader.viewer.page.into(),
-        CARD_EXIT_FRAC,
-    );
-    let anchor = watch.screen;
-
-    // Reactive viewport (the shared primitive): resize-aware signal, owned by
-    // this reactive scope. Replaces the old local snapshot + refresh listener.
-    let viewport = use_viewport();
-    let reduced = reduced_motion_signal();
-
-    // ── Card targeting ────────────────────────────────────────────────
-    let (measure_ref, content_height) = use_content_measure(ctrl.content.word, ctrl.content.word_info);
-    let expanded = expanded_target(anchor.into(), content_height, viewport);
-    let target = spring_target(
-        anchor.into(),
-        ctrl.geometry.gphase,
-        ctrl.drag.offset,
-        expanded,
-        viewport,
-    );
-
-    // Snapping while compact was what made closing read as a cut: the spring
-    // teleported the surface onto the anchor instead of morphing down to it.
-    // Only the processing phase (where no surface exists anyway) snaps.
-    let snap = Signal::derive(move || {
-        ctrl.drag.active.get() || reduced.get() || ctrl.geometry.gphase.get() == GlossPhase::Processing
-    });
-    let spring: SpringBox<GlossBox> = use_spring_box(target.into(), snap);
-    let sprung = spring.value;
-
-    let progress = Memo::new(move |_| {
-        let (Some(b), Some(a), Some(e)) = (sprung.get(), anchor.get(), expanded.get()) else {
-            return if ctrl.geometry.gphase.get() == GlossPhase::Expanded {
-                1.0
-            } else {
-                0.0
-            };
-        };
-        ((b.w - a.w) / (e.w - a.w).max(1.0)).clamp(0.0, 1.0)
-    });
+    // ── Card targeting: anchor watch, viewport, spring, progress ──────
+    let card = use_card_targeting(state, ctrl);
 
     // ── Open/close plumbing ───────────────────────────────────────────
     use_open_listener(state, ctrl);
-    use_open_effect(state, ctrl, watch, spring, viewport);
+    use_open_effect(state, ctrl, card.watch, card.spring, card.viewport);
     use_ai_chunks(state, ctrl);
 
     // ── Window-level behaviour ────────────────────────────────────────
     use_dismiss_interactions(ctrl);
-    use_origin_exit_collapse(watch, ctrl);
-    use_settle_unmount(ctrl, anchor.into(), sprung.into());
+    use_origin_exit_collapse(card.watch, ctrl);
+    use_settle_unmount(ctrl, card.anchor.into(), card.sprung.into());
     use_page_flip_collapse(state, ctrl);
     use_zoom_reset(state, ctrl);
 
     // ── Drag physics ──────────────────────────────────────────────────
-    let drag = use_card_drag(ctrl, expanded);
+    let drag = use_card_drag(ctrl, card.expanded);
 
     // ── Mark management (selection mode, context menu, undo) ──────────
     let sm = use_select_mode(state, ctrl);
 
-    // ── Surface props (unwrapped — it only renders while visible) ─────
+    // ── View ──────────────────────────────────────────────────────────
+    // Surface props (unwrapped — the surface only renders while visible).
     let phase_sig = Signal::derive(move || ctrl.geometry.gphase.get());
-    let box_sig = Signal::derive(move || sprung.get().unwrap_or_default());
-    let expanded_sig = Signal::derive(move || expanded.get().unwrap_or_default());
-    let progress_sig = Signal::derive(move || progress.get());
+    let box_sig = Signal::derive(move || card.sprung.get().unwrap_or_default());
+    let expanded_sig = Signal::derive(move || card.expanded.get().unwrap_or_default());
+    let progress_sig = Signal::derive(move || card.progress.get());
     let word_sig = Signal::derive(move || ctrl.content.word.get());
 
     view! {
-        // Invisible measure twin — pixel-exact replica of the scroll column
-        // in GlossSurface (same width, px-5/pt-6/pb-4, header, separator),
-        // so the measured height already includes chrome and wrap.
-        <div
-            node_ref=measure_ref
-            class=format!("pointer-events-none invisible fixed left-0 top-0 {}", crate::components::primitives::floating::types::z::CONTENT)
-            style=format!("width:{CARD_WIDTH}px")
-            aria-hidden="true"
-        >
-            <GlossBody word=ctrl.content.word>
-                {move || ctrl.content.word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
-            </GlossBody>
-        </div>
+        <GlossMeasureTwin
+            node_ref=card.measure_ref
+            word=word_sig
+            word_info=ctrl.content.word_info
+        />
 
         <Show when=move || ctrl.geometry.surface_visible.get() && ctrl.content.phase.get() != AiPhase::Idle>
             <GlossSurface
@@ -162,38 +103,12 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 word=word_sig
                 on_drag_start=drag.on_drag_start
             >
-                {move || match ctrl.content.phase.get() {
-                    AiPhase::Processing => view! { <LoadingShimmer /> }.into_any(),
-                    AiPhase::Streaming | AiPhase::Done => match ctrl.content.word_info.get() {
-                        Some(info) => view! { <WordInfoSections info=info /> }.into_any(),
-                        None => view! { <LoadingShimmer /> }.into_any(),
-                    },
-                    AiPhase::Error => {
-                        let err = ctrl.content.error.get().unwrap_or_else(AiError::unknown);
-                        let msg = err.friendly().into_owned();
-                        let retryable = err.retryable;
-                        view! {
-                            <div class="ai-text-reveal flex flex-col gap-3 p-1">
-                                <p class="text-sm leading-relaxed text-ink/80">{msg}</p>
-                                <Show when=move || retryable>
-                                    <button
-                                        type="button"
-                                        on:click=move |_| ctrl.commands.retry.run(())
-                                        class="self-start rounded-full border border-line bg-surface \
-                                               px-4 py-1.5 text-sm font-medium text-ink \
-                                               transition-[transform,background-color] duration-150 ease-out \
-                                               hover:bg-line active:scale-[0.96] \
-                                               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                    >
-                                        "Try again"
-                                    </button>
-                                </Show>
-                            </div>
-                        }
-                        .into_any()
-                    }
-                    AiPhase::Idle => ().into_any(),
-                }}
+                <GlossSurfaceContent
+                    phase=ctrl.content.phase
+                    word_info=ctrl.content.word_info
+                    error=ctrl.content.error
+                    retry=ctrl.commands.retry
+                />
             </GlossSurface>
         </Show>
 
@@ -205,3 +120,4 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
         <GlossUndoToast state ctrl undo=sm.undo />
     }
 }
+

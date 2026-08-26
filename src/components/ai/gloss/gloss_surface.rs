@@ -12,13 +12,17 @@
 //! Dismiss is not a button on the card: Escape / outside-tap / origin-exit are
 //! owned by the popover's window listeners.
 
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
 
 use pdf_core::gloss::{smoothstep, GlossBox};
 
-use crate::components::ai::types::GlossPhase;
+use crate::components::ai::types::{AiError, AiPhase, GlossPhase, WordInfo};
+use crate::components::ai::word_info::WordInfoSections;
+use crate::components::primitives::feedback::shimmer::LoadingShimmer;
 use crate::components::primitives::floating::floating_card::FloatingCard;
 use crate::components::primitives::floating::types::FloatBox;
+
+use super::placement::CARD_WIDTH;
 
 /// Surface background by phase.
 ///
@@ -201,5 +205,83 @@ pub(crate) fn GlossBody(
             <div class="mb-4 h-px bg-line"></div>
             <div>{children()}</div>
         </div>
+    }
+}
+
+/// The invisible measurement twin: a pixel-exact replica of the surface's
+/// scroll column (same width, `px-5/pt-6/pb-4`, header, separator), so the
+/// measured height already includes chrome and wrap — that is what makes
+/// `content_height` correct. Rendered off-screen for the lifetime of the
+/// popover.
+#[component]
+pub fn GlossMeasureTwin(
+    /// NodeRef of the twin; handed to the content-measure hook.
+    node_ref: NodeRef<html::Div>,
+    #[prop(into)] word: Signal<String>,
+    #[prop(into)] word_info: Signal<Option<WordInfo>>,
+) -> impl IntoView {
+    view! {
+        <div
+            node_ref=node_ref
+            class=format!(
+                "pointer-events-none invisible fixed left-0 top-0 {}",
+                crate::components::primitives::floating::types::z::CONTENT
+            )
+            style=format!("width:{CARD_WIDTH}px")
+            aria-hidden="true"
+        >
+            <GlossBody word=word>
+                {move || word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
+            </GlossBody>
+        </div>
+    }
+}
+
+/// The card body by data phase: shimmer while waiting, the word sections
+/// once anything is there (streaming or done), and the friendly error —
+/// with a retry affordance when the failure is retryable — on failure.
+/// Pure presentation of the content signals; the lifecycle that produces
+/// them lives in the controller.
+#[component]
+pub fn GlossSurfaceContent(
+    #[prop(into)] phase: Signal<AiPhase>,
+    #[prop(into)] word_info: Signal<Option<WordInfo>>,
+    #[prop(into)] error: Signal<Option<AiError>>,
+    /// Retry the current mark after a retryable failure.
+    retry: Callback<()>,
+) -> impl IntoView {
+    view! {
+        {move || match phase.get() {
+            AiPhase::Processing => view! { <LoadingShimmer /> }.into_any(),
+            AiPhase::Streaming | AiPhase::Done => match word_info.get() {
+                Some(info) => view! { <WordInfoSections info=info /> }.into_any(),
+                None => view! { <LoadingShimmer /> }.into_any(),
+            },
+            AiPhase::Error => {
+                let err = error.get().unwrap_or_else(AiError::unknown);
+                let msg = err.friendly().into_owned();
+                let retryable = err.retryable;
+                view! {
+                    <div class="ai-text-reveal flex flex-col gap-3 p-1">
+                        <p class="text-sm leading-relaxed text-ink/80">{msg}</p>
+                        <Show when=move || retryable>
+                            <button
+                                type="button"
+                                on:click=move |_| retry.run(())
+                                class="self-start rounded-full border border-line bg-surface \
+                                       px-4 py-1.5 text-sm font-medium text-ink \
+                                       transition-[transform,background-color] duration-150 ease-out \
+                                       hover:bg-line active:scale-[0.96] \
+                                       focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            >
+                                "Try again"
+                            </button>
+                        </Show>
+                    </div>
+                }
+                .into_any()
+            }
+            AiPhase::Idle => ().into_any(),
+        }}
     }
 }

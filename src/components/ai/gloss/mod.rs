@@ -11,6 +11,8 @@
 //!   (content / geometry / open / drag / cache), the shared commands,
 //!   and the open path as a named verdict + transitions.
 //! * [`placement`]      — the card's target memos (expanded box + drag offset).
+//! * [`targeting`]      — the targeting bundle: anchor watch, viewport,
+//!   measurement, spring, progress.
 //! * [`drag`]           — pointer physics for dragging the expanded card
 //!   (thin domain wrapper over the primitive drag mechanics).
 //! * [`interactions`]   — window-level behaviour (Escape/outside, exit, flip).
@@ -41,4 +43,5 @@ pub mod mark_layer;
 pub mod placement;
 pub mod selection_bar;
 pub mod selection_mode;
+pub mod targeting;
 pub mod undo_toast;
