@@ -49,9 +49,10 @@ pub fn MenuItem(
     // accent-soft treatment as OptionButton/Segmented, so every
     // selected/pressed row in the app speaks one visual language.
     let class = move || {
+        let hover = if disabled { "" } else { "hover:bg-line" };
         let base = format!(
-            "menu-item flex w-full items-center gap-2 {row_class} text-sm hover:bg-line \
-             disabled:pointer-events-none disabled:opacity-50"
+            "menu-item flex w-full items-center gap-2 {row_class} text-sm {hover} \
+             disabled:cursor-not-allowed disabled:opacity-45"
         );
         if selected_sig.get() && !danger {
             format!("{base} bg-accent-soft font-medium text-accent")
