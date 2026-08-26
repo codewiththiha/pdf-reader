@@ -16,9 +16,9 @@ use crate::storage::save_settings;
 pub fn AppTitleBar(
     state: AppState,
     #[prop(into)] left: ViewFn,
-    /// Optional centered overlay passed through to the generic title bar.
-    #[prop(optional, into)]
-    center: Option<ViewFn>,
+    /// Centered overlay passed through to the generic title bar. Defaults to empty.
+    #[prop(into, default = ViewFn::from(|| ()))]
+    center: ViewFn,
     #[prop(into)] right: ViewFn,
     /// Native traffic lights. The generic TitleBar does not know about them;
     /// this wrapper decides whether to mount the effect.

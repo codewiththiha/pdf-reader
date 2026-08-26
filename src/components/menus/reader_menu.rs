@@ -25,7 +25,7 @@ fn ModeButton(state: AppState, m: ViewMode, icon: IconName, title: &'static str)
         <IconButton
             icon=icon
             title=title
-            pressed=Some(pressed)
+            pressed=pressed
             on_click=move || state.reader.viewer.mode.set(m)
         />
     }
@@ -38,7 +38,7 @@ fn FitButton(state: AppState, f: FitMode, icon: IconName, title: &'static str) -
         <IconButton
             icon=icon
             title=title
-            pressed=Some(pressed)
+            pressed=pressed
             on_click=move || state.reader.viewer.fit.set(f)
         />
     }
@@ -131,7 +131,7 @@ pub fn ReaderMenu(state: AppState) -> impl IntoView {
                             icon=IconName::AutoScroll
                             label="Auto Scroll".to_string()
                             disabled=disabled
-                            selected=Some(Signal::derive(move || r.viewer.auto_scroll.get()))
+                            selected=Signal::derive(move || r.viewer.auto_scroll.get())
                             on_click=move || r.viewer.auto_scroll.update(|v| *v = !*v)
                         >
                             <span class="ml-auto flex gap-0.5"><Kbd>"Shift"</Kbd><Kbd>"A"</Kbd></span>

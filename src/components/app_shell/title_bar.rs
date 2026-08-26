@@ -48,10 +48,10 @@ pub fn TitleBar(
     /// padding.
     band_inset: Signal<bool>,
     #[prop(into)] left: ViewFn,
-    /// Optional centered overlay (e.g. the document title). Absolute-positioned
-    /// over the row so left/right clusters keep their natural layout.
-    #[prop(optional, into)]
-    center: Option<ViewFn>,
+    /// Centered overlay (e.g. the document title). Absolute-positioned over the
+    /// row so left/right clusters keep their natural layout. Defaults to empty.
+    #[prop(into, default = ViewFn::from(|| ()))]
+    center: ViewFn,
     #[prop(into)] right: ViewFn,
     children: Children,
 ) -> impl IntoView {
@@ -103,14 +103,12 @@ pub fn TitleBar(
                     class=("pointer-events-none", move || !visible.get())
                 >
                     {left.run()}
-                    {center.map(|c| view! {
-                        <div
-                            class="absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center"
-                            data-tauri-drag-region="true"
-                        >
-                            {c.run()}
-                        </div>
-                    })}
+                    <div
+                        class="absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center"
+                        data-tauri-drag-region="true"
+                    >
+                        {center.run()}
+                    </div>
                     <div class="ml-auto flex shrink-0 items-center gap-1">
                         {right.run()}
                         <PinButton pinned=pinned on_pin_change=on_pin_change />
