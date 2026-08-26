@@ -105,6 +105,24 @@ pub fn relayout_to(state: ReaderState, factor: f64, virtualizer: &Virtualizer) {
 }
 
 pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
+    // While any scale animation is in flight (a zoom gesture, a sidebar slide,
+    // a window-resize drag — all raise `zoom_animating` and all end in
+    // `commit_scale`, which clears it), the virtualizer's DOM scroll echo must
+    // not overwrite the core anchor: the browser fires those per-frame scroll
+    // events one frame late, so the echo is stale and the next anchored
+    // rescale pins from it, making the content oscillate instead of gliding.
+    // The echo is re-adopted the moment the animation commits.
+    {
+        let v = virtualizer.clone();
+        Effect::new(move |_| {
+            if state.viewer.zoom_animating.get() {
+                v.suspend_scroll_feedback();
+            } else {
+                v.resume_scroll_feedback();
+            }
+        });
+    }
+
     let anim_slot = StoredValue::new_local(None::<StepSlot>);
     let live_token = StoredValue::new_local(Rc::new(Cell::new(0u64)));
 

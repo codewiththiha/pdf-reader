@@ -73,6 +73,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         pending_scroll: Rc::new(Cell::new(None)),
         scroll_armed: Rc::new(Cell::new(false)),
         flush_armed: Rc::new(Cell::new(false)),
+        scroll_feedback: Cell::new(true),
         container_ro: RefCell::new(None),
         item_ro: RefCell::new(None),
         listeners: RefCell::new(Vec::new()),
@@ -182,6 +183,16 @@ pub(crate) struct VirtualizerInner {
     pub scroll_armed: Rc<Cell<bool>>,
     pub flush_armed: Rc<Cell<bool>>,
 
+    /// While false, the DOM scroll echo must not touch the core. A programmatic
+    /// scroll burst (a zoom tween, a sidebar slide, a resize drag) writes the
+    /// surface every frame; the browser fires the corresponding scroll events
+    /// a frame late, so echoing them back overwrites the core's anchor position
+    /// with a stale value and the next anchored rescale oscillates around the
+    /// true path — the content visibly jitters during the animation. The app
+    /// flips this off for the duration of such a gesture and back on when the
+    /// gesture commits.
+    pub scroll_feedback: Cell<bool>,
+
     pub container_ro: RefCell<Option<ObserverBinding>>,
     pub item_ro: RefCell<Option<ObserverBinding>>,
     pub listeners: RefCell<Vec<ListenerBinding>>,
@@ -228,6 +239,13 @@ impl VirtualizerInner {
 
     /// rAF-coalesced scroll handling.
     pub(crate) fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
+        if !self.scroll_feedback.get() {
+            // A programmatic gesture owns the surface: its anchored writes are
+            // authoritative and the echo is one frame stale. Adopting it here
+            // would corrupt the anchor (see the field docs); the gesture's own
+            // `apply` already published the position to the scroll_top signal.
+            return;
+        }
         let content = dom_top - self.options.padding_start;
         let step = self.core.borrow_mut().on_scroll(content);
         write_if_changed(self.scroll_top, content);
@@ -594,6 +612,21 @@ impl Virtualizer {
         if let Some(flush) = flush {
             self.inner.apply(flush.step);
         }
+    }
+
+    /// Ignore the DOM scroll echo until [`resume_scroll_feedback`]. Use around
+    /// a sustained programmatic scroll burst (zoom tween, sidebar slide,
+    /// resize drag): the browser echoes those writes one frame late, and
+    /// letting the echo overwrite the core's anchor position makes each
+    /// anchored rescale pin from a stale offset — the content oscillates
+    /// instead of gliding.
+    pub fn suspend_scroll_feedback(&self) {
+        self.inner.scroll_feedback.set(false);
+    }
+
+    /// Re-adopt the DOM scroll echo (see [`suspend_scroll_feedback`]).
+    pub fn resume_scroll_feedback(&self) {
+        self.inner.scroll_feedback.set(true);
     }
 
     /// Zoom: multiply every size by `factor` while keeping the viewport center pinned.
