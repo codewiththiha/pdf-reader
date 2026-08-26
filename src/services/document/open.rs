@@ -154,8 +154,8 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.viewer.fit.set(FitMode::Width);
                 // Heights belong to the document that was just closed; leaving
                 // them would have the zoom coordinator anchor against a stale
-                // column on the first gesture. PageList re-seeds them from
-                // `page_sizes` (intrinsic heights) at the current scale.
+                // column on the first gesture. ReaderPage re-seeds them from
+                // the intrinsic page sizes at the current scale.
                 state.reader.document.metrics.css_heights.set(Vec::new());
                 let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =

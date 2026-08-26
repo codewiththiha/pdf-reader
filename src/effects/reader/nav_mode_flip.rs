@@ -1,13 +1,23 @@
 //! Entering continuous mode: align `scroll_top` to the current page.
-//! `viewer.page` is the source of truth here, not a stale offset left
-//! over from a previous continuous session.
+//! `viewer.page` is the source of truth here, not a stale offset left over
+//! from a previous continuous session.
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{DocumentLayout, ViewMode};
+use pdf_core::layout::{DocumentLayout, PAGE_GAP, ViewMode};
+
 use crate::state::ReaderState;
 
-use super::navigation_sync::estimated_top;
+fn estimated_top(page: u32, state: ReaderState) -> f64 {
+    let estimated = state
+        .document
+        .page1_size
+        .get_untracked()
+        .map(|size| size.height)
+        .unwrap_or(0.0)
+        * state.viewer.zoom.render.get_untracked();
+    (page.saturating_sub(1)) as f64 * (estimated + PAGE_GAP)
+}
 
 pub(super) fn mode_flip(state: ReaderState, layout: Memo<DocumentLayout>) {
     let mut was_continuous = state.viewer.mode.get_untracked() == ViewMode::Continuous;

@@ -637,9 +637,7 @@ impl VirtualizerCore {
 
     /// Re-aim the pending scroll after the layout moved.
     fn settle_pending(&mut self) -> Option<f64> {
-        let Some(pending) = self.pending else {
-            return None;
-        };
+        let pending = self.pending?;
         let Some(target) = self.target_offset(pending.index, pending.align) else {
             self.pending = None;
             return None;
@@ -648,9 +646,7 @@ impl VirtualizerCore {
             self.pending = None;
             return None;
         }
-        let Some(slot) = self.pending.as_mut() else {
-            return None;
-        };
+        let slot = self.pending.as_mut()?;
         if slot.attempts >= self.max_retries {
             self.pending = None;
             return None;

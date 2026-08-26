@@ -12,7 +12,9 @@ use std::time::Duration;
 use leptos::prelude::*;
 
 use pdf_core::layout::{DocumentLayout, TOOLBAR_H};
-use pdf_core::math::{constrained_scale, fit_scale, FitMode};
+use pdf_core::math::{FitMode, constrained_scale, fit_scale};
+use virtual_list_leptos::Virtualizer;
+
 use crate::state::{ReaderState, SidebarMode};
 
 use super::zoom::{commit_scale, gesture_owns_layout, relayout_to, take_commit_echo};
@@ -24,6 +26,7 @@ pub fn fit_effect(
     // state passed in explicitly).
     sidebar: RwSignal<SidebarMode>,
     layout: Memo<DocumentLayout>,
+    virtualizer: Virtualizer,
 ) {
     // Width of the window at the last refit, used to tell a WINDOW resize from
     // a sidebar slide: both move `container_size`, but only the former moves
@@ -226,7 +229,7 @@ pub fn fit_effect(
             let cur = state.viewer.zoom.display.get_untracked();
             if (target - cur).abs() >= 0.0005 {
                 state.viewer.zoom_animating.set(true);
-                relayout_to(state, target / cur, layout);
+                relayout_to(state, target / cur, layout, &virtualizer);
                 state.viewer.zoom.display.set(target);
             }
         }
@@ -255,6 +258,7 @@ pub fn fit_effect(
         // Debounce: each `container_size` change re-runs this effect and clears
         // the previous timer, so the commit fires once the size has been stable
         // for ~120ms — one render per slide or per resize drag, at the end.
+        let timer_virtualizer = virtualizer.clone();
         let handle = set_timeout_with_handle(
             move || {
                 if first_run {
@@ -268,7 +272,7 @@ pub fn fit_effect(
                 // heights stay at the old scale and the scroll teleports.
                 let cur = state.viewer.zoom.display.get_untracked();
                 if (target - cur).abs() >= 0.0005 {
-                    relayout_to(state, target / cur, layout);
+                    relayout_to(state, target / cur, layout, &timer_virtualizer);
                     state.viewer.zoom.display.set(target);
                 }
                 let prev = state.viewer.zoom.render.get_untracked();

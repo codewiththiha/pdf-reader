@@ -22,6 +22,13 @@ use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{Positioning, VirtualItem, VirtualRow};
 use crate::surface::{DomSurface, ScrollSurface};
 
+type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
+type ObserverBinding = (ResizeObserver, ObserverCallback);
+type ListenerCallback = Closure<dyn FnMut(Event)>;
+type ListenerBinding = (web_sys::Element, &'static str, ListenerCallback);
+type RangeCallback = Rc<dyn Fn(Option<Window>)>;
+type IdleCallback = Rc<dyn Fn()>;
+
 /// Create a virtualizer. Must be called inside a reactive owner.
 pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     let count0 = options.count.get_untracked();
@@ -150,23 +157,13 @@ pub(crate) struct VirtualizerInner {
     pub scroll_armed: Rc<Cell<bool>>,
     pub flush_armed: Rc<Cell<bool>>,
 
-    pub container_ro: RefCell<
-        Option<(
-            ResizeObserver,
-            Closure<dyn FnMut(js_sys::Array, ResizeObserver)>,
-        )>,
-    >,
-    pub item_ro: RefCell<
-        Option<(
-            ResizeObserver,
-            Closure<dyn FnMut(js_sys::Array, ResizeObserver)>,
-        )>,
-    >,
-    pub listeners: RefCell<Vec<(web_sys::Element, &'static str, Closure<dyn FnMut(Event)>)>>,
+    pub container_ro: RefCell<Option<ObserverBinding>>,
+    pub item_ro: RefCell<Option<ObserverBinding>>,
+    pub listeners: RefCell<Vec<ListenerBinding>>,
     pub scroll_end_timer: RefCell<Option<TimeoutHandle>>,
 
-    pub range_cbs: RefCell<Vec<Rc<dyn Fn(Option<Window>)>>>,
-    pub idle_cbs: RefCell<Vec<Rc<dyn Fn()>>>,
+    pub range_cbs: RefCell<Vec<RangeCallback>>,
+    pub idle_cbs: RefCell<Vec<IdleCallback>>,
 
     pub items_signal: OnceCell<Signal<Vec<VirtualItem>, LocalStorage>>,
     pub rows_signal: OnceCell<Signal<Vec<VirtualRow>, LocalStorage>>,
@@ -340,7 +337,7 @@ impl Virtualizer {
                     let inner2 = inner_for_listener.clone();
                     raf(move || {
                         inner2.scroll_armed.set(false);
-                        if let Some(dom) = inner2.pending_scroll.get().take() {
+                        if let Some(dom) = inner2.pending_scroll.take() {
                             inner2.handle_scroll(dom);
                         }
                     });
@@ -376,61 +373,49 @@ impl Virtualizer {
 
     /// Reactive mounted items.
     pub fn items(&self) -> Signal<Vec<VirtualItem>, LocalStorage> {
-        self.inner
-            .items_signal
-            .get_or_init(|| {
-                let inner = self.inner.clone();
-                Signal::derive_local(move || {
-                    let _ = inner.range.get();
-                    let _ = inner.layout_version.get();
-                    inner.core.borrow().items()
-                })
+        *self.inner.items_signal.get_or_init(|| {
+            let inner = self.inner.clone();
+            Signal::derive_local(move || {
+                let _ = inner.range.get();
+                let _ = inner.layout_version.get();
+                inner.core.borrow().items()
             })
-            .clone()
+        })
     }
 
     /// Reactive mounted rows.
     pub fn rows(&self) -> Signal<Vec<VirtualRow>, LocalStorage> {
-        self.inner
-            .rows_signal
-            .get_or_init(|| {
-                let inner = self.inner.clone();
-                Signal::derive_local(move || {
-                    let _ = inner.range.get();
-                    let _ = inner.layout_version.get();
-                    inner.core.borrow().rows()
-                })
+        *self.inner.rows_signal.get_or_init(|| {
+            let inner = self.inner.clone();
+            Signal::derive_local(move || {
+                let _ = inner.range.get();
+                let _ = inner.layout_version.get();
+                inner.core.borrow().rows()
             })
-            .clone()
+        })
     }
 
     /// Full spacer extent (paddings included).
     pub fn total_size(&self) -> Signal<f64, LocalStorage> {
-        self.inner
-            .total_signal
-            .get_or_init(|| {
-                let inner = self.inner.clone();
-                Signal::derive_local(move || {
-                    let _ = inner.layout_version.get();
-                    inner.core.borrow().total_size()
-                })
+        *self.inner.total_signal.get_or_init(|| {
+            let inner = self.inner.clone();
+            Signal::derive_local(move || {
+                let _ = inner.layout_version.get();
+                inner.core.borrow().total_size()
             })
-            .clone()
+        })
     }
 
     /// `(before, after)` spacer heights for [`Positioning::Padding`].
     pub fn padding(&self) -> Signal<(f64, f64), LocalStorage> {
-        self.inner
-            .padding_signal
-            .get_or_init(|| {
-                let inner = self.inner.clone();
-                Signal::derive_local(move || {
-                    let _ = inner.range.get();
-                    let _ = inner.layout_version.get();
-                    inner.core.borrow().padding()
-                })
+        *self.inner.padding_signal.get_or_init(|| {
+            let inner = self.inner.clone();
+            Signal::derive_local(move || {
+                let _ = inner.range.get();
+                let _ = inner.layout_version.get();
+                inner.core.borrow().padding()
             })
-            .clone()
+        })
     }
 
     /// The configured positioning mode.
@@ -440,39 +425,30 @@ impl Virtualizer {
 
     /// Reactive mount window.
     pub fn range(&self) -> Signal<Option<Window>, LocalStorage> {
-        self.inner
-            .range_signal
-            .get_or_init(|| {
-                let inner = self.inner.clone();
-                Signal::derive_local(move || inner.range.get())
-            })
-            .clone()
+        *self.inner.range_signal.get_or_init(|| {
+            let inner = self.inner.clone();
+            Signal::derive_local(move || inner.range.get())
+        })
     }
 
     /// Reactive dominant item.
     pub fn dominant(&self) -> Signal<usize, LocalStorage> {
-        self.inner
-            .dominant_signal
-            .get_or_init(|| {
-                let inner = self.inner.clone();
-                Signal::derive_local(move || {
-                    let _ = inner.scroll_top.get();
-                    let _ = inner.layout_version.get();
-                    inner.core.borrow().dominant()
-                })
+        *self.inner.dominant_signal.get_or_init(|| {
+            let inner = self.inner.clone();
+            Signal::derive_local(move || {
+                let _ = inner.scroll_top.get();
+                let _ = inner.layout_version.get();
+                inner.core.borrow().dominant()
             })
-            .clone()
+        })
     }
 
     /// Whether the container is scrolling.
     pub fn is_scrolling(&self) -> Signal<bool, LocalStorage> {
-        self.inner
-            .scrolling_signal
-            .get_or_init(|| {
-                let inner = self.inner.clone();
-                Signal::derive_local(move || inner.is_scrolling.get())
-            })
-            .clone()
+        *self.inner.scrolling_signal.get_or_init(|| {
+            let inner = self.inner.clone();
+            Signal::derive_local(move || inner.is_scrolling.get())
+        })
     }
 
     /// The scroll position signal (content coordinates).
@@ -510,6 +486,19 @@ impl Virtualizer {
     /// Snapshot offset of an item, padding included.
     pub fn offset_of(&self, index: usize) -> f64 {
         self.inner.core.borrow().offset_of(index)
+    }
+
+    /// Reactive main-axis offset of one item, padding included.
+    ///
+    /// Create this once per mounted child. It depends only on the layout
+    /// version, so it recomputes when geometry changes and never on plain
+    /// scrolling.
+    pub fn item_top(&self, index: usize) -> Signal<f64, LocalStorage> {
+        let inner = self.inner.clone();
+        Signal::derive_local(move || {
+            let _ = inner.layout_version.get();
+            inner.core.borrow().offset_of(index)
+        })
     }
 
     /// Scroll to an absolute content offset.
