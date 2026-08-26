@@ -13,7 +13,7 @@ use wasm_bindgen::JsCast;
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
 use crate::components::primitives::hooks::dom::by_id;
 use crate::components::primitives::hooks::use_viewport::viewport_size;
-use crate::components::primitives::hooks::use_window_event::add_window_capture_listener;
+use crate::components::primitives::hooks::use_window_event::{add_window_capture_listener, use_window_event};
 
 // Single public binding — do not also `use` PageAnchor above or rustc E0252s.
 pub use pdf_core::gloss::PageAnchor;
@@ -194,8 +194,7 @@ pub fn watch_page_anchor(
     });
 
     add_window_capture_listener("scroll", move |_| tick.update(|n| *n += 1));
-    let h = window_event_listener_untyped("resize", move |_| tick.update(|n| *n += 1));
-    on_cleanup(move || h.remove());
+    use_window_event("resize", move |_| tick.update(|n| *n += 1));
 
     AnchorWatch {
         screen,

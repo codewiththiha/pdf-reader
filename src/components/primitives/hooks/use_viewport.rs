@@ -28,9 +28,8 @@ pub fn viewport_size() -> (f64, f64) {
 /// context menus).
 pub fn use_viewport() -> RwSignal<(f64, f64)> {
     let size = RwSignal::new(viewport_size());
-    let handle = window_event_listener_untyped("resize", move |_| {
+    super::use_window_event::use_window_event("resize", move |_| {
         size.set(viewport_size());
     });
-    on_cleanup(move || handle.remove());
     size
 }

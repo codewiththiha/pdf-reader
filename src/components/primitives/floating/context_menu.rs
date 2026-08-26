@@ -17,6 +17,7 @@ use wasm_bindgen::JsCast;
 
 use super::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
 use super::types::{place_context_menu, Point};
+use crate::components::primitives::hooks::use_window_event::use_window_event;
 
 /// A right-click menu for a generic target payload.
 ///
@@ -71,8 +72,7 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
         }
         {
             let place = std::rc::Rc::clone(&place);
-            let h = window_event_listener_untyped("resize", move |_| place());
-            on_cleanup(move || h.remove());
+            use_window_event("resize", move |_| place());
         }
     });
 

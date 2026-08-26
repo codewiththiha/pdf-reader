@@ -21,6 +21,7 @@ use leptos::prelude::*;
 use super::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
 use super::position::{place_at_anchor, placement_options};
 use super::types::{node_within_any, PlacementSide, Size};
+use crate::components::primitives::hooks::use_window_event::use_window_event;
 
 #[component]
 pub fn Popover(
@@ -107,8 +108,7 @@ pub fn Popover(
         }
         place();
         request_animation_frame(place);
-        let h = window_event_listener_untyped("resize", move |_| place());
-        on_cleanup(move || h.remove());
+        use_window_event("resize", move |_| place());
     });
 
     // Report open→closed transitions (holds, pins, analytics).

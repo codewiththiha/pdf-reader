@@ -50,6 +50,7 @@ use crate::state::AppState;
 use crate::components::ai::anchor::host_id_for;
 use crate::components::app_shell::title_bar::TitleBarCtx;
 use crate::components::primitives::hooks::dom::{by_id, VIEWER_SLOT_ID};
+use crate::components::primitives::hooks::use_window_event::use_window_event;
 
 /// Fraction of the canvas width the label may cover.
 const MAX_CANVAS_OVERLAP: f64 = 0.25;
@@ -142,8 +143,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         _ = state.reader.document.title.get();
         _ = state.reader.document.path.get();
         measure();
-        let h = window_event_listener_untyped("resize", move |_| measure());
-        on_cleanup(move || h.remove());
+        use_window_event("resize", move |_| measure());
     });
 
     let shown = move || {
