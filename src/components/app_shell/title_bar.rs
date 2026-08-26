@@ -48,6 +48,10 @@ pub fn TitleBar(
     /// padding.
     band_inset: Signal<bool>,
     #[prop(into)] left: ViewFn,
+    /// Optional centered overlay (e.g. the document title). Absolute-positioned
+    /// over the row so left/right clusters keep their natural layout.
+    #[prop(optional, into)]
+    center: Option<ViewFn>,
     #[prop(into)] right: ViewFn,
     children: Children,
 ) -> impl IntoView {
@@ -91,7 +95,7 @@ pub fn TitleBar(
                     prop:inert=move || !visible.get()
                     on:mouseenter=move |_| show_bar()
                     on:mouseleave=move |_| hide_later_bar()
-                    class="toolbar-glass flex h-full items-center gap-2 pr-2 transition-opacity duration-200"
+                    class="toolbar-glass relative flex h-full items-center gap-2 pr-2 transition-opacity duration-200"
                     // 88px clears the lights (x:20 + ~54px) + a real gap.
                     class=("pl-[88px]", move || !sidebar_open())
                     class=("pl-3", sidebar_open)
@@ -99,6 +103,14 @@ pub fn TitleBar(
                     class=("pointer-events-none", move || !visible.get())
                 >
                     {left.run()}
+                    {center.map(|c| view! {
+                        <div
+                            class="absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center"
+                            data-tauri-drag-region="true"
+                        >
+                            {c.run()}
+                        </div>
+                    })}
                     <div class="ml-auto flex shrink-0 items-center gap-1">
                         {right.run()}
                         <PinButton pinned=pinned on_pin_change=on_pin_change />

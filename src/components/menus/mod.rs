@@ -2,3 +2,4 @@
 
 pub mod app_menu;
 pub mod appearance_menu;
+pub mod reader_menu;

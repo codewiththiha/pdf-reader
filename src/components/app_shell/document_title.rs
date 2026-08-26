@@ -117,3 +117,14 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
         </span>
     }
 }
+
+/// Centered document name for the reader title bar's center slot.
+#[component]
+pub fn CenteredDocTitle(state: AppState) -> impl IntoView {
+    let name = move || state.reader.document.display_name();
+    view! {
+        <span class="max-w-[46vw] truncate text-sm font-medium text-ink" title=name>
+            {name}
+        </span>
+    }
+}

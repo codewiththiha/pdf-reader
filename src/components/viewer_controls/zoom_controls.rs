@@ -40,7 +40,7 @@ pub(crate) fn apply_zoom(state: AppState, scale: f64) {
 /// gesture if there is one, else what is on screen. See `shortcuts::zoom_by`
 /// for why neither `scale` nor `display_scale` alone is correct — without this,
 /// clicking `+` twice quickly moves only one preset.
-fn step_base(state: AppState) -> f64 {
+pub(crate) fn step_base(state: AppState) -> f64 {
     state
         .reader
         .viewer
