@@ -16,8 +16,8 @@ use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
 use crate::components::ai::anchor::capture_selection;
-use crate::state::reader::SelectionDetail;
 use crate::state::AppState;
+use crate::state::reader::SelectionDetail;
 
 /// The JS protocol of the event detail: `null` (clear) or a full
 /// `SelectionDetail`. The engine already debounces and dedupes, so every
@@ -37,9 +37,8 @@ pub fn text_selection(state: AppState) {
             let detail = ev.detail();
             match parse_selection_detail(&detail) {
                 Some(selection) => {
-                    let page = state.reader.viewer.page.get_untracked();
                     let scale = state.reader.viewer.zoom.display.get_untracked();
-                    let anchor = capture_selection(page, scale);
+                    let anchor = capture_selection(scale);
                     state.reader.ai_selection.anchor.set(anchor);
                     state.reader.ai_selection.detail.set(Some(selection));
                     // A new selection supersedes any open explanation.

@@ -32,6 +32,20 @@ pub fn host_id_for(page: u32, single: bool) -> String {
     }
 }
 
+fn page_from_host_id(id: &str) -> Option<u32> {
+    if let Some(page) = id
+        .strip_prefix("sp-")
+        .and_then(|rest| rest.strip_suffix("-pg"))
+        .and_then(|n| n.parse::<u32>().ok())
+    {
+        return Some(page);
+    }
+    id.strip_prefix("cont-")
+        .and_then(|rest| rest.strip_suffix("-pg"))
+        .and_then(|n| n.parse::<u32>().ok())
+        .map(|index| index + 1)
+}
+
 /// Live viewport-space box for a page anchor. `None` when the scale is invalid
 /// or the host page is not mounted (virtualized away) — which by itself counts
 /// as "the anchor left the page".
@@ -51,7 +65,13 @@ pub fn screen_box(anchor: &PageAnchor, scale: f64, single: bool) -> Option<Gloss
 }
 
 /// Capture the current DOM selection as a page-space anchor.
-pub fn capture_selection(page: u32, scale: f64) -> Option<PageAnchor> {
+///
+/// The page number comes from the actual `.pdf-page` host under the selection,
+/// not from the reader's current-page signal. In the virtualized continuous
+/// reader those can temporarily diverge, and anchoring to the signal can point
+/// at an unmounted page host — which makes the floating Info pill vanish even
+/// though the selection itself is valid and visible.
+pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
     if scale <= 0.0 {
         return None;
     }
@@ -65,6 +85,7 @@ pub fn capture_selection(page: u32, scale: f64) -> Option<PageAnchor> {
         .parent_element()
         .or_else(|| node.dyn_into::<web_sys::Element>().ok())?;
     let host = el.closest(".pdf-page").ok().flatten()?;
+    let page = page_from_host_id(&host.id())?;
     let hr = host.get_bounding_client_rect();
     let rects = range.get_client_rects()?;
     let (mut l, mut t, mut r, mut b) = (
@@ -102,16 +123,11 @@ pub fn capture_selection(page: u32, scale: f64) -> Option<PageAnchor> {
     })
 }
 
-pub fn capture_selection_mark(
-    page: u32,
-    scale: f64,
-    word: String,
-    context: String,
-) -> Option<GlossMark> {
-    let a = capture_selection(page, scale)?;
+pub fn capture_selection_mark(scale: f64, word: String, context: String) -> Option<GlossMark> {
+    let a = capture_selection(scale)?;
     Some(GlossMark {
-        id: format!("g{page}-{}", js_sys::Date::now() as u64),
-        page,
+        id: format!("g{}-{}", a.page, js_sys::Date::now() as u64),
+        page: a.page,
         word,
         context,
         rect: a.rect,
@@ -185,5 +201,28 @@ pub fn watch_page_anchor(
         screen,
         exited,
         refresh,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_from_host_id;
+
+    #[test]
+    fn parses_continuous_host_ids_into_one_based_pages() {
+        assert_eq!(page_from_host_id("cont-0-pg"), Some(1));
+        assert_eq!(page_from_host_id("cont-11-pg"), Some(12));
+    }
+
+    #[test]
+    fn parses_single_page_host_ids() {
+        assert_eq!(page_from_host_id("sp-1-pg"), Some(1));
+        assert_eq!(page_from_host_id("sp-27-pg"), Some(27));
+    }
+
+    #[test]
+    fn rejects_unrelated_ids() {
+        assert_eq!(page_from_host_id("cont-wrap"), None);
+        assert_eq!(page_from_host_id("page-3"), None);
     }
 }

@@ -1,9 +1,7 @@
 use leptos::prelude::*;
-use pdf_core::gloss::{is_glossable, is_hintable, GlossMark};
+use pdf_core::gloss::{GlossMark, is_glossable, is_hintable};
 
-use crate::components::ai::anchor::{
-    capture_selection_mark, watch_page_anchor, MENU_EXIT_FRAC,
-};
+use crate::components::ai::anchor::{MENU_EXIT_FRAC, capture_selection_mark, watch_page_anchor};
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::state::AppState;
@@ -70,9 +68,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
 
     // Selection past the word-lookup cap: the pill renders muted inside the
     // hint band and not at all beyond it (see `visible` below).
-    let too_long = Signal::derive(move || {
-        detail.get().is_some_and(|s| !is_glossable(&s.text))
-    });
+    let too_long = Signal::derive(move || detail.get().is_some_and(|s| !is_glossable(&s.text)));
 
     let visible = Signal::derive(move || {
         detail.get().is_some_and(|s| is_hintable(&s.text))
@@ -112,7 +108,6 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                         let Some(sel) = detail.get_untracked() else {
                             return;
                         };
-                        let page = state.reader.viewer.page.get_untracked();
                         let scale = state.reader.viewer.zoom.display.get_untracked();
                         // Prefer the page-space anchor captured with the
                         // selection; fall back to a live DOM capture.
@@ -129,12 +124,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                                 rect: pa.rect,
                             })
                             .or_else(|| {
-                                capture_selection_mark(
-                                    page,
-                                    scale,
-                                    sel.text.clone(),
-                                    sel.context.clone(),
-                                )
+                                capture_selection_mark(scale, sel.text.clone(), sel.context.clone())
                             });
                         if let Some(m) = mark {
                             // Self-contained open: bumps open_req with the
