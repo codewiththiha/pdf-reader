@@ -174,11 +174,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
                 }
             >
                 <span class="block transition-opacity duration-200" class=("opacity-0", move || !shown())>
-                    {move || pdf_core::filename::display_name(
-                        state.reader.document.title.get().as_deref(),
-                        state.reader.document.path.get().as_deref(),
-                    )
-                    .unwrap_or_default()}
+                    {move || state.reader.document.display_name()}
                 </span>
             </div>
         </Portal>

@@ -8,9 +8,8 @@ use leptos::prelude::*;
 use pdf_engine::types::DocStatus;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::state::library::CoverImage;
-use crate::state::ReaderState;
+use crate::state::{NO_DOCUMENT, ReaderState};
 
-const NO_DOCUMENT: &str = "No document";
 
 #[component]
 pub(crate) fn BookInfo(
@@ -49,11 +48,7 @@ pub(crate) fn BookInfo(
                         class="truncate text-sm font-semibold text-ink"
                         data-tauri-drag-region="true"
                     >
-                        {move || pdf_core::filename::display_name(
-                            reader.document.title.get().as_deref(),
-                            reader.document.path.get().as_deref(),
-                        )
-                        .unwrap_or_else(|| NO_DOCUMENT.to_string())}
+                        {move || reader.document.display_name()}
                     </p>
                     <p class="truncate text-xs text-muted">
                         {move || reader.document.author.get().unwrap_or_default()}

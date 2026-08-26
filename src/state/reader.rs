@@ -62,11 +62,29 @@ impl DocumentState {
     pub fn page1_aspect_untracked(&self) -> f64 {
         page_aspect(self.page1_size.get_untracked())
     }
+
+    /// The document's human-facing name (tracked read: subscribes the
+    /// caller to title and path): its usable title, else the file stem,
+    /// else "No document". The three surfaces that show the name — the
+    /// toolbar title, the sidebar's document card, the floating label —
+    /// used to each hand-roll this with three different fallbacks; the
+    /// policy lives here now.
+    pub fn display_name(&self) -> String {
+        pdf_core::filename::display_name(
+            self.title.get().as_deref(),
+            self.path.get().as_deref(),
+        )
+        .unwrap_or_else(|| NO_DOCUMENT.to_string())
+    }
 }
 
 /// Aspect used while page 1 is unmeasured or degenerate: a 3:4 portrait,
 /// the default every fixed-geometry surface historically fell back to.
 pub const DEFAULT_PAGE_ASPECT: f64 = 0.75;
+
+/// Name shown when a document has neither a usable title nor a path (the
+/// reader shell with nothing open).
+pub const NO_DOCUMENT: &str = "No document";
 
 /// Height-over-width aspect of a page size, falling back to
 /// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not

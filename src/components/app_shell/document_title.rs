@@ -11,7 +11,6 @@ use crate::components::primitives::hooks::dom::{
 use crate::components::primitives::hooks::use_resize_observer::observe_elements;
 use crate::components::sidebar::shell::SIDEBAR_ASIDE_SELECTOR;
 
-use pdf_core::filename::display_name;
 use crate::state::AppState;
 
 /// Gap after the leading controls (`gap-1`).
@@ -97,13 +96,7 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
         remeasure();
     });
 
-    let name = move || {
-        display_name(
-            state.reader.document.title.get().as_deref(),
-            state.reader.document.path.get().as_deref(),
-        )
-        .unwrap_or_else(|| "No document".to_string())
-    };
+    let name = move || state.reader.document.display_name();
     let full = move || name();
     let hidden = move || avail.get().is_some_and(|w| w < TITLE_MIN_LABEL_W);
 
