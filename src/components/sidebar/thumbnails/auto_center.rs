@@ -72,7 +72,7 @@ impl AutoCenter {
                         }
                         let vh = v.viewport().get_untracked().main;
                         let page = state.viewer.page.get_untracked();
-                        let Some(target) = center_target(&v, page, aspect(state), vh) else {
+                        let Some(target) = center_target(&v, page, state.document.page1_aspect(), vh) else {
                             return;
                         };
                         reveal_drive.set(f64::NEG_INFINITY);
@@ -125,14 +125,14 @@ impl AutoCenter {
                     if vh <= 1.0 {
                         return;
                     }
-                    if let Some(target) = center_target(&v, pg, aspect_untracked(st), vh) {
+                    if let Some(target) = center_target(&v, pg, st.document.page1_aspect_untracked(), vh) {
                         v.scroll_to_offset(target, ScrollMode::Instant);
                     }
                 });
                 return;
             }
 
-            let Some(target) = center_target(&auto.virtualizer, page, aspect(state), vh) else {
+            let Some(target) = center_target(&auto.virtualizer, page, state.document.page1_aspect(), vh) else {
                 return;
             };
             let cur = auto.virtualizer.scroll_offset().get_untracked();
@@ -159,7 +159,7 @@ impl AutoCenter {
             let step_drive = auto.last_user_drive.clone();
             let step_timer = auto.glide_timer;
             let step_page = page;
-            let step_aspect = aspect(state);
+            let step_aspect = state.document.page1_aspect();
             let step: Rc<dyn Fn()> = Rc::new(move || {
                 let now = js_sys::Date::now();
                 let elapsed = now - step_drive.get();
@@ -229,36 +229,4 @@ impl AutoCenter {
             step_slot.set_value(None);
         });
     }
-}
-
-fn aspect(state: ReaderState) -> f64 {
-    state
-        .document
-        .page1_size
-        .get()
-        .map(|size| {
-            if size.width > 0.0 {
-                size.height / size.width
-            } else {
-                0.75
-            }
-        })
-        .unwrap_or(0.75)
-}
-
-/// Page-1 aspect ratio driving the fixed row height, read UNTRACKED for use
-/// inside a rAF/scroll callback that must not subscribe to geometry.
-fn aspect_untracked(state: ReaderState) -> f64 {
-    state
-        .document
-        .page1_size
-        .get_untracked()
-        .map(|size| {
-            if size.width > 0.0 {
-                size.height / size.width
-            } else {
-                0.75
-            }
-        })
-        .unwrap_or(0.75)
 }

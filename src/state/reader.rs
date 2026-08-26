@@ -2,7 +2,7 @@
 //! search state and the AI text-selection state. Pure UI chrome (sidebar,
 //! toast) lives in `state/ui` + `state/app`; pure domain logic in `pdf-core`.
 
-use leptos::prelude::{Memo, RwSignal, Set};
+use leptos::prelude::{Get, GetUntracked, Memo, RwSignal, Set};
 use serde::Deserialize;
 
 use pdf_core::appearance::TextureMode;
@@ -46,6 +46,36 @@ impl DocumentState {
         self.outline.set(Vec::new());
         self.page1_size.set(None);
         self.metrics.reset();
+    }
+
+    /// Height-over-width aspect of page 1 (tracked read: subscribes the
+    /// caller to `page1_size`). Every fixed-geometry surface that sizes
+    /// itself against the first sheet — the thumbnail grid's row height,
+    /// the auto-center target — goes through here, so the fallback policy
+    /// lives in exactly one place.
+    pub fn page1_aspect(&self) -> f64 {
+        page_aspect(self.page1_size.get())
+    }
+
+    /// Same, read untracked — for rAF/scroll callbacks that must not
+    /// subscribe to geometry.
+    pub fn page1_aspect_untracked(&self) -> f64 {
+        page_aspect(self.page1_size.get_untracked())
+    }
+}
+
+/// Aspect used while page 1 is unmeasured or degenerate: a 3:4 portrait,
+/// the default every fixed-geometry surface historically fell back to.
+pub const DEFAULT_PAGE_ASPECT: f64 = 0.75;
+
+/// Height-over-width aspect of a page size, falling back to
+/// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not
+/// positive (a zero-width sheet has no meaningful aspect, and dividing by
+/// it would poison every height derived from it).
+pub fn page_aspect(size: Option<PageSize>) -> f64 {
+    match size {
+        Some(s) if s.width > 0.0 => s.height / s.width,
+        _ => DEFAULT_PAGE_ASPECT,
     }
 }
 
@@ -305,3 +335,23 @@ pub struct ReaderState {
     pub gloss: GlossState,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_aspect_passes_through_measured_sizes() {
+        // US Letter at scale 1: 792/612 ≈ 1.294.
+        assert!((page_aspect(Some(PageSize { width: 612.0, height: 792.0 })) - 792.0 / 612.0).abs() < 1e-12);
+        // A landscape sheet inverts below 1.
+        assert!(page_aspect(Some(PageSize { width: 1000.0, height: 500.0 })) < 1.0);
+    }
+
+    #[test]
+    fn page_aspect_falls_back_to_portrait_when_unmeasured_or_degenerate() {
+        assert_eq!(page_aspect(None), DEFAULT_PAGE_ASPECT);
+        assert_eq!(page_aspect(Some(PageSize { width: 0.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
+        // A negative width is just as degenerate: never divide by it.
+        assert_eq!(page_aspect(Some(PageSize { width: -612.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
+    }
+}

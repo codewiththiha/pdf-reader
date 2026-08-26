@@ -42,20 +42,8 @@ pub fn ThumbnailsPanel(
     let count = Signal::derive(move || num_pages.get() as usize);
     let layout_epoch = RwSignal::new(0u64);
     let estimate = {
-        let page1_size = state.document.page1_size;
-        move |_index: usize| {
-            let aspect = page1_size
-                .get_untracked()
-                .map(|size| {
-                    if size.width > 0.0 {
-                        size.height / size.width
-                    } else {
-                        0.75
-                    }
-                })
-                .unwrap_or(0.75);
-            row_height(aspect)
-        }
+        let document = state.document;
+        move |_index: usize| row_height(document.page1_aspect_untracked())
     };
     let v = use_virtualizer(
         VirtualizerOptions::grid(count, estimate, GridSpec::fixed(2, GAP_CROSS))

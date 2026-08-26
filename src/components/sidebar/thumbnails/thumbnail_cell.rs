@@ -79,16 +79,9 @@ pub fn ThumbCell(
     let is_current = move || state.viewer.page.get() == page;
     let cid = format!("thumb-{page}");
 
-    // Page-1 aspect drives the fixed cell geometry; falls back to a 3:4
-    // portrait default if page1_size isn't populated yet.
-    let aspect = move || {
-        state
-            .document
-            .page1_size
-            .get()
-            .map(|s| if s.width > 0.0 { s.height / s.width } else { 0.75 })
-            .unwrap_or(0.75)
-    };
+    // Page-1 aspect drives the fixed cell geometry; the shared helper falls
+    // back to a 3:4 portrait default if page1_size isn't populated yet.
+    let aspect = move || state.document.page1_aspect();
     let cell_h = move || CELL_W * aspect();
 
     // Release the engine binding when this cell unmounts (scrolled out of the
