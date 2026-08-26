@@ -79,14 +79,14 @@ pub fn FloatingCard(
     });
 
     let scroll_class = scroll_class.unwrap_or("");
-    // Static class, parked in a signal so the render closure (an `Fn`) can
-    // read it without moving a non-Copy String out of its environment.
+    // Static for the component's lifetime: handed to the view as a plain
+    // attribute (no reactive closure, no signal) so nothing suggests it
+    // ever changes.
     let surface_class = class.unwrap_or_default();
-    let class_sig = RwSignal::new(surface_class);
 
     view! {
         <div
-            class=move || class_sig.get()
+            class=surface_class
             data-phase=move || data_phase.map(|p| p.get()).unwrap_or("")
             role=move || role.map(|r| r.get()).unwrap_or("")
             aria-label=move || aria_label.map(|l| l.get()).unwrap_or_default()

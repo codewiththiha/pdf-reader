@@ -149,23 +149,30 @@ pub fn Popover(
         },
     );
 
-    // Static, but parked in a signal so the Show children closure (an `Fn`)
-    // can read it without moving a non-Copy `String`.
-    let panel_class = if class.is_empty() {
-        format!("menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg", super::types::z::POPOVER)
-    } else {
-        format!(
-            "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg {class}",
-            super::types::z::POPOVER
-        )
-    };
-    let class_sig = RwSignal::new(panel_class);
+    // Static for the popover's lifetime, parked in a StoredValue — a Copy
+    // handle to a plain scoped cell. `Show`'s children closure must be an
+    // `Fn` and the class closure is moved into the element by value, so the
+    // captured handle has to be Copy; a signal would compile too but would
+    // pretend the class is reactive when only `style` actually is
+    // (re-written by `place`).
+    let panel_class: StoredValue<String, LocalStorage> =
+        StoredValue::new_local(if class.is_empty() {
+            format!(
+                "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg",
+                super::types::z::POPOVER
+            )
+        } else {
+            format!(
+                "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg {class}",
+                super::types::z::POPOVER
+            )
+        });
 
     view! {
         <Show when=move || open.get()>
             <div
                 node_ref=panel_ref
-                class=move || class_sig.get()
+                class=move || panel_class.with_value(String::clone)
                 style=move || style_sig.get()
             >
                 {children()}

@@ -104,13 +104,17 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
         Some(extra) => format!("{base_class} {extra}"),
         None => base_class,
     };
-    // Static class, parked in a signal so the Show closure (an `Fn`) can read
-    // it without moving a non-Copy String out of its environment.
-    let class_sig = RwSignal::new(panel_class);
+    // Static for the menu's lifetime, parked in a StoredValue — a Copy
+    // handle to a plain scoped cell. `Show`'s children closure must be an
+    // `Fn` and the class closure is moved into the element by value, so the
+    // captured handle has to be Copy; a signal would compile too but would
+    // pretend the class is reactive when only `style` actually is
+    // (re-written by the placement effect).
+    let panel_class: StoredValue<String, LocalStorage> = StoredValue::new_local(panel_class);
 
     view! {
         <Show when=move || visible.get()>
-            <div node_ref=panel_ref class=move || class_sig.get() style=move || style_sig.get() role="menu">
+            <div node_ref=panel_ref class=move || panel_class.with_value(String::clone) style=move || style_sig.get() role="menu">
                 {children()}
             </div>
         </Show>

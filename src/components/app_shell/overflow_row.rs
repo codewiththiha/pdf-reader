@@ -5,21 +5,19 @@ use leptos::prelude::*;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::menu_item::MenuItem;
 
-/// `close_on_click` (default true) dismisses the "…" popover after the
-/// action. Set it false for controls that should stay available (zoom ±).
+/// A toolbar action collapsed into the "…" popover: run the action, then
+/// dismiss the popover. Controls that need to stay open after a click
+/// simply render their own row instead of reusing this one.
 #[component]
 pub fn OverflowRow(
     icon: IconName,
     label: &'static str,
     on_click: impl Fn() + 'static,
     done: Callback<()>,
-    #[prop(default = true)] close_on_click: bool,
 ) -> impl IntoView {
     let action = move || {
         on_click();
-        if close_on_click {
-            done.run(());
-        }
+        done.run(());
     };
 
     view! {

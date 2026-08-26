@@ -28,17 +28,22 @@ pub fn ActionBar(
         Some(c) => format!("{base} {c}"),
         None => base,
     };
-    // Static class + label, parked in signals so the Show closure (an `Fn`)
-    // can read them without moving non-Copy Strings out of its environment.
-    let class_sig = RwSignal::new(pill_class);
-    let aria_label_sig = RwSignal::new(aria_label);
+    // Static class + label for the bar's lifetime, parked in StoredValues —
+    // Copy handles to plain scoped cells. `Show`'s children closure must be
+    // an `Fn` and the attribute closures are moved into the element by
+    // value, so the captured handles have to be Copy; signals would compile
+    // too but would pretend static strings are reactive. Only visibility is
+    // actually reactive here.
+    let pill_class: StoredValue<String, LocalStorage> = StoredValue::new_local(pill_class);
+    let aria_label: StoredValue<Option<String>, LocalStorage> =
+        StoredValue::new_local(aria_label);
 
     view! {
         <Show when=move || visible.get()>
             <div
-                class=move || class_sig.get()
+                class=move || pill_class.with_value(String::clone)
                 role=role
-                aria-label=move || aria_label_sig.get()
+                aria-label=move || aria_label.with_value(Clone::clone)
             >
                 {children()}
             </div>
