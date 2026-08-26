@@ -9,7 +9,7 @@
 //! - [`Strip::window`] — which items should stay mounted right now?
 //! - [`Strip::dominant`] — which item is the reader actually looking at?
 //!
-//! The crate is pure arithmetic: no DOM, no framework, `no_std` by default.
+//! The crate is pure arithmetic: no DOM, no framework, `no_std`-compatible (`std` enabled by default).
 //! Everything is `f64` in whatever unit your app already uses.
 //!
 //! # Layout layer
@@ -90,21 +90,17 @@
 extern crate alloc;
 
 pub mod anchor;
-#[cfg(feature = "advanced-trees")]
-mod chunked;
-#[cfg(feature = "advanced-trees")]
-mod fenwick;
+pub mod backend;
 mod layout;
-mod strip;
 mod units;
 mod window;
 
 pub use anchor::{AnchorPolicy, correct, pin_at, rescale_anchor};
+pub use backend::{Strip, StripBackend, UniformStrip};
 #[cfg(feature = "advanced-trees")]
-pub use chunked::ChunkedStrip;
+pub use backend::ChunkedStrip;
 #[cfg(feature = "advanced-trees")]
-pub use fenwick::FenwickStrip;
+pub use backend::FenwickStrip;
 pub use layout::{GridColumns, GridLayout, GridSpec, Layout, LayoutKind, ListLayout};
-pub use strip::Strip;
 pub use units::{SUBPIXEL_BITS, SUBPIXEL_FACTOR, from_sub, to_sub};
 pub use window::{Align, Budget, Overscan, Viewport, Window};

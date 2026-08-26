@@ -643,6 +643,72 @@ impl Strip {
     }
 }
 
+impl super::StripBackend for Strip {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn gap_sub(&self) -> i64 {
+        self.gap
+    }
+
+    fn offset_sub(&self, index: usize) -> i64 {
+        match self.starts.get(index) {
+            Some(&v) => v,
+            None => self.total_sub(),
+        }
+    }
+
+    fn size_sub(&self, index: usize) -> i64 {
+        let len = self.len();
+        if index >= len {
+            return 0;
+        }
+        let end = if index + 1 == len {
+            self.starts[len]
+        } else {
+            self.starts[index + 1].saturating_sub(self.gap)
+        };
+        end.saturating_sub(self.starts[index]).max(0)
+    }
+
+    fn total_sub(&self) -> i64 {
+        self.starts.last().copied().unwrap_or(0)
+    }
+
+    fn index_at_sub(&self, p: i64) -> usize {
+        let len = self.len();
+        if len == 0 || p <= 0 {
+            return 0;
+        }
+        let idx = self.starts[..len]
+            .partition_point(|&s| s <= p)
+            .saturating_sub(1);
+        if self.starts[idx].saturating_add(self.size_sub(idx)) <= p && idx + 1 < len {
+            idx + 1
+        } else {
+            idx
+        }
+    }
+
+    fn set_size_sub(&mut self, index: usize, new_sub: i64) -> i64 {
+        let len = self.len();
+        if index >= len {
+            return 0;
+        }
+        let old_sub = self.size_sub(index);
+        if new_sub == old_sub {
+            return 0;
+        }
+        let delta = new_sub.saturating_sub(old_sub);
+        for i in (index + 1)..=len {
+            self.starts[i] = self.starts[i].saturating_add(delta);
+        }
+        delta
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

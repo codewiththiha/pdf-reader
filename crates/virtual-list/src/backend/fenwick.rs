@@ -340,3 +340,74 @@ fn highest_power_of_two_le(x: i64) -> i64 {
     }
     p
 }
+
+impl super::StripBackend for FenwickStrip {
+    #[inline]
+    fn len(&self) -> usize {
+        self.n
+    }
+
+    fn gap_sub(&self) -> i64 {
+        self.gap
+    }
+
+    fn offset_sub(&self, index: usize) -> i64 {
+        if index == 0 {
+            return 0;
+        }
+        if index >= self.n {
+            return self.total;
+        }
+        prefix_sum(&self.tree, index)
+    }
+
+    fn size_sub(&self, index: usize) -> i64 {
+        if index >= self.n {
+            return 0;
+        }
+        let start_sub = prefix_sum(&self.tree, index);
+        let end_plus_gap_sub = if index + 1 > self.n {
+            self.total.saturating_add(self.gap)
+        } else {
+            prefix_sum(&self.tree, index + 1)
+        };
+        let size_plus_gap = end_plus_gap_sub.saturating_sub(start_sub);
+        size_plus_gap.saturating_sub(self.gap).max(0)
+    }
+
+    fn total_sub(&self) -> i64 {
+        self.total
+    }
+
+    fn index_at_sub(&self, p: i64) -> usize {
+        if self.n == 0 || p <= 0 {
+            return 0;
+        }
+        let idx = self.lift(p).min(self.n.saturating_sub(1));
+        let start_sub = prefix_sum(&self.tree, idx);
+        let end_sub = start_sub.saturating_add(self.size_sub(idx));
+        if p >= end_sub && idx + 1 < self.n {
+            idx + 1
+        } else {
+            idx
+        }
+    }
+
+    fn set_size_sub(&mut self, index: usize, new_sub: i64) -> i64 {
+        if index >= self.n {
+            return 0;
+        }
+        let old_sub = self.size_sub(index);
+        if new_sub == old_sub {
+            return 0;
+        }
+        let delta = new_sub.saturating_sub(old_sub);
+        let mut i = (index + 1) as i64;
+        while (i as usize) <= self.n {
+            self.tree[i as usize] = self.tree[i as usize].saturating_add(delta);
+            i += i & (-i);
+        }
+        self.total = self.total.saturating_add(delta);
+        delta
+    }
+}

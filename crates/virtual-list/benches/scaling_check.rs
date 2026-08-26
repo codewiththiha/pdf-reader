@@ -1,8 +1,8 @@
 //! Scaling check: compare the three virtual-list backends for offset lookups,
 //! window queries, and dynamic size updates.
 //!
-//! Run with: `cargo bench -p virtual-list` (or `cargo run --bench scaling_check
-//! -p virtual-list --release`).
+//! Run with: `cargo bench -p virtual-list --features advanced-trees` (or `cargo run --bench scaling_check
+//! -p virtual-list --release --features advanced-trees`).
 use std::hint::black_box;
 use std::time::Instant;
 use virtual_list::{Budget, ChunkedStrip, FenwickStrip, Strip};

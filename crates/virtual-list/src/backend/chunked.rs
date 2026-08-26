@@ -390,3 +390,94 @@ impl ChunkedStrip {
 }
 
 // `usize::isqrt` is stable since Rust 1.84 and used directly above.
+
+impl super::StripBackend for ChunkedStrip {
+    #[inline]
+    fn len(&self) -> usize {
+        self.n
+    }
+
+    fn gap_sub(&self) -> i64 {
+        self.gap
+    }
+
+    fn offset_sub(&self, index: usize) -> i64 {
+        if index == 0 {
+            return 0;
+        }
+        if index >= self.n {
+            // Total extent including the cumulative delta for the chunk owning `n`.
+            let last_chunk = self.chunk_of(self.n);
+            return self.starts[self.n].saturating_add(self.chunk_delta[last_chunk]);
+        }
+        let chunk = self.chunk_of(index);
+        self.starts[index].saturating_add(self.chunk_delta[chunk])
+    }
+
+    fn size_sub(&self, index: usize) -> i64 {
+        if index >= self.n {
+            return 0;
+        }
+        let start_sub = self.offset_sub(index);
+        let end_sub = if index + 1 == self.n {
+            let last_chunk = self.chunk_of(self.n);
+            self.starts[self.n].saturating_add(self.chunk_delta[last_chunk]).saturating_sub(self.gap)
+        } else {
+            self.offset_sub(index + 1).saturating_sub(self.gap)
+        };
+        end_sub.saturating_sub(start_sub).max(0)
+    }
+
+    fn total_sub(&self) -> i64 {
+        if self.n == 0 {
+            return 0;
+        }
+        let last_chunk = self.chunk_of(self.n);
+        self.starts[self.n].saturating_add(self.chunk_delta[last_chunk])
+    }
+
+    fn index_at_sub(&self, p: i64) -> usize {
+        if self.n == 0 || p <= 0 {
+            return 0;
+        }
+        // Binary search over items using sub-pixel offset directly.
+        let mut lo = 0usize;
+        let mut hi = self.n;
+        while lo + 1 < hi {
+            let mid = (lo + hi) / 2;
+            let start_sub = self.offset_sub(mid);
+            if start_sub <= p {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let idx = lo;
+        let end_sub = self.offset_sub(idx).saturating_add(self.size_sub(idx));
+        if p >= end_sub && idx + 1 < self.n {
+            idx + 1
+        } else {
+            idx
+        }
+    }
+
+    fn set_size_sub(&mut self, index: usize, new_sub: i64) -> i64 {
+        if index >= self.n {
+            return 0;
+        }
+        let old_sub = self.size_sub(index);
+        if new_sub == old_sub {
+            return 0;
+        }
+        let delta = new_sub.saturating_sub(old_sub);
+        let chunk = self.chunk_of(index);
+        let chunk_end = ((chunk + 1) * self.chunk_size).min(self.starts.len());
+        for j in (index + 1)..chunk_end {
+            self.starts[j] = self.starts[j].saturating_add(delta);
+        }
+        for c in (chunk + 1)..self.chunk_delta.len() {
+            self.chunk_delta[c] = self.chunk_delta[c].saturating_add(delta);
+        }
+        delta
+    }
+}

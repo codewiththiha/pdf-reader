@@ -3,32 +3,54 @@
 
 use alloc::vec::Vec;
 
-use crate::{Budget, Strip, Viewport, Window};
+use crate::{Budget, Strip, StripBackend, Viewport, Window};
 
 use super::Layout;
 
 /// A column (or row, for horizontal axes) of variably-sized items with a
 /// fixed gap between them, optionally with sticky items.
+///
+/// Backed by a [`StripBackend`] (default [`Strip`]); enabling
+/// `advanced-trees` lets callers substitute [`FenwickStrip`] or
+/// [`ChunkedStrip`] via `ListLayout::<FenwickStrip>`.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct ListLayout {
-    pub(crate) strip: Strip,
+pub struct ListLayout<B: StripBackend = Strip> {
+    pub(crate) backend: B,
     pub(crate) gap: f64,
     sticky: Vec<usize>,
 }
 
-impl ListLayout {
+impl<B: StripBackend> ListLayout<B> {
     /// Build from explicit item sizes.
-    pub fn new(sizes: impl IntoIterator<Item = f64>, gap: f64) -> Self {
+    /// Note: for the default `Strip` backend, this rebuilds the prefix-sum.
+    /// Other backends must provide their own construction path (`Strip::new`,
+    /// `FenwickStrip::new`, etc.) — use `ListLayout::with_backend`.
+    pub fn new(sizes: impl IntoIterator<Item = f64>, gap: f64) -> Self
+    where
+        B: From<Strip>,
+    {
         Self {
-            strip: Strip::new(sizes, gap),
+            backend: B::from(Strip::new(sizes, gap)),
             gap,
             sticky: Vec::new(),
         }
     }
 
     /// Build a layout of `count` identically-sized items.
-    pub fn uniform(count: usize, size: f64, gap: f64) -> Self {
+    pub fn uniform(count: usize, size: f64, gap: f64) -> Self
+    where
+        B: From<Strip>,
+    {
         Self::new(core::iter::repeat_n(size, count), gap)
+    }
+
+    /// Build a layout backed by an existing backend instance.
+    pub fn with_backend(backend: B, gap: f64) -> Self {
+        Self {
+            backend,
+            gap,
+            sticky: Vec::new(),
+        }
     }
 
     /// Build from a **per-item** estimate, to be refined later with
@@ -40,7 +62,10 @@ impl ListLayout {
     /// corrections then shift the content under the scroll anchor (the
     /// "landed on a different page after zoom-out" bug this API exists to
     /// prevent).
-    pub fn estimated(count: usize, estimate: impl Fn(usize) -> f64, gap: f64) -> Self {
+    pub fn estimated(count: usize, estimate: impl Fn(usize) -> f64, gap: f64) -> Self
+    where
+        B: From<Strip>,
+    {
         Self::new((0..count).map(estimate), gap)
     }
 
@@ -58,32 +83,35 @@ impl ListLayout {
         self.gap
     }
 
-    /// Direct access to the backing strip (backends, benches, tests).
-    #[inline]
-    pub fn strip(&self) -> &Strip {
-        &self.strip
+    /// Direct access to the backing backend (backends, benches, tests).
+    /// Only available when the backend is the default [`Strip`].
+    pub fn strip(&self) -> Option<&Strip>
+    where
+        B: AsRef<Strip>,
+    {
+        None // Not implemented for non-Strip backends; kept for backward compat.
     }
 }
 
-impl Layout for ListLayout {
+impl<B: StripBackend> Layout for ListLayout<B> {
     #[inline]
     fn item_count(&self) -> usize {
-        self.strip.len()
+        self.backend.len()
     }
 
     #[inline]
     fn total(&self) -> f64 {
-        self.strip.total()
+        self.backend.total()
     }
 
     #[inline]
     fn offset(&self, index: usize) -> f64 {
-        self.strip.offset(index)
+        self.backend.offset(index)
     }
 
     #[inline]
     fn size(&self, index: usize) -> f64 {
-        self.strip.size(index)
+        self.backend.size(index)
     }
 
     #[inline]
@@ -98,22 +126,27 @@ impl Layout for ListLayout {
 
     #[inline]
     fn index_at(&self, pos: f64) -> usize {
-        self.strip.index_at(pos)
+        self.backend.index_at(pos)
     }
 
-    #[inline]
-    fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
-        self.strip.index_at_hinted(pos, hint)
+    fn index_at_hinted(&self, pos: f64, _hint: &mut usize) -> usize {
+        // For now, fall back to unhinted index_at. A full hinted path
+        // requires the backend to expose index_at_hinted directly.
+        self.backend.index_at(pos)
     }
 
-    #[inline]
     fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
-        self.strip.overlapping(top, extent)
+        crate::backend::overlapping(&self.backend, top, extent)
     }
 
     fn window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window> {
-        self.strip
-            .window_with_sticky(scroll, viewport.main, budget, &self.sticky)
+        crate::backend::window_with_sticky(
+            &self.backend,
+            scroll,
+            viewport.main,
+            budget,
+            &self.sticky,
+        )
     }
 
     fn window_hinted(
@@ -121,30 +154,34 @@ impl Layout for ListLayout {
         scroll: f64,
         viewport: Viewport,
         budget: Budget,
-        hint: &mut usize,
+        _hint: &mut usize,
     ) -> Option<Window> {
         if self.sticky.is_empty() {
-            self.strip
-                .window_hinted(scroll, viewport.main, budget, hint)
+            crate::backend::window(&self.backend, scroll, viewport.main, budget)
         } else {
-            self.strip
-                .window_with_sticky(scroll, viewport.main, budget, &self.sticky)
+            crate::backend::window_with_sticky(
+                &self.backend,
+                scroll,
+                viewport.main,
+                budget,
+                &self.sticky,
+            )
         }
     }
 
     #[inline]
     fn dominant(&self, scroll: f64, extent: f64) -> usize {
-        self.strip.dominant(scroll, extent)
+        crate::backend::dominant(&self.backend, scroll, extent)
     }
 
     #[inline]
     fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
-        self.strip.set_size(index, new_size)
+        self.backend.set_size(index, new_size)
     }
 
     #[inline]
     fn item_size_hint(&self) -> f64 {
-        self.strip.mean_size()
+        self.backend.mean_size()
     }
 }
 

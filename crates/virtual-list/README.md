@@ -9,7 +9,7 @@ At the core sits `Strip`, a prefix-sum layout engine for one scrolling column of
 - **Which items should stay mounted right now?** — `window`
 - **Which item is the reader actually looking at?** — `dominant`
 
-It is pure arithmetic: no DOM, no framework, `no_std` by default.
+It is pure arithmetic: no DOM, no framework, `no_std`-compatible (`std` enabled by default).
 
 ## v0.2 layout layer
 
