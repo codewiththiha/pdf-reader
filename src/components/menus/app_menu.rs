@@ -72,7 +72,7 @@ pub fn MoreMenu() -> impl IntoView {
                 title="More"
                 on_click=move || open.set(!open.get())
             />
-            <MenuPopover open=open anchor=root_ref width=256 hold_titlebar=false class="p-1".to_string()>
+            <MenuPopover open=open anchor=root_ref width=256 hold_titlebar=false coordinate_space="toolbar-row" class="p-1".to_string()>
                 <MenuItem
                     icon=IconName::Fullscreen
                     label="Fullscreen"

@@ -70,6 +70,7 @@ pub fn AppearanceMenu(
                 anchor=root_ref
                 fallback_anchor=fallback_anchor
                 width=288
+                coordinate_space="toolbar-row"
                 class="max-h-[min(70vh,32rem)] overflow-y-auto p-3".to_string()
             >
                 <SectionLabel text="Presets" />

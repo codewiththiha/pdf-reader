@@ -172,7 +172,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                 <span>{percent}</span>
                 <Icon name=IconName::ChevronDown size=12 class="text-muted" />
             </Button>
-            <MenuPopover open=open anchor=root_ref width=176 class="p-1".to_string()>
+            <MenuPopover open=open anchor=root_ref width=176 coordinate_space="toolbar-row" class="p-1".to_string()>
                 <MenuItem
                     label="Fit width"
                     selected=Signal::derive(move || state.reader.viewer.fit.get() == FitMode::Width)
