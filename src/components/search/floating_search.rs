@@ -8,16 +8,15 @@ use std::time::Duration;
 
 use leptos::html;
 use leptos::prelude::*;
-
 use leptos::task::spawn_local;
+use virtual_list_leptos::Virtualizer;
 
-use crate::components::primitives::icon::{Icon, IconName};
 use super::result_list::ResultList;
-use crate::state::ReaderState;
+use crate::components::primitives::icon::{Icon, IconName};
 use crate::effects::reader::search::{
     activate_match, clear_search, dismiss_search, run_search, search_navigate,
 };
-
+use crate::state::ReaderState;
 
 /// How long typing must pause before the query runs.
 ///
@@ -31,7 +30,10 @@ const SEARCH_DEBOUNCE_MS: u64 = 180;
 const ICON_BTN: &str = "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-transparent text-ink transition-colors hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 #[component]
-pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
+pub fn FloatingSearch(
+    state: ReaderState,
+    virtualizer: StoredValue<Virtualizer, LocalStorage>,
+) -> impl IntoView {
     let (last_query, set_last_query) = signal(String::new());
     let (show_results, set_show_results) = signal(false);
     // Monotonic id for the newest search; guards against out-of-order
@@ -151,13 +153,14 @@ pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
         let fresh =
             last_query.get_untracked() != q || state.search.matches.with_untracked(Vec::is_empty);
         if !fresh {
-            search_navigate(state, dir);
+            virtualizer.with_value(|v| search_navigate(state, v, dir));
             return;
         }
         run_now(Some(Box::new(move || {
             let len = state.search.matches.with_untracked(Vec::len);
             if len > 0 {
-                activate_match(state, if dir < 0 { len - 1 } else { 0 });
+                virtualizer
+                    .with_value(|v| activate_match(state, v, if dir < 0 { len - 1 } else { 0 }));
             }
         })));
     };
@@ -269,7 +272,7 @@ pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
                         on:click=move |_| set_show_results.set(false)
                     >
                         <div class="max-h-72 overflow-y-auto">
-                            <ResultList state=state />
+                            <ResultList state=state virtualizer=virtualizer />
                         </div>
                     </div>
                 </Show>
@@ -277,4 +280,3 @@ pub fn FloatingSearch(state: ReaderState) -> impl IntoView {
         </Show>
     }
 }
-

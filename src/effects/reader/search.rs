@@ -3,12 +3,13 @@
 //! than jumping to the top of its page.
 
 use leptos::prelude::*;
+use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use pdf_engine::api as engine;
-use pdf_core::layout::{page_top_css, ViewMode, PAGE_GAP, TOOLBAR_H};
-use pdf_core::search::{scroll_to_reveal, SearchMatch};
-use crate::state::ReaderState;
 use crate::components::document::dom_helpers::page_list;
+use crate::state::ReaderState;
+use pdf_core::layout::{TOOLBAR_H, ViewMode};
+use pdf_core::search::{SearchMatch, scroll_to_reveal};
+use pdf_engine::api as engine;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs
 /// over the top-right of the viewer, so a match revealed underneath it would be
@@ -91,7 +92,7 @@ pub fn resume_search(state: ReaderState) {
 /// Continuous mode scrolls the column so the match itself is inside the
 /// readable band (see `scroll_to_reveal`); if it is already comfortably
 /// visible, nothing moves. Single-page mode just turns to its page.
-pub fn reveal_match(state: ReaderState, m: &SearchMatch) {
+pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
     // Tag first: the emphasis should land even if the view does not move.
     engine::set_active_match(m.page, m.index as i32);
 
@@ -100,23 +101,17 @@ pub fn reveal_match(state: ReaderState, m: &SearchMatch) {
         return;
     }
 
-    let Some(list) = page_list() else { return };
-    // One-shot wrapper is fine here: a cold path (one call per match
-    // activation), so rebuilding the layout once per click costs nothing the
-    // user can feel. Every hot path holds a cached `DocumentLayout`.
+    let Some(list) = page_list() else {
+        return;
+    };
     let scale = state.viewer.zoom.render.get_untracked();
-    let page_top = state.document.metrics.css_heights.with_untracked(|heights| {
-        page_top_css(m.page.saturating_sub(1) as usize, heights, PAGE_GAP)
-    });
+    let page_top = virtualizer.offset_of(m.page.saturating_sub(1) as usize);
 
     // Match rects are scale-1; the column is laid out at the render scale.
     //
-    // `page_top_css` is measured inside the column wrapper, which is offset by
-    // TOOLBAR_H (the `mt-12` that lets pages travel under the glass header).
-    // Adding it converts to the scroll container's own coordinates, which is
-    // what `scroll_top` and the insets below are expressed in. Leaving it out
-    // put every match 48 px higher than it really is, so a hit just past the
-    // fold looked visible and the view stayed put.
+    // The page list keeps a fixed toolbar-sized inset above the first page so
+    // pages can travel under the glass header. Add that inset when converting
+    // a page-local match rect into scroll-container coordinates.
     let top = TOOLBAR_H + page_top + m.y * scale;
     let bottom = top + (m.h * scale).max(1.0);
 
@@ -129,12 +124,12 @@ pub fn reveal_match(state: ReaderState, m: &SearchMatch) {
         0.0,
         REVEAL_MARGIN,
     ) {
-        list.set_scroll_top(next as i32);
+        virtualizer.scroll_to_offset(next, ScrollMode::Instant);
     }
 }
 
 /// Select match `index` (bounds-checked) and reveal it.
-pub fn activate_match(state: ReaderState, index: usize) {
+pub fn activate_match(state: ReaderState, virtualizer: &Virtualizer, index: usize) {
     let Some(m) = state
         .search
         .matches
@@ -143,19 +138,17 @@ pub fn activate_match(state: ReaderState, index: usize) {
         return;
     };
     state.search.active.set(Some(index));
-    reveal_match(state, &m);
+    reveal_match(state, virtualizer, &m);
 }
 
 /// Step to the next/previous MATCH (not page) and reveal it, wrapping at the
 /// ends of the document.
-pub fn search_navigate(state: ReaderState, dir: i32) {
+pub fn search_navigate(state: ReaderState, virtualizer: &Virtualizer, dir: i32) {
     let len = state.search.matches.with_untracked(Vec::len);
     let Some(next) =
         pdf_core::search::next_search_index(len, state.search.active.get_untracked(), dir)
     else {
         return;
     };
-    activate_match(state, next);
+    activate_match(state, virtualizer, next);
 }
-
-

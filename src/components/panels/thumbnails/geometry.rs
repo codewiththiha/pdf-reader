@@ -42,22 +42,12 @@ pub fn row_height(aspect: f64) -> f64 {
     CELL_W * aspect + ROW_GAP
 }
 
-/// Number of 2-column rows needed for `pages` pages.
-#[allow(dead_code)]
-pub fn row_count(pages: usize) -> usize {
-    pages.div_ceil(2)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn grid_geometry_holds() {
-        assert_eq!(row_count(0), 0);
-        assert_eq!(row_count(1), 1);
-        assert_eq!(row_count(4), 2);
-        assert_eq!(row_count(5), 3);
         assert!(2.0 * CELL_W + GAP_CROSS <= 288.0 - 2.0 * PAD);
         assert!(row_height(842.0 / 595.0) > row_height(612.0 / 792.0));
         assert_eq!(row_height(1.0), CELL_W + ROW_GAP);

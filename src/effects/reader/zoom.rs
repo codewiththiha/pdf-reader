@@ -13,12 +13,9 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;
-use wasm_bindgen::JsCast;
 
-use pdf_core::layout::DocumentLayout;
 use pdf_core::math::clamp_scale;
 
-use crate::components::document::dom_helpers::page_list;
 use crate::state::ReaderState;
 
 /// rAF step that can re-arm itself. StoredValue already wraps a RefCell, so we
@@ -82,18 +79,8 @@ pub(super) fn take_commit_echo() -> bool {
 }
 
 /// Applies a scale change to the layout immediately and atomically.
-pub fn relayout_to(
-    state: ReaderState,
-    factor: f64,
-    layout: Memo<DocumentLayout>,
-    virtualizer: &Virtualizer,
-) {
+pub fn relayout_to(state: ReaderState, factor: f64, virtualizer: &Virtualizer) {
     if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
-        return;
-    }
-
-    let count = layout.with(|layout| layout.strip_len());
-    if count == 0 {
         return;
     }
 
@@ -112,21 +99,6 @@ pub fn relayout_to(
         return;
     }
 
-    let gap = pdf_core::layout::PAGE_GAP;
-    let new_total =
-        heights.iter().copied().sum::<f64>() + gap * heights.len().saturating_sub(1) as f64;
-
-    if let Some(list) = page_list()
-        && let Some(column) = list.first_element_child()
-        && let Some(spacer) = column
-            .first_element_child()
-            .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
-    {
-        _ = spacer
-            .style()
-            .set_property("height", &format!("{new_total}px"));
-    }
-
     virtualizer.rescale(factor, {
         let heights = heights.clone();
         move |index| heights.get(index).copied().unwrap_or(0.0)
@@ -139,7 +111,7 @@ pub fn relayout_to(
 }
 
 /// The zoom coordinator. Must be called once from the app root (ReaderPage).
-pub fn zoom_system(state: ReaderState, layout: Memo<DocumentLayout>, virtualizer: Virtualizer) {
+pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
     let anim_slot = StoredValue::new_local(None::<StepSlot>);
     let live_token = StoredValue::new_local(Rc::new(Cell::new(0u64)));
 
@@ -169,7 +141,7 @@ pub fn zoom_system(state: ReaderState, layout: Memo<DocumentLayout>, virtualizer
         };
 
         if !animate || prefers_reduced_motion() {
-            relayout_to(state, target / from, layout, &virtualizer);
+            relayout_to(state, target / from, &virtualizer);
             commit(target);
             return;
         }
@@ -190,7 +162,7 @@ pub fn zoom_system(state: ReaderState, layout: Memo<DocumentLayout>, virtualizer
             let want = from + (target - from) * eased;
             let cur = state.viewer.zoom.display.get_untracked();
 
-            relayout_to(state, want / cur, layout, &step_virtualizer);
+            relayout_to(state, want / cur, &step_virtualizer);
             state.viewer.zoom.display.set(want);
 
             if t >= 1.0 {

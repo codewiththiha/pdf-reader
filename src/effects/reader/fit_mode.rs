@@ -3,7 +3,7 @@
 //! yields exactly one re-render.
 //!
 //! The zoom machinery (gesture animation, anchoring, commit) lives in the
-//! sibling `zoom` module; `fit_effect` hands the layout to it via
+//! sibling `zoom` module; `fit_effect` hands scale changes to it via
 //! `request_zoom`/`commit_scale` and reads `gesture_owns_layout` /
 //! `take_commit_echo` to stay out of a gesture's way.
 
@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{DocumentLayout, TOOLBAR_H};
+use pdf_core::layout::TOOLBAR_H;
 use pdf_core::math::{FitMode, constrained_scale, fit_scale};
 use virtual_list_leptos::Virtualizer;
 
@@ -25,7 +25,6 @@ pub fn fit_effect(
     // Sidebar open/close re-runs fit so the page re-centers (app chrome
     // state passed in explicitly).
     sidebar: RwSignal<SidebarMode>,
-    layout: Memo<DocumentLayout>,
     virtualizer: Virtualizer,
 ) {
     // Width of the window at the last refit, used to tell a WINDOW resize from
@@ -229,7 +228,7 @@ pub fn fit_effect(
             let cur = state.viewer.zoom.display.get_untracked();
             if (target - cur).abs() >= 0.0005 {
                 state.viewer.zoom_animating.set(true);
-                relayout_to(state, target / cur, layout, &virtualizer);
+                relayout_to(state, target / cur, &virtualizer);
                 state.viewer.zoom.display.set(target);
             }
         }
@@ -272,7 +271,7 @@ pub fn fit_effect(
                 // heights stay at the old scale and the scroll teleports.
                 let cur = state.viewer.zoom.display.get_untracked();
                 if (target - cur).abs() >= 0.0005 {
-                    relayout_to(state, target / cur, layout, &timer_virtualizer);
+                    relayout_to(state, target / cur, &timer_virtualizer);
                     state.viewer.zoom.display.set(target);
                 }
                 let prev = state.viewer.zoom.render.get_untracked();

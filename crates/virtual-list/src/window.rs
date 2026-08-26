@@ -151,10 +151,10 @@ pub struct Budget {
 }
 
 impl Budget {
-    /// Screenful-based budget — the previous `Budget { look_frac, max_items }`.
-    pub const fn screenfuls(look_frac: f64, max_items: usize) -> Self {
+    /// Screenful-based budget.
+    pub const fn screenfuls(screenfuls: f64, max_items: usize) -> Self {
         Self {
-            overscan: Overscan::Screenfuls(look_frac),
+            overscan: Overscan::Screenfuls(screenfuls),
             max_items,
         }
     }

@@ -106,14 +106,14 @@ impl GridLayout {
     pub fn resolve(spec: GridSpec, items: usize, row_pitch: f64, cross_extent: f64) -> Self {
         let columns = spec.columns_at(cross_extent);
         let row_pitch = crate::from_sub(crate::to_sub(row_pitch));
-        let row_count = items.div_ceil(columns);
+        let rows_len = items.div_ceil(columns);
         let cell_width = if cross_extent > 0.0 {
             ((cross_extent - (columns - 1) as f64 * spec.gap_cross) / columns as f64).max(0.0)
         } else {
             0.0
         };
         Self {
-            rows: Strip::uniform(row_count, row_pitch, 0.0),
+            rows: Strip::uniform(rows_len, row_pitch, 0.0),
             spec,
             columns,
             items,
@@ -141,9 +141,9 @@ impl GridLayout {
         self.columns
     }
 
-    /// Number of rows.
+    /// Number of resolved rows.
     #[inline]
-    pub fn row_count(&self) -> usize {
+    pub fn rows_len(&self) -> usize {
         self.rows.len()
     }
 
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn mapping_and_partial_last_row() {
         let g = thumbs(5);
-        assert_eq!(g.row_count(), 3);
+        assert_eq!(g.rows_len(), 3);
         assert_eq!(g.columns(), 2);
         assert_eq!(g.row_of(3), 1);
         assert_eq!(g.col_of(3), 1);
@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn thousand_item_grid_mounts_a_bounded_window() {
         let g = thumbs(1_000);
-        assert_eq!(g.row_count(), 500);
+        assert_eq!(g.rows_len(), 500);
         let budget = Budget::items(2, 64);
         let vp = Viewport::new(720.0, 264.0);
 
@@ -404,7 +404,7 @@ mod tests {
 
         let g = GridLayout::resolve(spec, 100, 150.0, 540.0);
         assert_eq!(g.columns(), 4);
-        assert_eq!(g.row_count(), 25);
+        assert_eq!(g.rows_len(), 25);
         assert!((g.cell_width() - 126.0).abs() < 1e-9);
         assert_eq!(g.col_of(5), 1);
         assert!((g.cross_offset(5) - 138.0).abs() < 1e-9);

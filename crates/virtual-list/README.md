@@ -1,120 +1,90 @@
 # virtual-list
 
-Windowing math for virtualized scrolling lists, responsive grids, and scroll anchoring.
+Pure geometry for virtualized scrolling lists, responsive grids, and scroll anchoring.
 
-At the core sits `Strip`, a prefix-sum layout engine for a scrolling column of variably-sized items. Given the sizes of every item in that column, the crate answers the four questions a virtualized surface has to answer on every frame:
+At the core sits `Strip`, a prefix-sum layout engine for one scrolling column of variably-sized items separated by a fixed gap. Given item sizes, it answers the four questions a virtualized surface asks every frame:
 
 - **Where does item `i` start?** — `offset`
-- **How tall is the whole thing?** — `total`
-- **Which items should be mounted right now?** — `window`
+- **How large is the whole content extent?** — `total`
+- **Which items should stay mounted right now?** — `window`
 - **Which item is the reader actually looking at?** — `dominant`
 
-It is pure arithmetic: no DOM, no framework, `no_std` by default. Everything is `f64` in whatever unit you like (CSS px, points, logical pixels).
+It is pure arithmetic: no DOM, no framework, `no_std` by default.
 
-Above `Strip`, v0.2 adds a `Layout` facade, `ListLayout`, width-aware `GridLayout`, and pure anchoring helpers (`correct`, `pin_at`, `rescale_anchor`).
+## v0.2 layout layer
 
-## Why not just loop over the sizes?
+Above `Strip`, the crate now exposes one shared geometry contract for higher-level virtualized surfaces:
 
-The naive implementation walks the size array to find an item's offset. That is
-`O(n)` per query, and a list that positions every mounted item per frame turns
-it into `O(n²)`. At 14 items nobody notices; at 2,000 items it is the reason
-scrolling stutters.
+- `Layout` — common queries for item count, offsets, windowing, and dominant-item selection
+- `ListLayout` — a variably-sized list backed by `Strip`
+- `GridLayout` — a uniform multi-column grid that windows by row while still answering per-item offsets
 
-`Strip` keeps a prefix-sum table, so `offset` is `O(1)` and every positional
-query is an `O(log n)` binary search. Building the table is `O(n)` once per size
-change.
+That lets framework adapters and apps share one geometry API even when a surface can switch between list and grid shapes.
 
-## Internals: `i64` sub-pixels, galloping search, and three backends
+## Anchoring helpers
 
-The prefix-sum table is held as `i64` in **sub-pixel units** (`1 << 16` per
-CSS pixel). That gives three wins over a `Vec<f64>`:
+The `anchor` module keeps the reader's place stable when geometry changes:
 
-- `partition_point` runs over integers — no NaN edge cases, faster
-  branch-predicted comparisons.
-- Sums cannot drift over long lists. `i64` is exact up to ~4.2e9 CSS pixels
-  (~4 200 km).
-- The storage footprint is identical (`8 * (n + 1)` bytes).
+- `correct` adjusts scroll after one measured item changes size
+- `pin_at` records the content point under a viewport anchor
+- `rescale_anchor` reapplies that anchor after a uniform rescale
 
-For **continuous scrolling**, the answer to "which item is at the top of the
-viewport?" is almost always the same index or one step away from the previous
-frame. `index_at_hinted(pos, &mut hint)` checks the neighbour first, and falls
-back to a **galloping search** (probe 1, 2, 4, 8 steps outwards, then binary
-search the bracket) for big jumps like scrollbar drags. That makes smooth
-scrolling **amortized `O(1)`**.
+The crate stays pure, so browser adapters, desktop apps, and tests can all use the same math.
 
-For **dynamic item sizes** (an image finishes loading, an accordion expands),
-the crate ships three backends:
+## Why this exists
 
-| Backend         | Lookup   | Update    | Use when                                       |
-| --------------- | -------- | --------- | ---------------------------------------------- |
-| `Strip`         | `O(1)`   | `O(n)`    | Static or rarely-resized lists                  |
-| `FenwickStrip`  | `O(log n)` | `O(log n)` | Highly-dynamic (chat, live logs, accordions)   |
-| `ChunkedStrip`  | `O(1)`   | `O(sqrt n)` | Large lists needing both fast lookups and dynamic updates |
+The naive implementation walks the size array to find an item's offset. That is `O(n)` per query, and a list that positions every mounted item every frame turns it into `O(n²)`.
 
-`FenwickStrip` uses a Binary Indexed Tree with **binary lifting** — no
-separate prefix-sum array is consulted on lookup.
+`Strip` keeps a prefix-sum table instead, so `offset` is `O(1)` and positional queries are `O(log n)` binary searches. Building the table is `O(n)` once per size change.
 
-`ChunkedStrip` uses square-root decomposition: an immutable per-item prefix-sum
-plus a small per-chunk cumulative delta register. The chunk size is picked
-automatically as `max(16, sqrt(n))`.
+For continuous scrolling, the answer is usually the same index as last frame or one step away. `index_at_hinted(pos, &mut hint)` checks the neighbour first, then falls back to a galloping search for big jumps like scrollbar drags. That makes smooth scrolling amortized `O(1)`.
 
-## Advanced features
+## Overscan and ceilings
 
-- **Scroll anchoring** — use `correct` for measurement updates and `rescale_anchor` for zoom-style rescaling so the reader's view does not jump.
-- **Sticky headers** — `window_with_sticky(scroll_top, viewport, budget,
-  &sticky_indices)` accepts a list of sticky item indices; the one with the
-  largest index whose start is at or above `scroll_top` is "pinned" to the
-  top of the viewport, and items below it scroll underneath. The pinned sticky
-  itself is always included in the returned window.
-- **Estimated / placeholder heights** — `Strip::with_estimated(count,
-  estimated_size, gap)` builds a strip with uniform placeholders; the caller
-  then refines each item with `set_size(index, measured_size)` as the real
-  dimensions become known.
+`Budget` splits mount policy into two orthogonal knobs:
+
+- `overscan`: extra distance or rows to keep warm around the viewport
+- `max_items`: a hard ceiling that trims only non-visible items
+
+You can express overscan as:
+
+- `Budget::screenfuls(...)` for zoom-invariant read-ahead
+- `Budget::items(...)` for fixed row buffers in cheap grids
+- `Overscan::Px(...)` for fixed pixel padding
+
+Two invariants hold for any budget:
+
+1. Every partly-visible item is always mounted.
+2. Trimming evicts the item furthest from the viewport first, preferring to keep the one below in reading direction.
+
+## Backends
+
+Three storage backends are available:
+
+| Backend        | Lookup   | Update    | Use when |
+| -------------- | -------- | --------- | -------- |
+| `Strip`        | `O(1)`   | `O(n)`    | Static or rarely-resized lists |
+| `FenwickStrip` | `O(log n)` | `O(log n)` | Highly dynamic lists (`advanced-trees`) |
+| `ChunkedStrip` | `O(1)`   | sublinear | Large lists needing fast lookups plus frequent updates (`advanced-trees`) |
 
 ## Example
 
 ```rust
 use virtual_list::{Budget, Strip};
 
-// A column of 500 pages, 800.0 tall each, separated by a 24.0 gap.
 let strip = Strip::uniform(500, 800.0, 24.0);
-
 assert_eq!(strip.offset(0), 0.0);
 assert_eq!(strip.offset(1), 824.0);
 
-// Mount what is on screen, plus one screenful of read-ahead each way,
-// but never more than 7 items at once.
 let budget = Budget::screenfuls(1.0, 7);
 let win = strip.window(10_000.0, 900.0, budget).unwrap();
 assert!(win.contains(strip.index_at(10_000.0)));
 
-// Continuous scrolling: hint-based galloping search is amortized O(1).
 let mut hint = 0usize;
 for top in (0..10_000).map(|i| i as f64 * 7.3) {
     let _ = strip.index_at_hinted(top, &mut hint);
 }
-
-// An image finished loading on item 12; resize it. The scroll anchor is
-// the reader's current page (item 30, scroll_top=24_000).
-let mut strip = Strip::uniform(500, 800.0, 24.0);
-let delta = strip.set_size(12, 1100.0);
-let new_top = virtual_list::correct(24_000.0, virtual_list::AnchorPolicy::Item(30), 12, delta);
-// The reader stays anchored on item 30.
 ```
-
-## Guarantees
-
-Two invariants hold for **any** `Budget`, which is what makes the budget safe to
-expose as a user-facing setting:
-
-1. Every item that is even partly visible is always in the window. No budget can
-   blank out something the reader is looking at.
-2. Trimming to `max_items` evicts the item furthest from the viewport first, and
-   prefers to keep the item *below* (reading direction), so the next item the
-   reader will reach is the last one dropped.
-
-Both are covered by exhaustive tests, including a fuzz-style sweep over
-scroll positions with `max_items: 1`.
 
 ## License
 

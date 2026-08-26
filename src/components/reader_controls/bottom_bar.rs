@@ -4,20 +4,20 @@
 //! so mouse readers keep page navigation without any persistent bottom chrome.
 //!
 //! The slider is a raw `<input type="range">` rather than the shared
-//! `Slider` because its max is REACTIVE (it tracks the live page-height
-//! column); `Slider`'s `min`/`max` are fixed `f64`s. `navigation_sync` already syncs DOM
-//! scroll ↔ `viewer.page`, so the slider and the page pill stay consistent
-//! for free (setting `#page-list` scroll fires `continuous_scroll`, which
-//! writes `viewer.scroll_top` back).
+//! `Slider` because its max is REACTIVE (it tracks the live virtualized
+//! document extent); `Slider`'s `min`/`max` are fixed `f64`s. `navigation_sync`
+//! already syncs DOM scroll ↔ `viewer.page`, so the slider and the page pill
+//! stay consistent for free.
 
 use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::prelude::*;
+use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use pdf_core::layout::{DocumentLayout, ViewMode};
 use crate::components::reader_controls::page_navigation::PageNavigation;
 use crate::state::ReaderState;
+use pdf_core::layout::ViewMode;
 
 /// Pointer must be off the bar this long before it hides.
 const BOTTOM_HIDE_DELAY_MS: u64 = 400;
@@ -25,12 +25,12 @@ const BOTTOM_HIDE_DELAY_MS: u64 = 400;
 #[component]
 pub fn ReaderBottomBar(
     reader: ReaderState,
-    /// The cached column layout, built once by the reader page (the reactive
-    /// slider max reads it instead of rebuilding the strip per heights change).
-    layout: Memo<DocumentLayout>,
+    /// The continuous reader's virtualizer, used for slider extent and scroll writes.
+    virtualizer: StoredValue<Virtualizer, LocalStorage>,
 ) -> impl IntoView {
     let visible = RwSignal::new(false);
     let timer = StoredValue::new_local(None::<TimeoutHandle>);
+    let total_size = virtualizer.with_value(|v| v.total_size());
 
     let show: Rc<dyn Fn()> = Rc::new(move || {
         if let Some(h) = timer.get_value() {
@@ -79,16 +79,15 @@ pub fn ReaderBottomBar(
                     type="range"
                     min="0"
                     max=move || {
-                        let total = layout.with(|l| l.total());
+                        let total = total_size.get();
                         let (_, vh) = reader.viewer.container_size.get();
                         (total - vh).max(0.0).to_string()
                     }
                     prop:value=move || reader.viewer.scroll_top.get().to_string()
                     on:input=move |ev| {
-                        if let Ok(v) = event_target_value(&ev).parse::<f64>()
-                            && let Some(list) = crate::components::document::dom_helpers::page_list()
-                        {
-                            list.set_scroll_top(v as i32);
+                        if let Ok(offset) = event_target_value(&ev).parse::<f64>() {
+                            virtualizer
+                                .with_value(|v| v.scroll_to_offset(offset, ScrollMode::Instant));
                         }
                     }
                     class="h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-accent"

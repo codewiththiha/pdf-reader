@@ -3,15 +3,15 @@
 //!
 //! - scroll -> page: the virtualizer's dominant-page signal
 //! - page -> scroll: `scroll_to_index(Start, Auto)`
-//!
-//! `mode_flip` stays on the cached `DocumentLayout` path until Phase 5.
+//! - mode flip -> scroll: `scroll_to_index(Start, Instant)` when re-entering
+//!   continuous mode
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{DocumentLayout, ViewMode};
+use pdf_core::layout::ViewMode;
 use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
@@ -32,11 +32,11 @@ impl NavSyncState {
 }
 
 /// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
-pub fn navigation_sync(state: ReaderState, layout: Memo<DocumentLayout>, virtualizer: Virtualizer) {
+pub fn navigation_sync(state: ReaderState, virtualizer: Virtualizer) {
     let nav = NavSyncState::new();
     let mode = state.viewer.mode;
 
-    mode_flip(state, layout);
+    mode_flip(state, virtualizer.clone());
 
     {
         let suppress = nav.suppress.clone();

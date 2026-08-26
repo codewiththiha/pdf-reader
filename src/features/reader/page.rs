@@ -39,7 +39,7 @@ use crate::effects::reader::zoom::zoom_system;
 use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
 use crate::state::SidebarMode;
-use pdf_core::layout::{DocumentLayout, PAGE_GAP, RENDER_BUDGET, ViewMode};
+use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, ViewMode};
 use pdf_engine::types::DocStatus;
 
 #[component]
@@ -47,18 +47,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
-    // One cached column layout for the session. Borrow the heights so a
-    // zoom frame doesn't clone the whole vector just to rebuild prefix sums.
-    let layout = Memo::new(move |_| {
-        vs.document
-            .metrics
-            .css_heights
-            .with(|heights| DocumentLayout::new(heights, PAGE_GAP))
-    });
 
-    // Keep `css_heights` fully seeded from intrinsic sizes for the remaining
-    // DocumentLayout-based systems (mode flip, fit, search) while the
-    // continuous window itself migrates to the virtualizer.
+    // Keep `css_heights` fully seeded from intrinsic sizes: it is the shared
+    // measurement store backing the virtualizer and zoom-rescale path, not a
+    // second layout model.
     Effect::new(move || {
         let count = vs.document.num_pages.get() as usize;
         let scale = vs.viewer.zoom.render.get();
@@ -137,8 +129,8 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         VirtualizerOptions::list(count, estimate)
             .gap(PAGE_GAP)
             .budget(RENDER_BUDGET)
-            .pinned(pinned_sig.into())
             .initial(Viewport::main_only(initial_vh), 0.0)
+            .pinned(pinned_sig.into())
             .epoch(epoch),
     );
 
@@ -164,9 +156,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
 
-    fit_effect(vs, state.ui.sidebar, layout, virtualizer.clone());
-    zoom_system(vs, layout, virtualizer.clone());
-    navigation_sync(vs, layout, virtualizer.clone());
+    fit_effect(vs, state.ui.sidebar, virtualizer.clone());
+    zoom_system(vs, virtualizer.clone());
+    navigation_sync(vs, virtualizer.clone());
     let virtualizer_view = StoredValue::new_local(virtualizer.clone());
     reading_progress(state);
 
@@ -330,8 +322,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 <PageIndicator current=state.reader.viewer.page total=state.reader.document.num_pages />
                             </div>
                         </Show>
-                        <ReaderBottomBar reader=vs layout=layout />
-                        <crate::components::search::floating_search::FloatingSearch state=vs />
+                        <ReaderBottomBar reader=vs virtualizer=virtualizer_view />
+                        <crate::components::search::floating_search::FloatingSearch
+                            state=vs
+                            virtualizer=virtualizer_view
+                        />
                     </main>
                 </div>
             </div>
