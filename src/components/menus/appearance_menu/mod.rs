@@ -26,7 +26,23 @@ use crate::components::primitives::separator::Separator;
 use crate::components::app_shell::adaptive_toolbar::ToolbarItem;
 use crate::components::app_shell::OverflowRow;
 use crate::components::app_shell::toolbar_popover::MenuPopover;
+use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
+use pdf_core::settings::Settings;
+
+/// A structural appearance change (base mode, texture mode, grain mode):
+/// flush any slider scrub still pending so the values the reader was just
+/// dialling land FIRST, then apply the change and mark the appearance dirty
+/// for rebake/persist. Every section's option buttons go through here —
+/// the flush preamble must not be re-typed per call site, or one forgotten
+/// copy silently drops the reader's in-flight dial.
+pub(crate) fn update_appearance(state: AppState, change: impl FnOnce(&mut Settings)) {
+    flush_appearance_commit();
+    state.settings.update(|s| {
+        change(s);
+        s.touch_appearance();
+    });
+}
 
 mod hue_picker;
 mod mode_section;

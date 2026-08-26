@@ -13,9 +13,7 @@ use crate::components::primitives::form::slider::Slider;
 use pdf_core::appearance::TextureMode;
 use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;
-use crate::effects::appearance::{
-    flush_appearance_commit, preview_appearance, AppearanceScrub,
-};
+use crate::effects::appearance::{preview_appearance, AppearanceScrub};
 
 #[component]
 pub fn TextureSection(state: AppState) -> impl IntoView {
@@ -42,13 +40,9 @@ pub fn TextureSection(state: AppState) -> impl IntoView {
                         <OptionButton
                             selected=selected
                             on_click=move || {
-                                flush_appearance_commit();
-                                state
-                                    .settings
-                                    .update(|s| {
-                                        s.appearance.texture = mode;
-                                        s.touch_appearance();
-                                    })
+                                super::update_appearance(state, move |s| {
+                                    s.appearance.texture = mode;
+                                })
                             }
                             variant_class="flex items-center justify-center gap-1 px-1.5 py-1.5 text-[11px]"
                         >

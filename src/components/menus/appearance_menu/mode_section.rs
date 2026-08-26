@@ -15,9 +15,7 @@ use crate::components::primitives::form::slider::Slider;
 use pdf_core::appearance::BaseMode;
 use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;
-use crate::effects::appearance::{
-    flush_appearance_commit, preview_appearance, AppearanceScrub,
-};
+use crate::effects::appearance::{preview_appearance, AppearanceScrub};
 
 fn base_icon(b: BaseMode) -> IconName {
     match b {
@@ -55,13 +53,9 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
                             on_click=move || {
                                 // Keep the hue the reader was just dialling,
                                 // then switch family.
-                                flush_appearance_commit();
-                                state
-                                    .settings
-                                    .update(|s| {
-                                        s.appearance.base = b;
-                                        s.touch_appearance();
-                                    })
+                                super::update_appearance(state, move |s| {
+                                    s.appearance.base = b;
+                                })
                             }
                             title=b.label()
                             variant_class="flex flex-col items-center gap-1 px-2 py-2 text-xs"

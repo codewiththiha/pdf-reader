@@ -10,9 +10,7 @@ use crate::components::primitives::form::slider::Slider;
 use pdf_core::appearance::NoiseMode;
 use crate::components::primitives::option_button::OptionButton;
 use crate::state::AppState;
-use crate::effects::appearance::{
-    flush_appearance_commit, preview_appearance, AppearanceScrub,
-};
+use crate::effects::appearance::{preview_appearance, AppearanceScrub};
 
 #[component]
 pub fn NoiseSection(state: AppState) -> impl IntoView {
@@ -36,18 +34,14 @@ pub fn NoiseSection(state: AppState) -> impl IntoView {
                         <OptionButton
                             selected=selected
                             on_click=move || {
-                                flush_appearance_commit();
-                                state
-                                    .settings
-                                    .update(|s| {
-                                        s.appearance.noise = m;
-                                        // Turning grain on at 0% shows nothing
-                                        // and reads as a dead control.
-                                        if m.is_on() && s.appearance.noise_intensity == 0 {
-                                            s.appearance.noise_intensity = 25;
-                                        }
-                                        s.touch_appearance();
-                                    })
+                                super::update_appearance(state, move |s| {
+                                    s.appearance.noise = m;
+                                    // Turning grain on at 0% shows nothing
+                                    // and reads as a dead control.
+                                    if m.is_on() && s.appearance.noise_intensity == 0 {
+                                        s.appearance.noise_intensity = 25;
+                                    }
+                                })
                             }
                             variant_class="px-2 py-1.5 text-xs"
                         >
