@@ -46,7 +46,7 @@ pub fn GlossUndoToast(
                             // after a switch, drop it instead of resurrecting
                             // marks into the wrong file.
                             if state.reader.document.path.get_untracked() == batch_path {
-                                ctrl.restore_marks.run(restored.clone());
+                                ctrl.commands.restore_marks.run(restored.clone());
                             }
                             undo.set(None);
                         }),

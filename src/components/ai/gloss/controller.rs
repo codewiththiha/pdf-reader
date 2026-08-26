@@ -1,14 +1,24 @@
-//! The gloss state-machine hub: every signal the popover juggles plus the
-//! behaviours all paths share — `reset` (full dismiss), `collapse_to_mark`
-//! (the outro), `add_mark` (dedup + persist) and `retry` (re-run a failed
-//! lookup). Also owns the open-event listener and the open effect, so
-//! [`super::gloss_ai_popover`] reads as wiring + view.
+//! The gloss state-machine hub. The controller groups its twenty-odd signals
+//! into cohesive slices — [`GlossContent`] (what the model is doing),
+//! [`GlossGeometry`] (what the card's box is doing), [`GlossOpen`] (which
+//! mark the card belongs to), [`GlossDrag`] (pointer state) and
+//! [`GlossCache`] (session answers) — so a hook that needs one concern takes
+//! one slice instead of the whole flat field list, and the shared behaviours
+//! ([`GlossCommands`]: reset, collapse, mark persistence, retry) are clearly
+//! commands rather than more state.
 //!
-//! Open path is deterministic: both the Info pill and a saved stroke dispatch
-//! `pdfreader:gloss-open` with the mark in the event detail. The listener
-//! sets `pending_mark` and bumps `open_req` (which the open effect tracks),
-//! so the effect always runs with a mark in hand — never a race against
-//! `detail` being cleared or a stale `popover_open = true` no-op.
+//! The open path is a named state machine: [`open_verdict`] decides what a
+//! request means given the controller's state (stale flag / swallow /
+//! collapse / open), and the open effect only dispatches on that verdict —
+//! no five-deep early-return chain. [`begin_open`], [`serve_cached`] and
+//! [`begin_fetch`] are the three transitions that actually move state.
+//!
+//! Open requests are deterministic: both the Info pill and a saved stroke
+//! dispatch `pdfreader:gloss-open` with the mark in the event detail. The
+//! listener ([`use_open_listener`]) sets `pending` and bumps `request`
+//! (which the open effect tracks), so the effect always runs with a mark in
+//! hand — never a race against `detail` being cleared or a stale
+//! `popover_open = true` no-op.
 
 use std::collections::HashMap;
 
@@ -27,26 +37,23 @@ use crate::state::AppState;
 /// worth of looked-up words, bounded so localStorage can't grow without end.
 pub const MARK_CAP: usize = 200;
 
-/// All gloss state + the shared behaviours. Every field is `Copy`, so hooks
-/// can take the controller by value without lifetime gymnastics.
+/// The data phase + payload of the open card: what the *model* is doing,
+/// independent of the card's geometry.
 #[derive(Clone, Copy)]
-pub struct GlossController {
-    // ── Data phase + content ──────────────────────────────────────────
+pub struct GlossContent {
     pub phase: RwSignal<AiPhase>,
     pub word: RwSignal<String>,
     pub word_info: RwSignal<Option<WordInfo>>,
     /// The typed failure behind `AiPhase::Error`, if any. Drives both the
     /// friendly message and the retry affordance in the surface.
     pub error: RwSignal<Option<AiError>>,
+}
 
-    // ── Geometry phase ────────────────────────────────────────────────
+/// The geometry phase of the surface: where the card's *box* is in its
+/// morph lifecycle, and whether the surface exists at all.
+#[derive(Clone, Copy)]
+pub struct GlossGeometry {
     pub gphase: RwSignal<GlossPhase>,
-
-    // ── Anchor: the persisted mark this card belongs to ───────────────
-    pub mark_sig: RwSignal<Option<GlossMark>>,
-    pub pending_mark: RwSignal<Option<GlossMark>>,
-    pub open_req: RwSignal<u64>,
-
     /// Whether the morphing surface exists at all. Distinct from
     /// `popover_open`: during processing the stroke IS the UI, and after the
     /// outro morph the surface unmounts while the gloss stays "open" on its
@@ -57,19 +64,91 @@ pub struct GlossController {
     /// CARD_EXIT_FRAC) so it is not instantly collapsed; it arms the first
     /// time the origin is inside the band, and only then can the band close it.
     pub exit_armed: RwSignal<bool>,
+}
 
-    // ── Drag state (the pointer physics live in [`super::drag`]) ──────
-    pub drag_offset: RwSignal<Option<(f64, f64)>>,
-    pub dragging: RwSignal<bool>,
+/// The open plumbing: which persisted mark the card belongs to, the mark
+/// queued by the latest request, and the request nonce that re-runs the
+/// open effect even when the popover is already open.
+#[derive(Clone, Copy)]
+pub struct GlossOpen {
+    /// The mark the open card belongs to (None while closed).
+    pub mark: RwSignal<Option<GlossMark>>,
+    /// The mark queued by the most recent open request, consumed by the
+    /// open effect.
+    pub pending: RwSignal<Option<GlossMark>>,
+    /// Monotonic request counter — tracking it is what makes a second open
+    /// of an already-open popover re-run the open effect.
+    pub request: RwSignal<u64>,
+}
+
+/// Drag state for the expanded card (the pointer physics live in
+/// [`super::drag`]).
+#[derive(Clone, Copy)]
+pub struct GlossDrag {
+    /// Anchor-relative offset of the dragged card (None = not dragged).
+    pub offset: RwSignal<Option<(f64, f64)>>,
+    /// Whether a drag is in progress (snaps the spring while true).
+    pub active: RwSignal<bool>,
+    /// Grab offset within the card, live only during a drag.
     pub grab: StoredValue<Option<(f64, f64)>, LocalStorage>,
+}
 
-    /// Answers already fetched this session, keyed by mark id. Re-opening a
-    /// stroke is recall, not a rescan.
-    pub cache: StoredValue<HashMap<String, WordInfo>, LocalStorage>,
+/// Answers already fetched this session, keyed by mark id. Re-opening a
+/// stroke is recall, not a rescan.
+#[derive(Clone, Copy)]
+pub struct GlossCache {
+    answers: StoredValue<HashMap<String, WordInfo>, LocalStorage>,
+}
 
-    // ── Behaviours ────────────────────────────────────────────────────
+impl GlossCache {
+    fn new() -> Self {
+        Self {
+            answers: StoredValue::new_local(HashMap::new()),
+        }
+    }
+
+    /// The cached answer for a mark id, if this session already fetched it.
+    pub fn get(&self, id: &str) -> Option<WordInfo> {
+        self.answers.with_value(|c| c.get(id).cloned())
+    }
+
+    /// Record a finished answer.
+    pub fn insert(&self, id: String, info: WordInfo) {
+        self.answers.update_value(|c| {
+            c.insert(id, info);
+        });
+    }
+
+    /// Drop one answer — a failed run must not leave a stale partial
+    /// snapshot behind for the mark's next open to recall.
+    pub fn remove(&self, id: &str) {
+        self.answers.update_value(|c| {
+            c.remove(id);
+        });
+    }
+
+    /// Evict the answers of removed marks, so re-opening them re-requests
+    /// instead of recalling an answer for a highlight that no longer exists.
+    pub fn evict(&self, marks: &[GlossMark]) {
+        self.answers.update_value(|c| {
+            for m in marks {
+                c.remove(&m.id);
+            }
+        });
+    }
+}
+
+/// The shared behaviours: every path funnels through these instead of
+/// re-implementing a close or a persistence dance.
+#[derive(Clone, Copy)]
+pub struct GlossCommands {
+    /// Full dismiss back to Idle (keeps the mark — the highlight reopens it).
     pub reset: Callback<()>,
+    /// The outro: fold the expanded card back down onto the word.
     pub collapse_to_mark: Callback<()>,
+    /// Record + persist a freshly captured mark, returning the CANONICAL one
+    /// (re-explaining the same word at the same spot reuses the existing
+    /// mark rather than stacking a second stroke on it).
     pub add_mark: Callback<GlossMark, GlossMark>,
     /// Remove marks by id: persist, evict their cached answers, close the
     /// card if it belonged to one of them. Returns the removed marks so the
@@ -77,7 +156,21 @@ pub struct GlossController {
     pub remove_marks: Callback<Vec<String>, Vec<GlossMark>>,
     /// Re-insert previously removed marks (the Undo path) and persist.
     pub restore_marks: Callback<Vec<GlossMark>>,
+    /// Retry the current mark after a retryable failure.
     pub retry: Callback<()>,
+}
+
+/// All gloss state + the shared behaviours, grouped into cohesive slices.
+/// Every field is `Copy`, so hooks can take the controller — or just the
+/// slice they need — by value without lifetime gymnastics.
+#[derive(Clone, Copy)]
+pub struct GlossController {
+    pub content: GlossContent,
+    pub geometry: GlossGeometry,
+    pub open: GlossOpen,
+    pub drag: GlossDrag,
+    pub cache: GlossCache,
+    pub commands: GlossCommands,
 }
 
 pub fn use_gloss_controller(state: AppState) -> GlossController {
@@ -86,55 +179,62 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
     let marks = state.reader.gloss.marks;
     let doc_path = state.reader.document.path;
 
-    let phase = RwSignal::new(AiPhase::Idle);
-    let word = RwSignal::new(String::new());
-    let word_info = RwSignal::new(None::<WordInfo>);
-    let error = RwSignal::new(None::<AiError>);
-    let gphase = RwSignal::new(GlossPhase::Processing);
-    let mark_sig = RwSignal::new(None::<GlossMark>);
-    let pending_mark = RwSignal::new(None::<GlossMark>);
-    let open_req = RwSignal::new(0u64);
-    let surface_visible = RwSignal::new(false);
-    let exit_armed = RwSignal::new(false);
-    let drag_offset = RwSignal::new(None::<(f64, f64)>);
-    let dragging = RwSignal::new(false);
-    let grab = StoredValue::new_local(None::<(f64, f64)>);
-    let cache = StoredValue::new_local(HashMap::<String, WordInfo>::new());
+    let content = GlossContent {
+        phase: RwSignal::new(AiPhase::Idle),
+        word: RwSignal::new(String::new()),
+        word_info: RwSignal::new(None::<WordInfo>),
+        error: RwSignal::new(None::<AiError>),
+    };
+    let geometry = GlossGeometry {
+        gphase: RwSignal::new(GlossPhase::Processing),
+        surface_visible: RwSignal::new(false),
+        exit_armed: RwSignal::new(false),
+    };
+    let open = GlossOpen {
+        mark: RwSignal::new(None::<GlossMark>),
+        pending: RwSignal::new(None::<GlossMark>),
+        request: RwSignal::new(0u64),
+    };
+    let drag = GlossDrag {
+        offset: RwSignal::new(None::<(f64, f64)>),
+        active: RwSignal::new(false),
+        grab: StoredValue::new_local(None::<(f64, f64)>),
+    };
+    let cache = GlossCache::new();
 
     // Full dismiss back to Idle. NOTE: the mark itself is intentionally kept
     // — the highlight is the point, and it is what reopens this card later.
     let reset = Callback::new(move |_| {
         popover_open.set(false);
-        phase.set(AiPhase::Idle);
-        word.set(String::new());
-        word_info.set(None);
-        error.set(None);
-        gphase.set(GlossPhase::Processing);
-        surface_visible.set(false);
-        exit_armed.set(false);
+        content.phase.set(AiPhase::Idle);
+        content.word.set(String::new());
+        content.word_info.set(None);
+        content.error.set(None);
+        geometry.gphase.set(GlossPhase::Processing);
+        geometry.surface_visible.set(false);
+        geometry.exit_armed.set(false);
         processing_id.set(None);
-        mark_sig.set(None);
-        drag_offset.set(None);
-        dragging.set(false);
-        grab.set_value(None);
+        open.mark.set(None);
+        drag.offset.set(None);
+        drag.active.set(false);
+        drag.grab.set_value(None);
     });
 
     // The outro: fold the expanded card back down onto the word. Every close
     // path funnels through here, and the popover's settle watcher unmounts
     // the surface once the spring has actually landed on the stroke.
     let collapse_to_mark = Callback::new(move |_| {
-        if gphase.get_untracked() != GlossPhase::Expanded || dragging.get_untracked() {
+        if geometry.gphase.get_untracked() != GlossPhase::Expanded || drag.active.get_untracked() {
             return;
         }
-        drag_offset.set(None);
-        gphase.set(GlossPhase::Compact);
+        drag.offset.set(None);
+        geometry.gphase.set(GlossPhase::Compact);
     });
 
     // Record + persist a freshly captured mark, and hand back the CANONICAL
-    // one: re-explaining the same word at the same spot reuses the existing
-    // mark rather than stacking a second stroke on it. Returning it matters —
-    // the id is what keys the processing glow and the answer cache, so the
-    // caller must not go on holding the discarded duplicate.
+    // one. Returning it matters — the id is what keys the processing glow
+    // and the answer cache, so the caller must not go on holding the
+    // discarded duplicate.
     let add_mark = Callback::new(move |m: GlossMark| -> GlossMark {
         let existing = marks.with_untracked(|v| {
             v.iter().find(|o| o.same_spot(&m)).cloned()
@@ -180,14 +280,11 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         if let Some(path) = doc_path.get_untracked() {
             crate::storage::persist_gloss(&path, &marks.get_untracked());
         }
-        cache.update_value(|c| {
-            for m in &removed {
-                c.remove(&m.id);
-            }
-        });
-        if mark_sig
+        cache.evict(&removed);
+        if open
+            .mark
             .get_untracked()
-            .is_some_and(|open| id_set.contains(open.id.as_str()))
+            .is_some_and(|current| id_set.contains(current.id.as_str()))
         {
             reset.run(());
         }
@@ -217,47 +314,40 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
     // ritual minus persistence (the mark is already canonical), so the stroke
     // thinks again and the surface is reborn on the first fresh chunk.
     let retry = Callback::new(move |_| {
-        let Some(mark) = mark_sig.get_untracked() else {
+        let Some(mark) = open.mark.get_untracked() else {
             return;
         };
         if !pdf_engine::has_tauri() {
             return; // the environment cannot change mid-session
         }
-        error.set(None);
-        word_info.set(None);
-        phase.set(AiPhase::Processing);
-        gphase.set(GlossPhase::Processing);
-        surface_visible.set(false);
+        content.error.set(None);
+        content.word_info.set(None);
+        content.phase.set(AiPhase::Processing);
+        geometry.gphase.set(GlossPhase::Processing);
+        geometry.surface_visible.set(false);
         processing_id.set(Some(mark.id.clone()));
         invoke_explain_word(mark.word, mark.context);
     });
 
     GlossController {
-        phase,
-        word,
-        word_info,
-        error,
-        gphase,
-        mark_sig,
-        pending_mark,
-        open_req,
-        surface_visible,
-        exit_armed,
-        drag_offset,
-        dragging,
-        grab,
+        content,
+        geometry,
+        open,
+        drag,
         cache,
-        reset,
-        collapse_to_mark,
-        add_mark,
-        remove_marks,
-        restore_marks,
-        retry,
+        commands: GlossCommands {
+            reset,
+            collapse_to_mark,
+            add_mark,
+            remove_marks,
+            restore_marks,
+            retry,
+        },
     }
 }
 
 /// Every open (stroke click OR Info pill) arrives as a CustomEvent that
-/// carries the mark and bumps the nonce. Tracking `open_req` is what makes a
+/// carries the mark and bumps the nonce. Tracking `request` is what makes a
 /// second open of an already-open popover re-run the open effect.
 pub fn use_open_listener(state: AppState, ctrl: GlossController) {
     let detail = state.reader.ai_selection.detail;
@@ -271,18 +361,146 @@ pub fn use_open_listener(state: AppState, ctrl: GlossController) {
             };
             detail.set(None);
             state.reader.ai_selection.anchor.set(None);
-            ctrl.pending_mark.set(Some(m));
-            ctrl.open_req.update(|n| *n += 1);
+            ctrl.open.pending.set(Some(m));
+            ctrl.open.request.update(|n| *n += 1);
             popover_open.set(true);
         },
     );
     on_cleanup(move || handle.remove());
 }
 
-/// The open effect: re-runs on EVERY request (nonce). The mark always arrives
-/// via `pending_mark` — both entry points (Info pill and stroke click)
-/// dispatch `GLOSS_OPEN_EVENT`, so an open with no pending mark can only mean
-/// a stale flag (e.g. a remount after a document switch), which is cleared.
+/// What an open request means, given the controller's state when it lands.
+/// Pure: the open effect reads its inputs untracked and dispatches on this,
+/// so the decision table is named, exhaustive, and unit-tested.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum OpenVerdict {
+    /// `popover_open` is set but no request is pending — a stale flag (e.g.
+    /// a remount after a document switch). Clear it, don't sit on it.
+    ClearFlag,
+    /// The request is for the mark whose run is still thinking: swallow the
+    /// re-click (a second request would restart or duplicate the run).
+    Swallow,
+    /// The request is for the mark expanded on screen: fold it back down
+    /// (toggle semantics live here, and only here — marks stay dumb open
+    /// dispatchers).
+    Collapse,
+    /// Adopt the request: run the opening ritual, then serve it from the
+    /// cache or the backend. Compact or mid-outro re-clicks land here too,
+    /// deliberately — they recall/reopen.
+    Open,
+}
+
+fn open_verdict(
+    pending: Option<&GlossMark>,
+    current: Option<&GlossMark>,
+    gphase: GlossPhase,
+    surface_visible: bool,
+) -> OpenVerdict {
+    let Some(pending) = pending else {
+        return OpenVerdict::ClearFlag;
+    };
+    if current.is_some_and(|m| m.same_spot(pending)) {
+        match (gphase, surface_visible) {
+            (GlossPhase::Processing, _) => return OpenVerdict::Swallow,
+            (GlossPhase::Expanded, true) => return OpenVerdict::Collapse,
+            _ => {}
+        }
+    }
+    OpenVerdict::Open
+}
+
+/// The opening ritual every fresh open runs: canonicalize + persist the
+/// mark, adopt it as current, re-derive the anchor NOW (same tick) and
+/// re-anchor the spring onto THIS word — every open morphs out of its own
+/// mark, never out of the previous card's resting place — and clear the
+/// transient state (native selection, drag offset, exit arming). Returns
+/// the CANONICAL mark.
+fn begin_open(
+    state: &AppState,
+    ctrl: GlossController,
+    watch: &AnchorWatch,
+    spring: &SpringBox<GlossBox>,
+    viewport: RwSignal<(f64, f64)>,
+    mark: GlossMark,
+) -> GlossMark {
+    // Self-contained open: mark is already in hand (Info pill or stroke
+    // click). Persist it so re-open/re-explain reuse the id.
+    let mark = ctrl.commands.add_mark.run(mark);
+
+    ctrl.open.pending.set(None);
+    state.reader.ai_selection.detail.set(None);
+    state.reader.ai_selection.anchor.set(None);
+    ctrl.open.mark.set(Some(mark.clone()));
+
+    watch.refresh.run(());
+    if let Some(a) = watch.screen.get_untracked() {
+        spring.reset_to.run(a);
+    }
+
+    ctrl.content.word.set(mark.word.clone());
+    viewport.set(viewport_size());
+    ctrl.drag.offset.set(None);
+    ctrl.drag.active.set(false);
+    ctrl.geometry.exit_armed.set(false);
+
+    // Exactly one highlighter: the native tint goes the moment the stroke
+    // takes over (it would also fight the card's own text selection).
+    if let Some(Some(s)) = web_sys::window().and_then(|w| w.get_selection().ok()) {
+        let _ = s.remove_all_ranges();
+    }
+
+    mark
+}
+
+/// Recall, not rescan: a stroke whose answer is already cached morphs
+/// straight back open, with no request and no shimmer.
+fn serve_cached(
+    ctrl: GlossController,
+    processing_id: RwSignal<Option<String>>,
+    info: WordInfo,
+) {
+    ctrl.content.word_info.set(Some(info));
+    ctrl.content.error.set(None);
+    ctrl.content.phase.set(AiPhase::Done);
+    processing_id.set(None);
+    ctrl.geometry.gphase.set(GlossPhase::Expanded);
+    ctrl.geometry.surface_visible.set(true);
+}
+
+/// Fresh (or retried) explain. No surface while thinking: the highlighter
+/// stroke is the only processing UI, so nothing is stacked over the word.
+fn begin_fetch(
+    ctrl: GlossController,
+    processing_id: RwSignal<Option<String>>,
+    mark: GlossMark,
+) {
+    ctrl.content.word_info.set(None);
+    ctrl.content.error.set(None);
+    ctrl.content.phase.set(AiPhase::Processing);
+    ctrl.geometry.gphase.set(GlossPhase::Processing);
+    ctrl.geometry.surface_visible.set(false);
+    processing_id.set(Some(mark.id.clone()));
+
+    if pdf_engine::has_tauri() {
+        invoke_explain_word(mark.word, mark.context);
+    } else {
+        // The environment cannot change mid-session: this is a terminal,
+        // non-retryable state, shown as an expanded error card.
+        ctrl.content.error.set(Some(AiError {
+            kind: AiErrorKind::Other("desktop-only".into()),
+            message: "AI explanations are only available in the desktop app.".into(),
+            retryable: false,
+        }));
+        ctrl.content.phase.set(AiPhase::Error);
+        processing_id.set(None);
+        ctrl.geometry.gphase.set(GlossPhase::Expanded);
+        ctrl.geometry.surface_visible.set(true);
+    }
+}
+
+/// The open effect: re-runs on EVERY request (nonce). Reads the state
+/// untracked, asks [`open_verdict`] what the request means, and dispatches —
+/// the branches are one screenful and each names its transition.
 pub fn use_open_effect(
     state: AppState,
     ctrl: GlossController,
@@ -291,109 +509,133 @@ pub fn use_open_effect(
     viewport: RwSignal<(f64, f64)>,
 ) {
     let popover_open = state.reader.ai_selection.popover_open;
-    let detail = state.reader.ai_selection.detail;
     let processing_id = state.reader.gloss.processing_id;
 
     Effect::new(move |_| {
-        let _ = ctrl.open_req.get(); // tracked nonce
+        let _ = ctrl.open.request.get(); // tracked nonce
         if !popover_open.get() {
             return;
         }
 
-        let Some(mark) = ctrl.pending_mark.get_untracked() else {
-            // Remount after a document switch (or any open with no pending
-            // mark) must clear the flag, not sit on it.
-            popover_open.set(false);
-            return;
-        };
+        let pending = ctrl.open.pending.get_untracked();
+        let current = ctrl.open.mark.get_untracked();
+        let verdict = open_verdict(
+            pending.as_ref(),
+            current.as_ref(),
+            ctrl.geometry.gphase.get_untracked(),
+            ctrl.geometry.surface_visible.get_untracked(),
+        );
 
-        // Toggle knowledge lives here (and only here): marks stay dumb open
-        // dispatchers. A re-click on the active expanded card folds it down;
-        // a click while its model run is still processing is ignored. Compact
-        // or mid-outro re-clicks deliberately fall through to recall/reopen.
-        let same_spot = ctrl
-            .mark_sig
-            .with_untracked(|m| m.as_ref().is_some_and(|m| m.same_spot(&mark)));
-        if same_spot {
-            match (
-                ctrl.gphase.get_untracked(),
-                ctrl.surface_visible.get_untracked(),
-            ) {
-                (GlossPhase::Processing, _) => {
-                    ctrl.pending_mark.set(None);
+        match verdict {
+            OpenVerdict::ClearFlag => popover_open.set(false),
+            OpenVerdict::Swallow => ctrl.open.pending.set(None),
+            OpenVerdict::Collapse => {
+                ctrl.open.pending.set(None);
+                ctrl.commands.collapse_to_mark.run(());
+            }
+            OpenVerdict::Open => {
+                let Some(pending) = pending else {
                     return;
+                };
+                let mark = begin_open(&state, ctrl, &watch, &spring, viewport, pending);
+                match ctrl.cache.get(&mark.id) {
+                    Some(info) => serve_cached(ctrl, processing_id, info),
+                    None => begin_fetch(ctrl, processing_id, mark),
                 }
-                (GlossPhase::Expanded, true) => {
-                    ctrl.pending_mark.set(None);
-                    ctrl.collapse_to_mark.run(());
-                    return;
-                }
-                _ => {}
             }
         }
-
-        // Self-contained open: mark is already in hand (Info pill or stroke
-        // click). Persist it so re-open/re-explain reuse the id.
-        let mark = ctrl.add_mark.run(mark);
-
-        ctrl.pending_mark.set(None);
-        detail.set(None);
-        state.reader.ai_selection.anchor.set(None);
-        ctrl.mark_sig.set(Some(mark.clone()));
-
-        // Re-derive the anchor NOW (same tick) and re-anchor the spring to
-        // THIS word: every open morphs out of its own mark, never out of the
-        // previous card's resting place.
-        watch.refresh.run(());
-        if let Some(a) = watch.screen.get_untracked() {
-            spring.reset_to.run(a);
-        }
-
-        ctrl.word.set(mark.word.clone());
-        viewport.set(viewport_size());
-        ctrl.drag_offset.set(None);
-        ctrl.dragging.set(false);
-        ctrl.exit_armed.set(false);
-
-        // Exactly one highlighter: the native tint goes the moment the stroke
-        // takes over (it would also fight the card's own text selection).
-        if let Some(Some(s)) = web_sys::window().and_then(|w| w.get_selection().ok()) {
-            let _ = s.remove_all_ranges();
-        }
-
-        // Recall, not rescan: a stroke whose answer is already cached morphs
-        // straight back open, with no request and no shimmer.
-        if let Some(info) = ctrl.cache.with_value(|c| c.get(&mark.id).cloned()) {
-            ctrl.word_info.set(Some(info));
-            ctrl.error.set(None);
-            ctrl.phase.set(AiPhase::Done);
-            processing_id.set(None);
-            ctrl.gphase.set(GlossPhase::Expanded);
-            ctrl.surface_visible.set(true);
-            return;
-        }
-
-        ctrl.word_info.set(None);
-        ctrl.error.set(None);
-        ctrl.phase.set(AiPhase::Processing);
-        ctrl.gphase.set(GlossPhase::Processing);
-        // No surface while thinking: the highlighter stroke is the only
-        // processing UI, so nothing is stacked over the word.
-        ctrl.surface_visible.set(false);
-        processing_id.set(Some(mark.id.clone()));
-
-        if !pdf_engine::has_tauri() {
-            ctrl.error.set(Some(AiError {
-                kind: AiErrorKind::Other("desktop-only".into()),
-                message: "AI explanations are only available in the desktop app.".into(),
-                retryable: false,
-            }));
-            ctrl.phase.set(AiPhase::Error);
-            processing_id.set(None);
-            ctrl.gphase.set(GlossPhase::Expanded);
-            ctrl.surface_visible.set(true);
-        } else {
-            invoke_explain_word(mark.word, mark.context);
-        }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mark(page: u32, word: &str, x: f64) -> GlossMark {
+        GlossMark {
+            id: format!("g{page}-{x}"),
+            page,
+            word: word.to_string(),
+            context: String::new(),
+            rect: GlossBox {
+                x,
+                y: 100.0,
+                w: 40.0,
+                h: 12.0,
+                r: 6.0,
+            },
+        }
+    }
+
+    #[test]
+    fn no_pending_mark_means_a_stale_flag() {
+        assert_eq!(
+            open_verdict(None, Some(&mark(3, "word", 10.0)), GlossPhase::Expanded, true),
+            OpenVerdict::ClearFlag
+        );
+    }
+
+    #[test]
+    fn a_reclick_while_processing_is_swallowed() {
+        let m = mark(3, "word", 10.0);
+        assert_eq!(
+            open_verdict(Some(&m), Some(&m), GlossPhase::Processing, false),
+            OpenVerdict::Swallow
+        );
+        // Even with a stray visible surface.
+        assert_eq!(
+            open_verdict(Some(&m), Some(&m), GlossPhase::Processing, true),
+            OpenVerdict::Swallow
+        );
+    }
+
+    #[test]
+    fn a_reclick_on_the_expanded_card_collapses_it() {
+        let m = mark(3, "word", 10.0);
+        assert_eq!(
+            open_verdict(Some(&m), Some(&m), GlossPhase::Expanded, true),
+            OpenVerdict::Collapse
+        );
+    }
+
+    #[test]
+    fn compact_or_unmounting_reclicks_reopen() {
+        let m = mark(3, "word", 10.0);
+        // Compact chip: recall/reopen.
+        assert_eq!(
+            open_verdict(Some(&m), Some(&m), GlossPhase::Compact, true),
+            OpenVerdict::Open
+        );
+        // Expanded phase but the surface already unmounted (mid-outro).
+        assert_eq!(
+            open_verdict(Some(&m), Some(&m), GlossPhase::Expanded, false),
+            OpenVerdict::Open
+        );
+    }
+
+    #[test]
+    fn a_different_mark_always_opens() {
+        let a = mark(3, "word", 10.0);
+        let b = mark(3, "other", 80.0);
+        let c = mark(4, "word", 10.0);
+        for gphase in [GlossPhase::Processing, GlossPhase::Expanded, GlossPhase::Compact] {
+            assert_eq!(open_verdict(Some(&b), Some(&a), gphase, true), OpenVerdict::Open);
+            assert_eq!(open_verdict(Some(&c), Some(&a), gphase, true), OpenVerdict::Open);
+        }
+    }
+
+    #[test]
+    fn a_same_spot_duplicate_is_the_same_mark_for_verdict_purposes() {
+        // add_mark canonicalizes same-spot duplicates; the verdict must
+        // treat them as the current mark (same page/word/rect, different id).
+        let current = mark(3, "word", 10.0);
+        let duplicate = GlossMark {
+            id: "g3-999".into(),
+            ..current.clone()
+        };
+        assert_eq!(
+            open_verdict(Some(&duplicate), Some(&current), GlossPhase::Expanded, true),
+            OpenVerdict::Collapse
+        );
+    }
 }

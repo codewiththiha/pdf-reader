@@ -23,7 +23,7 @@ pub fn GlossContextMenu(
         let Some(t) = menu.get_untracked() else {
             return;
         };
-        let removed = ctrl.remove_marks.run(vec![t.id]);
+        let removed = ctrl.commands.remove_marks.run(vec![t.id]);
         let path = state.reader.document.path.get_untracked();
         park_undo(undo, removed, path);
         menu.set(None);

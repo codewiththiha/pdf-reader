@@ -19,14 +19,14 @@ pub struct CardDrag {
 
 pub fn use_card_drag(ctrl: GlossController, expanded: Memo<Option<GlossBox>>) -> CardDrag {
     let on_drag_start = Callback::new(move |(cx, cy, origin): (f64, f64, GlossBox)| {
-        ctrl.grab.set_value(Some((cx - origin.x, cy - origin.y)));
-        ctrl.dragging.set(true);
+        ctrl.drag.grab.set_value(Some((cx - origin.x, cy - origin.y)));
+        ctrl.drag.active.set(true);
     });
 
     use_pointer_drag(
-        ctrl.dragging,
+        ctrl.drag.active,
         move |mx, my| {
-            let Some((dx, dy)) = ctrl.grab.get_value() else {
+            let Some((dx, dy)) = ctrl.drag.grab.get_value() else {
                 return;
             };
             let Some(e) = expanded.get_untracked() else {
@@ -39,11 +39,11 @@ pub fn use_card_drag(ctrl: GlossController, expanded: Memo<Option<GlossBox>>) ->
                 Size::new(vw, vh),
                 CARD_MARGIN,
             );
-            ctrl.drag_offset.set(Some((p.x - e.x, p.y - e.y)));
+            ctrl.drag.offset.set(Some((p.x - e.x, p.y - e.y)));
         },
         move || {
-            ctrl.grab.set_value(None);
-            ctrl.dragging.set(false);
+            ctrl.drag.grab.set_value(None);
+            ctrl.drag.active.set(false);
         },
     );
 

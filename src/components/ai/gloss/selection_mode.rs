@@ -119,7 +119,7 @@ pub fn use_select_mode(state: AppState, ctrl: GlossController) -> SelectMode {
     // strokes, and the bar wants its corner of the screen to itself.
     Effect::new(move |_| {
         if selecting.get() {
-            ctrl.collapse_to_mark.run(());
+            ctrl.commands.collapse_to_mark.run(());
             menu.set(None);
         }
     });

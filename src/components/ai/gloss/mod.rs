@@ -7,8 +7,9 @@
 //!   the side-aware card placement ([`pdf_core::gloss::place_card`]).
 //! * Page-aware anchors live in [`crate::components::ai::anchor`] (shared
 //!   with the selection Info pill).
-//! * [`controller`]     — the state machine hub: signals, open/close, dedup,
-//!   remove/restore.
+//! * [`controller`]     — the state machine hub: grouped state slices
+//!   (content / geometry / open / drag / cache), the shared commands,
+//!   and the open path as a named verdict + transitions.
 //! * [`placement`]      — the card's target memos (expanded box + drag offset).
 //! * [`drag`]           — pointer physics for dragging the expanded card
 //!   (thin domain wrapper over the primitive drag mechanics).

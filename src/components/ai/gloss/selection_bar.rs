@@ -53,7 +53,7 @@ pub fn GlossSelectBar(
         if ids.is_empty() {
             return;
         }
-        let removed = ctrl.remove_marks.run(ids);
+        let removed = ctrl.commands.remove_marks.run(ids);
         let path = state.reader.document.path.get_untracked();
         park_undo(undo, removed, path);
         exit_selection(state);

@@ -24,38 +24,34 @@ pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
             };
             match chunk {
                 AiChunkEvent::Snapshot(info) => {
-                    if let Some(m) = ctrl.mark_sig.get_untracked() {
-                        ctrl.cache.update_value(|c| {
-                            c.insert(m.id.clone(), info.clone());
-                        });
+                    if let Some(m) = ctrl.open.mark.get_untracked() {
+                        ctrl.cache.insert(m.id.clone(), info.clone());
                     }
                     processing_id.set(None);
-                    if ctrl.phase.get_untracked() == AiPhase::Processing {
-                        ctrl.phase.set(AiPhase::Streaming);
-                        if ctrl.gphase.get_untracked() == GlossPhase::Processing {
-                            ctrl.gphase.set(GlossPhase::Expanded);
-                            ctrl.surface_visible.set(true);
+                    if ctrl.content.phase.get_untracked() == AiPhase::Processing {
+                        ctrl.content.phase.set(AiPhase::Streaming);
+                        if ctrl.geometry.gphase.get_untracked() == GlossPhase::Processing {
+                            ctrl.geometry.gphase.set(GlossPhase::Expanded);
+                            ctrl.geometry.surface_visible.set(true);
                         }
                     }
-                    ctrl.word_info.set(Some(info));
+                    ctrl.content.word_info.set(Some(info));
                 }
-                AiChunkEvent::Done => ctrl.phase.set(AiPhase::Done),
+                AiChunkEvent::Done => ctrl.content.phase.set(AiPhase::Done),
                 AiChunkEvent::Error(err) => {
                     // A failed run must not leave a stale partial snapshot
                     // behind: re-opening this mark has to re-request, not
                     // recall the fragment as if it were the finished answer.
-                    if let Some(m) = ctrl.mark_sig.get_untracked() {
-                        ctrl.cache.update_value(|c| {
-                            c.remove(&m.id);
-                        });
+                    if let Some(m) = ctrl.open.mark.get_untracked() {
+                        ctrl.cache.remove(&m.id);
                     }
-                    ctrl.error.set(Some(err));
-                    ctrl.phase.set(AiPhase::Error);
+                    ctrl.content.error.set(Some(err));
+                    ctrl.content.phase.set(AiPhase::Error);
                     processing_id.set(None);
-                    if ctrl.gphase.get_untracked() == GlossPhase::Processing {
-                        ctrl.gphase.set(GlossPhase::Expanded);
+                    if ctrl.geometry.gphase.get_untracked() == GlossPhase::Processing {
+                        ctrl.geometry.gphase.set(GlossPhase::Expanded);
                     }
-                    ctrl.surface_visible.set(true);
+                    ctrl.geometry.surface_visible.set(true);
                 }
             }
         },

@@ -68,7 +68,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // flags `exited` once the origin passes CARD_EXIT_FRAC of the viewport
     // height (or leaves the top, or its page unmounts).
     let watch = watch_page_anchor(
-        Signal::derive(move || ctrl.mark_sig.get().map(|m| PageAnchor::from_mark(&m))),
+        Signal::derive(move || ctrl.open.mark.get().map(|m| PageAnchor::from_mark(&m))),
         state.reader.viewer.zoom.display.into(),
         state.reader.viewer.mode.into(),
         state.reader.viewer.scroll_top.into(),
@@ -83,12 +83,12 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let reduced = reduced_motion_signal();
 
     // ── Card targeting ────────────────────────────────────────────────
-    let (measure_ref, content_height) = use_content_measure(ctrl.word, ctrl.word_info);
+    let (measure_ref, content_height) = use_content_measure(ctrl.content.word, ctrl.content.word_info);
     let expanded = expanded_target(anchor.into(), content_height, viewport);
     let target = spring_target(
         anchor.into(),
-        ctrl.gphase,
-        ctrl.drag_offset,
+        ctrl.geometry.gphase,
+        ctrl.drag.offset,
         expanded,
         viewport,
     );
@@ -97,14 +97,14 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     // teleported the surface onto the anchor instead of morphing down to it.
     // Only the processing phase (where no surface exists anyway) snaps.
     let snap = Signal::derive(move || {
-        ctrl.dragging.get() || reduced.get() || ctrl.gphase.get() == GlossPhase::Processing
+        ctrl.drag.active.get() || reduced.get() || ctrl.geometry.gphase.get() == GlossPhase::Processing
     });
     let spring: SpringBox<GlossBox> = use_spring_box(target.into(), snap);
     let sprung = spring.value;
 
     let progress = Memo::new(move |_| {
         let (Some(b), Some(a), Some(e)) = (sprung.get(), anchor.get(), expanded.get()) else {
-            return if ctrl.gphase.get() == GlossPhase::Expanded {
+            return if ctrl.geometry.gphase.get() == GlossPhase::Expanded {
                 1.0
             } else {
                 0.0
@@ -132,11 +132,11 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
     let sm = use_select_mode(state, ctrl);
 
     // ── Surface props (unwrapped — it only renders while visible) ─────
-    let phase_sig = Signal::derive(move || ctrl.gphase.get());
+    let phase_sig = Signal::derive(move || ctrl.geometry.gphase.get());
     let box_sig = Signal::derive(move || sprung.get().unwrap_or_default());
     let expanded_sig = Signal::derive(move || expanded.get().unwrap_or_default());
     let progress_sig = Signal::derive(move || progress.get());
-    let word_sig = Signal::derive(move || ctrl.word.get());
+    let word_sig = Signal::derive(move || ctrl.content.word.get());
 
     view! {
         // Invisible measure twin — pixel-exact replica of the scroll column
@@ -148,12 +148,12 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
             style=format!("width:{CARD_WIDTH}px")
             aria-hidden="true"
         >
-            <GlossBody word=ctrl.word>
-                {move || ctrl.word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
+            <GlossBody word=ctrl.content.word>
+                {move || ctrl.content.word_info.get().map(|info| view! { <WordInfoSections info=info /> })}
             </GlossBody>
         </div>
 
-        <Show when=move || ctrl.surface_visible.get() && ctrl.phase.get() != AiPhase::Idle>
+        <Show when=move || ctrl.geometry.surface_visible.get() && ctrl.content.phase.get() != AiPhase::Idle>
             <GlossSurface
                 phase=phase_sig
                 box_=box_sig
@@ -162,14 +162,14 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                 word=word_sig
                 on_drag_start=drag.on_drag_start
             >
-                {move || match ctrl.phase.get() {
+                {move || match ctrl.content.phase.get() {
                     AiPhase::Processing => view! { <LoadingShimmer /> }.into_any(),
-                    AiPhase::Streaming | AiPhase::Done => match ctrl.word_info.get() {
+                    AiPhase::Streaming | AiPhase::Done => match ctrl.content.word_info.get() {
                         Some(info) => view! { <WordInfoSections info=info /> }.into_any(),
                         None => view! { <LoadingShimmer /> }.into_any(),
                     },
                     AiPhase::Error => {
-                        let err = ctrl.error.get().unwrap_or_else(AiError::unknown);
+                        let err = ctrl.content.error.get().unwrap_or_else(AiError::unknown);
                         let msg = err.friendly().into_owned();
                         let retryable = err.retryable;
                         view! {
@@ -178,7 +178,7 @@ pub fn GlossAiPopover(state: AppState) -> impl IntoView {
                                 <Show when=move || retryable>
                                     <button
                                         type="button"
-                                        on:click=move |_| ctrl.retry.run(())
+                                        on:click=move |_| ctrl.commands.retry.run(())
                                         class="self-start rounded-full border border-line bg-surface \
                                                px-4 py-1.5 text-sm font-medium text-ink \
                                                transition-[transform,background-color] duration-150 ease-out \

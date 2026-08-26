@@ -25,7 +25,7 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
     // the primitive is used for the outside-press half and the Escape half
     // stays here as domain policy.
     Effect::new(move |_| {
-        if !ctrl.surface_visible.get() {
+        if !ctrl.geometry.surface_visible.get() {
             return;
         }
         let key = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
@@ -33,11 +33,11 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
             if ke.key() != "Escape" {
                 return;
             }
-            match ctrl.gphase.get_untracked() {
+            match ctrl.geometry.gphase.get_untracked() {
                 // First Escape closes the card (with the outro); a second one
                 // on the bare chip gives up on the gloss entirely.
-                GlossPhase::Expanded => ctrl.collapse_to_mark.run(()),
-                _ => ctrl.reset.run(()),
+                GlossPhase::Expanded => ctrl.commands.collapse_to_mark.run(()),
+                _ => ctrl.commands.reset.run(()),
             }
         });
         on_cleanup(move || key.remove());
@@ -46,8 +46,8 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
     // A press inside the surface is the card's own interaction; anywhere else
     // collapses an expanded card (compact chips stay put).
     use_dismiss(
-        ctrl.surface_visible.into(),
-        ctrl.collapse_to_mark,
+        ctrl.geometry.surface_visible.into(),
+        ctrl.commands.collapse_to_mark,
         DismissPolicy {
             escape: false,
             outside: Some(DismissTrigger::PointerDown),
@@ -70,7 +70,7 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
 /// hard exit instead: page unmounted, or origin fully out of the viewport.
 pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
     Effect::new(move |_| {
-        if !ctrl.surface_visible.get() || ctrl.gphase.get() != GlossPhase::Expanded {
+        if !ctrl.geometry.surface_visible.get() || ctrl.geometry.gphase.get() != GlossPhase::Expanded {
             return;
         }
 
@@ -82,7 +82,7 @@ pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
             Some(b) => (b.y + b.h) < 0.0 || b.y > vh,
         };
         if gone {
-            ctrl.collapse_to_mark.run(());
+            ctrl.commands.collapse_to_mark.run(());
             return;
         }
 
@@ -90,11 +90,11 @@ pub fn use_origin_exit_collapse(watch: AnchorWatch, ctrl: GlossController) {
         // collapsed by the band. Opened low → unarmed → survives; scroll up
         // (arms) then back down past the band → collapses, as designed.
         if !watch.exited.get() {
-            ctrl.exit_armed.set(true);
+            ctrl.geometry.exit_armed.set(true);
             return;
         }
-        if ctrl.exit_armed.get_untracked() {
-            ctrl.collapse_to_mark.run(());
+        if ctrl.geometry.exit_armed.get_untracked() {
+            ctrl.commands.collapse_to_mark.run(());
         }
     });
 }
@@ -109,17 +109,17 @@ pub fn use_settle_unmount(
     sprung: Signal<Option<GlossBox>>,
 ) {
     Effect::new(move |_| {
-        if !ctrl.surface_visible.get() || ctrl.gphase.get() != GlossPhase::Compact {
+        if !ctrl.geometry.surface_visible.get() || ctrl.geometry.gphase.get() != GlossPhase::Compact {
             return;
         }
         let Some(a) = anchor.get() else {
             // The mark's page unmounted mid-morph: there is nothing left to
             // land on, so drop the surface now.
-            ctrl.surface_visible.set(false);
+            ctrl.geometry.surface_visible.set(false);
             return;
         };
         if sprung.get().is_some_and(|b| boxes_close(b, a, 0.5)) {
-            ctrl.surface_visible.set(false);
+            ctrl.geometry.surface_visible.set(false);
         }
     });
 }
@@ -129,8 +129,8 @@ pub fn use_settle_unmount(
 pub fn use_page_flip_collapse(state: AppState, ctrl: GlossController) {
     Effect::new(move |_| {
         let _ = state.reader.viewer.page.get();
-        if ctrl.surface_visible.get_untracked() {
-            ctrl.collapse_to_mark.run(());
+        if ctrl.geometry.surface_visible.get_untracked() {
+            ctrl.commands.collapse_to_mark.run(());
         }
     });
 }
@@ -144,7 +144,7 @@ pub fn use_zoom_reset(state: AppState, ctrl: GlossController) {
             return;
         }
         if state.reader.ai_selection.popover_open.get_untracked() {
-            ctrl.reset.run(());
+            ctrl.commands.reset.run(());
         }
     });
 }
