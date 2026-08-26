@@ -19,6 +19,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
+use crate::components::primitives::hooks::use_resize_observer::use_resize_observer;
 use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
@@ -138,6 +139,10 @@ pub fn ThumbnailsPanel(
         if live.get() {
             v_remeasure.remeasure_container();
         }
+    });
+    let v_resize = v.clone();
+    use_resize_observer(scroll_ref, move |_| {
+        v_resize.remeasure_container();
     });
 
     auto.install(state, sidebar);
