@@ -1,6 +1,8 @@
 //! Fit-mode effect: recomputes the render scale while FitMode::Width/Page is
-//! active, debounced 120ms after `container_size` settles so a sidebar slide
-//! yields exactly one re-render.
+//! active. The LAYOUT follows every `container_size` frame (a sidebar slide
+//! must not let the stretched DOM and the virtualized heights diverge); the
+//! crisp RENDER is debounced 180ms after the size settles, so a slide yields
+//! exactly one re-render.
 //!
 //! The zoom machinery (gesture animation, anchoring, commit) lives in the
 //! sibling `zoom` module; `fit_effect` hands scale changes to it via
@@ -27,20 +29,13 @@ pub fn fit_effect(
     sidebar: RwSignal<SidebarMode>,
     virtualizer: Virtualizer,
 ) {
-    // Width of the window at the last refit, used to tell a WINDOW resize from
-    // a sidebar slide: both move `container_size`, but only the former moves
-    // `window.innerWidth`. No timers, no guessing.
-    let last_win_w: StoredValue<f64> = StoredValue::new(f64::NAN);
-    // Last page we computed a fit for. A page-only change must NOT follow
-    // the layout on the same frame (that would zoom on every row boundary
-    // while the reader is scrolling); it waits for the existing debounce.
+    // Last page we computed a fit for. Doubles as the first-run marker: it
+    // starts at 0 and is only ever written with a real (>= 1) page once the
+    // document is open, so "no fit computed yet" and "the document is
+    // opening" are the same state. A page-only change must NOT follow the
+    // layout on the same frame (that would zoom on every row boundary while
+    // the reader is scrolling); it waits for the existing debounce.
     let last_fit_page: StoredValue<u32> = StoredValue::new(0);
-    // Container width at the previous run and the time of the last width
-    // CHANGE. The sidebar's width animates over 300ms, so a slide re-runs
-    // this effect with a fresh width every frame; a width that moved less
-    // than a second ago therefore marks the run as part of that slide.
-    let last_cw: StoredValue<f64> = StoredValue::new(f64::NAN);
-    let last_width_change_ms: StoredValue<f64> = StoredValue::new(0.0);
 
     Effect::new(move |_| {
         let fit = state.viewer.fit.get();
@@ -110,34 +105,11 @@ pub fn fit_effect(
                 _ => (p1.width, p1.height),
             }
         });
+        // First run is the document opening, which always fits.
         let prev_page = last_fit_page.get_value();
+        let first_run = prev_page == 0;
         let page_changed = prev_page != 0 && prev_page != page;
         last_fit_page.set_value(page);
-
-        let win_w = web_sys::window()
-            .and_then(|w| w.inner_width().ok())
-            .and_then(|v| v.as_f64())
-            .unwrap_or(f64::NAN);
-        let prev_win_w = last_win_w.get_value();
-        // First run (NaN) is the document opening, which always fits.
-        let first_run = prev_win_w.is_nan();
-        let window_resized = first_run || (win_w - prev_win_w).abs() >= 0.5;
-        if window_resized {
-            last_win_w.set_value(win_w);
-        }
-
-        // Is the container width still moving? A sidebar slide fires a burst
-        // of `container_size` updates for the whole 300ms animation (and a
-        // window-resize drag behaves the same way, which is fine — the same
-        // reasoning applies). The 350ms window covers the 300ms transition
-        // plus the tail of frames the ResizeObserver delivers after it ends.
-        let now = js_sys::Date::now();
-        let prev_cw = last_cw.get_value();
-        if !prev_cw.is_nan() && (cw - prev_cw).abs() > 1.0 {
-            last_width_change_ms.set_value(now);
-        }
-        last_cw.set_value(cw);
-        let in_sidebar_slide = (now - last_width_change_ms.get_value()) < 350.0;
 
         // The scale this run is aiming at.
         //
@@ -211,24 +183,28 @@ pub fn fit_effect(
         // --- the sidebar slide ------------------------------------------------
         // The `<aside>` animates its width over 300ms, so `container_size`
         // arrives as a burst of per-frame values. FREEZING the scale through
-        // that burst (the previous approach) keeps the page host wider than the
+        // that burst (an earlier approach) keeps the page host wider than the
         // content box it now has to fit in — and because the host is a flex
         // child, the browser SQUISHES it: width shrinks, the inline height
         // doesn't, and a letter page goes from a 0.77 aspect to 0.61. The page
-        // is visibly distorted, then snaps back at the end. That snap is the
-        // "flicker then instantly switch" being reported.
+        // is visibly distorted, then snaps back at the end.
         //
-        // So: follow the slide continuously in `display_scale` — pages
-        // CSS-stretch every frame, aspect preserved, so no squish at any
-        // point along the way. The relayout, though, waits for the debounce:
-        // running it per frame rescaled the virtualizer dozens of times
-        // inside the animation, and every rescale writes a scroll offset
-        // that the browser clamps against a spacer still one frame behind
-        // — an error that compounds over the slide and is largest at the
-        // end of the document, which is exactly where the close-slide
-        // flicker lived. The debounce below commits ONE crisp render once
-        // the width settles, and the measured heights flow back through
-        // `on_geometry` to re-anchor the layout at the final scale.
+        // Following the slide in `display_scale` ALONE is just as wrong: the
+        // stretch effect re-sizes every mounted host to the new scale in the
+        // same frame, but the virtualizer's heights — and therefore every
+        // item top — would still be at the OLD scale, so pages gap and
+        // overlap for the whole slide and only snap flush at the commit
+        // render. The layout must move in LOCKSTEP with the stretched DOM:
+        // same frame, same factor, through the same relayout a zoom gesture
+        // uses.
+        //
+        // The rapid-fire rescales that implies are safe: `zoom_animating` is
+        // held true for the whole slide (the cheap stretched raster shows,
+        // renders are suspended, the DOM scroll echo is gated), and
+        // `relayout_to` re-asserts its scroll write on the next animation
+        // frame — once the spacer has actually been laid out at the new
+        // height — so the stale-scrollHeight clamp cannot compound across
+        // the burst.
         if just_committed {
             // A gesture just landed: leave it exactly where the reader put it.
             //
@@ -251,18 +227,13 @@ pub fn fit_effect(
         if !first_run && !page_changed {
             let cur = state.viewer.zoom.display.get_untracked();
             if (target - cur).abs() >= 0.0005 {
-                if in_sidebar_slide {
-                    // Mid-slide: the width is still animating, so this effect
-                    // fires again within a frame or two. Track the target in
-                    // `display_scale` (the CSS stretch above) and let the
-                    // debounce perform the single relayout + commit at the
-                    // end, once the width has settled.
-                    state.viewer.zoom.display.set(target);
-                } else {
-                    state.viewer.zoom_animating.set(true);
-                    relayout_to(state, target / cur, &virtualizer);
-                    state.viewer.zoom.display.set(target);
-                }
+                // Sidebar slide / window resize / refit: one dance. Display
+                // leads (the stretch effect follows it), the layout moves in
+                // the same frame, and the debounce below commits the crisp
+                // render once the size settles.
+                state.viewer.zoom_animating.set(true);
+                relayout_to(state, target / cur, &virtualizer);
+                state.viewer.zoom.display.set(target);
             }
         }
 
@@ -272,7 +243,7 @@ pub fn fit_effect(
         // writes it. Arming a timer when the layout is already settled
         // therefore fed the effect its own output: timer fires -> writes
         // `zoom_animating` -> effect re-runs -> arms another timer -> forever,
-        // a self-sustaining 120ms loop that re-rendered the page endlessly.
+        // a self-sustaining 180ms loop that re-rendered the page endlessly.
         //
         // It showed up after zooming in past the fit in a NARROW window and
         // then widening it: the page ends up at a scale that already fits and
@@ -289,7 +260,7 @@ pub fn fit_effect(
 
         // Debounce: each `container_size` change re-runs this effect and clears
         // the previous timer, so the commit fires once the size has been stable
-        // for ~120ms — one render per slide or per resize drag, at the end.
+        // for ~180ms — one render per slide or per resize drag, at the end.
         let timer_virtualizer = virtualizer.clone();
         let handle = set_timeout_with_handle(
             move || {
