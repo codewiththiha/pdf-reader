@@ -154,8 +154,14 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
                 // their own skeleton until renderThumb completes.
                 cells_mounted.set(true);
                 intro.set(true);
-                // Keep the marker through one committed frame, then remove it
-                // so the CSS opacity transition runs alongside the aside.
+                // Keep the marker through one COMMITTED frame, then remove
+                // it so the CSS opacity transition runs alongside the aside.
+                // Two rAFs, not one: the first callback fires BEFORE the
+                // frame with `intro` painted has been composited, so clearing
+                // there would change the class in the same paint the marker
+                // appeared in — no transition. The second callback runs
+                // strictly after that frame is on screen, which is the
+                // earliest point the fade can actually animate from.
                 request_animation_frame(move || {
                     request_animation_frame(move || intro.set(false));
                 });

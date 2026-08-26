@@ -51,6 +51,13 @@ pub struct DismissPolicy {
     pub topmost_only: bool,
 }
 
+// The topmost-overlay registry. Deliberately `thread_local!` — in WASM the
+// UI is single-threaded, so this is an application-global that every
+// dismissable surface shares WITHOUT threading a registry handle through
+// each component's props (it is exactly the kind of ambient bookkeeping a
+// prop would force onto surfaces that never care about stacking). The cost
+// is that tests touching it must tolerate shared per-thread state, which
+// the tests below do by pushing and popping symmetrically.
 thread_local! {
     /// Stack of open dismissable ids, most recent last.
     static DISMISS_STACK: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
@@ -171,4 +178,68 @@ pub fn use_dismiss(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Push `ids`, run `body`, then pop them again so the shared stack is
+    /// exactly as we found it — later tests on this thread start clean.
+    fn with_stack<T>(ids: &[u64], body: impl FnOnce() -> T) -> T {
+        for id in ids {
+            push_stack(*id);
+        }
+        let out = body();
+        for id in ids {
+            pop_stack(*id);
+        }
+        out
+    }
+
+    #[test]
+    fn the_most_recent_surface_is_topmost() {
+        with_stack(&[7, 9], || {
+            assert!(is_topmost(9));
+            assert!(!is_topmost(7));
+        });
+    }
+
+    #[test]
+    fn an_empty_stack_has_no_topmost() {
+        // Safe on a fresh thread's stack: an empty Vec's last() is None.
+        let empty = DISMISS_STACK.with(|s| s.borrow().is_empty());
+        if empty {
+            assert!(!is_topmost(42));
+        }
+    }
+
+    #[test]
+    fn pushing_the_same_id_twice_does_not_stack_it_twice() {
+        with_stack(&[5], || {
+            push_stack(5);
+            assert!(is_topmost(5));
+            pop_stack(5);
+            pop_stack(5); // second pop of an absent id: a no-op
+            assert!(!is_topmost(5));
+        });
+    }
+
+    #[test]
+    fn popping_a_middle_surface_preserves_the_rest() {
+        with_stack(&[1, 2, 3], || {
+            pop_stack(2);
+            assert!(!is_topmost(2));
+            assert!(is_topmost(3));
+            pop_stack(3);
+            assert!(is_topmost(1)); // the oldest becomes topmost again
+        });
+    }
+
+    #[test]
+    fn ids_are_handed_out_monotonically() {
+        let a = next_id();
+        let b = next_id();
+        assert!(b > a, "ids must never repeat: {a} then {b}");
+    }
 }
