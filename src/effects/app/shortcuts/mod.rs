@@ -84,6 +84,7 @@ pub fn shortcuts(
             return;
         }
 
+        crate::effects::reader::auto_scroll::handle_auto_scroll_shortcut(state, &ev);
         handle_zoom_shortcut(state, &ev);
         handle_navigation_shortcut(state, &ev);
     });

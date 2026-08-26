@@ -1,5 +1,5 @@
-//! Navigation sync: keeps `viewer.page` and the continuous scroll position in
-//! sync around the virtualizer. Wired once from ReaderPage.
+//! Navigation sync: keeps `viewer.page` and the continuous/horizontal scroll
+//! position in sync around the virtualizers. Wired once from ReaderPage.
 //!
 //! - scroll -> page: the virtualizer's dominant-page signal
 //! - page -> scroll: `scroll_to_index(Start, Auto)`
@@ -32,11 +32,15 @@ impl NavSyncState {
 }
 
 /// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
-pub fn navigation_sync(state: ReaderState, virtualizer: Virtualizer) {
+pub fn navigation_sync(
+    state: ReaderState,
+    virtualizer: Virtualizer,
+    h_virtualizer: Virtualizer,
+) {
     let nav = NavSyncState::new();
     let mode = state.viewer.mode;
 
-    mode_flip(state, virtualizer.clone());
+    mode_flip(state, virtualizer.clone(), h_virtualizer.clone());
 
     {
         let suppress = nav.suppress.clone();
@@ -61,6 +65,41 @@ pub fn navigation_sync(state: ReaderState, virtualizer: Virtualizer) {
         let v = virtualizer.clone();
         Effect::new(move |_| {
             if mode.get() != ViewMode::Continuous {
+                return;
+            }
+            let page = page.get();
+            if suppress.get() {
+                suppress.set(false);
+                return;
+            }
+            if page == 0 {
+                return;
+            }
+            v.scroll_to_index((page - 1) as usize, Align::Start, ScrollMode::Auto);
+        });
+    }
+
+    {
+        // dominant page follows the horizontal strip
+        let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
+        Effect::new(move |_| {
+            if mode.get() != ViewMode::Horizontal {
+                return;
+            }
+            let dominant = v.dominant().get() as u32 + 1;
+            if page.get_untracked() == dominant {
+                return;
+            }
+            suppress.set(true);
+            page.set(dominant);
+        });
+    }
+
+    {
+        // page changes drive the horizontal strip
+        let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
+        Effect::new(move |_| {
+            if mode.get() != ViewMode::Horizontal {
                 return;
             }
             let page = page.get();

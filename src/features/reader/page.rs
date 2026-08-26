@@ -8,20 +8,16 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use leptos::html;
 use leptos::prelude::*;
 use virtual_list::Viewport;
 use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
-use super::toolbar_entries::reader_toolbar_entries;
-use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
-use crate::components::app_shell::adaptive_toolbar::AdaptiveToolbar;
 use crate::components::app_shell::app_title_bar::AppTitleBar;
-use crate::components::app_shell::document_title::DocumentTitle;
+use crate::components::app_shell::document_title::CenteredDocTitle;
 use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
-use crate::components::primitives::button::{Button, ButtonVariant};
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::tooltip::Tooltip;
+use crate::components::menus::appearance_menu::AppearanceMenu;
+use crate::components::menus::reader_menu::ReaderMenu;
+use crate::components::primitives::hooks::dom::VIEWER_SLOT_ID;
 use crate::components::sidebar::Sidebar;
 use crate::components::sidebar::document_info::BookInfo;
 use crate::components::sidebar::header::SidebarHeader;
@@ -35,10 +31,8 @@ use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::effects::reader::zoom::zoom_system;
-use crate::services::document::{close_document, open_dialog};
 use crate::state::AppState;
-use crate::state::SidebarMode;
-use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, ViewMode};
+use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, TOOLBAR_H, ViewMode};
 use pdf_engine::types::DocStatus;
 
 #[component]
@@ -133,6 +127,23 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             .epoch(epoch),
     );
 
+    // Horizontal virtualizer: created unconditionally (hook), bound only when the view mounts.
+    let h_estimate = move |index: usize| {
+        vs.document.metrics.intrinsic.with_untracked(|sizes| {
+            sizes.get(index).map(|s| s.width).unwrap_or(0.0)
+        }) * vs.viewer.zoom.display.get_untracked()
+    };
+    let h_virtualizer = use_virtualizer(
+        VirtualizerOptions::list(count, h_estimate)
+            .axis(virtual_list_leptos::Axis::Horizontal)
+            .gap(0.0)
+            .budget(RENDER_BUDGET)
+            .padding(TOOLBAR_H, 24.0)
+            .initial(Viewport::new(1200.0, initial_vh), 0.0)
+            .epoch(epoch),
+    );
+    let h_virtualizer_view = StoredValue::new_local(h_virtualizer.clone());
+
     {
         let v = virtualizer.clone();
         Effect::new(move |_| {
@@ -155,9 +166,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
 
-    fit_effect(vs, state.ui.sidebar, virtualizer.clone());
-    zoom_system(vs, virtualizer.clone());
-    navigation_sync(vs, virtualizer.clone());
+    fit_effect(vs, state.ui.sidebar, virtualizer.clone(), h_virtualizer.clone());
+    zoom_system(vs, virtualizer.clone(), h_virtualizer.clone());
+    navigation_sync(vs, virtualizer.clone(), h_virtualizer.clone());
+    crate::effects::reader::auto_scroll::auto_scroll(vs);
     let virtualizer_view = StoredValue::new_local(virtualizer.clone());
     reading_progress(state);
 
@@ -172,93 +184,18 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         present: paint.present,
     });
 
-    let appearance_open = RwSignal::new(false);
-    let collapsed_ids = RwSignal::new(Vec::<&'static str>::new());
-    let overflow_ref: NodeRef<html::Div> = NodeRef::new();
-
-    // AdaptiveToolbar is generic UI: it gets a ready flag and a refresh
-    // counter instead of AppState. The page bumps the counter whenever
-    // chrome state that affects the bar's geometry changes.
-    let toolbar_ready = Signal::derive(move || status.get() == DocStatus::Ready);
-    let toolbar_refresh = RwSignal::new(0u64);
-    Effect::new(move |_| {
-        _ = state.ui.sidebar.get();
-        _ = state.reader.document.status.get();
-        _ = state.reader.document.num_pages.get();
-        _ = state.reader.document.title.get();
-        _ = state.reader.document.path.get();
-        toolbar_refresh.update(|n| *n += 1);
-    });
-
-    // LEFT slot: sidebar toggle (only while the sidebar is closed — the
-    // sidebar's own chrome row owns it otherwise), Library, Open, DocumentTitle.
-    let left = move || {
-        view! {
-            <div class="flex min-w-0 items-center gap-1">
-                <div
-                    id=TOOLBAR_LEADING_ID
-                    data-tauri-drag-region="true"
-                    class="flex shrink-0 items-center gap-1"
-                >
-                    <Show when=move || state.ui.sidebar.get() == SidebarMode::None>
-                        <Tooltip text="Toggle sidebar">
-                            <Button
-                                on_click=move |_| state.ui.sidebar.set(SidebarMode::Thumbs)
-                                variant=ButtonVariant::Ghost
-                                title="Toggle sidebar"
-                            >
-                                <Icon name=IconName::Sidebar size=18 />
-                            </Button>
-                        </Tooltip>
-                    </Show>
-                    <Show when=move || {
-                        matches!(
-                            state.reader.document.status.get(),
-                            DocStatus::Ready | DocStatus::Opening
-                        )
-                    }>
-                        <Tooltip text="Library">
-                            <Button
-                                on_click=move |_| close_document(state)
-                                variant=ButtonVariant::Ghost
-                                title="Close this book and return to the library"
-                            >
-                                <Icon name=IconName::Library size=18 />
-                            </Button>
-                        </Tooltip>
-                    </Show>
-                    <Tooltip text="Open PDF (Cmd/Ctrl+O)">
-                        <Button
-                            on_click=move |_| open_dialog(state)
-                            variant=ButtonVariant::Toolbar
-                            title="Open PDF (Cmd/Ctrl+O)"
-                        >
-                            <Icon name=IconName::Open size=18 />
-                            <span>"Open"</span>
-                        </Button>
-                    </Tooltip>
-                </div>
-                <DocumentTitle state=state />
-            </div>
-        }
-    };
-
-    // RIGHT slot: view-mode, fit, zoom, appearance — collision-aware overflow.
+    // ── New chrome: no Open button, centered title, theme + 3-dash only ──
+    let left = move || ();
+    let center = move || view! { <CenteredDocTitle state=state /> };
     let right = move || {
-        let entries = reader_toolbar_entries(state, appearance_open, collapsed_ids, overflow_ref);
         view! {
-            <AdaptiveToolbar
-                ready=toolbar_ready
-                refresh=toolbar_refresh.into()
-                entries=entries
-                collapsed_ids=collapsed_ids
-                overflow_ref=overflow_ref
-            />
+            <AppearanceMenu state=state />
+            <ReaderMenu state=state />
         }
     };
 
     view! {
-        <AppTitleBar state=state left=left right=right>
+        <AppTitleBar state=state left=left center=center right=right>
             // overflow-hidden clips the hidden ReaderBottomBar's slide-down translate
             // so it can never leak a phantom scrollbar onto the window.
             <div class="relative flex h-full w-full flex-col overflow-hidden bg-paper text-ink">
@@ -303,10 +240,21 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                     <crate::components::document::SinglePageView state=vs />
                                 }
                                 .into_any(),
+                                ViewMode::Dual => view! {
+                                    <crate::components::document::DualPageView state=vs />
+                                }
+                                .into_any(),
                                 ViewMode::Continuous => view! {
                                     <crate::components::document::ContinuousView
                                         state=vs
                                         virtualizer=virtualizer_view.get_value()
+                                    />
+                                }
+                                .into_any(),
+                                ViewMode::Horizontal => view! {
+                                    <crate::components::document::HorizontalView
+                                        state=vs
+                                        virtualizer=h_virtualizer_view.get_value()
                                     />
                                 }
                                 .into_any(),
@@ -325,7 +273,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 />
                             </div>
                         </Show>
-                        <ReaderBottomBar reader=vs virtualizer=virtualizer_view />
+                        <ReaderBottomBar
+                            reader=vs
+                            virtualizer=virtualizer_view
+                            h_virtualizer=h_virtualizer_view
+                        />
                         <crate::components::search::floating_search::FloatingSearch
                             state=vs
                             virtualizer=virtualizer_view

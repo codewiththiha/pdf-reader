@@ -28,6 +28,7 @@ pub fn fit_effect(
     // state passed in explicitly).
     sidebar: RwSignal<SidebarMode>,
     virtualizer: Virtualizer,
+    h_virtualizer: Virtualizer,
 ) {
     // Last page we computed a fit for. Doubles as the first-run marker: it
     // starts at 0 and is only ever written with a real (>= 1) page once the
@@ -232,7 +233,7 @@ pub fn fit_effect(
                 // the same frame, and the debounce below commits the crisp
                 // render once the size settles.
                 state.viewer.zoom_animating.set(true);
-                relayout_to(state, target / cur, &virtualizer);
+                relayout_to(state, target / cur, &virtualizer, &h_virtualizer);
                 state.viewer.zoom.display.set(target);
             }
         }
@@ -262,6 +263,7 @@ pub fn fit_effect(
         // the previous timer, so the commit fires once the size has been stable
         // for ~180ms — one render per slide or per resize drag, at the end.
         let timer_virtualizer = virtualizer.clone();
+        let timer_h_virtualizer = h_virtualizer.clone();
         let handle = set_timeout_with_handle(
             move || {
                 if first_run {
@@ -275,7 +277,7 @@ pub fn fit_effect(
                 // heights stay at the old scale and the scroll teleports.
                 let cur = state.viewer.zoom.display.get_untracked();
                 if (target - cur).abs() >= 0.0005 {
-                    relayout_to(state, target / cur, &timer_virtualizer);
+                    relayout_to(state, target / cur, &timer_virtualizer, &timer_h_virtualizer);
                     state.viewer.zoom.display.set(target);
                 }
                 let prev = state.viewer.zoom.render.get_untracked();

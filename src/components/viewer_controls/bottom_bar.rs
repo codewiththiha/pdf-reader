@@ -1,5 +1,5 @@
 //! Auto-hide bottom bar: the displaced PageNavigation (prev/next + page input)
-//! and, in continuous mode, a scroll scrubber. Mirrors the top bar's
+//! and, in scrolling modes, a scroll scrubber. Mirrors the top bar's
 //! hover-reveal pattern so mouse readers keep page navigation without any
 //! persistent bottom chrome.
 //!
@@ -28,13 +28,15 @@ pub fn ReaderBottomBar(
     reader: ReaderState,
     /// The continuous reader's virtualizer, used for slider extent and scroll writes.
     virtualizer: StoredValue<Virtualizer, LocalStorage>,
+    /// The horizontal strip's virtualizer (same role when mode is Horizontal).
+    h_virtualizer: StoredValue<Virtualizer, LocalStorage>,
 ) -> impl IntoView {
-    let total_size = virtualizer.with_value(|v| v.total_size());
     let hover = use_hover_visibility(Duration::from_millis(BOTTOM_HIDE_DELAY_MS), || false);
     let visible = hover.visible;
     let show_strip = hover.show.clone();
     let show_bar = hover.show;
     let hide_later = hover.hide_later.clone();
+    let horizontal = move || reader.viewer.mode.get() == ViewMode::Horizontal;
 
     view! {
         <div
@@ -56,18 +58,31 @@ pub fn ReaderBottomBar(
             class=("pointer-events-none", move || !visible.get())
         >
             <PageNavigation state=reader />
-            <Show when=move || reader.viewer.mode.get() == ViewMode::Continuous>
+            <Show when=move || reader.viewer.mode.get().can_scroll()>
                 <RangeInput
-                    value=Signal::derive(move || reader.viewer.scroll_top.get())
+                    value=Signal::derive(move || {
+                        if horizontal() {
+                            h_virtualizer.with_value(|v| v.scroll_offset()).get()
+                        } else {
+                            virtualizer.with_value(|v| v.scroll_offset()).get()
+                        }
+                    })
                     min=Signal::derive(|| 0.0)
                     max=Signal::derive(move || {
-                        let total = total_size.get();
-                        let (_, vh) = reader.viewer.container_size.get();
-                        (total - vh).max(0.0)
+                        let (total, main) = if horizontal() {
+                            h_virtualizer.with_value(|v| (v.total_size().get(), v.viewport().get().main))
+                        } else {
+                            virtualizer.with_value(|v| (v.total_size().get(), v.viewport().get().main))
+                        };
+                        (total - main).max(0.0)
                     })
                     step=Signal::derive(|| 1.0)
                     on_input=move |offset| {
-                        virtualizer.with_value(|v| v.scroll_to_offset(offset, ScrollMode::Instant));
+                        if horizontal() {
+                            h_virtualizer.with_value(|v| v.scroll_to_offset(offset, ScrollMode::Instant));
+                        } else {
+                            virtualizer.with_value(|v| v.scroll_to_offset(offset, ScrollMode::Instant));
+                        }
                     }
                     aria_label="Page position"
                     class="h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-accent"

@@ -73,7 +73,12 @@ pub(super) fn take_commit_echo() -> bool {
     COMMIT_ECHO.with(|c| c.replace(false))
 }
 
-pub fn relayout_to(state: ReaderState, factor: f64, virtualizer: &Virtualizer) {
+pub fn relayout_to(
+    state: ReaderState,
+    factor: f64,
+    virtualizer: &Virtualizer,
+    h_virtualizer: &Virtualizer,
+) {
     if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
         return;
     }
@@ -89,45 +94,54 @@ pub fn relayout_to(state: ReaderState, factor: f64, virtualizer: &Virtualizer) {
         .metrics
         .css_heights
         .with_untracked(|heights| heights.clone());
-    if heights.is_empty() {
-        return;
+    if !heights.is_empty() {
+        virtualizer.rescale(factor, {
+            let heights = heights.clone();
+            move |index| heights.get(index).copied().unwrap_or(0.0)
+        });
+
+        let scroll_top = virtualizer.scroll_offset().get_untracked();
+        if (scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
+            state.viewer.scroll_top.set(scroll_top);
+        }
+
+        // Growing content needs one more scroll assertion, one frame later.
+        //
+        // `rescale` clamps the new scroll offset against the NEW layout and emits
+        // a scroll write that `apply()` performs synchronously — but the spacer
+        // `<div>` that gives the scroll container its `scrollHeight` is patched by
+        // Leptos only after this synchronous call returns. The browser therefore
+        // clamps the write to the OLD, shorter scrollHeight. One frame later the
+        // spacer has grown, yet the scroll position stays pinned at the stale
+        // clamp. Mid-document the anchor correction hides the error; at the end
+        // of the document the clamp distance is at its maximum, which is why the
+        // jump is only visible on the last pages (and only when the content is
+        // growing — a sidebar CLOSING, not opening).
+        //
+        // Re-assert the target scroll on the next animation frame, after the
+        // spacer has been laid out at its new height.
+        if factor > 1.0 {
+            let v = virtualizer.clone();
+            let target_scroll = scroll_top;
+            request_animation_frame(move || {
+                v.scroll_to_offset(target_scroll, ScrollMode::Instant);
+            });
+        }
     }
 
-    virtualizer.rescale(factor, {
-        let heights = heights.clone();
-        move |index| heights.get(index).copied().unwrap_or(0.0)
+    // Horizontal strip: widths are exact (intrinsic × scale), so rescale too.
+    let new_scale = state.viewer.zoom.display.get_untracked() * factor;
+    let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
+        sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
     });
-
-    let scroll_top = virtualizer.scroll_offset().get_untracked();
-    if (scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
-        state.viewer.scroll_top.set(scroll_top);
-    }
-
-    // Growing content needs one more scroll assertion, one frame later.
-    //
-    // `rescale` clamps the new scroll offset against the NEW layout and emits
-    // a scroll write that `apply()` performs synchronously — but the spacer
-    // `<div>` that gives the scroll container its `scrollHeight` is patched by
-    // Leptos only after this synchronous call returns. The browser therefore
-    // clamps the write to the OLD, shorter scrollHeight. One frame later the
-    // spacer has grown, yet the scroll position stays pinned at the stale
-    // clamp. Mid-document the anchor correction hides the error; at the end
-    // of the document the clamp distance is at its maximum, which is why the
-    // jump is only visible on the last pages (and only when the content is
-    // growing — a sidebar CLOSING, not opening).
-    //
-    // Re-assert the target scroll on the next animation frame, after the
-    // spacer has been laid out at its new height.
-    if factor > 1.0 {
-        let v = virtualizer.clone();
-        let target_scroll = scroll_top;
-        request_animation_frame(move || {
-            v.scroll_to_offset(target_scroll, ScrollMode::Instant);
+    if !widths.is_empty() {
+        h_virtualizer.rescale(factor, move |index| {
+            widths.get(index).copied().unwrap_or(0.0) * new_scale
         });
     }
 }
 
-pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
+pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: Virtualizer) {
     // While any scale animation is in flight (a zoom gesture, a sidebar slide,
     // a window-resize drag — all raise `zoom_animating` and all end in
     // `commit_scale`, which clears it), the virtualizer's DOM scroll echo must
@@ -137,11 +151,14 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
     // The echo is re-adopted the moment the animation commits.
     {
         let v = virtualizer.clone();
+        let hv = h_virtualizer.clone();
         Effect::new(move |_| {
             if state.viewer.zoom_animating.get() {
                 v.suspend_scroll_feedback();
+                hv.suspend_scroll_feedback();
             } else {
                 v.resume_scroll_feedback();
+                hv.resume_scroll_feedback();
             }
         });
     }
@@ -161,21 +178,25 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
         if (target - from).abs() < 1e-9 {
             commit_scale(state, target);
             virtualizer.resume_measurements();
+            h_virtualizer.resume_measurements();
             return;
         }
 
         virtualizer.suspend_measurements();
+        h_virtualizer.suspend_measurements();
 
         let commit = {
             let virtualizer = virtualizer.clone();
+            let h_virtualizer = h_virtualizer.clone();
             move |final_scale: f64| {
                 commit_scale(state, final_scale);
                 virtualizer.resume_measurements();
+                h_virtualizer.resume_measurements();
             }
         };
 
         if !animate || prefers_reduced_motion() {
-            relayout_to(state, target / from, &virtualizer);
+            relayout_to(state, target / from, &virtualizer, &h_virtualizer);
             commit(target);
             return;
         }
@@ -187,6 +208,7 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
         let step_self = Rc::downgrade(&step_slot);
         let live_step = live.clone();
         let step_virtualizer = virtualizer.clone();
+        let step_h_virtualizer = h_virtualizer.clone();
         let step: Rc<dyn Fn()> = Rc::new(move || {
             if live_step.get() != token {
                 return;
@@ -196,7 +218,7 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer) {
             let want = from + (target - from) * eased;
             let cur = state.viewer.zoom.display.get_untracked();
 
-            relayout_to(state, want / cur, &step_virtualizer);
+            relayout_to(state, want / cur, &step_virtualizer, &step_h_virtualizer);
             state.viewer.zoom.display.set(want);
 
             if t >= 1.0 {
