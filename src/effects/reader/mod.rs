@@ -2,6 +2,7 @@
 //! (scroll/page navigation sync, fit/zoom, search, selection tracking,
 //! reading progress).
 
+pub mod auto_scroll;
 pub mod continuous_scroll;
 pub mod fit_mode;
 pub mod link_navigation;
