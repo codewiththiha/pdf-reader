@@ -189,6 +189,18 @@ impl VirtualizerInner {
         }
     }
 
+    /// Apply a step produced by a scroll COMMAND (the surface was already
+    /// written by the core): signals only, no second DOM write. Instant
+    /// writes carry the adopted position; smooth writes return no step and
+    /// surface later through `handle_scroll`.
+    pub(crate) fn apply_local(&self, step: Step) {
+        if step.layout_changed {
+            self.layout_version.update(|version| *version += 1);
+        }
+        write_if_changed(self.range, step.range);
+        write_if_changed(self.scroll_top, self.core.borrow().scroll_top());
+    }
+
     /// rAF-coalesced scroll handling.
     pub(crate) fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
         let content = dom_top - self.options.padding_start;
@@ -502,21 +514,32 @@ impl Virtualizer {
     }
 
     /// Scroll to an absolute content offset.
+    ///
+    /// Instant writes are adopted into the local signals immediately (the
+    /// core already wrote the DOM, so there is no second write); smooth
+    /// writes surface through the coalesced scroll handling once the
+    /// browser echoes them back.
     pub fn scroll_to_offset(&self, offset: f64, mode: ScrollMode) {
-        let inner = &self.inner;
-        inner
+        let step = self
+            .inner
             .core
             .borrow_mut()
-            .scroll_to_offset(offset, mode, &inner.surface);
+            .scroll_to_offset(offset, mode, &self.inner.surface);
+        if let Some(step) = step {
+            self.inner.apply_local(step);
+        }
     }
 
     /// Scroll to an item with an alignment.
     pub fn scroll_to_index(&self, index: usize, align: Align, mode: ScrollMode) {
-        let inner = &self.inner;
-        let _ = inner
+        let step = self
+            .inner
             .core
             .borrow_mut()
-            .scroll_to_index(index, align, mode, &inner.surface);
+            .scroll_to_index(index, align, mode, &self.inner.surface);
+        if let Some(step) = step {
+            self.inner.apply_local(step);
+        }
     }
 
     /// Abandon an in-flight scroll-to.

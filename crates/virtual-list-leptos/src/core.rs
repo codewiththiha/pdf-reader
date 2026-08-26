@@ -388,33 +388,54 @@ impl VirtualizerCore {
         step
     }
 
-    /// Scroll to an absolute content offset.
+    /// Scroll to an absolute content offset (clamped).
+    ///
+    /// The surface is written once, here. An **instant** write is adopted
+    /// into the core state immediately, so a geometry rebuild in the same
+    /// tick (a document switch) anchors at the NEW position rather than the
+    /// stale pre-jump one — the returned [`Step`] lets the adapter apply the
+    /// new window without a second DOM write. A smooth write waits for the
+    /// browser echo (`on_scroll`) and returns `None`.
     pub fn scroll_to_offset(
         &mut self,
         content_top: f64,
         mode: ScrollMode,
         surface: &impl ScrollSurface,
-    ) {
+    ) -> Option<Step> {
+        // An explicit offset always supersedes an in-flight programmatic
+        // scroll; otherwise a pending re-aim could fight the new position.
         self.pending = None;
         let target = content_top.clamp(self.min_scroll(), self.max_scroll());
-        surface.set_scroll(target, self.resolve_smooth(target, mode));
+        let smooth = self.resolve_smooth(target, mode);
+        surface.set_scroll(target, smooth);
+        if smooth {
+            None
+        } else {
+            self.scroll_top = target;
+            Some(self.rewindow())
+        }
     }
 
     /// Scroll to an item with an alignment.
+    ///
+    /// Same instant-adoption contract as [`Self::scroll_to_offset`]. The
+    /// pending-scroll bookkeeping is armed for BOTH behaviors so a
+    /// measurement that moves the target can re-aim an in-flight scroll;
+    /// only instant writes adopt locally.
     pub fn scroll_to_index(
         &mut self,
         index: usize,
         align: Align,
         mode: ScrollMode,
         surface: &impl ScrollSurface,
-    ) -> bool {
+    ) -> Option<Step> {
         if self.layout.is_empty() {
-            return false;
+            return None;
         }
         let index = index.min(self.layout.item_count() - 1);
         let Some(target) = self.target_offset(index, align) else {
             self.pending = None;
-            return false;
+            return None;
         };
         let smooth = self.resolve_smooth(target, mode);
         self.pending = Some(PendingScroll {
@@ -424,7 +445,12 @@ impl VirtualizerCore {
             attempts: 0,
         });
         surface.set_scroll(target, smooth);
-        true
+        if smooth {
+            None
+        } else {
+            self.scroll_top = target;
+            Some(self.rewindow())
+        }
     }
 
     /// Abandon an in-flight scroll-to.
@@ -816,14 +842,41 @@ mod tests {
     fn scroll_to_index_writes_and_echoes() {
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
-        assert!(core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface));
+        // Instant: adopted into the core state immediately, no echo needed.
+        assert!(core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface).is_some());
+        assert_eq!(core.scroll_top(), 5_000.0);
         assert_eq!(surface.writes(), vec![(5_000.0, false)]);
 
         let _ = core.on_scroll(5_000.0);
-        assert!(core.scroll_to_index(52, Align::Start, ScrollMode::Auto, &surface));
-        assert!(core.scroll_to_index(0, Align::Start, ScrollMode::Auto, &surface));
+        // Auto within two viewports: smooth, so nothing adopts locally yet.
+        assert!(core.scroll_to_index(52, Align::Start, ScrollMode::Auto, &surface).is_none());
+        // Auto beyond two viewports: instant, adopted locally.
+        assert!(core.scroll_to_index(0, Align::Start, ScrollMode::Auto, &surface).is_some());
         assert_eq!(surface.writes()[1], (5_200.0, true));
         assert_eq!(surface.writes()[2], (0.0, false));
+        assert_eq!(core.scroll_top(), 0.0);
+    }
+
+    #[test]
+    fn instant_scroll_is_adopted_before_a_geometry_rebuild() {
+        // The document-switch race: the app writes scroll_top = 0 (Instant)
+        // and the adapter's count-rebuild re-anchors in the same tick,
+        // before the DOM echo lands. The rebuild must anchor at the NEW
+        // position, not the stale pre-jump one.
+        let surface = TestSurface::default();
+        let mut core = list_core(100, 100.0, 200.0);
+        let _ = core.on_scroll(5_000.0); // old document, deep scroll
+
+        // Scroll to the top of the NEW document: instant, adopted now.
+        assert!(core.scroll_to_offset(0.0, ScrollMode::Instant, &surface).is_some());
+        assert_eq!(core.scroll_top(), 0.0);
+
+        // The count rebuild that follows anchors at the adopted 0.
+        let estimate = |_index: usize| 100.0;
+        let step = core.set_count(20, &estimate);
+        assert!(step.layout_changed);
+        assert_eq!(core.scroll_top(), 0.0);
+        assert_eq!(step.scroll_write, Some(0.0));
     }
 
     #[test]
@@ -849,7 +902,11 @@ mod tests {
         let surface = TestSurface::default();
         let mut core = list_core(100, 100.0, 200.0);
         let _ = core.on_scroll(1_000.0);
-        let _ = core.scroll_to_index(50, Align::Start, ScrollMode::Instant, &surface);
+        // Smooth scroll-to: NOT adopted locally — the browser echoes it, and
+        // until it does the core still works from the old position. That is
+        // the window the bounded re-aim protects: measurements keep moving
+        // the target before the echo lands.
+        assert!(core.scroll_to_index(50, Align::Start, ScrollMode::Smooth, &surface).is_none());
 
         let mut retries = 0;
         for round in 0..5 {
@@ -982,11 +1039,13 @@ mod tests {
             },
         );
         let surface = TestSurface::default();
-        core.scroll_to_offset(-12.0, ScrollMode::Instant, &surface);
+        assert!(core.scroll_to_offset(-12.0, ScrollMode::Instant, &surface).is_some());
+        assert_eq!(core.scroll_top(), -12.0);
         assert_eq!(surface.writes(), vec![(-12.0, false)]);
-        assert!(core.scroll_to_index(0, Align::Center, ScrollMode::Instant, &surface));
+        assert!(core.scroll_to_index(0, Align::Center, ScrollMode::Instant, &surface).is_some());
         assert!(surface.writes()[1].0 < 0.0);
-        core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface);
+        assert!(core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface).is_some());
         assert_eq!(surface.writes()[2].0, -12.0);
+        assert_eq!(core.scroll_top(), -12.0);
     }
 }
