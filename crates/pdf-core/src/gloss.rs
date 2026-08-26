@@ -100,17 +100,6 @@ pub fn is_hintable(text: &str) -> bool {
 }
 
 /// `f64::clamp` lifted to a free fn so call sites read as the reference.
-pub fn clamp(n: f64, min: f64, max: f64) -> f64 {
-    n.clamp(min, max)
-}
-
-/// Hermite smoothstep: 0 below `edge0`, 1 above `edge1`, smooth between.
-/// Drives the card content's opacity/interactivity fade as the morph progresses.
-pub fn smoothstep(t: f64, edge0: f64, edge1: f64) -> f64 {
-    let x = clamp((t - edge0) / (edge1 - edge0).max(0.0001), 0.0, 1.0);
-    x * x * (3.0 - 2.0 * x)
-}
-
 /// Whether two boxes are equal to within `epsilon` on all five fields — the
 /// spring's "settled" and "already snapped" tests.
 pub fn boxes_close(a: GlossBox, b: GlossBox, epsilon: f64) -> bool {
@@ -247,24 +236,6 @@ mod tests {
         let mut moved = base.clone();
         moved.rect.y += 2.0;
         assert!(!base.same_spot(&moved));
-    }
-
-    #[test]
-    fn smoothstep_is_clamped_at_both_edges_and_smooth_between() {
-        assert!((smoothstep(-1.0, 0.0, 1.0)).abs() < 1e-9);
-        assert!((smoothstep(0.0, 0.0, 1.0)).abs() < 1e-9);
-        assert!((smoothstep(1.0, 0.0, 1.0) - 1.0).abs() < 1e-9);
-        assert!((smoothstep(2.0, 0.0, 1.0) - 1.0).abs() < 1e-9);
-        // The midpoint of a smoothstep is exactly 0.5.
-        assert!((smoothstep(0.5, 0.0, 1.0) - 0.5).abs() < 1e-9);
-        // Monotonic across the ramp.
-        let mut last = -1.0;
-        for i in 0..=20 {
-            let t = i as f64 / 20.0;
-            let s = smoothstep(t, 0.0, 1.0);
-            assert!(s >= last, "non-monotonic at {t}: {s} < {last}");
-            last = s;
-        }
     }
 
     #[test]
