@@ -56,7 +56,7 @@ pdf-core = { path = "crates/pdf-core" }
 pdf-engine = { path = "crates/pdf-engine" }
 
 [workspace]
-members = ["src-tauri", "crates/virtual-list", "crates/pdf-core", "crates/pdf-engine"]
+members = ["src-tauri", "crates/virtual-list", "crates/virtual-list-leptos", "crates/pdf-core", "crates/pdf-engine"]
 
 [profile.release]
 # Keep wasm small for a desktop app.
