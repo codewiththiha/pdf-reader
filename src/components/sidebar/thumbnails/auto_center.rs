@@ -110,6 +110,28 @@ impl AutoCenter {
             let just_opened = !was_open;
             auto.centered.set_value((true, page));
 
+            if just_opened {
+                // One frame so the aside has real layout, re-measure, then
+                // snap. Instant: the reader should land centered on open, not
+                // glide. The 0ms-timer path this replaces was armed inside the
+                // effect, so the first viewport/page echo cancelled it before
+                // it ever fired.
+                let v = auto.virtualizer.clone();
+                let st = state;
+                let pg = page;
+                request_animation_frame(move || {
+                    v.remeasure_container();
+                    let vh = v.viewport().get_untracked().main;
+                    if vh <= 1.0 {
+                        return;
+                    }
+                    if let Some(target) = center_target(&v, pg, aspect_untracked(st), vh) {
+                        v.scroll_to_offset(target, ScrollMode::Instant);
+                    }
+                });
+                return;
+            }
+
             let Some(target) = center_target(&auto.virtualizer, page, aspect(state), vh) else {
                 return;
             };
@@ -190,16 +212,21 @@ impl AutoCenter {
             };
             let fire = step.clone();
             let handle = set_timeout_with_handle(move || fire(), Duration::from_millis(delay)).ok();
-            let glide_timer = auto.glide_timer;
-            let glide_step = auto.glide_step;
             auto.glide_timer.set_value(handle);
-            on_cleanup(move || {
-                if let Some(handle) = glide_timer.get_value() {
-                    handle.clear();
-                    glide_timer.set_value(None);
-                }
-                glide_step.set_value(None);
-            });
+        });
+
+        // Timer cleanup belongs to the panel's lifetime, not to effect
+        // re-runs: a cleanup registered inside the effect would cancel the
+        // armed glide on the next viewport/page echo — which is exactly what
+        // killed the open snap. This runs only when the panel is disposed.
+        let timer = auto.glide_timer;
+        let step_slot = auto.glide_step;
+        on_cleanup(move || {
+            if let Some(h) = timer.get_value() {
+                h.clear();
+                timer.set_value(None);
+            }
+            step_slot.set_value(None);
         });
     }
 }
@@ -209,6 +236,23 @@ fn aspect(state: ReaderState) -> f64 {
         .document
         .page1_size
         .get()
+        .map(|size| {
+            if size.width > 0.0 {
+                size.height / size.width
+            } else {
+                0.75
+            }
+        })
+        .unwrap_or(0.75)
+}
+
+/// Page-1 aspect ratio driving the fixed row height, read UNTRACKED for use
+/// inside a rAF/scroll callback that must not subscribe to geometry.
+fn aspect_untracked(state: ReaderState) -> f64 {
+    state
+        .document
+        .page1_size
+        .get_untracked()
         .map(|size| {
             if size.width > 0.0 {
                 size.height / size.width
