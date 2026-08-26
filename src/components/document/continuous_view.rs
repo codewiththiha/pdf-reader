@@ -18,6 +18,18 @@ pub fn ContinuousView(
     crate::effects::reader::continuous_scroll::continuous_scroll(state);
     observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
 
+    // Bridge for the not-yet-migrated consumers of `viewer.scroll_top`
+    // (relayout_to, fit, AI anchors, the bottom-bar scrubber, ...): keep it
+    // in step with the virtualizer's coalesced scroll. `continuous_scroll`
+    // currently writes the same value from the raw DOM scroll event; when
+    // it is audited, its write goes away and this bridge becomes the only
+    // writer.
+    {
+        let scroll_top = state.viewer.scroll_top;
+        let offset = virtualizer.scroll_offset();
+        Effect::new(move |_| scroll_top.set(offset.get()));
+    }
+
     let total_height = virtualizer.total_size();
     let scroll_offset = virtualizer.scroll_offset();
     let progress = move || {
