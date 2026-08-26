@@ -20,6 +20,14 @@ pub const TB_RIGHT_RESERVE: f64 = crate::components::app_shell::constants::PIN_R
 pub const TB_TITLE_RESERVE: f64 = crate::components::app_shell::constants::MIN_DOC_TITLE_WIDTH;
 
 /// One control that can live in the bar or in the overflow menu.
+///
+/// The three views are `Arc<dyn Fn ... Send + Sync>` closures because the
+/// entries live in a `RwSignal<Vec<ToolbarItem>>` — Leptos' default signal
+/// storage requires `Send + Sync + 'static` contents (single-threaded WASM
+/// today, but the storage contract is what it is), and the sizer/inline pair
+/// must share ONE closure (`pair`) so the measured width can never drift
+/// from what the bar renders. `pair` exists so callers never wire those two
+/// by hand.
 #[derive(Clone)]
 pub struct ToolbarItem {
     pub id: &'static str,

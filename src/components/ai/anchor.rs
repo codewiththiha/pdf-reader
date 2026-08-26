@@ -19,6 +19,11 @@ use crate::components::primitives::hooks::use_window_event::{add_window_capture_
 pub use pdf_core::gloss::PageAnchor;
 
 /// The selection "Info" pill lives until its origin fully leaves the viewport.
+///
+/// `1.0` is deliberate, not an untuned placeholder: the pill is small and
+/// passive (it morphs nothing and owns no screen real estate), so it should
+/// never vanish while any part of the text it points at is still visible —
+/// unlike the gloss card below, which covers content and yields earlier.
 pub const MENU_EXIT_FRAC: f64 = 1.0;
 /// The expanded gloss card tolerates scroll until its origin passes this
 /// fraction of the viewport height (or leaves the top edge).
