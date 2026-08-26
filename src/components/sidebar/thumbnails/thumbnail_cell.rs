@@ -16,6 +16,7 @@ use std::time::Duration;
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use wasm_bindgen::JsCast;
 
 use pdf_engine::api as engine;
 use crate::state::ReaderState;
@@ -101,6 +102,18 @@ pub fn ThumbCell(
     on_cleanup(move || {
         mounted_cleanup.store(false, Ordering::Relaxed);
         engine::cancel_thumb(&cid_cleanup);
+        // WKWebView does not release a canvas backing store on DOM removal
+        // alone — every close/open cycle would otherwise leak a batch of
+        // IOSurfaces until GC gets around to it. Zero the backing store so
+        // the panel's close costs a constant, never growth.
+        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+            if let Some(el) = doc.get_element_by_id(&cid_cleanup) {
+                if let Some(cv) = el.dyn_ref::<web_sys::HtmlCanvasElement>() {
+                    cv.set_width(0);
+                    cv.set_height(0);
+                }
+            }
+        }
         if let Ok(mut guard) = bound_cleanup.lock() {
             guard.retain(|&p| p != page_cleanup);
         }

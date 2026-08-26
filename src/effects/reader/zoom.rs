@@ -61,7 +61,7 @@ thread_local! {
     static COMMIT_ECHO: Cell<bool> = const { Cell::new(false) };
 }
 
-pub(super) fn gesture_owns_layout() -> bool {
+pub(crate) fn gesture_owns_layout() -> bool {
     ZOOM_GESTURE.with(|g| g.get())
 }
 

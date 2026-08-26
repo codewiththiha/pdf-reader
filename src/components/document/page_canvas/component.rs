@@ -204,10 +204,20 @@ pub fn PageCanvas(
             if engine::blit_thumb(&cid_effect, page) {
                 return; // cached thumbnail is fine
             }
-            // FALLTHROUGH: first render at the DISPLAY scale so the slide
+            // A sidebar slide (fit-driven) is NOT a zoom gesture: the page's
+            // display scale is still moving and the commit pass renders once
+            // at the settled scale ~480ms later. Rendering here would produce
+            // a bitmap at a scale that is already obsolete — 2–3 wasted
+            // full-size RGBA bitmaps per toggle. Only a REAL zoom gesture
+            // (which owns the layout) gets a live first render at the display
+            // scale; the thumbnail underlay covers the gap for the slide.
+            if !crate::effects::reader::zoom::gesture_owns_layout() {
+                return;
+            }
+            // FALLTHROUGH: first render at the DISPLAY scale so the gesture
             // has pixels. Read untracked to avoid subscribing to per-frame
             // display_scale changes (which would re-run this effect every
-            // frame of the slide — a render storm).
+            // frame of the zoom — a render storm).
             // The `s` used below is `s_render` by default; override it for
             // this fallthrough path.
         }
