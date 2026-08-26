@@ -34,6 +34,35 @@ use pdf_engine::api as engine;
 use pdf_core::appearance::TextureMode;
 use leptos::prelude::Signal;
 
+/// The gloss overlay inputs a page host renders when the document carries
+/// highlights: the persisted marks, the id of the mark currently waiting on
+/// the model (so its stroke can wear the processing animation), and the
+/// shared multi-select state. Passed as ONE optional prop so the four inputs
+/// cannot arrive half-configured.
+pub struct GlossOverlayProps {
+    /// The document's persisted gloss marks.
+    pub marks: Signal<Vec<pdf_core::gloss::GlossMark>>,
+    /// Id of the gloss mark currently waiting on the model.
+    pub processing: Signal<Option<String>>,
+    /// Shared gloss multi-select mode.
+    pub selecting: RwSignal<bool>,
+    /// Shared ids selected in gloss multi-select mode.
+    pub selected: RwSignal<std::collections::HashSet<String>>,
+}
+
+impl GlossOverlayProps {
+    /// The reader's shared gloss state as a page host's overlay inputs —
+    /// the only construction the reader's two page views need.
+    pub fn from_gloss(gloss: crate::state::reader::GlossState) -> Self {
+        Self {
+            marks: gloss.marks.read_only().into(),
+            processing: gloss.processing_id.read_only().into(),
+            selecting: gloss.selection_active,
+            selected: gloss.selected_marks,
+        }
+    }
+}
+
 #[component]
 pub fn PageCanvas(
     /// 1-based page number this host renders.
@@ -62,21 +91,12 @@ pub fn PageCanvas(
     /// The page texture mode (from the app shell, derived from settings).
     #[prop(into)]
     texture: Signal<TextureMode>,
-    /// The document's persisted gloss highlights. `None` (the default) renders
-    /// no layer at all, so this host stays usable outside the reader.
+    /// The gloss overlay: persisted marks, the processing id, and the shared
+    /// multi-select state. `None` (the default) renders no layer at all, so
+    /// this host stays usable outside the reader — one optional prop instead
+    /// of four that only make sense together.
     #[prop(optional)]
-    gloss_marks: Option<Signal<Vec<pdf_core::gloss::GlossMark>>>,
-    /// Id of the gloss mark currently waiting on the model, so the stroke can
-    /// wear the processing animation. Ignored unless `gloss_marks` is set too.
-    #[prop(optional)]
-    gloss_processing: Option<Signal<Option<String>>>,
-    /// Shared gloss multi-select mode. Optional with a local false fallback so
-    /// this page host remains reusable outside the reader.
-    #[prop(optional)]
-    gloss_selecting: Option<RwSignal<bool>>,
-    /// Shared ids selected in gloss multi-select mode.
-    #[prop(optional)]
-    gloss_selected: Option<RwSignal<std::collections::HashSet<String>>>,
+    gloss_overlay: Option<GlossOverlayProps>,
 ) -> impl IntoView {
     // Texture is a prop, not context: this component is reusable without an
     // ambient provider. A Memo so only a real texture change rebuilds the
@@ -343,10 +363,6 @@ pub fn PageCanvas(
         });
     });
 
-    let gloss_selecting = gloss_selecting.unwrap_or_else(|| RwSignal::new(false));
-    let gloss_selected = gloss_selected
-        .unwrap_or_else(|| RwSignal::new(std::collections::HashSet::new()));
-
     view! {
         <div id=host_id class=host_class>
             <canvas id=canvas_id />
@@ -362,18 +378,16 @@ pub fn PageCanvas(
             // Persisted gloss highlights. Rendered by Leptos INSIDE the host,
             // so every remount repaints them from the page-space rects — the
             // reason a mark survives scrolling, zooming and reopening the book.
-            {gloss_marks
-                .map(|marks| {
-                    let processing = gloss_processing
-                        .unwrap_or_else(|| Signal::derive(|| None));
+            {gloss_overlay
+                .map(|gloss| {
                     view! {
                         <crate::components::ai::gloss::mark_layer::GlossMarkLayer
                             page=page
-                            marks=marks
+                            marks=gloss.marks
                             scale=scale
-                            processing=processing
-                            selecting=gloss_selecting
-                            selected=gloss_selected
+                            processing=gloss.processing
+                            selecting=gloss.selecting
+                            selected=gloss.selected
                         />
                     }
                 })}

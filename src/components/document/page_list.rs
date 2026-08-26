@@ -24,6 +24,7 @@ use virtual_list_leptos::{Align, ScrollMode, VirtualItem, Virtualizer};
 use wasm_bindgen::JsCast;
 
 use crate::components::document::PageCanvas;
+use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::state::{ReaderState, TextureSignal};
 
 #[component]
@@ -117,10 +118,7 @@ pub fn PageList(
                                     host_id=format!("cont-{index}-pg")
                                     render_text=true
                                     on_geometry=on_geometry
-                                    gloss_marks=state.gloss.marks.read_only().into()
-                                    gloss_processing=state.gloss.processing_id.read_only().into()
-                                    gloss_selecting=state.gloss.selection_active
-                                    gloss_selected=state.gloss.selected_marks
+                                    gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
                                 />
                             </div>
                         }

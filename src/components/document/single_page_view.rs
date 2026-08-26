@@ -17,6 +17,7 @@
 use leptos::prelude::*;
 
 use crate::components::document::PageCanvas;
+use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::state::TextureSignal;
 use crate::state::ReaderState;
 use crate::components::primitives::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
@@ -86,10 +87,7 @@ pub fn SinglePageView(state: ReaderState) -> impl IntoView {
                                     canvas_id=format!("sp-{page}-cv")
                                     host_id=format!("sp-{page}-pg")
                                     render_text=true
-                                    gloss_marks=state.gloss.marks.read_only().into()
-                                    gloss_processing=state.gloss.processing_id.read_only().into()
-                                    gloss_selecting=state.gloss.selection_active
-                                    gloss_selected=state.gloss.selected_marks
+                                    gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
                                 />
                             </div>
                         }
