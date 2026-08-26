@@ -35,6 +35,12 @@ pub fn fit_effect(
     // the layout on the same frame (that would zoom on every row boundary
     // while the reader is scrolling); it waits for the existing debounce.
     let last_fit_page: StoredValue<u32> = StoredValue::new(0);
+    // Container width at the previous run and the time of the last width
+    // CHANGE. The sidebar's width animates over 300ms, so a slide re-runs
+    // this effect with a fresh width every frame; a width that moved less
+    // than a second ago therefore marks the run as part of that slide.
+    let last_cw: StoredValue<f64> = StoredValue::new(f64::NAN);
+    let last_width_change_ms: StoredValue<f64> = StoredValue::new(0.0);
 
     Effect::new(move |_| {
         let fit = state.viewer.fit.get();
@@ -120,6 +126,19 @@ pub fn fit_effect(
             last_win_w.set_value(win_w);
         }
 
+        // Is the container width still moving? A sidebar slide fires a burst
+        // of `container_size` updates for the whole 300ms animation (and a
+        // window-resize drag behaves the same way, which is fine — the same
+        // reasoning applies). The 350ms window covers the 300ms transition
+        // plus the tail of frames the ResizeObserver delivers after it ends.
+        let now = js_sys::Date::now();
+        let prev_cw = last_cw.get_value();
+        if !prev_cw.is_nan() && (cw - prev_cw).abs() > 1.0 {
+            last_width_change_ms.set_value(now);
+        }
+        last_cw.set_value(cw);
+        let in_sidebar_slide = (now - last_width_change_ms.get_value()) < 350.0;
+
         // The scale this run is aiming at.
         //
         // With a fit mode, that is whatever fits the new container. WITHOUT one
@@ -199,12 +218,17 @@ pub fn fit_effect(
         // is visibly distorted, then snaps back at the end. That snap is the
         // "flicker then instantly switch" being reported.
         //
-        // So: follow the slide continuously in LAYOUT only. Each frame writes
-        // `display_scale` (pages CSS-stretch, aspect preserved) and re-anchors
-        // the scroll, with `zoom_animating` held true so nothing renders. The
-        // debounce below then commits ONE crisp render when the slide settles.
-        // Same rule as a zoom gesture, same machinery — a smooth ride, one
-        // render, and no distortion at any point along the way.
+        // So: follow the slide continuously in `display_scale` — pages
+        // CSS-stretch every frame, aspect preserved, so no squish at any
+        // point along the way. The relayout, though, waits for the debounce:
+        // running it per frame rescaled the virtualizer dozens of times
+        // inside the animation, and every rescale writes a scroll offset
+        // that the browser clamps against a spacer still one frame behind
+        // — an error that compounds over the slide and is largest at the
+        // end of the document, which is exactly where the close-slide
+        // flicker lived. The debounce below commits ONE crisp render once
+        // the width settles, and the measured heights flow back through
+        // `on_geometry` to re-anchor the layout at the final scale.
         if just_committed {
             // A gesture just landed: leave it exactly where the reader put it.
             //
@@ -227,9 +251,18 @@ pub fn fit_effect(
         if !first_run && !page_changed {
             let cur = state.viewer.zoom.display.get_untracked();
             if (target - cur).abs() >= 0.0005 {
-                state.viewer.zoom_animating.set(true);
-                relayout_to(state, target / cur, &virtualizer);
-                state.viewer.zoom.display.set(target);
+                if in_sidebar_slide {
+                    // Mid-slide: the width is still animating, so this effect
+                    // fires again within a frame or two. Track the target in
+                    // `display_scale` (the CSS stretch above) and let the
+                    // debounce perform the single relayout + commit at the
+                    // end, once the width has settled.
+                    state.viewer.zoom.display.set(target);
+                } else {
+                    state.viewer.zoom_animating.set(true);
+                    relayout_to(state, target / cur, &virtualizer);
+                    state.viewer.zoom.display.set(target);
+                }
             }
         }
 

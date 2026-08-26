@@ -12,7 +12,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use virtual_list_leptos::Virtualizer;
+use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use pdf_core::math::clamp_scale;
 
@@ -101,6 +101,29 @@ pub fn relayout_to(state: ReaderState, factor: f64, virtualizer: &Virtualizer) {
     let scroll_top = virtualizer.scroll_offset().get_untracked();
     if (scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
         state.viewer.scroll_top.set(scroll_top);
+    }
+
+    // Growing content needs one more scroll assertion, one frame later.
+    //
+    // `rescale` clamps the new scroll offset against the NEW layout and emits
+    // a scroll write that `apply()` performs synchronously — but the spacer
+    // `<div>` that gives the scroll container its `scrollHeight` is patched by
+    // Leptos only after this synchronous call returns. The browser therefore
+    // clamps the write to the OLD, shorter scrollHeight. One frame later the
+    // spacer has grown, yet the scroll position stays pinned at the stale
+    // clamp. Mid-document the anchor correction hides the error; at the end
+    // of the document the clamp distance is at its maximum, which is why the
+    // jump is only visible on the last pages (and only when the content is
+    // growing — a sidebar CLOSING, not opening).
+    //
+    // Re-assert the target scroll on the next animation frame, after the
+    // spacer has been laid out at its new height.
+    if factor > 1.0 {
+        let v = virtualizer.clone();
+        let target_scroll = scroll_top;
+        request_animation_frame(move || {
+            v.scroll_to_offset(target_scroll, ScrollMode::Instant);
+        });
     }
 }
 
