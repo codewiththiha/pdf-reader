@@ -1013,6 +1013,45 @@ mod tests {
     }
 
     #[test]
+    fn rescale_keeps_the_viewport_center_stable() {
+        // The zoom contract from the reader's side: whatever content point
+        // sits at the viewport CENTER before a rescale must still sit at the
+        // center afterwards. A top-anchored rescale would hold the top pixel
+        // fixed instead and let the focal point walk — which reads as the
+        // page sliding under the reader while it scales. A sidebar slide
+        // rescales per frame, so any per-frame drift compounds into the
+        // visible mid-slide misalignment; this pins the invariant that
+        // prevents it.
+        let vh = 500.0;
+        let scroll = 10_000.0;
+        let mut core = list_core(200, 100.0, vh);
+        let _ = core.on_scroll(scroll);
+
+        // The content point at the viewport center, by hand for this
+        // uniform gapless list: item 102, 50px into it.
+        let center = scroll + vh / 2.0;
+        let item = (center / 100.0) as usize;
+        let px = center - item as f64 * 100.0;
+        assert_eq!((item, px), (102, 50.0));
+
+        let before = core.dominant();
+        let step = core.rescale(0.8, &|_index| 80.0);
+        assert!(step.layout_changed);
+
+        // The same item still dominates, and the anchored content point is
+        // still at the viewport center.
+        assert_eq!(core.dominant(), before);
+        let anchored = core.offset_of(item) + px * 0.8;
+        assert!(
+            (anchored - core.scroll_top() - vh / 2.0).abs() < 1e-9,
+            "viewport center drifted: anchored {} vs scroll {} + {}",
+            anchored,
+            core.scroll_top(),
+            vh / 2.0
+        );
+    }
+
+    #[test]
     fn rebuild_re_pitches_the_grid_without_moving_the_reader() {
         let mut core = grid_core(
             100,
