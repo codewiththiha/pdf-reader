@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn estimated_seeds_each_item_from_its_own_size() {
-        let l = ListLayout::estimated(4, |i| [100.0, 300.0, 200.0, 100.0][i], 0.0);
+        let l: ListLayout = ListLayout::estimated(4, |i| [100.0, 300.0, 200.0, 100.0][i], 0.0);
         assert_eq!(l.offset(0), 0.0);
         assert_eq!(l.offset(1), 100.0);
         assert_eq!(l.offset(2), 400.0);
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn sticky_matches_strip_window_with_sticky() {
         let sizes = [50.0, 100.0, 100.0, 100.0, 50.0, 100.0, 100.0, 100.0];
-        let l = ListLayout::new(sizes, 0.0).with_sticky([0, 4]);
+        let l: ListLayout = ListLayout::new(sizes, 0.0).with_sticky([0, 4]);
         let budget = Budget::screenfuls(0.0, 50);
         let win = l
             .window(l.offset(1), Viewport::main_only(300.0), budget)
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn overscan_items_uses_the_mean_item_size() {
-        let l = ListLayout::uniform(40, 100.0, 0.0);
+        let l: ListLayout = ListLayout::uniform(40, 100.0, 0.0);
         let a = l
             .window(2_000.0, Viewport::main_only(200.0), Budget::items(2, 100))
             .unwrap();

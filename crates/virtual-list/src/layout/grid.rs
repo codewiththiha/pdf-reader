@@ -413,7 +413,7 @@ mod tests {
     #[test]
     fn one_column_grid_is_a_list() {
         let g = GridLayout::uniform(30, 1, 100.0, 200.0, 0.0);
-        let l = super::super::ListLayout::uniform(30, 100.0, 0.0);
+        let l: super::super::ListLayout = super::super::ListLayout::uniform(30, 100.0, 0.0);
         assert_eq!(g.total(), l.total());
         for i in 0..30 {
             assert_eq!(g.offset(i), l.offset(i), "offset {i}");

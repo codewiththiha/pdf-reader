@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn pin_at_finds_the_item_under_the_viewport_center() {
-        let l = ListLayout::uniform(10, 100.0, 0.0);
+        let l: ListLayout = ListLayout::uniform(10, 100.0, 0.0);
         let (item, px) = pin_at(&l, 0.0, 200.0, 0.5);
         assert_eq!(item, 1);
         assert!((px - 0.0).abs() < 1e-9);
@@ -181,7 +181,7 @@ mod tests {
             })
             .collect();
         let vh = 800.0;
-        let mut layout = ListLayout::new(intrinsic.iter().copied(), 24.0);
+        let mut layout: ListLayout = ListLayout::new(intrinsic.iter().copied(), 24.0);
 
         let mut scroll = layout.offset(255) + layout.size(255) * 0.5 - vh * 0.5;
         let start = layout.dominant(scroll, vh);
@@ -201,7 +201,7 @@ mod tests {
                 "the anchor walked at scale {scale}"
             );
         }
-        let home = ListLayout::new(intrinsic.iter().copied(), 24.0);
+        let home: ListLayout = ListLayout::new(intrinsic.iter().copied(), 24.0);
         let expect = home.offset(255) + home.size(255) * 0.5 - vh * 0.5;
         assert!(
             (scroll - expect).abs() < 0.01,
