@@ -47,7 +47,9 @@ use leptos::prelude::*;
 use pdf_engine::types::DocStatus;
 use crate::state::SidebarMode;
 use crate::state::AppState;
+use crate::components::ai::anchor::host_id_for;
 use crate::components::app_shell::title_bar::TitleBarCtx;
+use crate::components::primitives::hooks::dom::{by_id, VIEWER_SLOT_ID};
 
 /// Fraction of the canvas width the label may cover.
 const MAX_CANVAS_OVERLAP: f64 = 0.25;
@@ -73,15 +75,17 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             // zoom_animating drops, so skipping here loses nothing.
             if state.reader.viewer.zoom_animating.get_untracked() { return; }
 
-            // THE page under the eyes, by id — never an arbitrary mounted page.
+            // THE page under the eyes, by id — never an arbitrary mounted
+            // page. The id format is the anchor module's; duplicating it here
+            // once drifted from the single-page host convention.
             let page = state.reader.viewer.page.get_untracked().max(1);
-            let host_id = if state.reader.viewer.mode.get_untracked() == pdf_core::layout::ViewMode::Single {
-                format!("sp-{page}-pg")
-            } else {
-                format!("cont-{}-pg", page.saturating_sub(1))
-            };
-            let Some(doc_el) = crate::components::primitives::hooks::dom::by_id(&host_id) else { return };
-            let Some(viewer) = crate::components::primitives::hooks::dom::by_id("viewer-slot") else { return };
+            let single = state.reader.viewer.mode.get_untracked()
+                == pdf_core::layout::ViewMode::Single;
+            // A missing host is the ordinary virtualization gap (the page
+            // under the eyes is between mounts), so this stays a silent
+            // `by_id` — but the viewer slot itself is chrome.
+            let Some(doc_el) = by_id(&host_id_for(page, single)) else { return };
+            let Some(viewer) = by_id(VIEWER_SLOT_ID) else { return };
 
             let pr = doc_el.get_bounding_client_rect();
             let vr = viewer.get_bounding_client_rect();

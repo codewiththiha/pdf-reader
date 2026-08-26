@@ -16,6 +16,7 @@ use leptos::children::ViewFn;
 use leptos::prelude::*;
 
 use crate::components::primitives::floating::types::z::BAR;
+use crate::components::primitives::hooks::dom::TOOLBAR_ROW_ID;
 use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
@@ -85,7 +86,7 @@ pub fn TitleBar(
             >
                 <div
                     // DocumentTitle measurement anchors MUST keep these ids.
-                    id="toolbar-row"
+                    id=TOOLBAR_ROW_ID
                     data-tauri-drag-region="true"
                     prop:inert=move || !visible.get()
                     on:mouseenter=move |_| show_bar()

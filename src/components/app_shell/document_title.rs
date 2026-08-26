@@ -5,7 +5,11 @@
 
 use leptos::prelude::*;
 
+use crate::components::primitives::hooks::dom::{
+    by_id, by_id_warn, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,
+};
 use crate::components::primitives::hooks::use_resize_observer::observe_elements;
+use crate::components::sidebar::shell::SIDEBAR_ASIDE_SELECTOR;
 
 use pdf_core::filename::display_name;
 use crate::state::AppState;
@@ -20,15 +24,17 @@ const TITLE_MIN_LABEL_W: f64 = crate::components::app_shell::constants::MIN_DOC_
 /// correct through the sidebar close slide because it uses the live rects,
 /// not the raw sidebar mode or title-bar padding model.
 fn measure_available() -> Option<f64> {
-    let doc = web_sys::window()?.document()?;
-    let row = doc.get_element_by_id("toolbar-row")?;
+    // Warn-once lookups: while the reader is mounted these ids always exist,
+    // so a miss is a renamed id (or a stale rAF after unmount) and deserves
+    // one console line rather than silence.
+    let row = by_id_warn(TOOLBAR_ROW_ID)?;
     let row_rect = row.get_bounding_client_rect();
     if row_rect.width() <= 0.0 {
         return None;
     }
-    let pre = doc.get_element_by_id("toolbar-leading")?;
+    let pre = by_id_warn(TOOLBAR_LEADING_ID)?;
     let pre_rect = pre.get_bounding_client_rect();
-    let right = doc.get_element_by_id("toolbar-trailing")?;
+    let right = by_id_warn(TOOLBAR_TRAILING_ID)?;
     let right_rect = right.get_bounding_client_rect();
 
     // The pin button follows #toolbar-trailing inside its ml-auto parent. Using
@@ -61,18 +67,22 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
     // ids; the primitive installs once with the first non-empty set and a
     // later reactive run self-heals an initial miss.
     Effect::new(move |_| {
-        let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
-            return;
-        };
+        // Silent lookups on purpose: the effect can run before its anchor
+        // ids have mounted, and the observer primitive self-heals an initial
+        // miss on a later reactive run (see its docs). Warn-once would turn
+        // that ordinary mount race into console noise.
         let mut els = Vec::new();
-        for id in ["toolbar-row", "toolbar-leading", "toolbar-trailing"] {
-            if let Some(el) = doc.get_element_by_id(id) {
+        for id in [TOOLBAR_ROW_ID, TOOLBAR_LEADING_ID, TOOLBAR_TRAILING_ID] {
+            if let Some(el) = by_id(id) {
                 els.push(el);
             }
         }
         // The title row changes inset at the end of the close hold, whereas
         // this aside changes width during every frame of the 300ms slide.
-        if let Some(aside) = doc.query_selector("aside.sidebar-aside").ok().flatten() {
+        if let Some(aside) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.query_selector(SIDEBAR_ASIDE_SELECTOR).ok().flatten())
+        {
             els.push(aside);
         }
         observe_elements(els, move |_| remeasure());

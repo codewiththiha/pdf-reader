@@ -40,6 +40,14 @@ fn active_outline_index(outline: &[OutlineNode], page: u32) -> Option<usize> {
     active
 }
 
+/// Selector for a rendered outline row button by its data attribute. Both the
+/// reveal effect and the center-on-tab gesture find their row this way; one
+/// definition keeps the attribute name and format from drifting out of sync
+/// with the row markup in `outline_view`.
+fn outline_row_selector(idx: usize) -> String {
+    format!(r#"button[data-outline-index="{idx}"]"#)
+}
+
 /// Left padding for an outline row, in px.
 ///
 /// The indent used to be an unbounded `8 + depth * 14`. The sidebar is a fixed
@@ -171,10 +179,7 @@ pub fn OutlinePanel(
                 std::rc::Rc::new(std::cell::RefCell::new(None));
             let weak = std::rc::Rc::downgrade(&holder);
             let f: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
-                let row = parent
-                    .query_selector(&format!("button[data-outline-index=\"{idx}\"]"))
-                    .ok()
-                    .flatten();
+                let row = parent.query_selector(&outline_row_selector(idx)).ok().flatten();
                 match row {
                     // A row with no height is not laid out yet; keep waiting.
                     Some(row) if row.get_bounding_client_rect().height() > 0.0 => {
@@ -218,11 +223,7 @@ pub fn OutlinePanel(
             let Some(idx) = active_outline_index(&outline, page) else { return };
             let Some(parent) = scroller.get_untracked() else { return };
             let parent: web_sys::Element = parent.into();
-            if let Some(row) = parent
-                .query_selector(&format!("button[data-outline-index=\"{idx}\"]"))
-                .ok()
-                .flatten()
-            {
+            if let Some(row) = parent.query_selector(&outline_row_selector(idx)).ok().flatten() {
                 crate::components::primitives::hooks::dom::center_in_scroll_parent(&row, &parent);
             }
         });

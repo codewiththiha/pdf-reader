@@ -14,6 +14,7 @@ use virtual_list::Viewport;
 use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
 use super::toolbar_entries::reader_toolbar_entries;
+use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use crate::components::app_shell::adaptive_toolbar::AdaptiveToolbar;
 use crate::components::app_shell::app_title_bar::AppTitleBar;
 use crate::components::app_shell::document_title::DocumentTitle;
@@ -195,7 +196,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         view! {
             <div class="flex min-w-0 items-center gap-1">
                 <div
-                    id="toolbar-leading"
+                    id=TOOLBAR_LEADING_ID
                     data-tauri-drag-region="true"
                     class="flex shrink-0 items-center gap-1"
                 >
@@ -295,7 +296,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             />
                         }
                     />
-                    <main id="viewer-slot" class="relative min-w-0 flex-1 overflow-hidden">
+                    <main id=VIEWER_SLOT_ID class="relative min-w-0 flex-1 overflow-hidden">
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {

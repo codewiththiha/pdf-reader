@@ -8,7 +8,9 @@ use wasm_bindgen::JsCast;
 use crate::components::primitives::hooks::use_resize_observer::observe_elements;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
-use crate::components::primitives::hooks::dom::by_id;
+use crate::components::primitives::hooks::dom::{
+    by_id, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,
+};
 use crate::components::app_shell::toolbar_popover::MenuPopover;
 use super::toolbar_overflow::compute_collapsed;
 
@@ -74,7 +76,7 @@ pub fn AdaptiveToolbar(
     let recalc = move || {
         request_animation_frame(move || {
             let Some(sizer) = sizer_ref.get() else { return };
-            let Some(row) = by_id("toolbar-row") else { return };
+            let Some(row) = by_id(TOOLBAR_ROW_ID) else { return };
             let list = entries.get_untracked();
             let kids = sizer.children();
             let widths: Vec<f64> = (0..list.len() as u32)
@@ -82,7 +84,7 @@ pub fn AdaptiveToolbar(
                 .collect();
             let priorities: Vec<u32> = list.iter().map(|e| e.priority).collect();
             let rr = row.get_bounding_client_rect();
-            let left_end = by_id("toolbar-leading")
+            let left_end = by_id(TOOLBAR_LEADING_ID)
                 .map(|e| e.get_bounding_client_rect().right())
                 .unwrap_or(rr.left());
             let title_reserve = if ready.get_untracked() {
@@ -104,14 +106,12 @@ pub fn AdaptiveToolbar(
     Effect::new(move |_| {
         let Some(sizer) = sizer_ref.get() else { return };
         let mut els = vec![sizer.unchecked_into::<web_sys::Element>()];
-        if let Some(row) = by_id("toolbar-row") {
+        if let Some(row) = by_id(TOOLBAR_ROW_ID) {
             els.push(row);
         }
-        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-            for id in ["toolbar-leading", "toolbar-trailing"] {
-                if let Some(el) = doc.get_element_by_id(id) {
-                    els.push(el);
-                }
+        for id in [TOOLBAR_LEADING_ID, TOOLBAR_TRAILING_ID] {
+            if let Some(el) = by_id(id) {
+                els.push(el);
             }
         }
         observe_elements(els, move |_| recalc());
@@ -123,7 +123,7 @@ pub fn AdaptiveToolbar(
 
     view! {
         <div class="relative shrink-0">
-            <div id="toolbar-trailing" data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
+            <div id=TOOLBAR_TRAILING_ID data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
                 // ⋯ FIRST: it stands where the collapsed controls used to be.
                 // When nothing has collapsed the trigger stays hidden via `<Show>`,
                 // so this only occupies space once at least one entry was evicted.
