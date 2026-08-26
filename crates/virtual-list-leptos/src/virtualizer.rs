@@ -137,7 +137,32 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         on_cleanup(move || inner_handle.with_value(|inner| inner.dispose()));
     }
 
-    Virtualizer { inner }
+    let virtualizer = Virtualizer { inner };
+
+    // MATERIALIZE THE DERIVED SIGNALS HERE, IN THIS OWNER.
+    //
+    // The reader's effects (navigation_sync's scroll→page sync, the pinned
+    // window in ReaderPage) call `v.dominant()`, and other components call
+    // `items()`/`rows()`/`total_size()`/... lazily through these accessors.
+    // `Signal::derive_local` registers the memo with the CURRENT reactive
+    // owner, and a Leptos effect runs its callback inside a per-run temporary
+    // owner that is disposed the moment the run ends. A signal first created
+    // inside such a run would therefore be DISPOSED before the next effect
+    // run could read it — every subsequent `dominant().get()` panics with
+    // "already been disposed", which kills the scroll→page sync, the zoom
+    // window pinning and the thumbnail page tracking all at once. Creating
+    // them eagerly here (use_virtualizer runs in the component's stable
+    // owner) makes their lifetime the component's, not a single effect run's.
+    // Memos are lazy, so this is node registration only — no computation.
+    let _ = virtualizer.items();
+    let _ = virtualizer.rows();
+    let _ = virtualizer.total_size();
+    let _ = virtualizer.padding();
+    let _ = virtualizer.range();
+    let _ = virtualizer.dominant();
+    let _ = virtualizer.is_scrolling();
+
+    virtualizer
 }
 
 /// Shared adapter state.

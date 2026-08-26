@@ -101,24 +101,40 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
             let new_budget = gap + overlap - SAFETY;
 
             // Only write on a real change — avoids class/style closure churn
-            // every rAF during the sidebar slide.
-            if budget.get_untracked().is_none_or(|b| (b - new_budget).abs() > 0.5) {
-                budget.set(Some(new_budget));
+            // every rAF during the sidebar slide. The rAF can outlive this
+            // component (closing the document unmounts it while a frame is in
+            // flight), so try-accessors make a stale frame a silent no-op.
+            if budget
+                .try_get_untracked()
+                .flatten()
+                .is_none_or(|b| (b - new_budget).abs() > 0.5)
+            {
+                let _ = budget.try_set(Some(new_budget));
             }
             if let Some(span) = label_ref.get() {
                 let w = span.scroll_width() as f64;
-                if w > 0.0 && (label_w.get_untracked() - w).abs() > 0.5 {
-                    label_w.set(w);
+                let prev = label_w.try_get_untracked();
+                if w > 0.0 && prev.is_none_or(|p| (p - w).abs() > 0.5) {
+                    let _ = label_w.try_set(w);
                 }
             }
         });
     };
 
     // Re-measure whenever geometry or identity can change, and on resize.
+    //
+    // `zoom_animating` is tracked so the effect re-runs when a gesture SETTLES
+    // (the rAF below skips while the flag is up): a zoom-in that fills the
+    // viewer with the page must collapse the budget and hide the label, a
+    // zoom-out must bring it back. Without this the label would sit over the
+    // page indefinitely after zooming, because zooming does not move
+    // `page`/`container_size` (the anchored page stays dominant).
     Effect::new(move |_| {
         _ = state.reader.viewer.container_size.get();
         _ = state.reader.viewer.page.get();
         _ = state.reader.viewer.mode.get();
+        _ = state.reader.viewer.zoom_animating.get();
+        _ = state.reader.viewer.zoom.render.get();
         _ = state.reader.document.title.get();
         _ = state.reader.document.path.get();
         measure();

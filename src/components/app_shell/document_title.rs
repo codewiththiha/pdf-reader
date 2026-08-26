@@ -45,9 +45,13 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
     let remeasure = move || {
         request_animation_frame(move || {
             if let Some(w) = measure_available() {
-                let prev = avail.get_untracked();
+                // The rAF can outlive this component (a route flip back to the
+                // library disposes `avail` while a frame is in flight), so a
+                // plain read would panic on the disposed signal. Try-accessors
+                // make a stale frame a silent no-op.
+                let prev = avail.try_get_untracked().flatten();
                 if prev.is_none_or(|p: f64| (p - w).abs() > 0.5) {
-                    avail.set(Some(w));
+                    let _ = avail.try_set(Some(w));
                 }
             }
         });

@@ -28,3 +28,7 @@ contracts.md
 bun.lock
 .st.txt
 .claude-shell-test.txt
+
+# Local web build output (wasm-bindgen webgen + assembled static root)
+/webgen/
+/webroot/
