@@ -20,7 +20,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{from_sub, to_sub, Budget, Window};
+use crate::{Budget, Window, from_sub, to_sub};
 
 /// A column of variably-sized items separated by a fixed gap, stored as a
 /// chunked prefix-sum array.
@@ -144,6 +144,15 @@ impl ChunkedStrip {
         from_sub(self.starts[self.n].saturating_add(self.chunk_delta[last_chunk]))
     }
 
+    /// Average item extent — resolves [`crate::Overscan::Items`] budgets.
+    pub fn mean_size(&self) -> f64 {
+        if self.n == 0 {
+            0.0
+        } else {
+            self.total() / self.n as f64
+        }
+    }
+
     /// Offset of the start of item `index`. `0.0` for an empty strip or for
     /// `index == 0`; the total for `index >= n`.
     ///
@@ -213,23 +222,26 @@ impl ChunkedStrip {
         if self.n == 0 {
             return None;
         }
-        let bottom = top + extent.max(0.0);
+        let extent = extent.max(0.0);
+        if extent == 0.0 {
+            return None;
+        }
         let mut first = self.index_at(top);
         let start_first = to_sub(self.offset(first));
         let end_first = start_first.saturating_add(to_sub(self.size(first)));
         if end_first <= to_sub(top) {
             first += 1;
         }
-        if first >= self.n || self.offset(first) > bottom {
+        let bottom_sub = to_sub(top + extent);
+        if first >= self.n || to_sub(self.offset(first)) >= bottom_sub {
             return None;
         }
-        // Last item whose start is <= bottom.
+        // Last item whose start is strictly below the bottom edge.
         let mut lo = first;
         let mut hi = self.n;
-        let bottom_sub = to_sub(bottom);
         while lo + 1 < hi {
             let mid = (lo + hi) / 2;
-            if to_sub(self.offset(mid)) <= bottom_sub {
+            if to_sub(self.offset(mid)) < bottom_sub {
                 lo = mid;
             } else {
                 hi = mid;
@@ -247,17 +259,21 @@ impl ChunkedStrip {
 
     /// Inclusive range of items to keep mounted. See
     /// [`Strip::window`](super::Strip::window).
-    pub fn window(
-        &self,
-        scroll_top: f64,
-        viewport: f64,
-        budget: Budget,
-    ) -> Option<Window> {
+    pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
         if self.is_empty() {
             return None;
         }
         let vh = viewport.max(0.0);
-        let look = budget.look_frac.max(0.0) * vh;
+        if vh == 0.0 {
+            return (scroll_top < self.total()).then(|| {
+                let index = self.index_at(scroll_top);
+                Window {
+                    first: index,
+                    last: index,
+                }
+            });
+        }
+        let look = budget.overscan.padding(vh, self.mean_size());
         let padded = self.overlapping(scroll_top - look, vh + 2.0 * look)?;
         let vis = self.visible(scroll_top, vh).unwrap_or(padded);
         let max = budget.max_items.max(1);

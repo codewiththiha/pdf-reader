@@ -21,7 +21,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{from_sub, to_sub, Budget, Window};
+use crate::{Budget, Window, from_sub, to_sub};
 
 /// A column of variably-sized items separated by a fixed gap, backed by a
 /// Fenwick (Binary Indexed) Tree.
@@ -107,6 +107,15 @@ impl FenwickStrip {
         from_sub(self.total)
     }
 
+    /// Average item extent — resolves [`crate::Overscan::Items`] budgets.
+    pub fn mean_size(&self) -> f64 {
+        if self.n == 0 {
+            0.0
+        } else {
+            self.total() / self.n as f64
+        }
+    }
+
     /// Offset of the start of item `index`. `O(log n)` via Fenwick prefix-sum.
     ///
     /// Returns `0.0` for `index == 0`, the total extent for `index >= n`.
@@ -172,8 +181,12 @@ impl FenwickStrip {
         if self.n == 0 {
             return None;
         }
+        let extent = extent.max(0.0);
+        if extent == 0.0 {
+            return None;
+        }
         let top_sub = to_sub(top);
-        let bottom_sub = to_sub(top + extent.max(0.0));
+        let bottom_sub = to_sub(top + extent);
 
         let mut first = self.index_at(top);
         let start_first = prefix_sum(&self.tree, first);
@@ -181,10 +194,10 @@ impl FenwickStrip {
         if end_first <= top_sub {
             first += 1;
         }
-        if first >= self.n || self.offset(first) > from_sub(bottom_sub) {
+        if first >= self.n || to_sub(self.offset(first)) >= bottom_sub {
             return None;
         }
-        let last = self.lift(bottom_sub).min(self.n - 1);
+        let last = last_start_before(self, bottom_sub)?;
         (last >= first).then_some(Window { first, last })
     }
 
@@ -196,17 +209,21 @@ impl FenwickStrip {
 
     /// Inclusive range of items to keep mounted. See
     /// [`Strip::window`](super::Strip::window) for the budget semantics.
-    pub fn window(
-        &self,
-        scroll_top: f64,
-        viewport: f64,
-        budget: Budget,
-    ) -> Option<Window> {
+    pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
         if self.is_empty() {
             return None;
         }
         let vh = viewport.max(0.0);
-        let look = budget.look_frac.max(0.0) * vh;
+        if vh == 0.0 {
+            return (scroll_top < self.total()).then(|| {
+                let index = self.index_at(scroll_top);
+                Window {
+                    first: index,
+                    last: index,
+                }
+            });
+        }
+        let look = budget.overscan.padding(vh, self.mean_size());
 
         let padded = self.overlapping(scroll_top - look, vh + 2.0 * look)?;
         let vis = self.visible(scroll_top, vh).unwrap_or(padded);
@@ -261,9 +278,7 @@ impl FenwickStrip {
         let mut bit = self.top_bit;
         while bit > 0 {
             let next = idx + bit;
-            if (next as usize) <= self.n
-                && sum.saturating_add(self.tree[next as usize]) <= value
-            {
+            if (next as usize) <= self.n && sum.saturating_add(self.tree[next as usize]) <= value {
                 sum = sum.saturating_add(self.tree[next as usize]);
                 idx = next;
             }
@@ -271,6 +286,24 @@ impl FenwickStrip {
         }
         idx as usize
     }
+}
+
+/// Largest item index whose start is strictly below `bottom_sub`.
+fn last_start_before(strip: &FenwickStrip, bottom_sub: i64) -> Option<usize> {
+    if strip.n == 0 {
+        return None;
+    }
+    let mut lo = 0usize;
+    let mut hi = strip.n;
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if to_sub(strip.offset(mid)) < bottom_sub {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    lo.checked_sub(1)
 }
 
 impl PartialEq for FenwickStrip {

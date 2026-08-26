@@ -13,6 +13,11 @@
 //! pixels). There is no DOM and no framework here: feed it sizes, get back
 //! indices and offsets.
 //!
+//! Above that core, [`Layout`] exposes one geometry contract for higher-level
+//! virtualized surfaces, including [`ListLayout`] and width-aware [`GridLayout`].
+//! The [`anchor`] helpers provide pure scroll-anchoring math for size changes
+//! and zoom rescales without coupling the crate to any UI framework.
+//!
 //! # Performance
 //!
 //! The obvious implementation walks the size array to find an item's offset,
@@ -59,6 +64,9 @@
 //! // What is on screen in a 150-tall viewport parked at the top?
 //! let win = strip.visible(0.0, 150.0).unwrap();
 //! assert_eq!((win.first, win.last), (0, 1));
+//!
+//! // Windowing budgets are screenful-based by default.
+//! let _budget = Budget::screenfuls(0.5, 5);
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -67,17 +75,22 @@
 
 extern crate alloc;
 
-mod strip;
-mod units;
-
+pub mod anchor;
 #[cfg(feature = "advanced-trees")]
 mod chunked;
 #[cfg(feature = "advanced-trees")]
 mod fenwick;
+mod layout;
+mod strip;
+mod units;
+mod window;
 
-pub use strip::{Budget, Strip, Window};
+pub use anchor::{AnchorPolicy, correct, pin_at, rescale_anchor};
 #[cfg(feature = "advanced-trees")]
 pub use chunked::ChunkedStrip;
 #[cfg(feature = "advanced-trees")]
 pub use fenwick::FenwickStrip;
-pub use units::{from_sub, to_sub, SUBPIXEL_BITS, SUBPIXEL_FACTOR};
+pub use layout::{GridColumns, GridLayout, GridSpec, Layout, LayoutKind, ListLayout};
+pub use strip::Strip;
+pub use units::{SUBPIXEL_BITS, SUBPIXEL_FACTOR, from_sub, to_sub};
+pub use window::{Align, Budget, Overscan, Viewport, Window};

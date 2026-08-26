@@ -1,94 +1,9 @@
-//! The [`Strip`] windowing core plus its window/budget types.
+//! The [`Strip`] windowing core.
 
 use alloc::vec::Vec;
 
 use crate::units::{from_sub, to_sub};
-
-/// An inclusive range of item indices, `first ..= last`.
-///
-/// Always non-empty: a `Window` is only ever produced when at least one item
-/// qualifies, so `first <= last` holds by construction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Window {
-    /// First item in the range (0-based, inclusive).
-    pub first: usize,
-    /// Last item in the range (0-based, inclusive).
-    pub last: usize,
-}
-
-impl Window {
-    /// Number of items in the range.
-    #[inline]
-    pub const fn len(&self) -> usize {
-        self.last - self.first + 1
-    }
-
-    /// Always `false` — a `Window` is non-empty by construction. Present
-    /// because clippy asks for it whenever `len` exists.
-    #[inline]
-    pub const fn is_empty(&self) -> bool {
-        false
-    }
-
-    /// Whether `index` falls inside the range.
-    #[inline]
-    pub const fn contains(&self, index: usize) -> bool {
-        self.first <= index && index <= self.last
-    }
-
-    /// Iterate the indices in the range.
-    #[inline]
-    pub fn iter(&self) -> core::ops::RangeInclusive<usize> {
-        self.first..=self.last
-    }
-}
-
-impl IntoIterator for Window {
-    type Item = usize;
-    type IntoIter = core::ops::RangeInclusive<usize>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.first..=self.last
-    }
-}
-
-/// How much to keep mounted around the viewport.
-///
-/// # Why read-ahead is measured in screenfuls
-///
-/// Expressing read-ahead as a fixed number of *items* silently means two
-/// different things at different item sizes. When items are short, three of
-/// them is a modest read-ahead; when one item is several screens tall, three of
-/// them is a huge amount of off-screen work the reader cannot reach for many
-/// seconds — and if each mounted item owns an expensive resource (a raster, a
-/// video, a canvas) that is where the memory goes.
-///
-/// One screenful ahead is one screenful ahead at any item size, so
-/// [`look_frac`](Self::look_frac) behaves the same whether the list is zoomed
-/// in or out.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Budget {
-    /// Read-ahead and read-behind, as a multiple of the viewport size.
-    ///
-    /// `0.5` keeps half a screenful mounted on each side of what is visible;
-    /// `1.0` would be a full screenful. `0.0` mounts only what is strictly
-    /// on screen. Negative values are clamped to `0.0`.
-    pub look_frac: f64,
-    /// Hard ceiling on how many items may be mounted at once.
-    ///
-    /// Only ever trims items that are **not** visible, so correctness never
-    /// depends on this being large enough. `0` is treated as `1`.
-    pub max_items: usize,
-}
-
-impl Default for Budget {
-    fn default() -> Self {
-        Self {
-            look_frac: 0.5,
-            max_items: 5,
-        }
-    }
-}
+use crate::window::{Budget, Window};
 
 /// A column of variably-sized items separated by a fixed gap.
 ///
@@ -193,11 +108,7 @@ impl Strip {
             from_sub(self.starts[index + 1].saturating_sub(self.gap))
         };
         let s = end - from_sub(self.starts[index]);
-        if s < 0.0 {
-            0.0
-        } else {
-            s
-        }
+        if s < 0.0 { 0.0 } else { s }
     }
 
     /// Total extent of the column: every item plus the gaps between them, with
@@ -205,6 +116,16 @@ impl Strip {
     #[inline]
     pub fn total(&self) -> f64 {
         from_sub(self.starts.last().copied().unwrap_or(0))
+    }
+
+    /// Average item extent — resolves [`crate::Overscan::Items`] budgets.
+    pub fn mean_size(&self) -> f64 {
+        let len = self.len();
+        if len == 0 {
+            0.0
+        } else {
+            self.total() / len as f64
+        }
     }
 
     /// Index of the item whose span contains `pos`.
@@ -231,7 +152,9 @@ impl Strip {
         }
         let p = to_sub(pos);
         // Last item whose start is <= pos.
-        let idx = self.starts[..len].partition_point(|&s| s <= p).saturating_sub(1);
+        let idx = self.starts[..len]
+            .partition_point(|&s| s <= p)
+            .saturating_sub(1);
         // If pos is at or past that item's end (i.e. in the gap below it, or
         // exactly on its bottom edge), the next item now leads — except at the
         // very end of the strip, which has no next item to report.
@@ -357,13 +280,12 @@ impl Strip {
 
         // Apply the same boundary rule as `index_at`: if pos is at or past the
         // end of the candidate, the next item leads.
-        let idx = if self.starts[target].saturating_add(self.size_sub(target)) <= p
-            && target + 1 < len
-        {
-            target + 1
-        } else {
-            target
-        };
+        let idx =
+            if self.starts[target].saturating_add(self.size_sub(target)) <= p && target + 1 < len {
+                target + 1
+            } else {
+                target
+            };
         *hint = idx;
         idx
     }
@@ -371,55 +293,57 @@ impl Strip {
     /// Inclusive range of items overlapping the span `[top, top + extent)`.
     ///
     /// An item that ends exactly at `top` has scrolled out and is excluded; an
-    /// item that starts exactly at the bottom edge is included. Returns `None`
-    /// for an empty strip, or when the span lies entirely within a gap.
+    /// item that starts exactly at the bottom edge is also excluded because the
+    /// lower bound is half-open. Returns `None` for an empty strip, a span with
+    /// no extent, or when the span lies entirely within a gap.
     pub fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
         let len = self.len();
         if len == 0 {
             return None;
         }
-        let bottom = top + extent.max(0.0);
+        let extent = extent.max(0.0);
+        if extent == 0.0 {
+            return None;
+        }
+        let bottom_sub = to_sub(top + extent);
 
         // First candidate: the item containing `top`, which may end before it.
         let mut first = self.index_at(top);
-        if self.starts[first].saturating_add(self.size_sub(first))
-            <= to_sub(top)
-        {
+        if self.starts[first].saturating_add(self.size_sub(first)) <= to_sub(top) {
             first += 1;
         }
-        if first >= len || from_sub(self.starts[first]) > bottom {
+        if first >= len || self.starts[first] >= bottom_sub {
             return None;
         }
-        // Last item whose start is <= bottom.
-        let last = self
-            .starts
-            .partition_point_inclusive(to_sub(bottom), len);
+        // Last item whose start is strictly below the bottom edge.
+        let last = self.starts[..len]
+            .partition_point(|&s| s < bottom_sub)
+            .saturating_sub(1);
         (last >= first).then_some(Window { first, last })
     }
 
     /// [`Strip::overlapping`] with a **hint** — see [`Strip::index_at_hinted`].
-    pub fn overlapping_hinted(
-        &self,
-        top: f64,
-        extent: f64,
-        hint: &mut usize,
-    ) -> Option<Window> {
+    pub fn overlapping_hinted(&self, top: f64, extent: f64, hint: &mut usize) -> Option<Window> {
         let len = self.len();
         if len == 0 {
             return None;
         }
-        let bottom_sub = to_sub(top + extent.max(0.0));
+        let extent = extent.max(0.0);
+        if extent == 0.0 {
+            return None;
+        }
+        let bottom_sub = to_sub(top + extent);
 
         let mut first = self.index_at_hinted(top, hint);
         if self.starts[first].saturating_add(self.size_sub(first)) <= to_sub(top) {
             first += 1;
         }
-        if first >= len || self.starts[first] > bottom_sub {
+        if first >= len || self.starts[first] >= bottom_sub {
             return None;
         }
-        let last = self
-            .starts
-            .partition_point_inclusive(bottom_sub, len);
+        let last = self.starts[..len]
+            .partition_point(|&s| s < bottom_sub)
+            .saturating_sub(1);
         (last >= first).then_some(Window { first, last })
     }
 
@@ -435,7 +359,8 @@ impl Strip {
     ///
     /// The window is everything overlapping
     /// `[scroll_top - look, scroll_top + viewport + look]` where
-    /// `look = budget.look_frac * viewport`, trimmed to `budget.max_items`.
+    /// `look` is derived from [`Budget::overscan`], trimmed to
+    /// `budget.max_items`.
     ///
     /// Two invariants hold for any `budget`:
     ///
@@ -444,12 +369,7 @@ impl Strip {
     /// - trimming drops the item furthest from the viewport first and prefers
     ///   to keep the item below, so the next item the reader reaches is the
     ///   last one evicted.
-    pub fn window(
-        &self,
-        scroll_top: f64,
-        viewport: f64,
-        budget: Budget,
-    ) -> Option<Window> {
+    pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
         self.window_with_sticky(scroll_top, viewport, budget, &[])
     }
 
@@ -466,7 +386,16 @@ impl Strip {
             return None;
         }
         let vh = viewport.max(0.0);
-        let look = budget.look_frac.max(0.0) * vh;
+        if vh == 0.0 {
+            return (scroll_top < self.total()).then(|| {
+                let index = self.index_at_hinted(scroll_top, hint);
+                Window {
+                    first: index,
+                    last: index,
+                }
+            });
+        }
+        let look = budget.overscan.padding(vh, self.mean_size());
         let padded = self.overlapping_hinted(scroll_top - look, vh + 2.0 * look, hint)?;
         let vis = self.visible(scroll_top, vh).unwrap_or(padded);
         let max = budget.max_items.max(1);
@@ -526,6 +455,22 @@ impl Strip {
             .filter(|&i| self.starts[i] <= to_sub(scroll_top))
             .max();
 
+        if vh == 0.0 {
+            return (scroll_top < self.total()).then(|| {
+                let point = Window {
+                    first: self.index_at(scroll_top),
+                    last: self.index_at(scroll_top),
+                };
+                match pinned {
+                    Some(index) => point.union(Window {
+                        first: index,
+                        last: index,
+                    }),
+                    None => point,
+                }
+            });
+        }
+
         let pinned_size: f64 = match pinned {
             Some(i) => self.size(i),
             None => 0.0,
@@ -535,10 +480,9 @@ impl Strip {
         // by `pinned_size` and whose height is shrunk by `pinned_size`.
         let effective_top = scroll_top + pinned_size;
         let effective_vh = (vh - pinned_size).max(0.0);
-        let look = budget.look_frac.max(0.0) * effective_vh;
+        let look = budget.overscan.padding(effective_vh, self.mean_size());
 
-        let padded =
-            self.overlapping(effective_top - look, effective_vh + 2.0 * look)?;
+        let padded = self.overlapping(effective_top - look, effective_vh + 2.0 * look)?;
         // What is strictly on screen must survive any trim.
         let vis = self.visible(effective_top, effective_vh).unwrap_or(padded);
 
@@ -699,39 +643,10 @@ impl Strip {
     }
 }
 
-/// Extension trait used internally by [`Strip`] to encapsulate the
-/// "partition_point that returns the largest index whose start is <= x, capped
-/// at len-1" pattern. Implemented on `&[i64]` so the optional tree backends
-/// can also call it without code duplication.
-trait PartitionPointInclusive {
-    /// Largest index `i < cap` such that `self[i] <= value`. Returns `0` when
-    /// no element satisfies the predicate, never returns `cap` or beyond.
-    fn partition_point_inclusive(&self, value: i64, cap: usize) -> usize;
-}
-
-impl PartitionPointInclusive for [i64] {
-    fn partition_point_inclusive(&self, value: i64, cap: usize) -> usize {
-        let n = self.len().min(cap);
-        if n == 0 {
-            return 0;
-        }
-        // partition_point returns the first index where the predicate is false.
-        // Slice to [0, n) so the result is in [0, n]; we saturating-sub 1 to
-        // get the largest index whose start is <= value.
-        let pp = self[..n].partition_point(|&s| s <= value);
-        match pp {
-            0 => 0,
-            i if i > n => n - 1,
-            i => i - 1,
-        }
-    }
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::{from_sub, to_sub, SUBPIXEL_FACTOR};
+    use crate::units::{SUBPIXEL_FACTOR, from_sub, to_sub};
     #[cfg(feature = "advanced-trees")]
     use crate::{ChunkedStrip, FenwickStrip};
 
@@ -827,11 +742,23 @@ mod tests {
     #[test]
     fn overlapping_edges() {
         let s = fixture();
-        assert_eq!(s.overlapping(0.0, 100.0).unwrap(), Window { first: 0, last: 0 });
+        assert_eq!(
+            s.overlapping(0.0, 100.0).unwrap(),
+            Window { first: 0, last: 0 }
+        );
         // An item ending exactly at the top edge has scrolled out.
-        assert_eq!(s.overlapping(100.0, 100.0).unwrap(), Window { first: 1, last: 1 });
-        assert_eq!(s.overlapping(0.0, 150.0).unwrap(), Window { first: 0, last: 1 });
-        assert_eq!(s.overlapping(0.0, 10_000.0).unwrap(), Window { first: 0, last: 2 });
+        assert_eq!(
+            s.overlapping(100.0, 100.0).unwrap(),
+            Window { first: 1, last: 1 }
+        );
+        assert_eq!(
+            s.overlapping(0.0, 150.0).unwrap(),
+            Window { first: 0, last: 1 }
+        );
+        assert_eq!(
+            s.overlapping(0.0, 10_000.0).unwrap(),
+            Window { first: 0, last: 2 }
+        );
         // A viewport parked wholly inside the 100..124 gap sees nothing.
         assert_eq!(s.overlapping(105.0, 10.0), None);
         // Past the end.
@@ -841,7 +768,7 @@ mod tests {
     #[test]
     fn window_keeps_every_visible_item() {
         let s = Strip::uniform(40, 300.0, 24.0);
-        let budget = Budget { look_frac: 1.0, max_items: 3 };
+        let budget = Budget::screenfuls(1.0, 3);
         // Sweep the whole scrollable range; the invariant must never break.
         let mut top = 0.0;
         while top < s.total() {
@@ -861,14 +788,16 @@ mod tests {
     fn window_honours_max_items_when_it_can() {
         let s = Strip::uniform(40, 100.0, 24.0);
         // Viewport shows ~2 items; read-ahead would pull in many more.
-        let win = s.window(1_000.0, 200.0, Budget { look_frac: 5.0, max_items: 4 }).unwrap();
+        let win = s
+            .window(1_000.0, 200.0, Budget::screenfuls(5.0, 4))
+            .unwrap();
         assert_eq!(win.len(), 4);
 
         // `max_items: 0` is documented to behave as `1` — a budget of zero
         // would otherwise blank out the entire list, which can never be
         // correct (the reader always sees something).
         let s0 = Strip::uniform(10, 1_000.0, 24.0);
-        let win0 = s0.window(0.0, 100.0, Budget { look_frac: 0.0, max_items: 0 }).unwrap();
+        let win0 = s0.window(0.0, 100.0, Budget::screenfuls(0.0, 0)).unwrap();
         assert_eq!(win0.len(), 1);
     }
 
@@ -876,7 +805,7 @@ mod tests {
     fn window_exceeds_budget_only_for_visible_items() {
         // Ten short items are all on screen at once, with a budget of 1.
         let s = Strip::uniform(10, 50.0, 0.0);
-        let win = s.window(0.0, 500.0, Budget { look_frac: 0.0, max_items: 1 }).unwrap();
+        let win = s.window(0.0, 500.0, Budget::screenfuls(0.0, 1)).unwrap();
         let vis = s.visible(0.0, 500.0).unwrap();
         assert_eq!(win, vis, "visibility must win over the ceiling");
     }
@@ -885,7 +814,7 @@ mod tests {
     fn window_trims_furthest_first_and_keeps_the_item_below() {
         // Items are 100 tall, gap 0. Viewport 100 tall parked exactly on item 5.
         let s = Strip::uniform(20, 100.0, 0.0);
-        let win = s.window(500.0, 100.0, Budget { look_frac: 2.0, max_items: 3 }).unwrap();
+        let win = s.window(500.0, 100.0, Budget::screenfuls(2.0, 3)).unwrap();
         // Visible is item 5; with 3 slots we keep 5 and prefer below => 5,6,7.
         assert!(win.contains(5));
         assert_eq!(win.len(), 3);
@@ -943,12 +872,24 @@ mod tests {
         // 0.0. Non-power-of-2 denominators (0.1, 0.333, 0.999, 123.456) round
         // to the nearest 1/65536 and lose ~1.5e-5 — that is the documented
         // trade-off for the i64 sub-pixel storage.
-        let sizes = [13.0, 400.0, 7.5, 999.25, 1.0, 0.1, 0.333, 0.999, 123.456, 0.25, 0.0625];
+        let sizes = [
+            13.0, 400.0, 7.5, 999.25, 1.0, 0.1, 0.333, 0.999, 123.456, 0.25, 0.0625,
+        ];
         let s = Strip::new(sizes, 11.0);
         let mut expect = 0.0;
         for (i, &sz) in sizes.iter().enumerate() {
-            assert!((s.offset(i) - expect).abs() < APPROX_TOL, "offset {i}: {} vs {}", s.offset(i), expect);
-            assert!((s.size(i) - sz).abs() < APPROX_TOL, "size {i}: {} vs {}", s.size(i), sz);
+            assert!(
+                (s.offset(i) - expect).abs() < APPROX_TOL,
+                "offset {i}: {} vs {}",
+                s.offset(i),
+                expect
+            );
+            assert!(
+                (s.size(i) - sz).abs() < APPROX_TOL,
+                "size {i}: {} vs {}",
+                s.size(i),
+                sz
+            );
             expect += sz + 11.0;
         }
         assert!((s.total() - (expect - 11.0)).abs() < APPROX_TOL);
@@ -962,7 +903,10 @@ mod tests {
     fn subpixel_precision_for_non_binary_fractions() {
         // Exact: denominators are powers of 2.
         for &x in &[0.0, 1.0, 0.5, 0.25, 0.125, 7.5, 999.25, 13.0, 1_234_567.0] {
-            assert!((from_sub(to_sub(x)) - x).abs() < 1e-12, "exact round-trip {x}");
+            assert!(
+                (from_sub(to_sub(x)) - x).abs() < 1e-12,
+                "exact round-trip {x}"
+            );
         }
         // Approximate: non-power-of-2 denominators lose up to 1/SUBPIXEL_FACTOR.
         // The bound is symmetric and tight (rounding to nearest, not truncating).
@@ -987,7 +931,10 @@ mod tests {
         while pos < s.total() {
             let a = s.index_at(pos);
             let b = s.index_at_hinted(pos, &mut hint);
-            assert_eq!(a, b, "hinted disagrees with unhinted at pos={pos}: {a} vs {b}");
+            assert_eq!(
+                a, b,
+                "hinted disagrees with unhinted at pos={pos}: {a} vs {b}"
+            );
             pos += 1.0;
         }
     }
@@ -1035,8 +982,8 @@ mod tests {
         // Out-of-range index is a no-op (returns 0.0, no panic, no mutation).
         // Same for a size that equals the current size — early return, no work.
         let mut s2 = Strip::new([100.0, 200.0], 24.0);
-        assert_eq!(s2.set_size(5, 200.0), 0.0);  // out of range
-        assert_eq!(s2.set_size(0, 100.0), 0.0); // unchanged
+        assert_eq!(s2.set_size(5, 200.0), 0.0);
+        assert_eq!(s2.set_size(0, 100.0), 0.0);
         assert_eq!(s2.size(0), 100.0);
         assert_eq!(s2.size(1), 200.0);
         assert_eq!(s2.total(), 100.0 + 24.0 + 200.0);
@@ -1045,14 +992,11 @@ mod tests {
     #[test]
     fn scroll_anchor_compensates_for_size_change_above() {
         let mut s = Strip::uniform(20, 100.0, 0.0);
-        let scroll_top = s.offset(10); // looking at item 10
-        // Item 5 (above the viewport) grows by 50px.
+        let scroll_top = s.offset(10);
         let delta = s.set_size(5, 150.0);
         assert_eq!(delta, 50.0);
-        // The reader's view must shift down by 50px to stay anchored on item 10.
         let new_top = s.scroll_anchor_delta(scroll_top, 10, 5, delta);
         assert_eq!(new_top, scroll_top + 50.0);
-        // And item 10's start in the mutated strip should be the new top.
         assert_eq!(s.offset(10), new_top);
     }
 
@@ -1060,7 +1004,6 @@ mod tests {
     fn scroll_anchor_ignores_changes_below_or_at_anchor() {
         let mut s = Strip::uniform(20, 100.0, 0.0);
         let scroll_top = s.offset(10);
-        // Item 15 (BELOW the viewport) grows: the reader's anchor is unaffected.
         let delta = s.set_size(15, 200.0);
         assert_eq!(delta, 100.0);
         let new_top = s.scroll_anchor_delta(scroll_top, 10, 15, delta);
@@ -1077,18 +1020,10 @@ mod tests {
 
     #[test]
     fn window_with_sticky_picks_correct_pin() {
-        // Items: 0=header(50), 1..3=content(100 each), 4=header(50), 5..7=content(100)
         let sizes = [50.0, 100.0, 100.0, 100.0, 50.0, 100.0, 100.0, 100.0];
         let s = Strip::new(sizes, 0.0);
-        // Scroll to item 1: header 0 should pin.
-        let win = s.window_with_sticky(
-            s.offset(1),
-            300.0,
-            Budget { look_frac: 0.0, max_items: 50 },
-            &[0, 4],
-        );
+        let win = s.window_with_sticky(s.offset(1), 300.0, Budget::screenfuls(0.0, 50), &[0, 4]);
         let win = win.unwrap();
-        // The pinned header is item 0; the window must include items below it.
         assert!(win.contains(0));
         assert!(win.contains(1));
     }
@@ -1097,20 +1032,14 @@ mod tests {
     fn window_with_sticky_no_overlap_matches_window() {
         let s = Strip::uniform(20, 100.0, 0.0);
         let budget = Budget::default();
-        let a = s.window(500.0, 300.0, budget);
-        let b = s.window_with_sticky(500.0, 300.0, budget, &[5, 10]);
-        // Neither sticky 5 nor 10 is at top=500, so the result equals `window`.
+        let a = s.window(450.0, 300.0, budget);
+        let b = s.window_with_sticky(450.0, 300.0, budget, &[5, 10]);
         assert_eq!(a, b);
     }
 
     #[cfg(feature = "advanced-trees")]
     #[test]
     fn fenwick_matches_strip_for_static_layout() {
-        // Inputs span both power-of-2 denominators (75.5, 300.25) and non-
-        // power-of-2 ones (0.1, 0.333). Both backends use the same i64 sub-pixel
-        // storage, so the two paths produce IDENTICAL f64 outputs — the
-        // tolerance could be 0.0; 1e-9 is defence-in-depth against any future
-        // divergence in the conversion paths.
         let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0, 0.1, 0.333];
         let s = Strip::new(sizes, 11.0);
         let f = FenwickStrip::new(sizes, 11.0);
@@ -1124,29 +1053,24 @@ mod tests {
             assert_eq!(s.index_at(pos), f.index_at(pos), "index_at {pos}");
         }
         for top in [0.0, 100.0, 200.0, 500.0] {
-            assert_eq!(s.overlapping(top, 200.0), f.overlapping(top, 200.0), "overlap {top}");
+            assert_eq!(
+                s.overlapping(top, 200.0),
+                f.overlapping(top, 200.0),
+                "overlap {top}"
+            );
         }
     }
 
     #[cfg(feature = "advanced-trees")]
     #[test]
     fn fenwick_set_size_propagates_to_later_items() {
-        // Verifies that FenwickStrip::set_size updates the prefix-sum so that
-        // `offset(i)` for items strictly AFTER the changed item shift by
-        // exactly `delta`, while `size(i)` for the changed item reflects the
-        // new value. (The test name used to claim "O(log n) in practice";
-        // correctness, not complexity, is what's being checked here — the
-        // complexity is established by the algorithm, not measured by the
-        // test.)
         let sizes = [100.0; 1000];
         let mut f = FenwickStrip::new(sizes, 24.0);
         let delta = f.set_size(500, 200.0);
         assert_eq!(delta, 100.0);
         assert_eq!(f.size(500), 200.0);
         assert_eq!(f.size(0), 100.0);
-        // Total must reflect the +100 from item 500.
         assert!((f.total() - (100.0 * 1000.0 + 24.0 * 999.0 + 100.0)).abs() < APPROX_TOL);
-        // Offset of item 501 must have shifted by +100.
         assert!((f.offset(501) - (Strip::new(sizes, 24.0).offset(501) + 100.0)).abs() < APPROX_TOL);
     }
 
@@ -1155,7 +1079,7 @@ mod tests {
     fn chunked_matches_strip_for_static_layout() {
         let sizes = [100.0, 200.0, 150.0, 75.5, 300.25, 50.0, 80.0, 0.1, 0.333];
         let s = Strip::new(sizes, 11.0);
-        let c = ChunkedStrip::new_with_chunk(sizes, 11.0, 4); // chunk size 4
+        let c = ChunkedStrip::new_with_chunk(sizes, 11.0, 4);
         assert_eq!(s.len(), c.len());
         for i in 0..sizes.len() {
             assert!((s.offset(i) - c.offset(i)).abs() < 1e-9, "offset {i}");
@@ -1171,8 +1095,6 @@ mod tests {
         let delta = c.set_size(50, 200.0);
         assert_eq!(delta, 100.0);
         assert_eq!(c.size(50), 200.0);
-        // Offset of item 51 must have shifted by +100.
         assert!((c.offset(51) - (Strip::new(sizes, 24.0).offset(51) + 100.0)).abs() < APPROX_TOL);
     }
 }
-

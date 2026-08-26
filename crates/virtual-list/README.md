@@ -1,18 +1,17 @@
 # virtual-list
 
-Windowing math for virtualized scrolling lists of variably-sized items.
+Windowing math for virtualized scrolling lists, responsive grids, and scroll anchoring.
 
-Given the sizes of every item in a scrolling column, this crate answers the four
-questions a virtualized list has to answer on every frame:
+At the core sits `Strip`, a prefix-sum layout engine for a scrolling column of variably-sized items. Given the sizes of every item in that column, the crate answers the four questions a virtualized surface has to answer on every frame:
 
 - **Where does item `i` start?** — `offset`
 - **How tall is the whole thing?** — `total`
 - **Which items should be mounted right now?** — `window`
-- **Which item is the reader actually looking at?** — `dominant**
+- **Which item is the reader actually looking at?** — `dominant`
 
-It is pure arithmetic: no DOM, no framework, no allocator tricks, `no_std` by
-default-off. Everything is `f64` in whatever unit you like (CSS px, points,
-logical pixels).
+It is pure arithmetic: no DOM, no framework, `no_std` by default. Everything is `f64` in whatever unit you like (CSS px, points, logical pixels).
+
+Above `Strip`, v0.2 adds a `Layout` facade, `ListLayout`, width-aware `GridLayout`, and pure anchoring helpers (`correct`, `pin_at`, `rescale_anchor`).
 
 ## Why not just loop over the sizes?
 
@@ -61,9 +60,7 @@ automatically as `max(16, sqrt(n))`.
 
 ## Advanced features
 
-- **Scroll anchoring** — when an item above the viewport changes size, call
-  `scroll_anchor_delta(scroll_top, anchor_index, delta)` to get the corrected
-  scroll position so the reader's view doesn't jump.
+- **Scroll anchoring** — use `correct` for measurement updates and `rescale_anchor` for zoom-style rescaling so the reader's view does not jump.
 - **Sticky headers** — `window_with_sticky(scroll_top, viewport, budget,
   &sticky_indices)` accepts a list of sticky item indices; the one with the
   largest index whose start is at or above `scroll_top` is "pinned" to the
@@ -87,7 +84,7 @@ assert_eq!(strip.offset(1), 824.0);
 
 // Mount what is on screen, plus one screenful of read-ahead each way,
 // but never more than 7 items at once.
-let budget = Budget { look_frac: 1.0, max_items: 7 };
+let budget = Budget::screenfuls(1.0, 7);
 let win = strip.window(10_000.0, 900.0, budget).unwrap();
 assert!(win.contains(strip.index_at(10_000.0)));
 
@@ -101,7 +98,7 @@ for top in (0..10_000).map(|i| i as f64 * 7.3) {
 // the reader's current page (item 30, scroll_top=24_000).
 let mut strip = Strip::uniform(500, 800.0, 24.0);
 let delta = strip.set_size(12, 1100.0);
-let new_top = strip.scroll_anchor_delta(24_000.0, 30, delta);
+let new_top = virtual_list::correct(24_000.0, virtual_list::AnchorPolicy::Item(30), 12, delta);
 // The reader stays anchored on item 30.
 ```
 

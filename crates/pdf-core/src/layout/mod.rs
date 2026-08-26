@@ -13,8 +13,8 @@ mod document;
 mod viewport;
 
 pub use document::DocumentLayout;
-pub use virtual_list::{Budget, Strip};
 pub use viewport::visible_grid_rows;
+pub use virtual_list::{Budget, Strip};
 
 pub const PAGE_GAP: f64 = 24.0;
 
@@ -29,16 +29,13 @@ pub const TOOLBAR_H: f64 = 48.0;
 
 /// Read-ahead budget in screenfuls, not pages: a fixed page count means a
 /// modest read-ahead when zoomed out and several screens of wasted rasters
-/// when zoomed in. `look_frac` is the read-ahead each way; `max_items` the ceiling.
+/// when zoomed in. The overscan decides the slack each way; `max_items` is the ceiling.
 pub type RenderBudget = Budget;
 
 /// Comfortable read-ahead: half a screenful each way, up to 3 mounted pages
 /// total (visible + ~1 above + ~1 below). Each mounted page at 2× DPR plus
 /// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
-pub const RENDER_BUDGET: RenderBudget = RenderBudget {
-    look_frac: 0.5,
-    max_items: 3,
-};
+pub const RENDER_BUDGET: RenderBudget = RenderBudget::screenfuls(0.5, 3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -68,7 +65,12 @@ pub fn anchored_scroll(
 ) -> Option<f64> {
     // One-shot wrapper; the hot path goes through
     // `DocumentLayout::anchored_scroll` on a cached layout.
-    DocumentLayout::new(heights, gap).anchored_scroll(scroll_top, viewport_h, factor, anchor_screen_y)
+    DocumentLayout::new(heights, gap).anchored_scroll(
+        scroll_top,
+        viewport_h,
+        factor,
+        anchor_screen_y,
+    )
 }
 
 #[cfg(test)]
@@ -86,4 +88,3 @@ mod tests {
         assert_eq!(DocumentLayout::new(&[], 24.0).total(), 0.0);
     }
 }
-

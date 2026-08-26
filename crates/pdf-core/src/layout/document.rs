@@ -52,8 +52,6 @@ impl DocumentLayout {
         self.strip.total()
     }
 
-
-
     /// 1-based page the reader is actually looking at (ties go to the lower
     /// page number). Falls back to 1 for an empty column.
     pub fn dominant(&self, scroll_top: f64, viewport_h: f64) -> u32 {
@@ -85,10 +83,9 @@ impl DocumentLayout {
     }
 }
 
-
 #[cfg(test)]
 mod dominant_page_tests {
-    use crate::layout::{anchored_scroll, page_top_css, DocumentLayout, PAGE_GAP};
+    use crate::layout::{DocumentLayout, PAGE_GAP, anchored_scroll, page_top_css};
 
     fn dominant(scroll_top: f64, viewport_h: f64, heights: &[f64], gap: f64) -> u32 {
         DocumentLayout::new(heights, gap).dominant(scroll_top, viewport_h)
@@ -200,7 +197,10 @@ mod dominant_page_tests {
             page_top_css(3, &[792.0; 4], PAGE_GAP),
             "uniform seeding hides real offsets in a mixed-size document"
         );
-        assert_eq!(page_top_css(3, &mixed, PAGE_GAP), 792.0 + 1008.0 + 792.0 + 3.0 * PAGE_GAP);
+        assert_eq!(
+            page_top_css(3, &mixed, PAGE_GAP),
+            792.0 + 1008.0 + 792.0 + 3.0 * PAGE_GAP
+        );
     }
 }
 
@@ -213,18 +213,23 @@ mod tests {
 
     #[test]
     fn window_expands_and_clamps() {
-        let b = RenderBudget { look_frac: 1.0, max_items: 7 };
-        assert_eq!(DocumentLayout::new(&H, 24.0).window(124.0, 200.0, b), Some((0, 2)));
-        let none = RenderBudget { look_frac: 0.0, max_items: 7 };
-        assert_eq!(DocumentLayout::new(&H, 24.0).window(124.0, 200.0, none), Some((1, 1)));
+        let b = RenderBudget::screenfuls(1.0, 7);
+        assert_eq!(
+            DocumentLayout::new(&H, 24.0).window(124.0, 200.0, b),
+            Some((0, 2))
+        );
+        let none = RenderBudget::screenfuls(0.0, 7);
+        assert_eq!(
+            DocumentLayout::new(&H, 24.0).window(124.0, 200.0, none),
+            Some((1, 1))
+        );
     }
 }
-
 
 #[cfg(test)]
 mod render_range_tests {
     use super::*;
-    use crate::layout::{page_top_css, PAGE_GAP, RenderBudget, Strip};
+    use crate::layout::{PAGE_GAP, RenderBudget, Strip, page_top_css};
 
     fn window(
         scroll_top: f64,
@@ -246,7 +251,6 @@ mod render_range_tests {
             .overlapping(top, height)
             .map(|w| (w.first, w.last))
     }
-
 
     const GAP: f64 = PAGE_GAP;
 
@@ -305,7 +309,10 @@ mod render_range_tests {
         let page_bottom = page_top_css(idx, &h, GAP) + h[idx];
         let near = page_bottom - vh - 10.0; // bottom is 10px beyond the viewport
         let (f, l) = window(near, vh, &h, GAP, b).unwrap();
-        assert!(l >= idx + 1, "next page should be mounted early, got {f}..={l}");
+        assert!(
+            l >= idx + 1,
+            "next page should be mounted early, got {f}..={l}"
+        );
         // ...and it is genuinely not visible yet, i.e. this is real read-ahead.
         let (vf, vl) = span_overlapping(near, vh, &h, GAP).unwrap();
         assert_eq!((vf, vl), (idx, idx), "next page must not be on screen yet");
@@ -333,13 +340,18 @@ mod render_range_tests {
     /// budget — including budgets too small to hold them all.
     #[test]
     fn visible_pages_are_never_evicted() {
-        let cases = [(396.0, 800.0), (792.0, 800.0), (3960.0, 420.0), (200.0, 1200.0)];
+        let cases = [
+            (396.0, 800.0),
+            (792.0, 800.0),
+            (3960.0, 420.0),
+            (200.0, 1200.0),
+        ];
         for (page_h, vh) in cases {
             let h = uniform(30, page_h);
             for budget in [
                 RenderBudget::default(),
-                RenderBudget { look_frac: 0.0, max_items: 1 },
-                RenderBudget { look_frac: 3.0, max_items: 2 },
+                RenderBudget::screenfuls(0.0, 1),
+                RenderBudget::screenfuls(3.0, 2),
             ] {
                 for step in 0..40 {
                     let st = step as f64 * page_h * 0.37;
@@ -364,7 +376,7 @@ mod render_range_tests {
         let vh = 800.0;
         let h = uniform(60, 120.0); // many tiny pages: lots are visible at once
         for max_items in [1usize, 3, 5, 7, 12] {
-            let b = RenderBudget { look_frac: 2.0, max_items };
+            let b = RenderBudget::screenfuls(2.0, max_items);
             let st = 1000.0;
             let (f, l) = window(st, vh, &h, GAP, b).unwrap();
             let n = l - f + 1;
@@ -392,7 +404,7 @@ mod render_range_tests {
         assert_eq!(window(99_999.0, 800.0, &h, GAP, b), None);
         assert_eq!(span_overlapping(99_999.0, 800.0, &h, GAP), None);
         // A zero max_items is treated as 1 rather than producing an empty range.
-        let bad = RenderBudget { look_frac: 0.0, max_items: 0 };
+        let bad = RenderBudget::screenfuls(0.0, 0);
         let (f, l) = window(1100.0, 800.0, &h, GAP, bad).unwrap();
         assert!(l >= f);
     }
@@ -403,10 +415,13 @@ mod render_range_tests {
     fn gap_parking_still_mounts_neighbours() {
         let h = [100.0, 200.0, 100.0];
         // 100..124 is the gap after page 0; a 15px viewport sits inside it.
-        let b = RenderBudget { look_frac: 1.0, max_items: 7 };
+        let b = RenderBudget::screenfuls(1.0, 7);
         let got = window(104.0, 15.0, &h, GAP, b);
         assert!(got.is_some(), "a gap position must still mount something");
         let (f, l) = got.unwrap();
-        assert!(f == 0 && l >= 1, "expected the pages either side, got {f}..={l}");
+        assert!(
+            f == 0 && l >= 1,
+            "expected the pages either side, got {f}..={l}"
+        );
     }
 }
