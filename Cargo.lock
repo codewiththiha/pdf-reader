@@ -2947,6 +2947,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "serde_json",
  "virtual-list",
+ "virtual-list-leptos",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

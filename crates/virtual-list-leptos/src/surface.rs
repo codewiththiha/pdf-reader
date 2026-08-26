@@ -3,8 +3,9 @@
 //! whole refresh engine run in plain host-side unit tests.
 //!
 //! Coordinates: surfaces receive **content coordinates** (`0` = top of the
-//! first item). Implementations translate to their own coordinate space
-//! (the DOM surface adds `padding_start`).
+//! first item). Negative values address the scrollable `padding_start` band.
+//! Implementations translate to their own coordinate space (the DOM surface
+//! adds `padding_start`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -63,7 +64,7 @@ impl ScrollSurface for DomSurface {
         };
 
         let opts = web_sys::ScrollToOptions::new();
-        let offset = content_top.max(0.0) + self.padding_start;
+        let offset = (content_top + self.padding_start).max(0.0);
         match self.axis {
             Axis::Vertical => opts.set_top(offset),
             Axis::Horizontal => opts.set_left(offset),

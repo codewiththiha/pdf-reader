@@ -7,7 +7,8 @@
 //! host against a [`crate::surface::TestSurface`].
 //!
 //! Coordinates are **content coordinates**: `0` is the top of the first item;
-//! `padding_start` is owned by the adapter.
+//! negative offsets address the scrollable `padding_start` band that sits
+//! before it.
 
 use virtual_list::{
     Align, AnchorPolicy, Budget, GridLayout, Layout, LayoutKind, ListLayout, Viewport, Window,
@@ -125,7 +126,7 @@ impl VirtualizerCore {
             eps: config.eps,
             max_retries: config.max_retries,
             hint: 0,
-            scroll_top: config.initial_offset.max(0.0),
+            scroll_top: config.initial_offset,
             viewport: config.viewport,
             range: None,
             pinned: None,
@@ -133,13 +134,14 @@ impl VirtualizerCore {
             queue: Vec::new(),
             suspended: false,
         };
+        this.scroll_top = this.scroll_top.clamp(this.min_scroll(), this.max_scroll());
         this.range = this.rewindow().range;
         this
     }
 
     /// The container scrolled. `content_top` is in content coordinates.
     pub fn on_scroll(&mut self, content_top: f64) -> Step {
-        self.scroll_top = content_top.max(0.0).min(self.max_scroll());
+        self.scroll_top = content_top;
         self.rewindow()
     }
 
@@ -233,14 +235,44 @@ impl VirtualizerCore {
         self.scroll_top = match anchor {
             Some((item, px)) if count > 0 => {
                 let item = item.min(count - 1);
-                (self.layout.offset(item) + px).clamp(0.0, max_scroll)
+                (self.layout.offset(item) + px).clamp(self.min_scroll(), max_scroll)
             }
-            _ => self.scroll_top.min(max_scroll),
+            _ => self.scroll_top.clamp(self.min_scroll(), max_scroll),
         };
 
         let mut step = self.rewindow();
         step.layout_changed = true;
         step.scroll_write = Some(self.scroll_top);
+        step
+    }
+
+    /// Rebuild the layout at the current count from fresh sizes, preserving
+    /// the reader's anchor even when geometry changes without a count change.
+    pub fn rebuild(&mut self, sizes: &dyn Fn(usize) -> f64) -> Step {
+        let count = self.layout.item_count();
+        let anchor = if self.layout.is_empty() {
+            None
+        } else {
+            let item = self.layout.dominant(self.scroll_top, self.viewport.main);
+            Some((item, self.scroll_top - self.layout.offset(item)))
+        };
+        let (shape, gap, cross) = (self.shape, self.gap, self.viewport.cross);
+        let sticky = self.sticky.clone();
+        self.layout = build_layout(&shape, count, sizes, cross, gap, &sticky);
+        self.hint = 0;
+        self.queue.clear();
+        self.scroll_top = match anchor {
+            Some((item, px)) if count > 0 => {
+                let item = item.min(count - 1);
+                (self.layout.offset(item) + px).clamp(self.min_scroll(), self.max_scroll())
+            }
+            _ => self.scroll_top.clamp(self.min_scroll(), self.max_scroll()),
+        };
+
+        let mut step = self.rewindow();
+        step.layout_changed = true;
+        step.scroll_write = Some(self.scroll_top);
+        self.refresh_pending_target();
         step
     }
 
@@ -309,9 +341,7 @@ impl VirtualizerCore {
         }
 
         let max_scroll = self.max_scroll();
-        if new_top > max_scroll {
-            new_top = max_scroll;
-        }
+        new_top = new_top.clamp(self.min_scroll(), max_scroll);
 
         let mut scroll_write = None;
         if (new_top - self.scroll_top).abs() > self.eps {
@@ -349,7 +379,7 @@ impl VirtualizerCore {
         self.hint = 0;
         self.pending = None;
         if let Some(top) = new_top {
-            self.scroll_top = top.min(self.max_scroll());
+            self.scroll_top = top.clamp(self.min_scroll(), self.max_scroll());
         }
 
         let mut step = self.rewindow();
@@ -366,7 +396,7 @@ impl VirtualizerCore {
         surface: &impl ScrollSurface,
     ) {
         self.pending = None;
-        let target = content_top.clamp(0.0, self.max_scroll());
+        let target = content_top.clamp(self.min_scroll(), self.max_scroll());
         surface.set_scroll(target, self.resolve_smooth(target, mode));
     }
 
@@ -429,6 +459,12 @@ impl VirtualizerCore {
     /// Full spacer extent, paddings included.
     pub fn total_size(&self) -> f64 {
         self.padding_start + self.layout.total() + self.padding_end
+    }
+
+    /// Lowest scrollable content offset: the start of the
+    /// `padding_start` band.
+    pub fn min_scroll(&self) -> f64 {
+        -self.padding_start
     }
 
     /// Largest scrollable content offset.
@@ -596,7 +632,7 @@ impl VirtualizerCore {
                 }
             }
         };
-        Some(raw.clamp(0.0, self.max_scroll()))
+        Some(raw.clamp(self.min_scroll(), self.max_scroll()))
     }
 
     /// Re-aim the pending scroll after the layout moved.
@@ -921,5 +957,40 @@ mod tests {
         assert!(step.layout_changed);
         assert_eq!(step.scroll_write, Some(4_900.0));
         assert_eq!(core.dominant(), 24);
+    }
+
+    #[test]
+    fn rebuild_re_pitches_the_grid_without_moving_the_reader() {
+        let mut core = grid_core(
+            100,
+            120.0,
+            GridSpec::fixed(2, 8.0),
+            Viewport::new(600.0, 252.0),
+            Budget::items(1, 100),
+        );
+        let _ = core.on_scroll(1_200.0);
+        let dominant = core.dominant();
+        let step = core.rebuild(&|_index| 200.0);
+        assert!(step.layout_changed);
+        assert_eq!(core.dominant(), dominant);
+    }
+
+    #[test]
+    fn scroll_targets_can_enter_the_start_padding_band() {
+        let mut core = VirtualizerCore::new(
+            LayoutKind::List(ListLayout::uniform(10, 100.0, 0.0)),
+            CoreConfig {
+                padding_start: 12.0,
+                viewport: Viewport::main_only(300.0),
+                ..CoreConfig::default()
+            },
+        );
+        let surface = TestSurface::default();
+        core.scroll_to_offset(-12.0, ScrollMode::Instant, &surface);
+        assert_eq!(surface.writes(), vec![(-12.0, false)]);
+        assert!(core.scroll_to_index(0, Align::Center, ScrollMode::Instant, &surface));
+        assert!(surface.writes()[1].0 < 0.0);
+        core.scroll_to_offset(-500.0, ScrollMode::Instant, &surface);
+        assert_eq!(surface.writes()[2].0, -12.0);
     }
 }

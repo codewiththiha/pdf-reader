@@ -4,7 +4,7 @@
 //! with write-if-changed guards so nothing downstream re-renders unless the
 //! mounted window actually changed.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -48,6 +48,10 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
     let core = VirtualizerCore::new(layout, config);
     let initial_range = core.range();
     let initial_scroll = core.scroll_top();
+    let initial_epoch = options
+        .epoch
+        .map(|signal| signal.get_untracked())
+        .unwrap_or(0);
 
     let inner = Rc::new(VirtualizerInner {
         surface: DomSurface::new(options.axis, options.padding_start),
@@ -56,6 +60,7 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         range: RwSignal::new(initial_range),
         layout_version: RwSignal::new(0),
         is_scrolling: RwSignal::new(false),
+        last_epoch: Cell::new(initial_epoch),
         options,
         core: RefCell::new(core),
         pending_scroll: Rc::new(Cell::new(None)),
@@ -67,17 +72,37 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         scroll_end_timer: RefCell::new(None),
         range_cbs: RefCell::new(Vec::new()),
         idle_cbs: RefCell::new(Vec::new()),
+        items_signal: OnceCell::new(),
+        rows_signal: OnceCell::new(),
+        total_signal: OnceCell::new(),
+        padding_signal: OnceCell::new(),
+        range_signal: OnceCell::new(),
+        dominant_signal: OnceCell::new(),
+        scrolling_signal: OnceCell::new(),
     });
 
     {
         let inner = inner.clone();
         Effect::new(move |_| {
             let count = inner.options.count.get();
-            if inner.core.borrow().item_count() != count {
-                let estimate = inner.options.estimate_size.clone();
-                let step = inner.core.borrow_mut().set_count(count, &*estimate);
+            let epoch = inner.options.epoch.map(|signal| signal.get()).unwrap_or(0);
+            let estimate = inner.options.estimate_size.clone();
+
+            let step = {
+                let mut core = inner.core.borrow_mut();
+                if core.item_count() != count {
+                    Some(core.set_count(count, &*estimate))
+                } else if epoch != inner.last_epoch.get() {
+                    Some(core.rebuild(&*estimate))
+                } else {
+                    None
+                }
+            };
+
+            if let Some(step) = step {
                 inner.apply(step);
             }
+            inner.last_epoch.set(epoch);
         });
     }
 
@@ -119,6 +144,7 @@ pub(crate) struct VirtualizerInner {
     pub range: RwSignal<Option<Window>>,
     pub layout_version: RwSignal<u64>,
     pub is_scrolling: RwSignal<bool>,
+    pub last_epoch: Cell<u64>,
 
     pub pending_scroll: Rc<Cell<Option<f64>>>,
     pub scroll_armed: Rc<Cell<bool>>,
@@ -141,6 +167,14 @@ pub(crate) struct VirtualizerInner {
 
     pub range_cbs: RefCell<Vec<Rc<dyn Fn(Option<Window>)>>>,
     pub idle_cbs: RefCell<Vec<Rc<dyn Fn()>>>,
+
+    pub items_signal: OnceCell<Signal<Vec<VirtualItem>, LocalStorage>>,
+    pub rows_signal: OnceCell<Signal<Vec<VirtualRow>, LocalStorage>>,
+    pub total_signal: OnceCell<Signal<f64, LocalStorage>>,
+    pub padding_signal: OnceCell<Signal<(f64, f64), LocalStorage>>,
+    pub range_signal: OnceCell<Signal<Option<Window>, LocalStorage>>,
+    pub dominant_signal: OnceCell<Signal<usize, LocalStorage>>,
+    pub scrolling_signal: OnceCell<Signal<bool, LocalStorage>>,
 }
 
 impl VirtualizerInner {
@@ -160,7 +194,7 @@ impl VirtualizerInner {
 
     /// rAF-coalesced scroll handling.
     pub(crate) fn handle_scroll(self: &Rc<Self>, dom_top: f64) {
-        let content = (dom_top - self.options.padding_start).max(0.0);
+        let content = dom_top - self.options.padding_start;
         let step = self.core.borrow_mut().on_scroll(content);
         write_if_changed(self.scroll_top, content);
         write_if_changed(self.range, step.range);
@@ -263,6 +297,13 @@ where
     }
 }
 
+fn dom_scroll_offset(el: &web_sys::HtmlElement, axis: crate::options::Axis) -> f64 {
+    match axis {
+        crate::options::Axis::Vertical => el.scroll_top() as f64,
+        crate::options::Axis::Horizontal => el.scroll_left() as f64,
+    }
+}
+
 impl Virtualizer {
     /// Bind the scroll container.
     pub fn bind_container(&self, el: web_sys::Element) {
@@ -278,7 +319,7 @@ impl Virtualizer {
 
         if !had_scroll_write {
             let current = inner.core.borrow().scroll_top();
-            if current > 0.0 {
+            if current < 0.0 || current > inner.options.measure_epsilon {
                 inner.surface.set_scroll(current, false);
             }
         }
@@ -292,10 +333,7 @@ impl Virtualizer {
                 let Ok(html) = element.dyn_into::<web_sys::HtmlElement>() else {
                     return;
                 };
-                let dom_top = match inner_for_listener.options.axis {
-                    crate::options::Axis::Vertical => html.scroll_top() as f64,
-                    crate::options::Axis::Horizontal => html.scroll_left() as f64,
-                };
+                let dom_top = dom_scroll_offset(&html, inner_for_listener.options.axis);
                 inner_for_listener.pending_scroll.set(Some(dom_top));
                 if !inner_for_listener.scroll_armed.get() {
                     inner_for_listener.scroll_armed.set(true);
@@ -338,41 +376,61 @@ impl Virtualizer {
 
     /// Reactive mounted items.
     pub fn items(&self) -> Signal<Vec<VirtualItem>, LocalStorage> {
-        let inner = self.inner.clone();
-        Signal::derive_local(move || {
-            let _ = inner.range.get();
-            let _ = inner.layout_version.get();
-            inner.core.borrow().items()
-        })
+        self.inner
+            .items_signal
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                Signal::derive_local(move || {
+                    let _ = inner.range.get();
+                    let _ = inner.layout_version.get();
+                    inner.core.borrow().items()
+                })
+            })
+            .clone()
     }
 
     /// Reactive mounted rows.
     pub fn rows(&self) -> Signal<Vec<VirtualRow>, LocalStorage> {
-        let inner = self.inner.clone();
-        Signal::derive_local(move || {
-            let _ = inner.range.get();
-            let _ = inner.layout_version.get();
-            inner.core.borrow().rows()
-        })
+        self.inner
+            .rows_signal
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                Signal::derive_local(move || {
+                    let _ = inner.range.get();
+                    let _ = inner.layout_version.get();
+                    inner.core.borrow().rows()
+                })
+            })
+            .clone()
     }
 
     /// Full spacer extent (paddings included).
     pub fn total_size(&self) -> Signal<f64, LocalStorage> {
-        let inner = self.inner.clone();
-        Signal::derive_local(move || {
-            let _ = inner.layout_version.get();
-            inner.core.borrow().total_size()
-        })
+        self.inner
+            .total_signal
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                Signal::derive_local(move || {
+                    let _ = inner.layout_version.get();
+                    inner.core.borrow().total_size()
+                })
+            })
+            .clone()
     }
 
     /// `(before, after)` spacer heights for [`Positioning::Padding`].
     pub fn padding(&self) -> Signal<(f64, f64), LocalStorage> {
-        let inner = self.inner.clone();
-        Signal::derive_local(move || {
-            let _ = inner.range.get();
-            let _ = inner.layout_version.get();
-            inner.core.borrow().padding()
-        })
+        self.inner
+            .padding_signal
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                Signal::derive_local(move || {
+                    let _ = inner.range.get();
+                    let _ = inner.layout_version.get();
+                    inner.core.borrow().padding()
+                })
+            })
+            .clone()
     }
 
     /// The configured positioning mode.
@@ -382,24 +440,39 @@ impl Virtualizer {
 
     /// Reactive mount window.
     pub fn range(&self) -> Signal<Option<Window>, LocalStorage> {
-        let inner = self.inner.clone();
-        Signal::derive_local(move || inner.range.get())
+        self.inner
+            .range_signal
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                Signal::derive_local(move || inner.range.get())
+            })
+            .clone()
     }
 
     /// Reactive dominant item.
     pub fn dominant(&self) -> Signal<usize, LocalStorage> {
-        let inner = self.inner.clone();
-        Signal::derive_local(move || {
-            let _ = inner.scroll_top.get();
-            let _ = inner.layout_version.get();
-            inner.core.borrow().dominant()
-        })
+        self.inner
+            .dominant_signal
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                Signal::derive_local(move || {
+                    let _ = inner.scroll_top.get();
+                    let _ = inner.layout_version.get();
+                    inner.core.borrow().dominant()
+                })
+            })
+            .clone()
     }
 
     /// Whether the container is scrolling.
     pub fn is_scrolling(&self) -> Signal<bool, LocalStorage> {
-        let inner = self.inner.clone();
-        Signal::derive_local(move || inner.is_scrolling.get())
+        self.inner
+            .scrolling_signal
+            .get_or_init(|| {
+                let inner = self.inner.clone();
+                Signal::derive_local(move || inner.is_scrolling.get())
+            })
+            .clone()
     }
 
     /// The scroll position signal (content coordinates).
@@ -410,6 +483,28 @@ impl Virtualizer {
     /// The viewport signal.
     pub fn viewport(&self) -> RwSignal<Viewport> {
         self.inner.viewport
+    }
+
+    /// Re-read the bound container's real viewport and scroll position.
+    pub fn remeasure_container(&self) {
+        let Some(el) = self.inner.surface.element() else {
+            return;
+        };
+        let vp = viewport_of(&el, self.inner.options.axis);
+        self.inner.handle_viewport(vp);
+
+        let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() else {
+            return;
+        };
+        let content =
+            dom_scroll_offset(&html, self.inner.options.axis) - self.inner.options.padding_start;
+        if (content - self.inner.core.borrow().scroll_top()).abs()
+            > self.inner.options.measure_epsilon
+        {
+            let step = self.inner.core.borrow_mut().on_scroll(content);
+            write_if_changed(self.inner.scroll_top, content);
+            write_if_changed(self.inner.range, step.range);
+        }
     }
 
     /// Snapshot offset of an item, padding included.

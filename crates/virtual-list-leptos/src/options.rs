@@ -63,6 +63,9 @@ pub struct VirtualizerOptions {
     pub padding_start: f64,
     /// Content padding after the last item.
     pub padding_end: f64,
+    /// Bump to force a layout rebuild when geometry changes without a count
+    /// change (a new row pitch, a font swap).
+    pub epoch: Option<Signal<u64>>,
     /// Reactive extra indices that must stay mounted.
     pub pinned: Option<Signal<Option<(usize, usize)>>>,
     /// Sticky item indices (list layouts only).
@@ -96,6 +99,7 @@ impl VirtualizerOptions {
             axis: Axis::default(),
             padding_start: 0.0,
             padding_end: 0.0,
+            epoch: None,
             pinned: None,
             sticky: Vec::new(),
             positioning: Positioning::default(),
@@ -140,6 +144,12 @@ impl VirtualizerOptions {
     pub fn padding(mut self, start: f64, end: f64) -> Self {
         self.padding_start = start;
         self.padding_end = end;
+        self
+    }
+
+    /// Layout epoch signal.
+    pub fn epoch(mut self, epoch: Signal<u64>) -> Self {
+        self.epoch = Some(epoch);
         self
     }
 
