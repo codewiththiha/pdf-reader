@@ -106,18 +106,12 @@ pub fn ResultList(
                 }
                 .into_any()
             } else {
-                let each_rows = rows.clone();
-                let key_rows = rows.clone();
                 view! {
                     <For
-                        each=move || 0..each_rows.len()
-                        key=move |i| {
-                            key_rows.get(*i).map(result_key).unwrap_or_default()
-                        }
-                        children=move |i| {
-                            rows.get(i).cloned().map(|row| {
-                                view! { <ResultRow state=state virtualizer=virtualizer row=row /> }
-                            })
+                        each=move || rows.as_ref().clone()
+                        key=|row: &ResultRowView| result_key(row)
+                        children=move |row: ResultRowView| {
+                            view! { <ResultRow state=state virtualizer=virtualizer row=row /> }
                         }
                     />
                 }
