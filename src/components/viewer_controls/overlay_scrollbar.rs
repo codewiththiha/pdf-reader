@@ -20,70 +20,36 @@ pub fn OverlayScrollbar(
     let hide_handle: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
     let drag = RwSignal::new(None::<(f64, i32)>);
 
-    let sync_from_dom = {
-        move || {
-            let Some(el) = by_id(scroller_id) else {
-                return;
-            };
-            let (total, client, pos) = if horizontal {
-                (
-                    el.scroll_width() as f64,
-                    el.client_width() as f64,
-                    el.scroll_left() as f64,
-                )
-            } else {
-                (
-                    el.scroll_height() as f64,
-                    el.client_height() as f64,
-                    el.scroll_top() as f64,
-                )
-            };
-            frac.set((client / total.max(1.0)).min(1.0));
-            progress.set((pos / (total - client).max(1.0)).clamp(0.0, 1.0));
-        }
-    };
-
-    let poke = {
-        let hide_handle = hide_handle.clone();
-        move || {
-            shown.set(true);
-            if let Some(prev) = hide_handle.get() {
-                if let Some(w) = web_sys::window() {
-                    w.clear_timeout_with_handle(prev);
-                }
-            }
-            let shown_hide = shown;
-            let slot = hide_handle.clone();
-            let cb = Closure::once_into_js(move || {
-                shown_hide.set(false);
-            });
-            if let Some(w) = web_sys::window() {
-                if let Ok(h) = w.set_timeout_with_callback_and_timeout_and_arguments_0(
-                    cb.as_ref().unchecked_ref(),
-                    1000,
-                ) {
-                    slot.set(Some(h));
-                }
-            }
-        }
-    };
-
-    // Bind once when the scroller mounts. Re-run only when the id's element appears.
+    // Bind once when the scroller mounts.
     Effect::new({
         let hide_handle = hide_handle.clone();
         move |_| {
-            let _ = hide_handle; // keep alive
             let Some(el) = by_id(scroller_id) else {
-                // Retry next tick while the view mounts.
                 return;
             };
-            // Avoid double-binding if the effect re-runs.
             if el.get_attribute("data-overlay-sb").as_deref() == Some("1") {
                 return;
             }
             let _ = el.set_attribute("data-overlay-sb", "1");
 
-            sync_from_dom();
+            // Initial metrics.
+            {
+                let (total, client, pos) = if horizontal {
+                    (
+                        el.scroll_width() as f64,
+                        el.client_width() as f64,
+                        el.scroll_left() as f64,
+                    )
+                } else {
+                    (
+                        el.scroll_height() as f64,
+                        el.client_height() as f64,
+                        el.scroll_top() as f64,
+                    )
+                };
+                frac.set((client / total.max(1.0)).min(1.0));
+                progress.set((pos / (total - client).max(1.0)).clamp(0.0, 1.0));
+            }
 
             let progress_s = progress;
             let frac_s = frac;
