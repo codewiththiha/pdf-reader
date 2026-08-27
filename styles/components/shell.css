@@ -148,16 +148,20 @@ body {
 }
 
 .reader-bg { background-color: var(--color-paper); }
-/* `position: relative` anchors the ::before texture below to THIS element.
-   Without a positioning context the absolutely positioned pseudo resolves
-   against whichever ancestor happens to be positioned, so the backdrop
-   texture lands off the reader surface. */
 .reader-bg.blend {
+  /* Anchors the ::before texture bleed below to THIS element; without a
+     positioning context the absolutely positioned pseudo resolves against
+     whichever ancestor happens to be positioned. */
   position: relative;
-  background-color: var(--canvas-paper, var(--color-paper));
-  /* The paper colour is confirmed by an async engine read one beat after
-     the synchronous replay, so ease the correction instead of popping. */
-  transition: background-color 120ms ease-out;
+  /* The page's VISIBLE paper is --color-paper in every base: the bake
+     composites against it, and a white page pixel multiplied or screened
+     over its backdrop yields the backdrop itself (the same invariant that
+     makes .thumb-card use --color-paper). Reading it directly keeps the
+     blend backdrop byte-identical to the pages in light, dark and dim,
+     synchronously — no engine round trip, no drift towards a darker
+     sampled value, no lag. Deliberately NO transition: it would put the
+     backdrop a beat behind the pages during a tint scrub. */
+  background-color: var(--color-paper);
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
