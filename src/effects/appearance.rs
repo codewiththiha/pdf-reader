@@ -168,6 +168,12 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     let mut a = settings.get_untracked().appearance;
     apply_scrub(&mut a, patch);
     paint_appearance(a);
+    // The page re-colours under the drag through the live CSS pipeline; the
+    // blend backdrop must track it in the same frame. refresh_theme keeps the
+    // engine's pipeline cache honest for the colour read (a no-op rebake
+    // while scrub owns the canvases).
+    pdf_engine::api::refresh_theme();
+    crate::effects::app::theme::sync_canvas_paper();
 
     let commit_gen = bump_commit_gen();
     COMMIT_PAYLOAD.with(|p| p.set(Some((settings, patch))));

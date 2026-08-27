@@ -26,8 +26,6 @@
 //! `appearance` module; this file keeps the painting itself and the
 //! two app effects.
 
-use std::time::Duration;
-
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
@@ -82,6 +80,10 @@ pub fn paint_appearance_now(a: Appearance) {
     let kick = prev_base.as_deref() != Some(a.base.as_str());
 
     _ = el.set_attribute("data-base", a.base.as_str());
+    // Publish the texture too: in blend mode the backdrop bleeds the same
+    // paper texture past the page body (styles/components/shell.css), and
+    // the CSS keys off this attribute.
+    let _ = el.set_attribute("data-texture", a.texture.as_str());
     let class = el.class_list();
     if a.base.is_dark() {
         _ = class.add_1("dark");
@@ -143,55 +145,10 @@ pub fn paint_appearance_now(a: Appearance) {
     );
 }
 
-/// The blend backdrop must be the paper colour the reader actually sees,
-/// i.e. the dominant colour of the baked raster (filters/tint already in).
-/// Average a small margin corner of the current page's canvas: 1×1 dest
-/// means the draw itself does the averaging for us.
-fn sample_paper_from_canvas(canvas: &web_sys::HtmlCanvasElement) -> Option<String> {
-    if canvas.width() == 0 || canvas.height() == 0 {
-        return None;
-    }
-    let doc = web_sys::window()?.document()?;
-    let tmp: web_sys::HtmlCanvasElement = doc.create_element("canvas").ok()?.dyn_into().ok()?;
-    tmp.set_width(1);
-    tmp.set_height(1);
-    let ctx = tmp
-        .get_context("2d")
-        .ok()??
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .ok()?;
-    let side = canvas.width().min(32) as f64;
-    ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-        canvas, 0.0, 0.0, side, side, 0.0, 0.0, 1.0, 1.0,
-    )
-    .ok()?;
-    let d = ctx.get_image_data(0.0, 0.0, 1.0, 1.0).ok()?.data();
-    if d.0.len() < 4 {
-        return None;
-    }
-    let (r, g, b, a) = (d.0[0], d.0[1], d.0[2], d.0[3]);
-    if a < 200 {
-        return None;
-    }
-    Some(format!("#{:02x}{:02x}{:02x}", r, g, b))
-}
-
-fn refresh_canvas_paper(state: AppState) {
-    let page = state.reader.viewer.page.get_untracked().max(1);
-    let mode = state.reader.viewer.mode.get_untracked();
-    let canvas_id = crate::components::ai::anchor::host_id_for_mode(page, mode)
-        .replacen("-pg", "-cv", 1);
-    if let Some(el) = crate::components::primitives::hooks::dom::by_id(&canvas_id) {
-        if let Ok(canvas) = el.dyn_into::<web_sys::HtmlCanvasElement>() {
-            if let Some(hex) = sample_paper_from_canvas(&canvas) {
-                if let Some(style) = html_style() {
-                    let _ = style.set_property("--canvas-paper", &hex);
-                }
-                return;
-            }
-        }
-    }
-    // No mounted canvas yet (library / pre-render): engine's computed value.
+/// Real-time blend backdrop colour: the engine computes the post-filter
+/// paper colour from the live pipeline, so it matches the canvas on the
+/// same frame — no timeout, no sampling, no flicker.
+pub fn sync_canvas_paper() {
     wasm_bindgen_futures::spawn_local(async {
         if let Some(c) = pdf_engine::api::paper_color().await {
             if let Some(style) = html_style() {
@@ -213,29 +170,8 @@ pub fn apply_theme(state: AppState) {
         // scrub is in flight (scrub mode owns the canvases then) and before
         // the first document opens.
         pdf_engine::api::refresh_theme();
-        // Sample a beat later so the rebake has landed in the raster.
-        let handle =
-            set_timeout_with_handle(move || refresh_canvas_paper(state), Duration::from_millis(450))
-                .ok();
-        on_cleanup(move || {
-            if let Some(h) = handle {
-                h.clear();
-            }
-        });
-    });
-
-    Effect::new(move || {
-        let _ = state.reader.document.status.get();
-        let _ = state.reader.document.path.get();
-        let _ = state.reader.viewer.mode.get();
-        let handle =
-            set_timeout_with_handle(move || refresh_canvas_paper(state), Duration::from_millis(600))
-                .ok();
-        on_cleanup(move || {
-            if let Some(h) = handle {
-                h.clear();
-            }
-        });
+        // The blend backdrop follows the same pipeline in the same frame.
+        sync_canvas_paper();
     });
 
     Effect::new(move || {

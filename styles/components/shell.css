@@ -150,3 +150,45 @@ body {
 .reader-bg { background-color: var(--color-paper); }
 .reader-bg.blend { background-color: var(--canvas-paper, var(--color-paper)); }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
+
+/* BLEND TEXTURE BLEED — only in blend mode the backdrop carries the same
+   paper texture as the pages, so page and background read as one surface.
+   Pure CSS backgrounds: no extra layers in the compositor sense of canvases,
+   no RAM. Non-blend mode keeps textures clipped to the page body. */
+.reader-bg.blend::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--texture-opacity, 0.9);
+  --tex-scale: var(--texture-scale-user, 1); /* backdrop is not zoomed */
+  --tex-unit: calc(26px * var(--tex-scale));
+  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  background-origin: border-box;
+  background-position: 0 0;
+}
+html[data-texture="paper"] .reader-bg.blend::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  background-color: var(--texture-paper);
+  background-blend-mode: var(--texture-blend, multiply);
+  background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
+}
+html[data-texture="lined"] .reader-bg.blend::before {
+  background-image: repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+html[data-texture="grid"] .reader-bg.blend::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+html[data-texture="dotted"] .reader-bg.blend::before {
+  background-image: radial-gradient(var(--texture-line) calc(1px * var(--tex-scale)), transparent calc(1.5px * var(--tex-scale)));
+  background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
+}
+html[data-texture="cross"] .reader-bg.blend::before {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-size: var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit), var(--tex-unit) var(--tex-unit);
+}

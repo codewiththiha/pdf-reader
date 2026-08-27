@@ -137,6 +137,9 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.document.status.set(DocStatus::Ready);
                 // A successful open dismisses any stale error toast.
                 state.ui.toast.set(None);
+                // The blend backdrop (when enabled) follows the new document's
+                // paper colour from the first frame it can be read.
+                crate::effects::app::theme::sync_canvas_paper();
 
                 // Gloss highlights for THIS document. Loaded here rather than
                 // lazily by the mark layer so the very first page mount already
