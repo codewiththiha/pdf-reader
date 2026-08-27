@@ -20,21 +20,26 @@ pub fn OverlayScrollbar(
     let hide_handle: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
     let drag = RwSignal::new(None::<(f64, i32)>);
 
-    let read_metrics = move || -> Option<(i32, i32, i32)> {
-        let el = by_id(scroller_id)?;
-        Some(if horizontal {
-            (el.scroll_width(), el.client_width(), el.scroll_left())
-        } else {
-            (el.scroll_height(), el.client_height(), el.scroll_top())
-        })
-    };
-
-    let sync = move || {
-        if let Some((total, client, pos)) = read_metrics() {
-            let total = total as f64;
-            let client = client as f64;
+    let sync_from_dom = {
+        move || {
+            let Some(el) = by_id(scroller_id) else {
+                return;
+            };
+            let (total, client, pos) = if horizontal {
+                (
+                    el.scroll_width() as f64,
+                    el.client_width() as f64,
+                    el.scroll_left() as f64,
+                )
+            } else {
+                (
+                    el.scroll_height() as f64,
+                    el.client_height() as f64,
+                    el.scroll_top() as f64,
+                )
+            };
             frac.set((client / total.max(1.0)).min(1.0));
-            progress.set((pos as f64 / (total - client).max(1.0)).clamp(0.0, 1.0));
+            progress.set((pos / (total - client).max(1.0)).clamp(0.0, 1.0));
         }
     };
 
@@ -63,29 +68,73 @@ pub fn OverlayScrollbar(
         }
     };
 
-    Effect::new(move |_| {
-        let Some(el) = by_id(scroller_id) else {
-            return;
-        };
-        let sync_c = sync;
-        let poke_c = poke;
-        let cb = Closure::wrap(Box::new(move |_: web_sys::Event| {
-            sync_c();
-            poke_c();
-        }) as Box<dyn FnMut(web_sys::Event)>);
-        let _ = el.add_event_listener_with_callback("scroll", cb.as_ref().unchecked_ref());
-        // Leak intentionally for the component lifetime — cleaned on page unmount
-        // when the owner drops. Store as StoredValue so Drop runs with the owner.
-        let retained = StoredValue::new_local(cb);
-        on_cleanup(move || {
-            if let Some(el) = by_id(scroller_id) {
-                retained.with_value(|cb| {
-                    let _ = el
-                        .remove_event_listener_with_callback("scroll", cb.as_ref().unchecked_ref());
-                });
+    // Bind once when the scroller mounts. Re-run only when the id's element appears.
+    Effect::new({
+        let hide_handle = hide_handle.clone();
+        move |_| {
+            let _ = hide_handle; // keep alive
+            let Some(el) = by_id(scroller_id) else {
+                // Retry next tick while the view mounts.
+                return;
+            };
+            // Avoid double-binding if the effect re-runs.
+            if el.get_attribute("data-overlay-sb").as_deref() == Some("1") {
+                return;
             }
-        });
-        sync();
+            let _ = el.set_attribute("data-overlay-sb", "1");
+
+            sync_from_dom();
+
+            let progress_s = progress;
+            let frac_s = frac;
+            let shown_s = shown;
+            let hide_s = hide_handle.clone();
+            let horiz = horizontal;
+            let sid = scroller_id;
+
+            let cb = Closure::wrap(Box::new(move |_: web_sys::Event| {
+                if let Some(el) = by_id(sid) {
+                    let (total, client, pos) = if horiz {
+                        (
+                            el.scroll_width() as f64,
+                            el.client_width() as f64,
+                            el.scroll_left() as f64,
+                        )
+                    } else {
+                        (
+                            el.scroll_height() as f64,
+                            el.client_height() as f64,
+                            el.scroll_top() as f64,
+                        )
+                    };
+                    frac_s.set((client / total.max(1.0)).min(1.0));
+                    progress_s.set((pos / (total - client).max(1.0)).clamp(0.0, 1.0));
+                }
+                shown_s.set(true);
+                if let Some(prev) = hide_s.get() {
+                    if let Some(w) = web_sys::window() {
+                        w.clear_timeout_with_handle(prev);
+                    }
+                }
+                let shown_hide = shown_s;
+                let slot = hide_s.clone();
+                let tcb = Closure::once_into_js(move || {
+                    shown_hide.set(false);
+                });
+                if let Some(w) = web_sys::window() {
+                    if let Ok(h) = w.set_timeout_with_callback_and_timeout_and_arguments_0(
+                        tcb.as_ref().unchecked_ref(),
+                        1000,
+                    ) {
+                        slot.set(Some(h));
+                    }
+                }
+            }) as Box<dyn FnMut(web_sys::Event)>);
+
+            let _ = el.add_event_listener_with_callback("scroll", cb.as_ref().unchecked_ref());
+            // Retain for the component lifetime.
+            StoredValue::new_local(cb);
+        }
     });
 
     let axis_pos = move |ev: &leptos::ev::PointerEvent| {
@@ -112,7 +161,12 @@ pub fn OverlayScrollbar(
                 }
             }
             on:pointerdown=move |ev| {
-                if let Some((_, _, pos)) = read_metrics() {
+                if let Some(el) = by_id(scroller_id) {
+                    let pos = if horizontal {
+                        el.scroll_left()
+                    } else {
+                        el.scroll_top()
+                    };
                     drag.set(Some((axis_pos(&ev), pos)));
                     if let Some(t) = ev.current_target() {
                         if let Ok(el) = t.dyn_into::<web_sys::Element>() {
@@ -123,16 +177,18 @@ pub fn OverlayScrollbar(
                 }
             }
             on:pointermove=move |ev| {
-                if let (Some((p0, s0)), Some((total, client, _))) = (drag.get(), read_metrics()) {
-                    let delta =
-                        (axis_pos(&ev) - p0) / (client as f64).max(1.0) * total as f64;
+                if let (Some((p0, s0)), Some(el)) = (drag.get(), by_id(scroller_id)) {
+                    let (total, client) = if horizontal {
+                        (el.scroll_width() as f64, el.client_width() as f64)
+                    } else {
+                        (el.scroll_height() as f64, el.client_height() as f64)
+                    };
+                    let delta = (axis_pos(&ev) - p0) / client.max(1.0) * total;
                     let next = (s0 as f64 + delta) as i32;
-                    if let Some(el) = by_id(scroller_id) {
-                        if horizontal {
-                            el.set_scroll_left(next);
-                        } else {
-                            el.set_scroll_top(next);
-                        }
+                    if horizontal {
+                        el.set_scroll_left(next);
+                    } else {
+                        el.set_scroll_top(next);
                     }
                 }
             }
