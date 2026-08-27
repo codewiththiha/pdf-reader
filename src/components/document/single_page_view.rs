@@ -16,13 +16,12 @@
 
 use leptos::prelude::*;
 
-use crate::components::document::PageCanvas;
 use crate::components::document::page_canvas::component::GlossOverlayProps;
+use crate::components::document::paginated::PaginatedShell;
+use crate::components::document::PageCanvas;
 use crate::components::primitives::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
-use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
-use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
-use crate::state::TextureSignal;
 use crate::state::ReaderState;
+use crate::state::TextureSignal;
 
 #[component]
 pub fn SinglePageView(state: ReaderState) -> impl IntoView {
@@ -30,49 +29,37 @@ pub fn SinglePageView(state: ReaderState) -> impl IntoView {
         .expect("TextureSignal must be provided by app bootstrap");
     let display_scale = state.viewer.zoom.display.read_only();
     let prev_page = StoredValue::new(0u32);
-    observe_content_size(SINGLE_PAGE_CONTAINER_ID, state.viewer.container_size);
 
     view! {
-        <div class="relative h-full w-full">
-            <div
-                id=SINGLE_PAGE_CONTAINER_ID
-                class="scrollbar-none flex h-full w-full items-start justify-center overflow-auto bg-surface"
-            >
-                <div
-                    class="pb-6 pt-18"
-                    style:padding-inline=move || format!("{}px", state.viewer.page_margin.get())
-                >
-                    <For
-                        each=move || std::iter::once(state.viewer.page.get())
-                        key=|p: &u32| *p
-                        children=move |page: u32| {
-                            let prev = prev_page.get_value();
-                            let dir = if prev == 0 || page > prev {
-                                "page-enter-right"
-                            } else {
-                                "page-enter-left"
-                            };
-                            prev_page.set_value(page);
-                            view! {
-                                <div class=dir>
-                                    <PageCanvas
-                                        page=page
-                                        scale=display_scale
-                                        render_scale=state.viewer.zoom.render
-                                        zoom_animating=state.viewer.zoom_animating
-                                        texture=texture
-                                        canvas_id=format!("sp-{page}-cv")
-                                        host_id=format!("sp-{page}-pg")
-                                        render_text=true
-                                        gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
-                                    />
-                                </div>
-                            }
-                        }
-                    />
-                </div>
-            </div>
-            <OverlayScrollbar scroller_id=SINGLE_PAGE_CONTAINER_ID />
-        </div>
+        <PaginatedShell state=state scroller_id=SINGLE_PAGE_CONTAINER_ID>
+            <For
+                each=move || std::iter::once(state.viewer.page.get())
+                key=|p: &u32| *p
+                children=move |page: u32| {
+                    let prev = prev_page.get_value();
+                    let dir = if prev == 0 || page > prev {
+                        "page-enter-right"
+                    } else {
+                        "page-enter-left"
+                    };
+                    prev_page.set_value(page);
+                    view! {
+                        <div class=dir>
+                            <PageCanvas
+                                page=page
+                                scale=display_scale
+                                render_scale=state.viewer.zoom.render
+                                zoom_animating=state.viewer.zoom_animating
+                                texture=texture
+                                canvas_id=format!("sp-{page}-cv")
+                                host_id=format!("sp-{page}-pg")
+                                render_text=true
+                                gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
+                            />
+                        </div>
+                    }
+                }
+            />
+        </PaginatedShell>
     }
 }

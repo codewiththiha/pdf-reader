@@ -257,7 +257,7 @@ pub fn Sidebar(
 ) -> impl IntoView {
     view! {
         <aside
-            class="sidebar-aside flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
+            class="sidebar-aside flex h-full shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
             class=("w-72", move || matches!(mode.get(), SidebarMode::Thumbs | SidebarMode::Outline))
             class=("w-0", move || mode.get() == SidebarMode::None)
             class=("border-r-0", move || mode.get() == SidebarMode::None)

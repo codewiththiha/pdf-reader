@@ -44,7 +44,7 @@ pub(super) fn mode_flip(
                 v.remeasure_container();
                 if page > 0 {
                     let index = (page - 1) as usize;
-                    v.scroll_to_index(index, Align::Start, ScrollMode::Instant);
+                    v.scroll_to_index(index, Align::Center, ScrollMode::Instant);
                 }
             });
         }

@@ -9,6 +9,7 @@ pub mod dual_page_view;
 pub mod horizontal_view;
 pub mod page_canvas;
 pub mod page_list;
+pub mod paginated;
 pub mod single_page_view;
 
 pub(crate) use continuous_view::ContinuousView;

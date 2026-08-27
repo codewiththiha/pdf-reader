@@ -19,7 +19,7 @@ pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 fn on_true() -> bool { true }
 fn default_gloss_opacity() -> f64 { 0.4 }
-fn default_page_margin() -> f64 { 24.0 }
+fn default_page_margin() -> f64 { 0.0 }
 fn default_custom_gloss() -> String { "#a58af0".into() }
 
 fn is_hex6(s: &str) -> bool {
@@ -59,6 +59,14 @@ pub struct LayoutSettings {
     /// Remove the vertical gap between pages in scroll view.
     #[serde(default)]
     pub no_gap: bool,
+    #[serde(default = "on_true")]
+    pub auto_scale: bool,
+    #[serde(default = "on_true")]
+    pub page_shadow: bool,
+    #[serde(default)]
+    pub sidebar_overlay: bool,
+    #[serde(default)]
+    pub blend_mode: bool,
     /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
     #[serde(default = "default_page_margin")]
     pub page_margin: f64,
@@ -73,6 +81,10 @@ impl Default for LayoutSettings {
             floating_label_style: FloatingLabelStyle::FileName,
             progress_bar: true,
             no_gap: false,
+            auto_scale: true,
+            page_shadow: true,
+            sidebar_overlay: false,
+            blend_mode: false,
             page_margin: default_page_margin(),
         }
     }
@@ -418,5 +430,23 @@ mod tests {
         let s: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.appearance, Appearance::default());
         assert!(s.user_presets.is_empty());
+    }
+
+    #[test]
+    fn layout_settings_default() {
+        let s = LayoutSettings::default();
+        assert_eq!(s.page_margin, 0.0);
+        assert!(s.auto_scale);
+        assert!(s.page_shadow);
+        assert!(!s.sidebar_overlay);
+        assert!(!s.blend_mode);
+
+        // Deserializing empty JSON layout object fills in the defaults
+        let s: LayoutSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.page_margin, 0.0);
+        assert!(s.auto_scale);
+        assert!(s.page_shadow);
+        assert!(!s.sidebar_overlay);
+        assert!(!s.blend_mode);
     }
 }

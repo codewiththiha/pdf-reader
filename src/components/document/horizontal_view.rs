@@ -31,7 +31,7 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
             let page = state.viewer.page.get_untracked();
             if page > 0 {
                 use virtual_list_leptos::{Align, ScrollMode};
-                v.scroll_to_index((page - 1) as usize, Align::Start, ScrollMode::Instant);
+                v.scroll_to_index((page - 1) as usize, Align::Center, ScrollMode::Instant);
             }
         });
     }

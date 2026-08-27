@@ -4,10 +4,10 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use pdf_core::appearance::BaseMode;
 use pdf_core::settings::{FloatingLabelStyle, GlossColor, PageIndicatorStyle};
 
 use crate::components::app_shell::toolbar_popover::MenuPopover;
+use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::menu_item::MenuItem;
@@ -291,6 +291,42 @@ fn LayoutTab(state: AppState) -> impl IntoView {
                     </span>
                 </span>
             </Row>
+            <Row label="Auto Scale">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.layout.auto_scale))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.auto_scale = v);
+                    })
+                    title="Refit to width when entering single / two-page modes".to_string()
+                />
+            </Row>
+            <Row label="Page Shadow">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.layout.page_shadow))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.page_shadow = v);
+                    })
+                    title="Drop shadow under PDF pages".to_string()
+                />
+            </Row>
+            <Row label="Overlay Sidebar">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.layout.sidebar_overlay))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.sidebar_overlay = v);
+                    })
+                    title="Sidebar floats over pages and auto-hides".to_string()
+                />
+            </Row>
+            <Row label="Blend Mode">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.layout.blend_mode))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.blend_mode = v);
+                    })
+                    title="Paint the reader background with the page's own paper colour".to_string()
+                />
+            </Row>
         </div>
     }
 }
@@ -298,48 +334,11 @@ fn LayoutTab(state: AppState) -> impl IntoView {
 #[component]
 fn ThemeTab(state: AppState) -> impl IntoView {
     let s = state.settings;
-    let color_input: NodeRef<html::Input> = NodeRef::new();
+    let custom_open = RwSignal::new(false);
+    let custom_anchor: NodeRef<html::Div> = NodeRef::new();
+
     view! {
-        <SectionLabel text="Theme Mode" />
-        <div class="flex items-center justify-end gap-2 rounded-xl border border-line px-4 py-3">
-            {BaseMode::all()
-                .into_iter()
-                .map(|b| {
-                    let icon = match b {
-                        BaseMode::Light => IconName::Sun,
-                        BaseMode::Dim => IconName::Dim,
-                        BaseMode::Dark => IconName::Moon,
-                    };
-                    let active = Signal::derive(move || s.with(|st| st.appearance.base) == b);
-                    let class = move || {
-                        let base = "flex h-10 w-10 items-center justify-center rounded-full transition-colors \
-focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-                        if active.get() {
-                            format!("{base} bg-accent-soft text-accent")
-                        } else {
-                            format!("{base} text-muted hover:text-ink")
-                        }
-                    };
-                    view! {
-                        <button
-                            type="button"
-                            title=b.label()
-                            aria-pressed=move || active.get().to_string()
-                            on:click=move |_| {
-                                s.update(|st| {
-                                    st.appearance.base = b;
-                                    st.touch_appearance();
-                                })
-                            }
-                            class=class
-                        >
-                            <Icon name=icon size=18 />
-                        </button>
-                    }
-                })
-                .collect_view()}
-        </div>
-        <div class="mt-5"><SectionLabel text="Highlight Colors" /></div>
+        <SectionLabel text="AI Highlight Colors" />
         <div class="rounded-xl border border-line">
             <div class="grid grid-cols-6 gap-2 px-4 py-4">
                 {GlossColor::all()
@@ -356,38 +355,42 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
                                 }
                             };
                             view! {
-                                <button
-                                    type="button"
-                                    title="Custom…"
-                                    aria-pressed=move || active.get().to_string()
-                                    on:click=move |_| {
-                                        s.update(|st| st.gloss_color = GlossColor::Custom);
-                                        if let Some(el) = color_input.get() {
-                                            el.click();
+                                <div node_ref=custom_anchor class="relative flex flex-col items-center">
+                                    <button
+                                        type="button"
+                                        title="Custom…"
+                                        aria-pressed=move || active.get().to_string()
+                                        on:click=move |_| {
+                                            s.update(|st| st.gloss_color = GlossColor::Custom);
+                                            custom_open.set(true);
                                         }
-                                    }
-                                    class="flex flex-col items-center gap-1.5 rounded-lg py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                >
-                                    <span
-                                        class=ring
-                                        style="background:conic-gradient(from 90deg,#e56b64,#e8c449,#6fd58c,#6ba3f5,#a58af0,#e56b64)"
+                                        class="flex flex-col items-center gap-1.5 rounded-lg py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                     >
                                         <span
-                                            class="h-full w-full rounded-full border border-line"
-                                            style=move || {
-                                                format!(
-                                                    "background-color:{}",
-                                                    s.with(|st| st.gloss_custom.clone())
-                                                )
-                                            }
-                                        ></span>
-                                    </span>
-                                    <span class="text-xs text-muted">"Custom"</span>
-                                </button>
+                                            class=ring
+                                            style="background:conic-gradient(from 90deg,#e56b64,#e8c449,#6fd58c,#6ba3f5,#a58af0,#e56b64)"
+                                        >
+                                            <span
+                                                class="h-full w-full rounded-full border border-line"
+                                                style=move || {
+                                                    format!(
+                                                        "background-color:{}",
+                                                        s.with(|st| st.gloss_custom.clone())
+                                                    )
+                                                }
+                                            ></span>
+                                        </span>
+                                        <span class="text-xs text-muted">"Custom"</span>
+                                    </button>
+                                    <CustomColorPicker state=state open=custom_open anchor=custom_anchor />
+                                </div>
                             }
                             .into_any()
                         } else {
-                            let bg = c.resolve("").unwrap_or_default();
+                            let bg = move || {
+                                c.resolve(&s.with(|st| st.gloss_custom.clone()))
+                                    .unwrap_or_else(|| s.with(|st| st.appearance.accent_hex()))
+                            };
                             let swatch = move || {
                                 let base = "h-8 w-8 rounded-full border-2 border-line";
                                 if active.get() {
@@ -404,7 +407,7 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
                                     on:click=move |_| s.update(|st| st.gloss_color = c)
                                     class="flex flex-col items-center gap-1.5 rounded-lg py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                 >
-                                    <span class=swatch style=format!("background-color:{bg}")></span>
+                                    <span class=swatch style=move || format!("background-color:{}", bg())></span>
                                     <span class="text-xs text-muted">{c.label()}</span>
                                 </button>
                             }
@@ -413,19 +416,6 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
                     })
                     .collect_view()}
             </div>
-            <input
-                node_ref=color_input
-                type="color"
-                prop:value=move || s.with(|st| st.gloss_custom.clone())
-                on:input=move |ev| {
-                    let v = event_target_value(&ev);
-                    s.update(|st| {
-                        st.gloss_custom = v;
-                        st.gloss_color = GlossColor::Custom;
-                    });
-                }
-                class="pointer-events-none absolute h-0 w-0 opacity-0"
-            />
             <div class="border-t border-line">
                 <Row label="Opacity">
                     <span class="flex items-center gap-3">
@@ -464,5 +454,102 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
         <p class="mt-2 text-xs text-muted">
             "Colour, tint, textures and presets live in the palette menu on the title bar."
         </p>
+    }
+}
+
+fn hsl_to_hex(h: f64, s: f64, l: f64) -> String {
+    let (s, l) = (s / 100.0, l / 100.0);
+    let a = s * l.min(1.0 - l);
+    let f = |n: f64| {
+        let k = (n + h / 30.0) % 12.0;
+        let c = l - a * ((k - 3.0).min(9.0 - k)).clamp(-1.0, 1.0);
+        (c * 255.0).round() as u8
+    };
+    format!("#{:02x}{:02x}{:02x}", f(0.0), f(8.0), f(4.0))
+}
+
+fn hex_to_hsl(hex: &str) -> (f64, f64, f64) {
+    let c = |i: usize| {
+        u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0) as f64 / 255.0
+    };
+    let (r, g, b) = (c(1), c(3), c(5));
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let l = (max + min) / 2.0;
+    let d = max - min;
+    if d == 0.0 {
+        return (0.0, 0.0, l * 100.0);
+    }
+    let s = d / (1.0 - (2.0 * l - 1.0).abs());
+    let h = if max == r {
+        ((g - b) / d) % 6.0
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    ((h * 60.0 + 360.0) % 360.0, s * 100.0, l * 100.0)
+}
+
+#[component]
+fn CustomColorPicker(
+    state: AppState,
+    open: RwSignal<bool>,
+    anchor: NodeRef<html::Div>,
+) -> impl IntoView {
+    let s = state.settings;
+    let (init_h, init_sat, init_li) = hex_to_hsl(&s.with_untracked(|st| st.gloss_custom.clone()));
+    let (h, set_h) = signal(init_h);
+    let (sat, set_sat) = signal(init_sat);
+    let (li, set_li) = signal(init_li);
+    Effect::new(move |_| {
+        if !open.get() {
+            return;
+        }
+        let (hh, ss, ll) = hex_to_hsl(&s.with_untracked(|st| st.gloss_custom.clone()));
+        set_h.set(hh);
+        set_sat.set(ss);
+        set_li.set(ll);
+    });
+    let hex = move || hsl_to_hex(h.get(), sat.get(), li.get());
+    Effect::new(move |_| {
+        if open.get() {
+            s.update(|st| st.gloss_custom = hex());
+        }
+    });
+    view! {
+        <MenuPopover open=open anchor=anchor width=224 class="space-y-3 p-3".to_string()>
+            <Slider
+                value=h
+                min=0.0
+                max=360.0
+                step=1.0
+                label="Hue"
+                on_change=move |v| set_h.set(v)
+                class="hue-strip"
+            />
+            <Slider
+                value=sat
+                min=0.0
+                max=100.0
+                step=1.0
+                label="Saturation"
+                on_change=move |v| set_sat.set(v)
+            />
+            <Slider
+                value=li
+                min=5.0
+                max=95.0
+                step=1.0
+                label="Lightness"
+                on_change=move |v| set_li.set(v)
+            />
+            <div class="flex items-center justify-between text-xs text-muted">
+                <span>"Preview"</span>
+                <span
+                    class="h-6 w-10 rounded-md border border-line"
+                    style=move || format!("background:{}", hex())
+                />
+            </div>
+        </MenuPopover>
     }
 }

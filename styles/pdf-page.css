@@ -45,6 +45,10 @@
   --scale-round-y: 1px;
 }
 
+.no-page-shadow .pdf-page {
+  box-shadow: none;
+}
+
 .pdf-page canvas {
   position: absolute;
   inset: 0;

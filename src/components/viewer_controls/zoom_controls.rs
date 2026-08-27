@@ -16,6 +16,7 @@ use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::menu_item::MenuItem;
 use crate::components::primitives::separator::Separator;
 use crate::components::primitives::tooltip::Tooltip;
+use pdf_core::layout::TOOLBAR_H;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
 use crate::components::app_shell::adaptive_toolbar::ToolbarItem;
 use crate::components::app_shell::OverflowRow;
@@ -151,7 +152,7 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
             .page1_size
             .get()
             .map(|p| {
-                let fit_w = fit_scale(FitMode::Width, cw, ch, p.width, p.height, 48.0, shown);
+                let fit_w = fit_scale(FitMode::Width, cw, ch, p.width, p.height, TOOLBAR_H, shown);
                 is_space_constrained(desired, fit_w)
             })
             .unwrap_or(false);

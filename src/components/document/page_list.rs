@@ -20,6 +20,7 @@
 
 use leptos::html;
 use leptos::prelude::*;
+use pdf_core::layout::TOOLBAR_H;
 use virtual_list_leptos::{Align, ScrollMode, VirtualItem, Virtualizer};
 use wasm_bindgen::JsCast;
 
@@ -90,7 +91,7 @@ pub fn PageList(
             // Inner column, offset by the toolbar height so the first page
             // starts below the glass header while the scrollport itself still
             // runs the full height of the window.
-            <div class="relative mt-12">
+            <div class="relative" style=format!("margin-top:{TOOLBAR_H}px")>
                 <div
                     aria-hidden="true"
                     style:height=move || format!("{}px", total_size.get())

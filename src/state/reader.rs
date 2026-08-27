@@ -209,7 +209,7 @@ impl ViewerSignals {
         self.scroll_top.set(0.0);
         self.auto_scroll.set(false);
         self.page_gap.set(PAGE_GAP);
-        self.page_margin.set(24.0);
+        self.page_margin.set(0.0);
     }
 }
 
@@ -226,7 +226,7 @@ impl Default for ViewerSignals {
             selected_pages: RwSignal::new(None),
             auto_scroll: RwSignal::new(false),
             page_gap: RwSignal::new(PAGE_GAP),
-            page_margin: RwSignal::new(24.0),
+            page_margin: RwSignal::new(0.0),
         }
     }
 }

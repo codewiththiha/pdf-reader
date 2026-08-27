@@ -7,6 +7,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 
 use leptos::prelude::*;
 use virtual_list::Viewport;
@@ -20,6 +21,7 @@ use crate::components::menus::reader_menu::ReaderMenu;
 use crate::components::menus::settings_modal::SettingsModal;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
+use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
@@ -40,6 +42,7 @@ use crate::services::document::close_document;
 use crate::state::AppState;
 use crate::state::SidebarMode;
 use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, ViewMode};
+use pdf_core::math::FitMode;
 use pdf_engine::types::DocStatus;
 
 #[component]
@@ -220,6 +223,20 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
 
+    let prev_mode = StoredValue::new(vs.viewer.mode.get_untracked());
+    Effect::new(move |_| {
+        let mode = vs.viewer.mode.get();
+        let prev = prev_mode.get_value();
+        if mode == prev {
+            return;
+        }
+        prev_mode.set_value(mode);
+        let auto = state.settings.with(|s| s.layout.auto_scale);
+        if matches!(mode, ViewMode::Dual | ViewMode::Horizontal) || (auto && mode.is_paginated()) {
+            vs.viewer.fit.set(FitMode::Width);
+        }
+    });
+
     fit_effect(vs, state.ui.sidebar, virtualizer.clone(), h_virtualizer.clone());
     zoom_system(vs, virtualizer.clone(), h_virtualizer.clone());
     navigation_sync(vs, virtualizer.clone(), h_virtualizer.clone());
@@ -231,11 +248,49 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let mode = state.reader.viewer.mode;
     let is_ready = move || status.get() == DocStatus::Ready;
     let paint = sidebar_paint(state.ui.sidebar);
-    // Publish how far the open/close slide has progressed so the AppTitleBar
-    // above can hold its left inset and native traffic lights through a close
-    // instead of snapping them on the first frame.
+
+    let overlay_sb = Signal::derive(move || state.settings.with(|st| st.layout.sidebar_overlay));
+    let sb_hover = use_hover_visibility(Duration::from_millis(250), move || !overlay_sb.get());
+    let last_panel = RwSignal::new(SidebarMode::Thumbs);
+    Effect::new(move |_| {
+        let m = state.ui.sidebar.get();
+        if m != SidebarMode::None {
+            last_panel.set(m);
+        }
+    });
+    let prev_vis = StoredValue::new_local(false);
+    Effect::new(move |_| {
+        // edge-triggered hover open/close
+        let vis = sb_hover.visible.get();
+        let was = prev_vis.get_value();
+        prev_vis.set_value(vis);
+        if !overlay_sb.get() {
+            return;
+        }
+        if vis && !was && state.ui.sidebar.get() == SidebarMode::None {
+            state.ui.sidebar.set(last_panel.get());
+        } else if !vis && was && state.ui.sidebar.get() != SidebarMode::None {
+            state.ui.sidebar.set(SidebarMode::None);
+        }
+    });
     provide_context(SidebarChromeCtx {
-        present: paint.present,
+        present: Signal::derive(move || paint.present.get() && !overlay_sb.get()),
+    });
+
+    let sb_request_show = RwSignal::new(0u32);
+    let sb_request_hide = RwSignal::new(0u32);
+
+    let show_fn = sb_hover.show.clone();
+    Effect::new(move |_| {
+        if sb_request_show.get() > 0 {
+            show_fn();
+        }
+    });
+    let hide_fn = sb_hover.hide_later.clone();
+    Effect::new(move |_| {
+        if sb_request_hide.get() > 0 {
+            hide_fn();
+        }
     });
 
     let settings_open = RwSignal::new(false);
@@ -299,42 +354,71 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         <AppTitleBar state=state left=left center=center right=right>
             // overflow-hidden clips the hidden ReaderBottomBar's slide-down translate
             // so it can never leak a phantom scrollbar onto the window.
-            <div class="relative flex h-full w-full flex-col overflow-hidden bg-paper text-ink">
-                <div class="flex min-h-0 flex-1">
-                    <Sidebar
-                        mode=state.ui.sidebar
-                        header=move || view! { <SidebarHeader reader=vs sidebar=state.ui.sidebar /> }
-                        info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
-                        panels=move || view! {
-                            <SidebarOutline
-                                state=vs
-                                sidebar=state.ui.sidebar
-                                shown=paint.show_outline
-                                outro=paint.is_closed
-                                intro=paint.intro
-                            />
-                            <SidebarThumbs
-                                state=vs
-                                sidebar=state.ui.sidebar
-                                // Cells mount with the aside. Cached thumbs
-                                // blit during the slide; cold cells retain their
-                                // skeleton until their capped render completes.
-                                live=Signal::derive(move || paint.thumbs_live.get())
-                                shown=paint.show_thumbs
-                                outro=paint.is_closed
-                                intro=paint.intro
-                            />
+            <div
+                class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
+                class=("blend", move || state.settings.with(|st| st.layout.blend_mode))
+            >
+                <div class="relative flex min-h-0 flex-1">
+                    <Show when=move || overlay_sb.get() && state.ui.sidebar.get() == SidebarMode::None>
+                        <div
+                            class="absolute inset-y-0 left-0 z-[var(--z-bar)] w-1.5"
+                            on:mouseenter=move |_| sb_request_show.update(|n| *n += 1)
+                        />
+                    </Show>
+                    <div
+                        class=move || {
+                            if overlay_sb.get() {
+                                "absolute inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl transition-transform duration-300 ease-in-out"
+                            } else {
+                                "contents"
+                            }
                         }
-                        footer=move || view! {
-                            <PanelSwitcher
-                                mode=state.ui.sidebar
-                                thumbs_active=paint.thumbs_active
-                                outline_active=paint.outline_active
-                                on_reveal=request_reveal_active
-                            />
-                        }
-                    />
-                    <main id=VIEWER_SLOT_ID class="relative min-w-0 flex-1 overflow-hidden">
+                        class=(
+                            "-translate-x-full",
+                            move || overlay_sb.get() && state.ui.sidebar.get() == SidebarMode::None,
+                        )
+                        on:mouseenter=move |_| sb_request_show.update(|n| *n += 1)
+                        on:mouseleave=move |_| sb_request_hide.update(|n| *n += 1)
+                    >
+                        <Sidebar
+                            mode=state.ui.sidebar
+                            header=move || view! { <SidebarHeader reader=vs sidebar=state.ui.sidebar /> }
+                            info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
+                            panels=move || view! {
+                                <SidebarOutline
+                                    state=vs
+                                    sidebar=state.ui.sidebar
+                                    shown=paint.show_outline
+                                    outro=paint.is_closed
+                                    intro=paint.intro
+                                />
+                                <SidebarThumbs
+                                    state=vs
+                                    sidebar=state.ui.sidebar
+                                    // Cells mount with the aside. Cached thumbs
+                                    // blit during the slide; cold cells retain their
+                                    // skeleton until their capped render completes.
+                                    live=Signal::derive(move || paint.thumbs_live.get())
+                                    shown=paint.show_thumbs
+                                    outro=paint.is_closed
+                                    intro=paint.intro
+                                />
+                            }
+                            footer=move || view! {
+                                <PanelSwitcher
+                                    mode=state.ui.sidebar
+                                    thumbs_active=paint.thumbs_active
+                                    outline_active=paint.outline_active
+                                    on_reveal=request_reveal_active
+                                />
+                            }
+                        />
+                    </div>
+                    <main
+                        id=VIEWER_SLOT_ID
+                        class="relative min-w-0 flex-1 overflow-hidden"
+                        class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
+                    >
                         <Show when=is_ready>
                             {move || match mode.get() {
                                 ViewMode::Single => view! {

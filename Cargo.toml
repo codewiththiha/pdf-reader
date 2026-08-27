@@ -30,6 +30,7 @@ web-sys = { version = "0.3", features = [
   "DomTokenList",
   "CssStyleDeclaration",
   "CanvasRenderingContext2d",
+  "ImageData",
   "Event",
   "MouseEvent",
   "KeyboardEvent",

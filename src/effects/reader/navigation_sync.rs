@@ -110,7 +110,7 @@ pub fn navigation_sync(
             if page == 0 {
                 return;
             }
-            v.scroll_to_index((page - 1) as usize, Align::Start, ScrollMode::Auto);
+            v.scroll_to_index((page - 1) as usize, Align::Center, ScrollMode::Auto);
         });
     }
 }

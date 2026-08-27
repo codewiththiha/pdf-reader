@@ -1,6 +1,6 @@
 //! More menu (⋯ overflow).
 //!
-//! Fullscreen (Tauri window API with a browser fallback), Print, a
+//! Fullscreen (Tauri window API with a browser fallback), a
 //! keyboard-shortcuts reference panel, and an About row. The panel renders
 //! through the shared window-aware `Popover`, so outside-click/Escape
 //! dismissal, viewport clamping, upward flipping and the "keep the titlebar
@@ -80,15 +80,6 @@ pub fn MoreMenu() -> impl IntoView {
                 >
                     {move || full.get().then(|| view! { <span class="ml-auto text-xs text-muted">"On"</span> })}
                 </MenuItem>
-                <MenuItem
-                    icon=IconName::Print
-                    label="Print…"
-                    on_click=move || {
-                        if let Some(w) = web_sys::window() {
-                            _ = w.print();
-                        }
-                    }
-                />
                 <MenuItem
                     icon=IconName::Keyboard
                     label="Keyboard Shortcuts"

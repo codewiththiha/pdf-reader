@@ -18,6 +18,7 @@ use web_sys::Event;
 use pdf_engine::api as engine;
 use pdf_engine::types::{DocStatus, PageSize};
 use pdf_core::filename::display_name;
+use pdf_core::layout::TOOLBAR_H;
 use crate::state::library::{self, CoverImage, RecentBook};
 use pdf_core::math::{fit_scale, FitMode};
 use crate::state::{AppState, Toast};
@@ -167,7 +168,7 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.document.metrics.css_heights.set(Vec::new());
                 let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =
-                    fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, 48.0, 1.0);
+                    fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, TOOLBAR_H, 1.0);
                 // Direct writes are correct HERE and nowhere else: this is the
                 // initial scale for a brand-new document, so there is no layout
                 // to animate from and nothing to anchor to. All three scales

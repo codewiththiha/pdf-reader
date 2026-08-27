@@ -65,14 +65,38 @@ pub fn TitleBar(
         Duration::from_millis(HIDE_DELAY_MS),
         move || is_held.get() || extra_hold.get(),
     );
-    let hovered = hover.visible;
-    let visible = Signal::derive(move || pinned.get() || hovered.get());
+    let bar_hovered = hover.visible;
+    let visible = Signal::derive(move || pinned.get() || bar_hovered.get());
     provide_context(TitleBarCtx { visible, held_count });
 
-    let hide_later_band = hover.hide_later.clone();
-    let hide_later_bar = hover.hide_later;
-    let show_band = hover.show.clone();
-    let show_bar = hover.show;
+    let hovered = StoredValue::new_local(false);
+    let enter = {
+        let show = hover.show.clone();
+        move || {
+            hovered.set_value(true);
+            show();
+        }
+    };
+    let leave = {
+        let hide = hover.hide_later.clone();
+        move || {
+            hovered.set_value(false);
+            hide();
+        }
+    };
+    let recheck = hover.hide_later.clone();
+    Effect::new(move |_| {
+        let _ = is_held.get();
+        let _ = extra_hold.get();
+        if !is_held.get() && !extra_hold.get() && !hovered.get_value() {
+            recheck(); // postpone is now false → schedules the hide
+        }
+    });
+
+    let enter_band = enter.clone();
+    let leave_band = leave.clone();
+    let enter_bar = enter;
+    let leave_bar = leave;
     let sidebar_open = move || band_inset.get();
 
     view! {
@@ -85,16 +109,16 @@ pub fn TitleBar(
                 class=("left-72", sidebar_open)
                 class=("left-0", move || !sidebar_open())
                 data-tauri-drag-region="true"
-                on:mouseenter=move |_| show_band()
-                on:mouseleave=move |_| hide_later_band()
+                on:mouseenter=move |_| enter_band()
+                on:mouseleave=move |_| leave_band()
             >
                 <div
                     // DocumentTitle measurement anchors MUST keep these ids.
                     id=TOOLBAR_ROW_ID
                     data-tauri-drag-region="true"
                     prop:inert=move || !visible.get()
-                    on:mouseenter=move |_| show_bar()
-                    on:mouseleave=move |_| hide_later_bar()
+                    on:mouseenter=move |_| enter_bar()
+                    on:mouseleave=move |_| leave_bar()
                     class="toolbar-glass relative flex h-full items-center gap-2 pr-2 transition-opacity duration-200"
                     // 88px clears the lights (x:20 + ~54px) + a real gap.
                     class=("pl-[88px]", move || !sidebar_open())

@@ -150,15 +150,6 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                     on_click=move || toggle_fullscreen(full)
                 />
                 <MenuItem
-                    icon=IconName::Print
-                    label="Print…".to_string()
-                    on_click=move || {
-                        if let Some(w) = web_sys::window() {
-                            let _ = w.print();
-                        }
-                    }
-                />
-                <MenuItem
                     icon=IconName::Keyboard
                     label="Keyboard Shortcuts".to_string()
                     on_click=move || set_show_keys.update(|v| *v = !*v)

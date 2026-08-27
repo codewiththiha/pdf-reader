@@ -184,7 +184,7 @@ there is no feedback loop between the label and the layout.
 
 - Glass toolbar with sidebar toggle, open button, document title, centred page navigation, zoom
   popover, view-mode switch, search and an overflow menu.
-- Overflow menu with fullscreen, print and a keyboard shortcut reference.
+- Overflow menu with fullscreen and a keyboard shortcut reference.
 - Animated sidebar with an outline and thumbnails rail. Panels stay mounted while the sidebar is
   collapsed, so thumbnails survive a toggle without re-rendering.
 - Status bar showing the current page position, rendered as a click-through overlay.
