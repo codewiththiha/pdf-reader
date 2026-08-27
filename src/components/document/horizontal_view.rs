@@ -2,7 +2,6 @@
 
 use leptos::html;
 use leptos::prelude::*;
-use pdf_core::layout::TOOLBAR_H;
 use virtual_list_leptos::{VirtualItem, Virtualizer};
 use wasm_bindgen::JsCast;
 
@@ -56,9 +55,11 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
                             let index = item.index;
                             let page = (index + 1) as u32;
                             let left = handle.with_value(|v| v.item_top(index));
+                            // top:0 — the strip owns the full window height and
+                            // the auto-hiding title bar overlays it, like Dual.
                             let style = move || format!(
-                                "position:absolute;top:{}px;left:{}px;height:100%;display:flex;align-items:flex-start;padding-inline:{}px",
-                                TOOLBAR_H, left.get(), state.viewer.page_margin.get()
+                                "position:absolute;top:0;left:{}px;height:100%;display:flex;align-items:flex-start;padding-inline:{}px",
+                                left.get(), state.viewer.page_margin.get()
                             );
                             let geo = Callback::new(move |(_page, w, _h): (u32, f64, f64)| {
                                 if w > 0.0 {

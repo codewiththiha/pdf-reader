@@ -63,15 +63,24 @@ pub fn fit_effect(
             }
         });
         // Margins shrink the usable width.
+        let horizontal = mode == ViewMode::Horizontal;
         let cw_eff = (cw - 2.0 * margin).max(1.0);
-        let ch_eff = if mode.is_paginated() { ch.max(1.0) } else { (ch - TOOLBAR_H).max(1.0) };
+        // Horizontal joins the paginated modes here: the strip owns the full
+        // window height and the auto-hiding title bar overlays it, exactly
+        // like two-page mode. Reserving TOOLBAR_H for a bar that hides left a
+        // permanent dead band above the pages.
+        let ch_eff = if mode.is_paginated() || horizontal {
+            ch.max(1.0)
+        } else {
+            (ch - TOOLBAR_H).max(1.0)
+        };
         // Only Dual renders a true two-page SPREAD. Horizontal lays out
         // individual pages in a strip — each virtual item is one page — so
         // doubling the page width there halved the fit scale and "Fit
         // Width" zoomed out to half the size it should be.
         let spread = matches!(mode, ViewMode::Dual);
         let (pw_eff, ph_eff) = if spread { (pw * 2.0, ph) } else { (pw, ph) };
-        let pad = if mode.is_paginated() { 0.0 } else { TOOLBAR_H };
+        let pad = if mode.is_paginated() || horizontal { 0.0 } else { TOOLBAR_H };
 
         let prev_page = last_fit_page.get_value();
         let first_run = prev_page == 0;
@@ -85,12 +94,13 @@ pub fn fit_effect(
             return;
         }
 
-        let target = if mode == ViewMode::Horizontal {
+        let target = if horizontal {
             // The horizontal strip's only real constraint is viewport
             // HEIGHT: several pages are visible at once, so "fit width" has
             // no single-page meaning here. Width follows from the page's
             // aspect ratio, which is how fixed-layout horizontal readers
-            // scale their spreads.
+            // scale their spreads. The height is the FULL window, so pages
+            // fill the band the title bar would otherwise steal.
             if ch_eff <= 1.0 {
                 // Container not measured yet; fitting to it would slam the
                 // page to the minimum scale.
