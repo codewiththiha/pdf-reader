@@ -27,12 +27,22 @@
 //! two app effects.
 
 use leptos::prelude::*;
+use std::cell::RefCell;
 use web_sys::wasm_bindgen::JsCast;
 
 use pdf_core::appearance::Appearance;
 use crate::state::AppState;
 
 use crate::effects::appearance::schedule_save;
+
+thread_local! {
+    /// Last paper colour the engine resolved. Lets `sync_canvas_paper` write
+    /// `--canvas-paper` synchronously, on the SAME frame as the rest of the
+    /// theme tokens, instead of waiting for the async engine round-trip.
+    /// Empty on the first paint of a session, where the CSS falls back to
+    /// `var(--color-paper)` exactly as before — so no colour shift.
+    static PAPER_CACHE: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 /// The seven tokens the tint may override. Listed once so they can be cleared
 /// as a set — a stale override left behind when the tint is removed would keep
@@ -148,11 +158,33 @@ pub fn paint_appearance_now(a: Appearance) {
 /// Real-time blend backdrop colour: the engine computes the post-filter
 /// paper colour from the live pipeline, so it matches the canvas on the
 /// same frame — no timeout, no sampling, no flicker.
+///
+/// The engine read is an async JS round-trip, so on its own it lands two to
+/// four frames after `paint_appearance` has already written the page tokens.
+/// That gap is the blend backdrop visibly lagging the page, and during a
+/// slider drag it re-opens on every preview tick, which reads as flicker.
+/// Replaying the last resolved colour synchronously closes the gap; the
+/// async call then only has to confirm (or correct) it one beat later.
 pub fn sync_canvas_paper() {
+    let cached = PAPER_CACHE.with(|c| c.borrow().clone());
+    if let Some(c) = &cached {
+        if let Some(style) = html_style() {
+            let _ = style.set_property("--canvas-paper", c);
+        }
+    }
     wasm_bindgen_futures::spawn_local(async {
         if let Some(c) = pdf_engine::api::paper_color().await {
-            if let Some(style) = html_style() {
-                let _ = style.set_property("--canvas-paper", &c);
+            let changed = PAPER_CACHE.with(|cache| {
+                let same = cache.borrow().as_deref() == Some(c.as_str());
+                if !same {
+                    *cache.borrow_mut() = Some(c.clone());
+                }
+                !same
+            });
+            if changed {
+                if let Some(style) = html_style() {
+                    let _ = style.set_property("--canvas-paper", &c);
+                }
             }
         }
     });

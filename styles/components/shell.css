@@ -148,7 +148,12 @@ body {
 }
 
 .reader-bg { background-color: var(--color-paper); }
-.reader-bg.blend { background-color: var(--canvas-paper, var(--color-paper)); }
+.reader-bg.blend {
+  background-color: var(--canvas-paper, var(--color-paper));
+  /* The paper colour is confirmed by an async engine read one beat after
+     the synchronous replay, so ease the correction instead of popping. */
+  transition: background-color 120ms ease-out;
+}
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
 /* BLEND TEXTURE BLEED — only in blend mode the backdrop carries the same
