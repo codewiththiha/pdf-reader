@@ -1,8 +1,23 @@
 //! Horizontal strip view: all pages in one virtualized horizontal scrollport.
+//!
+//! WHEEL POLICY. The strip is a horizontal scrollport in a world where the
+//! wheel is vertical, so exactly one case needs help from us: a plain
+//! vertical tick while the strip fits the slot vertically, where the browser
+//! has nothing to pan and would do nothing at all. That tick is translated
+//! into `scrollLeft`. Every other input is left to the native scroll chain —
+//! shift+wheel already maps to horizontal, a trackpad's `deltaX` already
+//! scrolls horizontally, and once a zoom makes the strip taller than the slot
+//! the plain wheel pans vertically for free.
+//!
+//! The strip's height is derived from the tallest intrinsic page at the live
+//! scale, so that vertical range appears exactly when the zoom exceeds
+//! fit-height. That single geometric fact is also what the wheel handler
+//! tests, so the two behaviours cannot drift apart into a second state flag.
 
 use leptos::html;
 use leptos::prelude::*;
 use virtual_list_leptos::{VirtualItem, Virtualizer};
+use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 
 use crate::components::document::PageCanvas;
@@ -18,15 +33,82 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
         .expect("TextureSignal must be provided by app bootstrap");
     let v = virtualizer;
     let list_ref: NodeRef<html::Div> = NodeRef::new();
+
+    // Tallest page at the live scale. The strip is at least this tall, so
+    // zooming past fit-height turns into REAL vertical scroll range — which
+    // is what flips the wheel handler into leaving vertical pans alone.
+    let strip_h = Memo::new(move |_| {
+        let scale = state.viewer.zoom.display.get();
+        let tallest = state
+            .document
+            .metrics
+            .intrinsic
+            .with(|pages| pages.iter().map(|p| p.height).fold(0.0, f64::max));
+        tallest * scale
+    });
+
     {
         let v = v.clone();
+        // The listener is retained by JS (the closure is leaked into a
+        // Function), so the element it is attached to must be remembered in
+        // order to detach it again on re-bind or unmount.
+        let wheel_guard = StoredValue::new_local(None::<(web_sys::Element, js_sys::Function)>);
         Effect::new(move |_| {
             let Some(div) = list_ref.get() else {
                 return;
             };
             let el: web_sys::Element = div.clone().unchecked_into();
-            v.bind_container(el);
+            v.bind_container(el.clone());
             v.remeasure_container();
+
+            if let Some((old_el, old_fn)) = wheel_guard.get_value() {
+                let _ = old_el.remove_event_listener_with_callback("wheel", &old_fn);
+            }
+            let target = el.clone();
+            let cb = Closure::<dyn FnMut(web_sys::WheelEvent)>::new(
+                move |e: web_sys::WheelEvent| {
+                    if e.shift_key() {
+                        // The browser already maps shift+wheel to horizontal.
+                        return;
+                    }
+                    let dx = e.delta_x();
+                    let mut dy = e.delta_y();
+                    match e.delta_mode() {
+                        1 => dy *= 16.0,  // lines (Firefox)
+                        2 => dy *= 120.0, // pages
+                        _ => {}
+                    }
+                    if dx.abs() > dy.abs() {
+                        // A genuine horizontal gesture: the native chain has it.
+                        return;
+                    }
+                    if target.scroll_height() - target.client_height() > 1 {
+                        // Zoomed in past fit-height: let the vertical pan happen.
+                        return;
+                    }
+                    // The strip fits vertically, so a vertical tick would do
+                    // nothing. Drive the strip with it instead.
+                    e.prevent_default();
+                    target.set_scroll_left((target.scroll_left() as f64 + dy) as i32);
+                },
+            );
+            let handler: js_sys::Function = cb.into_js_value().unchecked_into();
+            // Non-passive: the fits-vertically branch calls preventDefault.
+            let opts = web_sys::AddEventListenerOptions::new();
+            opts.set_passive(false);
+            let _ = el.add_event_listener_with_callback_and_add_event_listener_options(
+                "wheel",
+                &handler,
+                &opts,
+            );
+            wheel_guard.set_value(Some((el, handler)));
+            on_cleanup(move || {
+                if let Some((old_el, old_fn)) = wheel_guard.get_value() {
+                    let _ = old_el.remove_event_listener_with_callback("wheel", &old_fn);
+                }
+                wheel_guard.set_value(None);
+            });
+
             let page = state.viewer.page.get_untracked();
             if page > 0 {
                 use virtual_list_leptos::{Align, ScrollMode};
@@ -44,10 +126,14 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
             <div
                 id=H_PAGE_LIST_ID
                 node_ref=list_ref
-                class="scrollbar-none h-full w-full overflow-x-auto overflow-y-hidden outline-none"
+                class="scrollbar-none h-full w-full overflow-x-auto overflow-y-auto outline-none"
                 tabindex="0"
             >
-                <div class="relative h-full" style:width=move || format!("{}px", total_size.get())>
+                <div
+                    class="relative"
+                    style:width=move || format!("{}px", total_size.get())
+                    style:height=move || format!("max(100%, {}px)", strip_h.get().ceil())
+                >
                     <For
                         each=move || items.get()
                         key=|item: &VirtualItem| item.index
