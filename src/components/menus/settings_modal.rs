@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use pdf_core::appearance::BaseMode;
-use pdf_core::settings::{FloatingLabelStyle, GlossColor, LayoutSettings, PageIndicatorStyle};
+use pdf_core::settings::{FloatingLabelStyle, GlossColor, PageIndicatorStyle};
 
 use crate::components::app_shell::toolbar_popover::MenuPopover;
 use crate::components::primitives::icon::{Icon, IconName};
@@ -170,11 +170,6 @@ disabled:cursor-not-allowed disabled:opacity-45"
 #[component]
 fn LayoutTab(state: AppState) -> impl IntoView {
     let s = state.settings;
-    let set = move |f: fn(&mut LayoutSettings)| {
-        s.update(|st| {
-            f(&mut st.layout);
-        });
-    };
     let indicator_off = Signal::derive(move || !s.with(|st| st.layout.page_indicator));
     let label_off = Signal::derive(move || !s.with(|st| st.layout.floating_label));
     view! {
@@ -183,14 +178,18 @@ fn LayoutTab(state: AppState) -> impl IntoView {
             <Row label="Page Indicator">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.page_indicator))
-                    on_change=Callback::new(move |v| set(|l| l.page_indicator = v))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.page_indicator = v);
+                    })
                     title="Floating page indicator".to_string()
                 />
             </Row>
             <Row label="Indicator Style">
                 <StyleSelect
                     value=Signal::derive(move || s.with(|st| st.layout.page_indicator_style))
-                    on_change=Callback::new(move |v| set(|l| l.page_indicator_style = v))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.page_indicator_style = v);
+                    })
                     options=vec![
                         (PageIndicatorStyle::PageNumber, "Page Number"),
                         (PageIndicatorStyle::Percentage, "Percentage"),
@@ -205,14 +204,18 @@ fn LayoutTab(state: AppState) -> impl IntoView {
             <Row label="Floating Label">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.floating_label))
-                    on_change=Callback::new(move |v| set(|l| l.floating_label = v))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.floating_label = v);
+                    })
                     title="Floating document label".to_string()
                 />
             </Row>
             <Row label="Label Content">
                 <StyleSelect
                     value=Signal::derive(move || s.with(|st| st.layout.floating_label_style))
-                    on_change=Callback::new(move |v| set(|l| l.floating_label_style = v))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.floating_label_style = v);
+                    })
                     options=vec![
                         (FloatingLabelStyle::FileName, "File Name"),
                         (FloatingLabelStyle::Title, "Document Title"),
@@ -229,14 +232,18 @@ fn LayoutTab(state: AppState) -> impl IntoView {
             <Row label="Progress Bar">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.progress_bar))
-                    on_change=Callback::new(move |v| set(|l| l.progress_bar = v))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.progress_bar = v);
+                    })
                     title="Reading progress bar".to_string()
                 />
             </Row>
             <Row label="No Gap">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.no_gap))
-                    on_change=Callback::new(move |v| set(|l| l.no_gap = v))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.no_gap = v);
+                    })
                     title="Remove the spacing between pages in scroll view".to_string()
                 />
             </Row>
