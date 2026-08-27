@@ -74,7 +74,7 @@ fn toggle_fullscreen(full: RwSignal<bool>) {
 }
 
 #[component]
-pub fn ReaderMenu(state: AppState) -> impl IntoView {
+pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
     let r = state.reader;
@@ -137,6 +137,12 @@ pub fn ReaderMenu(state: AppState) -> impl IntoView {
                         </MenuItem>
                     }
                 }}
+                <div class="my-1"><Separator vertical=false /></div>
+                <MenuItem
+                    icon=IconName::Settings
+                    label="Settings…".to_string()
+                    on_click=move || { open.set(false); settings_open.set(true); }
+                />
                 <div class="my-1"><Separator vertical=false /></div>
                 <MenuItem
                     icon=IconName::Fullscreen
