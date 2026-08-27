@@ -50,5 +50,9 @@ pub(super) fn mode_flip(
         }
         was_continuous = continuous;
         was_horizontal = horizontal;
+        // A mode flip leaves the outgoing view's rasters behind and nothing
+        // necessarily renders right after, so the engine's own sweep (which
+        // only runs inside a render) would never fire. Release now.
+        pdf_engine::api::sweep();
     });
 }

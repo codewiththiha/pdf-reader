@@ -256,4 +256,8 @@ pub(super) fn commit_scale(state: ReaderState, scale: f64) {
     state.viewer.zoom.scale.set(scale);
     state.viewer.zoom.render.set(scale);
     state.viewer.zoom_animating.set(false);
+    // The scale is settled and the pages have (or will) be re-rendered at it:
+    // rasters of every other scale are dead weight, so let the engine drop
+    // them now instead of waiting for the next idle sweep.
+    pdf_engine::api::sweep();
 }

@@ -56,6 +56,7 @@ import {
   highlightsByPage,
   setSearchQuery,
   setActiveMatchValue,
+  sweepPdf,
   themeScrubActive,
 } from "./engine/state";
 
@@ -242,6 +243,9 @@ globalThis.PDFReader = {
     return paperInfo(readPipeline()).color;
   },
   setScrubMode,
+  sweep: () => {
+    sweepPdf();
+  },
   takePendingFile,
   prefetchThumb,
 } satisfies PDFReaderApi;

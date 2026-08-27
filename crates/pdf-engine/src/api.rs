@@ -286,6 +286,15 @@ pub fn set_scrub_mode(on: bool) {
     bridge::set_scrub_mode(on);
 }
 
+/// Release rasters/caches the engine no longer needs. Call after zoom
+/// commits, mode flips and scroll idle so memory drops immediately.
+pub fn sweep() {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::sweep();
+}
+
 // --- Window chrome ------------------------------------------------------
 
 /// Show/hide the native macOS traffic lights via the backend command. The

@@ -127,6 +127,13 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
+
+    /// Release rasters/caches the engine no longer needs (advisory
+    /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,
+    /// scroll idle — so memory drops immediately instead of waiting for the
+    /// engine's own 30s idle sweep.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "sweep")]
+    pub fn sweep();
 }
 
 /// Subscribe to a Tauri event. `handler` receives the event object (a JsValue,
