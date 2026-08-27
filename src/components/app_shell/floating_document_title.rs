@@ -167,7 +167,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
                     .with(|o| {
                         o.iter()
                             .filter(|n| n.page <= page)
-                            .last()
+                            .next_back()
                             .map(|n| n.title.clone())
                     })
                     .or_else(|| r.document.title.get())
