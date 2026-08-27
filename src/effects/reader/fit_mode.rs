@@ -65,9 +65,11 @@ pub fn fit_effect(
         // Margins shrink the usable width.
         let cw_eff = (cw - 2.0 * margin).max(1.0);
         let ch_eff = if mode.is_paginated() { ch.max(1.0) } else { (ch - TOOLBAR_H).max(1.0) };
-        // Dual AND horizontal show pages side by side, so both must fit the
-        // width of TWO pages. This is what makes the two modes agree.
-        let spread = matches!(mode, ViewMode::Dual | ViewMode::Horizontal);
+        // Only Dual renders a true two-page SPREAD. Horizontal lays out
+        // individual pages in a strip — each virtual item is one page — so
+        // doubling the page width there halved the fit scale and "Fit
+        // Width" zoomed out to half the size it should be.
+        let spread = matches!(mode, ViewMode::Dual);
         let (pw_eff, ph_eff) = if spread { (pw * 2.0, ph) } else { (pw, ph) };
         let pad = if mode.is_paginated() { 0.0 } else { TOOLBAR_H };
 
@@ -83,7 +85,21 @@ pub fn fit_effect(
             return;
         }
 
-        let target = if fit != FitMode::None {
+        let target = if mode == ViewMode::Horizontal {
+            // The horizontal strip's only real constraint is viewport
+            // HEIGHT: several pages are visible at once, so "fit width" has
+            // no single-page meaning here. Width follows from the page's
+            // aspect ratio, which is how fixed-layout horizontal readers
+            // scale their spreads.
+            if ch_eff <= 1.0 {
+                // Container not measured yet; fitting to it would slam the
+                // page to the minimum scale.
+                return;
+            }
+            let t = pdf_core::math::clamp_scale((ch_eff - pad).max(1.0) / ph_eff.max(1.0));
+            state.viewer.zoom.desired.set(t);
+            t
+        } else if fit != FitMode::None {
             let t = fit_scale(
                 fit,
                 cw_eff,
