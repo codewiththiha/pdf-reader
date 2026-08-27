@@ -10,6 +10,7 @@ use crate::components::document::PageCanvas;
 use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::components::primitives::hooks::dom::H_PAGE_LIST_ID;
 use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
+use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
 use crate::state::{ReaderState, TextureSignal};
 
 #[component]
@@ -40,49 +41,52 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
     let items = v.items();
     let total_size = v.total_size();
     view! {
-        <div
-            id=H_PAGE_LIST_ID
-            node_ref=list_ref
-            class="h-full w-full overflow-x-auto overflow-y-hidden outline-none"
-            tabindex="0"
-        >
-            <div class="relative h-full" style:width=move || format!("{}px", total_size.get())>
-                <For
-                    each=move || items.get()
-                    key=|item: &VirtualItem| item.index
-                    children=move |item: VirtualItem| {
-                        let index = item.index;
-                        let page = (index + 1) as u32;
-                        let left = handle.with_value(|v| v.item_top(index));
-                        let style = move || format!(
-                            "position:absolute;top:{}px;left:{}px;height:100%;display:flex;align-items:flex-start",
-                            TOOLBAR_H, left.get()
-                        );
-                        let geo = Callback::new(move |(page, w, _h): (u32, f64, f64)| {
-                            if w > 0.0 {
-                                handle.with_value(|v| v.report_size(index, w));
+        <div class="relative h-full w-full">
+            <div
+                id=H_PAGE_LIST_ID
+                node_ref=list_ref
+                class="scrollbar-none h-full w-full overflow-x-auto overflow-y-hidden outline-none"
+                tabindex="0"
+            >
+                <div class="relative h-full" style:width=move || format!("{}px", total_size.get())>
+                    <For
+                        each=move || items.get()
+                        key=|item: &VirtualItem| item.index
+                        children=move |item: VirtualItem| {
+                            let index = item.index;
+                            let page = (index + 1) as u32;
+                            let left = handle.with_value(|v| v.item_top(index));
+                            let style = move || format!(
+                                "position:absolute;top:{}px;left:{}px;height:100%;display:flex;align-items:flex-start;padding-inline:{}px",
+                                TOOLBAR_H, left.get(), state.viewer.page_margin.get()
+                            );
+                            let geo = Callback::new(move |(_page, w, _h): (u32, f64, f64)| {
+                                if w > 0.0 {
+                                    let m = state.viewer.page_margin.get_untracked();
+                                    handle.with_value(|v| v.report_size(index, w + 2.0 * m));
+                                }
+                            });
+                            view! {
+                                <div id=format!("hp-{page}-wrap") style=style>
+                                    <PageCanvas
+                                        page=page
+                                        scale=display_scale
+                                        render_scale=state.viewer.zoom.render
+                                        zoom_animating=state.viewer.zoom_animating
+                                        texture=texture
+                                        canvas_id=format!("hp-{page}-cv")
+                                        host_id=format!("hp-{page}-pg")
+                                        render_text=true
+                                        on_geometry=geo
+                                        gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
+                                    />
+                                </div>
                             }
-                            let _ = page;
-                        });
-                        view! {
-                            <div id=format!("hp-{page}-wrap") style=style>
-                                <PageCanvas
-                                    page=page
-                                    scale=display_scale
-                                    render_scale=state.viewer.zoom.render
-                                    zoom_animating=state.viewer.zoom_animating
-                                    texture=texture
-                                    canvas_id=format!("hp-{page}-cv")
-                                    host_id=format!("hp-{page}-pg")
-                                    render_text=true
-                                    on_geometry=geo
-                                    gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
-                                />
-                            </div>
                         }
-                    }
-                />
+                    />
+                </div>
             </div>
+            <OverlayScrollbar scroller_id=H_PAGE_LIST_ID horizontal=true />
         </div>
     }
 }

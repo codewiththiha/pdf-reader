@@ -6,6 +6,7 @@ use virtual_list_leptos::Virtualizer;
 use crate::components::primitives::floating::types::z::CONTROLS;
 use crate::components::primitives::hooks::dom::PAGE_LIST_ID;
 use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
+use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
 use crate::state::ReaderState;
 
 #[component]
@@ -21,12 +22,6 @@ pub fn ContinuousView(
     crate::effects::reader::continuous_scroll::continuous_scroll(state);
     observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
 
-    // Bridge for the not-yet-migrated consumers of `viewer.scroll_top`
-    // (relayout_to, fit, AI anchors, the bottom-bar scrubber, ...): keep it
-    // in step with the virtualizer's coalesced scroll. `continuous_scroll`
-    // currently writes the same value from the raw DOM scroll event; when
-    // it is audited, its write goes away and this bridge becomes the only
-    // writer.
     {
         let scroll_top = state.viewer.scroll_top;
         let offset = virtualizer.scroll_offset();
@@ -49,6 +44,7 @@ pub fn ContinuousView(
     view! {
         <div class="relative h-full w-full">
             <crate::components::document::PageList state=state virtualizer=virtualizer />
+            <OverlayScrollbar scroller_id=PAGE_LIST_ID />
             <Show when=move || progress_visible.get()>
                 <div
                     class=format!(

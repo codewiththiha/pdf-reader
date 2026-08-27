@@ -130,14 +130,15 @@ pub fn relayout_to(
         }
     }
 
-    // Horizontal strip: widths are exact (intrinsic × scale), so rescale too.
+    // Horizontal strip: widths are exact (intrinsic × scale + margin), so rescale too.
     let new_scale = state.viewer.zoom.display.get_untracked() * factor;
+    let margin = state.viewer.page_margin.get_untracked();
     let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
         sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
     });
     if !widths.is_empty() {
         h_virtualizer.rescale(factor, move |index| {
-            widths.get(index).copied().unwrap_or(0.0) * new_scale
+            widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
         });
     }
 }

@@ -137,3 +137,12 @@ body {
     background: var(--color-surface);
   }
 }
+
+
+/* Overlay scrollbars: hide native bars on tagged scrollports. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

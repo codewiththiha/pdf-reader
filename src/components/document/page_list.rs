@@ -84,7 +84,7 @@ pub fn PageList(
         <div
             id="page-list"
             node_ref=list_ref
-            class="h-full w-full overflow-y-auto outline-none"
+            class="scrollbar-none h-full w-full overflow-y-auto outline-none"
             tabindex="0"
         >
             // Inner column, offset by the toolbar height so the first page
@@ -103,8 +103,9 @@ pub fn PageList(
                         let top = virtualizer_handle.with_value(|virtualizer| virtualizer.item_top(index));
                         let style = move || {
                             format!(
-                                "position:absolute;top:{}px;left:0;right:0;display:flex;justify-content:center",
-                                top.get()
+                                "position:absolute;top:{}px;left:0;right:0;display:flex;justify-content:center;padding-inline:{}px",
+                                top.get(),
+                                state.viewer.page_margin.get()
                             )
                         };
                         view! {

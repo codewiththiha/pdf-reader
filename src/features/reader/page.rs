@@ -39,7 +39,7 @@ use crate::effects::reader::zoom::zoom_system;
 use crate::services::document::close_document;
 use crate::state::AppState;
 use crate::state::SidebarMode;
-use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, TOOLBAR_H, ViewMode};
+use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, ViewMode};
 use pdf_engine::types::DocStatus;
 
 #[component]
@@ -140,13 +140,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         vs.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
         }) * vs.viewer.zoom.display.get_untracked()
+            + 2.0 * vs.viewer.page_margin.get_untracked()
     };
     let h_virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, h_estimate)
             .axis(virtual_list_leptos::Axis::Horizontal)
             .gap(0.0)
             .budget(RENDER_BUDGET)
-            .padding(TOOLBAR_H, 24.0)
+            .padding(0.0, 0.0)
             .initial(Viewport::new(1200.0, initial_vh), 0.0)
             .epoch(epoch),
     );
@@ -174,6 +175,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
 
+    // Seed margin from persisted settings once the reader mounts.
+    {
+        let m = state.settings.with_untracked(|st| st.layout.page_margin);
+        vs.viewer.page_margin.set(m);
+    }
+
     // No-gap pref → runtime gap + rescale.
     {
         let v = virtualizer.clone();
@@ -186,6 +193,30 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             vs.viewer.page_gap.set(gap);
             let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
             v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
+        });
+    }
+
+    // Page margin pref — cross-axis for vertical, main-axis for horizontal.
+    {
+        let (v, hv) = (virtualizer.clone(), h_virtualizer.clone());
+        Effect::new(move |_| {
+            let m = state.settings.with(|st| st.layout.page_margin);
+            if (vs.viewer.page_margin.get_untracked() - m).abs() < 1e-9 {
+                return;
+            }
+            vs.viewer.page_margin.set(m);
+            let scale = vs.viewer.zoom.display.get_untracked();
+            let gap = vs.viewer.page_gap.get_untracked();
+            let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
+            let widths = vs
+                .document
+                .metrics
+                .intrinsic
+                .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
+            // Vertical: margin is cross-axis; sizes unchanged aside from gap.
+            v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
+            // Horizontal: margin is main-axis.
+            hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
         });
     }
 
