@@ -8,8 +8,9 @@
 //! Limit" scales that budget down; "Always Show Label" opts out of the
 //! auto-hide rules altogether.
 //!
-//! Shown only when a document is open, the sidebar is OFF (its identity row
-//! already shows the name) AND the titlebar is not visible (the bar contains
+//! Shown only when a document is open and — unless "Always Show Label" is on
+//! — the sidebar is OFF (its identity row already shows the name) AND the
+//! titlebar is not visible (the bar contains
 //! the name).
 //!
 //! Blend contract: `mix-blend-difference` blends only against what is painted
@@ -173,19 +174,17 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         }
     };
     let shown = move || {
-        let (persist, max_pct) = state.settings.with(|st| {
-            (st.layout.floating_label_persist, st.layout.floating_label_max_pct)
-        });
-        let base_ok = enabled()
-            && state.reader.document.status.get() == DocStatus::Ready
-            && ctx.map(|c| !c.visible.get()).unwrap_or(true);
-        if persist {
-            // Persist mode is the reader saying "I always want this": the
-            // sidebar and the width budget stop being reasons to hide it.
-            return base_ok;
+        if !enabled() || state.reader.document.status.get() != DocStatus::Ready {
+            return false;
         }
-        base_ok
-            && state.ui.sidebar.get() == SidebarMode::None
+        // Persist means NEVER auto-hide: the title bar, the sidebar and the
+        // width budget all stop being reasons to disappear.
+        if state.settings.with(|st| st.layout.floating_label_persist) {
+            return true;
+        }
+        let max_pct = state.settings.with(|st| st.layout.floating_label_max_pct);
+        state.ui.sidebar.get() == SidebarMode::None
+            && ctx.map(|c| !c.visible.get()).unwrap_or(true)
             // None = unknown = show
             && budget.get().is_none_or(|b| label_w.get() <= b * max_pct / 100.0)
     };
@@ -205,6 +204,13 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
                 class="pointer-events-none fixed left-3 top-3 block truncate text-sm font-medium \
                        text-white mix-blend-difference"
                 style:max-width=move || {
+                    // Persist must beat the width clamp too. When the page
+                    // fills the viewer the gap is ~0, so the budget falls
+                    // under MIN_LABEL_W and this returned "0px" — the label
+                    // was truncated to nothing no matter what `shown` said.
+                    if state.settings.with(|st| st.layout.floating_label_persist) {
+                        return "min(70vw, 560px)".to_string();
+                    }
                     let max_pct = state.settings.with(|st| st.layout.floating_label_max_pct);
                     match budget.get() {
                         Some(b) if b >= MIN_LABEL_W => {
