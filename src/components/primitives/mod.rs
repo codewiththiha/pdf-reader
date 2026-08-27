@@ -24,6 +24,7 @@ pub mod overlay;
 pub mod section_label;
 pub mod segmented;
 pub mod separator;
+pub mod switch;
 pub mod shortcut_row;
 pub mod toggle_button;
 pub mod tooltip;
