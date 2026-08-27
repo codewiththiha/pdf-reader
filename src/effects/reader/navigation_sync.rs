@@ -97,9 +97,19 @@ pub fn navigation_sync(
 
     {
         // page changes drive the horizontal strip
-        let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
+        let (suppress, page, v, zooming) = (
+            nav.suppress.clone(),
+            state.viewer.page,
+            h_virtualizer.clone(),
+            state.viewer.zoom_animating,
+        );
         Effect::new(move |_| {
             if mode.get() != ViewMode::Horizontal {
+                return;
+            }
+            // While zooming, the strip is center-anchored (see zoom.rs);
+            // re-centering a page here would fight the pinch.
+            if zooming.get() {
                 return;
             }
             let page = page.get();

@@ -137,9 +137,21 @@ pub fn relayout_to(
         sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
     });
     if !widths.is_empty() {
+        // In the horizontal strip the anchor is ALWAYS the screen center,
+        // never a page edge: capture the content coordinate under the
+        // viewport middle, rescale, then put that same coordinate back at
+        // the middle so zooming feels like a pinch centered on the eyes.
+        let vp_main = h_virtualizer.viewport().get_untracked().main;
+        let center = h_virtualizer.scroll_offset().get_untracked() + vp_main / 2.0;
+        let dom = h_virtualizer.dominant().get_untracked();
+        let dom_off = h_virtualizer.offset_of(dom);
+        let within = center - dom_off;
         h_virtualizer.rescale(factor, move |index| {
             widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
         });
+        let new_center = h_virtualizer.offset_of(dom) + within * factor;
+        h_virtualizer
+            .scroll_to_offset((new_center - vp_main / 2.0).max(0.0), ScrollMode::Instant);
     }
 }
 
