@@ -138,20 +138,25 @@ pub fn relayout_to(
     });
     if !widths.is_empty() {
         // In the horizontal strip the anchor is ALWAYS the screen center,
-        // never a page edge: capture the content coordinate under the
-        // viewport middle, rescale, then put that same coordinate back at
-        // the middle so zooming feels like a pinch centered on the eyes.
-        let vp_main = h_virtualizer.viewport().get_untracked().main;
-        let center = h_virtualizer.scroll_offset().get_untracked() + vp_main / 2.0;
-        let dom = h_virtualizer.dominant().get_untracked();
-        let dom_off = h_virtualizer.offset_of(dom);
-        let within = center - dom_off;
+        // never a page edge — and `rescale` already delivers exactly that:
+        // internally it pins the viewport centre (`pin_at(.., 0.5)`) and
+        // writes the anchored scroll offset through `apply()`.
+        //
+        // The old code then OVERRODE that result with a dominant-PAGE
+        // anchor: it measured the centre's offset within `dominant()` and
+        // re-derived the scroll position from that page's new origin.
+        // Whenever the viewport centre falls in the gap between two pages —
+        // the common case in a multi-page strip — `dominant()` snaps to
+        // whichever page covers more area, so the zoom re-anchored to a
+        // point inside that page and visibly yanked the strip sideways. In
+        // single-page view the centre always sits inside the page, which is
+        // why the bug never showed there.
+        //
+        // Trust the centre-anchored rescale and let it own the scroll
+        // position; the strip then zooms in pure offset space.
         h_virtualizer.rescale(factor, move |index| {
             widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
         });
-        let new_center = h_virtualizer.offset_of(dom) + within * factor;
-        h_virtualizer
-            .scroll_to_offset((new_center - vp_main / 2.0).max(0.0), ScrollMode::Instant);
     }
 }
 
