@@ -164,12 +164,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
                 let page = r.viewer.page.get();
                 r.document
                     .outline
-                    .with(|o| {
-                        o.iter()
-                            .filter(|n| n.page <= page)
-                            .next_back()
-                            .map(|n| n.title.clone())
-                    })
+                    .with(|o| o.iter().rfind(|n| n.page <= page).map(|n| n.title.clone()))
                     .or_else(|| r.document.title.get())
                     .unwrap_or_else(|| r.document.display_name())
             }
