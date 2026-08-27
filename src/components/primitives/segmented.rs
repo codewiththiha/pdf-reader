@@ -9,6 +9,7 @@
 //! - `full_width` for the overflow menu: container becomes `flex w-full` and
 //!   every option is `flex-1`, so two options split the row 50/50 exactly
 //!   regardless of label length.
+#![allow(dead_code)]
 
 use std::rc::Rc;
 

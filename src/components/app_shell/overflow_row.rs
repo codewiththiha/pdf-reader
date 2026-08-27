@@ -1,4 +1,5 @@
 //! Standard overflow-menu row for the adaptive toolbar.
+#![allow(dead_code)]
 
 use leptos::prelude::*;
 

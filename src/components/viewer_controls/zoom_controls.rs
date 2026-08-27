@@ -53,6 +53,7 @@ pub(crate) fn step_base(state: AppState) -> f64 {
 }
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
+#[allow(dead_code)]
 pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
     vec![
         // Zoom out + zoom in are one entry so they collapse together and stay
@@ -108,6 +109,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
     ]
 }
 
+#[allow(dead_code)]
 fn zoom_readout_entry(state: AppState) -> ToolbarItem {
     ToolbarItem {
         id: "zoom-readout",
@@ -133,6 +135,7 @@ fn zoom_readout_entry(state: AppState) -> ToolbarItem {
 }
 
 /// Percent readout + preset popover, extracted so it can be a single entry.
+#[allow(dead_code)]
 #[component]
 fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);

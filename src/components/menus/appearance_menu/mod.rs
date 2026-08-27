@@ -105,6 +105,7 @@ pub fn AppearanceMenu(
     }
 }
 
+#[allow(dead_code)]
 pub fn appearance_entry(
     state: AppState,
     appearance_open: RwSignal<bool>,

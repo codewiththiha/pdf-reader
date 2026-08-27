@@ -1,6 +1,7 @@
 //! The reader titlebar's collision-aware entries: view mode, fit, zoom,
 //! appearance. The route composes the toolbar; this module owns the item
 //! definitions so `page.rs` stays a coordinator, not a toolbar factory.
+#![allow(dead_code)]
 
 use leptos::html;
 use leptos::prelude::*;

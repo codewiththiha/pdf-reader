@@ -29,6 +29,7 @@ pub const MENU_EXIT_FRAC: f64 = 1.0;
 /// fraction of the viewport height (or leaves the top edge).
 pub const CARD_EXIT_FRAC: f64 = 0.8;
 
+#[allow(dead_code)]
 pub fn host_id_for(page: u32, single: bool) -> String {
     host_id_for_mode(
         page,

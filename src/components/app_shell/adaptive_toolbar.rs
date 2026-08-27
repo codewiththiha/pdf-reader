@@ -1,5 +1,9 @@
 //! Collision-aware toolbar group. Items that don't fit move into a
 //! conditional "…" overflow popover; with room to spare the button vanishes.
+//!
+//! Kept compiled (with dead_code allowed) after the reader chrome redesign so
+//! other pages can still adopt collision-aware overflow later.
+#![allow(dead_code)]
 use std::sync::Arc;
 use leptos::html;
 use leptos::prelude::*;
