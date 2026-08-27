@@ -76,15 +76,20 @@ pub fn SettingsModal(state: AppState, open: RwSignal<bool>) -> impl IntoView {
 
 #[component]
 fn TabButton(tab: RwSignal<Tab>, t: Tab, icon: IconName, label: &'static str) -> impl IntoView {
+    let class = move || {
+        let base = "flex h-9 items-center justify-center rounded-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+        if tab.get() == t {
+            format!("{base} gap-2 bg-accent-soft px-4 text-sm font-medium text-accent")
+        } else {
+            format!("{base} w-9 text-muted hover:text-ink")
+        }
+    };
     view! {
         <button
             type="button"
             on:click=move |_| tab.set(t)
             aria-pressed=move || (tab.get() == t).to_string()
-            class="flex h-9 items-center justify-center rounded-lg transition-all \
-focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            class=("gap-2 bg-accent-soft px-4 text-sm font-medium text-accent", move || tab.get() == t)
-            class=("w-9 text-muted hover:text-ink", move || tab.get() != t)
+            class=class
         >
             <Icon name=icon size=17 />
             {move || (tab.get() == t).then(|| view! { <span>{label}</span> })}
@@ -266,6 +271,14 @@ fn ThemeTab(state: AppState) -> impl IntoView {
                         BaseMode::Dark => IconName::Moon,
                     };
                     let active = Signal::derive(move || s.with(|st| st.appearance.base) == b);
+                    let class = move || {
+                        let base = "flex h-10 w-10 items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+                        if active.get() {
+                            format!("{base} bg-accent-soft text-accent")
+                        } else {
+                            format!("{base} text-muted hover:text-ink")
+                        }
+                    };
                     view! {
                         <button
                             type="button"
@@ -277,10 +290,7 @@ fn ThemeTab(state: AppState) -> impl IntoView {
                                     st.touch_appearance();
                                 })
                             }
-                            class="flex h-10 w-10 items-center justify-center rounded-full transition-colors \
-focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                            class=("bg-accent-soft text-accent", move || active.get())
-                            class=("text-muted hover:text-ink", move || !active.get())
+                            class=class
                         >
                             <Icon name=icon size=18 />
                         </button>
@@ -309,12 +319,15 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                             >
                                 <span
-                                    class="h-8 w-8 rounded-full border-2 border-line"
+                                    class=move || {
+                                        let base = "h-8 w-8 rounded-full border-2 border-line";
+                                        if active.get() {
+                                            format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
+                                        } else {
+                                            base.to_string()
+                                        }
+                                    }
                                     style=format!("background-color:{bg}")
-                                    class=(
-                                        "ring-2 ring-accent ring-offset-2 ring-offset-surface",
-                                        move || active.get(),
-                                    )
                                 ></span>
                                 <span class="text-xs text-muted">{c.label()}</span>
                             </button>
