@@ -19,11 +19,24 @@ export let pdf: PDFDocumentProxy | null = null;
 export let numPages = 0;
 export let currentPath: string | null = null;
 
+/** The dominant raster colour of the open document — the PDF's own paper —
+ *  or null until the first render finds one. The blend backdrop paints this
+ *  through the same filter + blend the raw canvases use, so backdrop and
+ *  page background are the same composite by construction. */
+export let detectedPaper: string | null = null;
+
 export function setLoadingTask(t: LoadingTask | null): void {
   loadingTask = t;
 }
 export function setPdf(doc: PDFDocumentProxy | null): void {
   pdf = doc;
+  if (!doc) setDetectedPaper(null); // document gone → re-detect on next open
+}
+export function setDetectedPaper(hex: string | null): void {
+  detectedPaper = hex;
+  const el = document.documentElement;
+  if (hex) el.style.setProperty("--pdf-paper", hex);
+  else el.style.removeProperty("--pdf-paper");
 }
 export function setNumPages(n: number): void {
   numPages = n;

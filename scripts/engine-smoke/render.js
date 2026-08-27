@@ -8,6 +8,14 @@ export async function run() {
     if (!r1.ok)
         throw new Error("render failed: " + JSON.stringify(r1));
     console.log("render ok (identity):", r1.width, "x", r1.height);
+    // Paper detection: the fake page is pure white, so the first render must
+    // have sampled it and published --pdf-paper on the root element.
+    const root = getEl("documentElement");
+    const detected = root.style.getPropertyValue("--pdf-paper");
+    if (detected !== "#ffffff") {
+        throw new Error("paper detection did not publish --pdf-paper #ffffff, got: " + detected);
+    }
+    console.log("paper detection ok: --pdf-paper #ffffff");
     // 2b. light theme with multiply over PURE WHITE = identity pipeline: a
     // render must allocate ZERO page-sized bake canvases (the default-theme
     // fast path). Small canvases (the 1x1 paper sampler) don't count.

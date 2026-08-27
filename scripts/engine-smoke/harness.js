@@ -192,12 +192,20 @@ export function getEl(id) {
 }
 const docEl = (() => {
     let _style = null;
+    // Inline custom properties written by the engine (e.g. --pdf-paper).
+    // Recorded, not ignored: the render test asserts on them.
+    const props = new Map();
     const el = {
         id: "documentElement",
         width: 0,
         height: 0,
         className: "",
-        style: { getAttribute: () => _style, setProperty() { } },
+        style: {
+            getAttribute: () => _style,
+            setProperty: (name, value) => { props.set(name, value); },
+            removeProperty: (name) => { props.delete(name); },
+            getPropertyValue: (name) => props.get(name) ?? "",
+        },
         classList: { add() { }, remove() { }, toggle() { }, contains() { return false; } },
         getAttribute() { return _style; },
         setAttribute(k, v) { if (k === "style")

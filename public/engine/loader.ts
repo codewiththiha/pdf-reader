@@ -9,6 +9,7 @@ import type {
   PDFDocumentProxy,
 } from "./types";
 import { errorInfo, fail, releaseCanvas } from "./canvas";
+import { resetPaperTries } from "./paper";
 import {
   currentPath,
   loadingTask,
@@ -294,6 +295,9 @@ export async function open(path: string): Promise<OpenResult> {
     if (destroy) await destroy();
     const doc = await openDocument(path);
     setPdf(doc);
+    // A new document means a fresh paper-detection budget (engine/paper.ts);
+    // the previous one was cleared by the destroy above.
+    resetPaperTries();
     setNumPages(doc.numPages);
     setCurrentPath(path);
 

@@ -147,18 +147,33 @@ body {
   display: none;
 }
 
-.reader-bg { background-color: var(--color-paper); }
-.reader-bg.blend {
-  /* Anchors the ::before texture bleed below to THIS element; without a
-     positioning context the absolutely positioned pseudo resolves against
-     whichever ancestor happens to be positioned. */
+.reader-bg {
+  /* Anchors the ::before texture bleed and the ::after blend paper below to
+     THIS element; without a positioning context the absolutely positioned
+     pseudos resolve against whichever ancestor happens to be positioned.
+     The z-index makes us a stacking context, so the z-index:-1 blend layer
+     stays contained here: above our own background, below texture + pages. */
   position: relative;
-  /* The engine's own composite of the live pipeline (filter + blend applied
-     to the page paper), with the token as the pre-boot fallback. It cannot be
-     --color-paper: under dim and under any tint the composite is a different
-     colour, and the backdrop then stops matching the pages. Deliberately NO
-     transition — it must move in the same frame as the canvases. */
-  background-color: var(--canvas-paper, var(--color-paper));
+  z-index: 0;
+  background-color: var(--color-paper); /* the blend backdrop for ::after */
+}
+/* BLEND PAPER — the backdrop must equal the CANVAS background, and that is
+   the PDF's own paper run through the theme pipeline, not any app colour.
+   The engine publishes the document's most-used raster colour as
+   --pdf-paper; we paint it raw and apply the exact same filter + blend the
+   raw canvases use, over the same app-paper backdrop they blend against.
+   Same inputs, same pipeline ⇒ identical composite at any slider position,
+   same frame. Deliberately NO transition — a tint scrub must repaint it in
+   lockstep with the canvases. */
+.reader-bg.blend::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* above our own bg (the blend backdrop), below texture + pages */
+  pointer-events: none;
+  background-color: var(--pdf-paper, var(--color-paper));
+  filter: var(--canvas-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 

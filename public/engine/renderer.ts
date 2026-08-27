@@ -5,6 +5,7 @@ import type {
   RenderResult,
 } from "./types";
 import { el, errorInfo, fail, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { maybeDetectPaper } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import {
@@ -207,6 +208,12 @@ export async function renderPageInternal(
     releasePageSurfaces(st);
     return fail("cancelled", "Render cancelled");
   }
+
+  // `target` still holds raw pixels here (bakeRaster runs below): the one
+  // point in the pipeline where the document's own paper is intact, so this
+  // is where the blend backdrop learns it. One ≤96×96 sample, ≤3 attempts
+  // per document, no extra render.
+  maybeDetectPaper(target);
 
   if (needsBake && pipeline) {
     // Keep the unbaked `target` on the page. Slider scrub restores it and

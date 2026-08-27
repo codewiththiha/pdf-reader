@@ -145,49 +145,22 @@ pub fn paint_appearance_now(a: Appearance) {
     );
 }
 
-/// Real-time blend backdrop colour. `paperColor()` returns the engine's own
-/// composite for the live pipeline — filter and blend applied to the page
-/// paper — which is what the canvas actually shows. `--color-paper` is NOT
-/// that colour: under dim (a dimmed, non-inverted page) and under any tint
-/// the composite lands somewhere else entirely and the backdrop stops
-/// matching the pages.
-///
-/// Deliberately no cache and no CSS transition. A cache lets a stale value
-/// win synchronously and a transition puts the backdrop a beat behind the
-/// canvases; between them they were the earlier flicker. Every write here is
-/// a freshly sampled composite.
-pub fn sync_canvas_paper() {
-    wasm_bindgen_futures::spawn_local(async {
-        if let Some(c) = pdf_engine::api::paper_color().await {
-            if let Some(style) = html_style() {
-                let _ = style.set_property("--canvas-paper", &c);
-            }
-        }
-    });
-}
-
 pub fn apply_theme(state: AppState) {
     // One effect, one paint: hue / texture / grain all live on Appearance,
     // and the live-preview path writes the same properties, so splitting
     // them into three effects just tripled the work on every settings write.
+    // The blend backdrop needs nothing from here: it is pure CSS over the
+    // same variables this effect paints (--canvas-filter / --canvas-blend)
+    // plus --pdf-paper, which the engine publishes on the first render of
+    // each document.
     Effect::new(move || {
         let a = state.settings.with(|s| s.appearance);
-        let ready = state.reader.document.status.get() == pdf_engine::types::DocStatus::Ready;
         paint_appearance_now(a);
         // The engine bakes the theme into its rasters (pages + thumbnails);
         // re-bake them at the freshly painted variables. A no-op while a
         // scrub is in flight (scrub mode owns the canvases then) and before
         // the first document opens.
         pdf_engine::api::refresh_theme();
-        // Sampling the paper needs an open document, and reading the status
-        // also makes the first Ready frame re-run this effect, which is what
-        // seeds the backdrop when a document opens.
-        if ready {
-            sync_canvas_paper();
-            // Once more after the engine's async rebake has rebuilt the
-            // pipeline, so the backdrop cannot lag a refresh.
-            request_animation_frame(sync_canvas_paper);
-        }
     });
 
     Effect::new(move || {

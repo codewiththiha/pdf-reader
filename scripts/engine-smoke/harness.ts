@@ -217,12 +217,20 @@ export function getEl(id: string): ReturnType<typeof makeElement> {
 
 const docEl: FakeCanvas & { id: string; width: number; height: number } = (() => {
   let _style: string | null = null;
+  // Inline custom properties written by the engine (e.g. --pdf-paper).
+  // Recorded, not ignored: the render test asserts on them.
+  const props = new Map<string, string>();
   const el: FakeCanvas & { id: string; width: number; height: number } = {
     id: "documentElement",
     width: 0,
     height: 0,
     className: "",
-    style: { getAttribute: () => _style, setProperty() {} },
+    style: {
+      getAttribute: () => _style,
+      setProperty: (name: string, value: string) => { props.set(name, value); },
+      removeProperty: (name: string) => { props.delete(name); },
+      getPropertyValue: (name: string) => props.get(name) ?? "",
+    },
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     getAttribute() { return _style; },
     setAttribute(k: string, v: string) { if (k === "style") _style = v; },
