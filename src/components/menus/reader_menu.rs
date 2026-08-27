@@ -15,8 +15,7 @@ use crate::components::primitives::menu_item::MenuItem;
 use crate::components::primitives::separator::Separator;
 use crate::components::primitives::shortcut_row::ShortcutRow;
 use crate::components::viewer_controls::zoom_controls::{apply_zoom, step_base};
-use crate::services::document::{close_document, open_dialog};
-use crate::state::{AppState, SidebarMode};
+use crate::state::AppState;
 
 #[component]
 fn ModeButton(state: AppState, m: ViewMode, icon: IconName, title: &'static str) -> impl IntoView {
@@ -140,29 +139,6 @@ pub fn ReaderMenu(state: AppState) -> impl IntoView {
                 }}
                 <div class="my-1"><Separator vertical=false /></div>
                 <MenuItem
-                    icon=IconName::Open
-                    label="Open…".to_string()
-                    on_click=move || { open.set(false); open_dialog(state); }
-                />
-                <MenuItem
-                    icon=IconName::Library
-                    label="Library".to_string()
-                    on_click=move || { open.set(false); close_document(state); }
-                />
-                <MenuItem
-                    icon=IconName::Sidebar
-                    label="Sidebar".to_string()
-                    on_click=move || {
-                        let next = if state.ui.sidebar.get() == SidebarMode::None {
-                            SidebarMode::Thumbs
-                        } else {
-                            SidebarMode::None
-                        };
-                        state.ui.sidebar.set(next);
-                    }
-                />
-                <div class="my-1"><Separator vertical=false /></div>
-                <MenuItem
                     icon=IconName::Fullscreen
                     label="Fullscreen".to_string()
                     on_click=move || toggle_fullscreen(full)
@@ -185,7 +161,6 @@ pub fn ReaderMenu(state: AppState) -> impl IntoView {
                 </MenuItem>
                 <Show when=move || show_keys.get()>
                     <div class="mt-1 max-h-56 overflow-y-auto border-t border-line pt-1">
-                        <ShortcutRow label="Open…" keys=vec!["⌘", "O"] />
                         <ShortcutRow label="Search…" keys=vec!["⌘", "F"] />
                         <ShortcutRow label="Auto scroll" keys=vec!["Shift", "A"] />
                         <ShortcutRow label="Prev / Next page" keys=vec!["←", "→"] />

@@ -17,7 +17,10 @@ use crate::components::app_shell::document_title::CenteredDocTitle;
 use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
-use crate::components::primitives::hooks::dom::VIEWER_SLOT_ID;
+use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
+use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::tooltip::Tooltip;
 use crate::components::sidebar::Sidebar;
 use crate::components::sidebar::document_info::BookInfo;
 use crate::components::sidebar::header::SidebarHeader;
@@ -31,7 +34,9 @@ use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::effects::reader::zoom::zoom_system;
+use crate::services::document::close_document;
 use crate::state::AppState;
+use crate::state::SidebarMode;
 use pdf_core::layout::{PAGE_GAP, RENDER_BUDGET, TOOLBAR_H, ViewMode};
 use pdf_engine::types::DocStatus;
 
@@ -184,8 +189,45 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         present: paint.present,
     });
 
-    // ── New chrome: no Open button, centered title, theme + 3-dash only ──
-    let left = move || ();
+    // Left: sidebar toggle + Library stay put. Open is gone. Title is centered;
+    // right is appearance + the 3-dash view menu.
+    let left = move || {
+        view! {
+            <div
+                id=TOOLBAR_LEADING_ID
+                data-tauri-drag-region="true"
+                class="flex shrink-0 items-center gap-1"
+            >
+                <Show when=move || state.ui.sidebar.get() == SidebarMode::None>
+                    <Tooltip text="Toggle sidebar">
+                        <Button
+                            on_click=move |_| state.ui.sidebar.set(SidebarMode::Thumbs)
+                            variant=ButtonVariant::Ghost
+                            title="Toggle sidebar"
+                        >
+                            <Icon name=IconName::Sidebar size=18 />
+                        </Button>
+                    </Tooltip>
+                </Show>
+                <Show when=move || {
+                    matches!(
+                        state.reader.document.status.get(),
+                        DocStatus::Ready | DocStatus::Opening
+                    )
+                }>
+                    <Tooltip text="Library">
+                        <Button
+                            on_click=move |_| close_document(state)
+                            variant=ButtonVariant::Ghost
+                            title="Close this book and return to the library"
+                        >
+                            <Icon name=IconName::Library size=18 />
+                        </Button>
+                    </Tooltip>
+                </Show>
+            </div>
+        }
+    };
     let center = move || view! { <CenteredDocTitle state=state /> };
     let right = move || {
         view! {
