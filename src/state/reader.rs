@@ -196,6 +196,8 @@ pub struct ViewerSignals {
     pub auto_scroll: RwSignal<bool>,
     /// Inter-page gap in the continuous strip (0 when No Gap is on).
     pub page_gap: RwSignal<f64>,
+    /// Horizontal inset around pages (CSS px). `0` removes the margin.
+    pub page_margin: RwSignal<f64>,
 }
 
 impl ViewerSignals {
@@ -207,6 +209,7 @@ impl ViewerSignals {
         self.scroll_top.set(0.0);
         self.auto_scroll.set(false);
         self.page_gap.set(PAGE_GAP);
+        self.page_margin.set(24.0);
     }
 }
 
@@ -223,6 +226,7 @@ impl Default for ViewerSignals {
             selected_pages: RwSignal::new(None),
             auto_scroll: RwSignal::new(false),
             page_gap: RwSignal::new(PAGE_GAP),
+            page_margin: RwSignal::new(24.0),
         }
     }
 }

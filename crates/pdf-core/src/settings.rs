@@ -19,6 +19,13 @@ pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 fn on_true() -> bool { true }
 fn default_gloss_opacity() -> f64 { 0.4 }
+fn default_page_margin() -> f64 { 24.0 }
+fn default_custom_gloss() -> String { "#a58af0".into() }
+
+fn is_hex6(s: &str) -> bool {
+    let b = s.as_bytes();
+    s.len() == 7 && b[0] == b'#' && b[1..].iter().all(|c| c.is_ascii_hexdigit())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,8 +39,8 @@ pub enum PageIndicatorStyle {
 #[serde(rename_all = "snake_case")]
 pub enum FloatingLabelStyle {
     #[default]
+    #[serde(alias = "title")] // migration: old saved "title" loads as FileName
     FileName,
-    Title,
     Chapter,
 }
 
@@ -52,6 +59,9 @@ pub struct LayoutSettings {
     /// Remove the vertical gap between pages in scroll view.
     #[serde(default)]
     pub no_gap: bool,
+    /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
+    #[serde(default = "default_page_margin")]
+    pub page_margin: f64,
 }
 
 impl Default for LayoutSettings {
@@ -63,6 +73,7 @@ impl Default for LayoutSettings {
             floating_label_style: FloatingLabelStyle::FileName,
             progress_bar: true,
             no_gap: false,
+            page_margin: default_page_margin(),
         }
     }
 }
@@ -76,12 +87,14 @@ pub enum GlossColor {
     Yellow,
     Green,
     Blue,
-    Violet,
+    /// Old saved `"violet"` becomes Custom (default hex = old violet).
+    #[serde(alias = "violet")]
+    Custom,
 }
 
 impl GlossColor {
     pub fn all() -> [GlossColor; 6] {
-        [Self::Accent, Self::Red, Self::Yellow, Self::Green, Self::Blue, Self::Violet]
+        [Self::Accent, Self::Red, Self::Yellow, Self::Green, Self::Blue, Self::Custom]
     }
 
     pub fn label(&self) -> &'static str {
@@ -91,19 +104,19 @@ impl GlossColor {
             Self::Yellow => "Yellow",
             Self::Green => "Green",
             Self::Blue => "Blue",
-            Self::Violet => "Violet",
+            Self::Custom => "Custom",
         }
     }
 
     /// `None` = follow the live accent tint.
-    pub fn hex(&self) -> Option<&'static str> {
+    pub fn resolve(&self, custom: &str) -> Option<String> {
         match self {
             Self::Accent => None,
-            Self::Red => Some("#e56b64"),
-            Self::Yellow => Some("#e8c449"),
-            Self::Green => Some("#6fd58c"),
-            Self::Blue => Some("#6ba3f5"),
-            Self::Violet => Some("#a58af0"),
+            Self::Red => Some("#e56b64".into()),
+            Self::Yellow => Some("#e8c449".into()),
+            Self::Green => Some("#6fd58c".into()),
+            Self::Blue => Some("#6ba3f5".into()),
+            Self::Custom => Some(custom.to_string()),
         }
     }
 }
@@ -133,6 +146,8 @@ pub struct Settings {
     pub gloss_color: GlossColor,
     #[serde(default = "default_gloss_opacity")]
     pub gloss_opacity: f64,
+    #[serde(default = "default_custom_gloss")]
+    pub gloss_custom: String,
 
     // --- legacy fields, read once then dropped -------------------------------
     #[serde(skip_serializing, default)]
@@ -157,6 +172,7 @@ impl Default for Settings {
             layout: LayoutSettings::default(),
             gloss_color: GlossColor::default(),
             gloss_opacity: default_gloss_opacity(),
+            gloss_custom: default_custom_gloss(),
             theme_id: None,
             texture: None,
             noise_enabled: None,
@@ -254,6 +270,10 @@ pub fn sanitize(settings: &mut Settings) {
     settings.appearance.sanitize();
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
     settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
+    settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
+    if !is_hex6(&settings.gloss_custom) {
+        settings.gloss_custom = default_custom_gloss();
+    }
 
     // Drop user presets with empty ids/names or ids that shadow a built-in;
     // both would make rows unselectable in the menu.
