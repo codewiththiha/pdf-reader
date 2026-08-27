@@ -154,9 +154,40 @@ pub fn relayout_to(
         //
         // Trust the centre-anchored rescale and let it own the scroll
         // position; the strip then zooms in pure offset space.
+        //
+        // scrollLeft is the core's; scrollTop is the DOM scroller's alone,
+        // so nothing re-anchored it and the vertical centre drifted on every
+        // zoom step. Each wrapper is strip-tall and centres its page, so the
+        // whole strip scales uniformly about its top edge — including the
+        // centring offset (H - h*s)/2 — which makes holding the vertical
+        // centre a single multiplication once the rescale has landed.
+        let list = crate::components::primitives::hooks::dom::h_page_list();
+        let (vh, old_top) = match &list {
+            Some(el) => (el.client_height() as f64, el.scroll_top() as f64),
+            None => (0.0, 0.0),
+        };
+
         h_virtualizer.rescale(factor, move |index| {
             widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
         });
+
+        if let Some(el) = list {
+            if vh > 1.0 {
+                let tallest = state.document.metrics.intrinsic.with_untracked(|sizes| {
+                    sizes.iter().map(|s| s.height).fold(0.0, f64::max)
+                });
+                let new_total = vh.max(tallest * new_scale);
+                if new_total > vh + 1.0 {
+                    let center = old_top + vh / 2.0;
+                    let target = (center * factor - vh / 2.0).clamp(0.0, new_total - vh);
+                    el.set_scroll_top(target as i32);
+                } else if old_top > 0.0 {
+                    // Zoomed back to (or below) fit-height: no vertical range
+                    // is left, so release the stale offset.
+                    el.set_scroll_top(0);
+                }
+            }
+        }
     }
 }
 

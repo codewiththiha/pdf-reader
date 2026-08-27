@@ -143,8 +143,16 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
                             let left = handle.with_value(|v| v.item_top(index));
                             // top:0 — the strip owns the full window height and
                             // the auto-hiding title bar overlays it, like Dual.
+                            //
+                            // align-items:center — every wrapper is exactly as
+                            // tall as the strip and the strip is at least as
+                            // tall as the tallest page at this scale, so a page
+                            // can never overflow its wrapper and centring can
+                            // never clip. A fitted strip then sits in the middle
+                            // of the window, and a zoomed one centres each page
+                            // against the tallest, like a real book strip.
                             let style = move || format!(
-                                "position:absolute;top:0;left:{}px;height:100%;display:flex;align-items:flex-start;padding-inline:{}px",
+                                "position:absolute;top:0;left:{}px;height:100%;display:flex;align-items:center;padding-inline:{}px",
                                 left.get(), state.viewer.page_margin.get()
                             );
                             let geo = Callback::new(move |(_page, w, _h): (u32, f64, f64)| {
