@@ -46,6 +46,21 @@ pub(super) fn mode_flip(
                     let index = (page - 1) as usize;
                     v.scroll_to_index(index, Align::Center, ScrollMode::Instant);
                 }
+                // Measure a SECOND time, one frame later. On the very first
+                // switch the strip's flex row has not always committed its
+                // layout by this frame, so `remeasure_container` reads a
+                // clientWidth of 0: the core gets a zero viewport, the
+                // window resolves to nothing, and no page mounts. The
+                // ResizeObserver cannot rescue it either — it was attached
+                // before the element had a layout box, so its first entry
+                // reports 0 as well. Going out of the mode and back in
+                // remounts after layout has settled, which is exactly why
+                // that worked around it. One more frame guarantees real
+                // geometry and the window mounts its pages.
+                let v2 = v.clone();
+                request_animation_frame(move || {
+                    v2.remeasure_container();
+                });
             });
         }
         was_continuous = continuous;
