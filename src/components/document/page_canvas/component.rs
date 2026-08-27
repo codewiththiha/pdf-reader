@@ -231,7 +231,13 @@ pub fn PageCanvas(
             // full-size RGBA bitmaps per toggle. Only a REAL zoom gesture
             // (which owns the layout) gets a live first render at the display
             // scale; the thumbnail underlay covers the gap for the slide.
-            if !crate::effects::reader::zoom::gesture_owns_layout() {
+            //
+            // But a mode flip starts a fit animation at the same time the new
+            // view's pages mount. If an UN-PAINTED page bails here and the
+            // commit lands on an unchanged scale, nothing ever re-triggers
+            // this effect and the page stays blank until you leave and come
+            // back. Gate only pages that already have pixels.
+            if !crate::effects::reader::zoom::gesture_owns_layout() && painted.get() {
                 return;
             }
             // FALLTHROUGH: first render at the DISPLAY scale so the gesture
