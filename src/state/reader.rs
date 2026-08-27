@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use pdf_core::appearance::TextureMode;
 use pdf_core::gloss::{GlossMark, PageAnchor};
-use pdf_core::layout::ViewMode;
+use pdf_core::layout::{PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
 use pdf_core::search::SearchMatch;
 use pdf_engine::types::{DocStatus, OutlineNode, PageSize};
@@ -194,6 +194,8 @@ pub struct ViewerSignals {
     pub selected_pages: RwSignal<Option<(u32, u32)>>,
     /// Continuous auto-scroll along the active strip (Continuous / Horizontal).
     pub auto_scroll: RwSignal<bool>,
+    /// Inter-page gap in the continuous strip (0 when No Gap is on).
+    pub page_gap: RwSignal<f64>,
 }
 
 impl ViewerSignals {
@@ -204,6 +206,7 @@ impl ViewerSignals {
         self.page.set(1);
         self.scroll_top.set(0.0);
         self.auto_scroll.set(false);
+        self.page_gap.set(PAGE_GAP);
     }
 }
 
@@ -219,6 +222,7 @@ impl Default for ViewerSignals {
             zoom_animating: RwSignal::new(false),
             selected_pages: RwSignal::new(None),
             auto_scroll: RwSignal::new(false),
+            page_gap: RwSignal::new(PAGE_GAP),
         }
     }
 }

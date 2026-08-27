@@ -17,6 +17,98 @@ use crate::presets::{builtin_presets, Preset};
 
 pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
+fn on_true() -> bool { true }
+fn default_gloss_opacity() -> f64 { 0.4 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageIndicatorStyle {
+    #[default]
+    PageNumber,
+    Percentage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FloatingLabelStyle {
+    #[default]
+    FileName,
+    Title,
+    Chapter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LayoutSettings {
+    #[serde(default = "on_true")]
+    pub page_indicator: bool,
+    #[serde(default)]
+    pub page_indicator_style: PageIndicatorStyle,
+    #[serde(default = "on_true")]
+    pub floating_label: bool,
+    #[serde(default)]
+    pub floating_label_style: FloatingLabelStyle,
+    #[serde(default = "on_true")]
+    pub progress_bar: bool,
+    /// Remove the vertical gap between pages in scroll view.
+    #[serde(default)]
+    pub no_gap: bool,
+}
+
+impl Default for LayoutSettings {
+    fn default() -> Self {
+        Self {
+            page_indicator: true,
+            page_indicator_style: PageIndicatorStyle::PageNumber,
+            floating_label: true,
+            floating_label_style: FloatingLabelStyle::FileName,
+            progress_bar: true,
+            no_gap: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlossColor {
+    #[default]
+    Accent,
+    Red,
+    Yellow,
+    Green,
+    Blue,
+    Violet,
+}
+
+impl GlossColor {
+    pub fn all() -> [GlossColor; 6] {
+        [Self::Accent, Self::Red, Self::Yellow, Self::Green, Self::Blue, Self::Violet]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Accent => "Auto",
+            Self::Red => "Red",
+            Self::Yellow => "Yellow",
+            Self::Green => "Green",
+            Self::Blue => "Blue",
+            Self::Violet => "Violet",
+        }
+    }
+
+    /// `None` = follow the live accent tint.
+    pub fn hex(&self) -> Option<&'static str> {
+        match self {
+            Self::Accent => None,
+            Self::Red => Some("#e56b64"),
+            Self::Yellow => Some("#e8c449"),
+            Self::Green => Some("#6fd58c"),
+            Self::Blue => Some("#6ba3f5"),
+            Self::Violet => Some("#a58af0"),
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -35,6 +127,12 @@ pub struct Settings {
     /// migrates pre-pin blobs to unpinned.
     #[serde(default)]
     pub titlebar_pinned: bool,
+    #[serde(default)]
+    pub layout: LayoutSettings,
+    #[serde(default)]
+    pub gloss_color: GlossColor,
+    #[serde(default = "default_gloss_opacity")]
+    pub gloss_opacity: f64,
 
     // --- legacy fields, read once then dropped -------------------------------
     #[serde(skip_serializing, default)]
@@ -56,6 +154,9 @@ impl Default for Settings {
             default_zoom: 1.0,
             last_path: None,
             titlebar_pinned: false,
+            layout: LayoutSettings::default(),
+            gloss_color: GlossColor::default(),
+            gloss_opacity: default_gloss_opacity(),
             theme_id: None,
             texture: None,
             noise_enabled: None,
@@ -152,6 +253,7 @@ pub fn sanitize(settings: &mut Settings) {
     // --- validation ----------------------------------------------------------
     settings.appearance.sanitize();
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
+    settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
 
     // Drop user presets with empty ids/names or ids that shadow a built-in;
     // both would make rows unselectable in the menu.
