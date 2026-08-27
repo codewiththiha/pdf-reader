@@ -23,9 +23,13 @@ enum Tab {
 }
 
 #[component]
-pub fn SettingsModal(state: AppState, open: RwSignal<bool>) -> impl IntoView {
+pub fn SettingsModal(
+    state: AppState,
+    open: RwSignal<bool>,
+    #[prop(default = "min(92vw, 620px)")] width: &'static str,
+    #[prop(default = "min(76vh, 640px)")] height: &'static str,
+) -> impl IntoView {
     let tab = RwSignal::new(Tab::Layout);
-    // Escape closes (outside-click is owned by the backdrop).
     Effect::new(move |_| {
         if !open.get() {
             return;
@@ -46,11 +50,11 @@ pub fn SettingsModal(state: AppState, open: RwSignal<bool>) -> impl IntoView {
                 on:click=move |_| open.set(false)
             >
                 <div
-                    class="flex max-h-[85vh] w-[min(92vw,620px)] flex-col rounded-2xl border border-line bg-surface shadow-2xl"
+                    class="flex flex-col rounded-2xl border border-line bg-surface shadow-2xl"
+                    style=format!("width:{width};height:{height}")
                     on:click=move |ev| ev.stop_propagation()
                 >
-                    // ── Tab row: icon-only idle, icon+label when active ──
-                    <div class="flex items-center gap-1 px-4 pb-2 pt-4">
+                    <div class="flex shrink-0 items-center gap-1 px-4 pb-2 pt-4">
                         <TabButton tab=tab t=Tab::Layout icon=IconName::Layout label="Layout" />
                         <TabButton tab=tab t=Tab::Theme icon=IconName::Palette label="Theme" />
                         <div class="ml-auto">
@@ -77,7 +81,8 @@ pub fn SettingsModal(state: AppState, open: RwSignal<bool>) -> impl IntoView {
 #[component]
 fn TabButton(tab: RwSignal<Tab>, t: Tab, icon: IconName, label: &'static str) -> impl IntoView {
     let class = move || {
-        let base = "flex h-9 items-center justify-center rounded-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+        let base = "flex h-9 items-center justify-center rounded-lg transition-all \
+focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
         if tab.get() == t {
             format!("{base} gap-2 bg-accent-soft px-4 text-sm font-medium text-accent")
         } else {
@@ -107,7 +112,6 @@ fn Row(label: &'static str, children: Children) -> impl IntoView {
     }
 }
 
-/// Readest-style "Page Number ▾" value dropdown.
 #[component]
 fn StyleSelect<T>(
     value: Signal<T>,
@@ -135,12 +139,7 @@ disabled:cursor-not-allowed disabled:opacity-45"
                 <span>{move || label_of(&value.get())}</span>
                 <Icon name=IconName::ChevronDown size=12 class="text-muted" />
             </button>
-            <MenuPopover
-                open=open
-                anchor=root_ref
-                width=190
-                class="p-1".to_string()
-            >
+            <MenuPopover open=open anchor=root_ref width=190 class="p-1".to_string()>
                 {opts.with_value(|opts| {
                     opts.iter()
                         .map(|(v, l)| {
@@ -223,12 +222,10 @@ fn LayoutTab(state: AppState) -> impl IntoView {
                     })
                     options=vec![
                         (FloatingLabelStyle::FileName, "File Name"),
-                        (FloatingLabelStyle::Title, "Document Title"),
                         (FloatingLabelStyle::Chapter, "Current Chapter"),
                     ]
                     label_of=|v: &FloatingLabelStyle| match v {
                         FloatingLabelStyle::FileName => "File Name",
-                        FloatingLabelStyle::Title => "Document Title",
                         FloatingLabelStyle::Chapter => "Current Chapter",
                     }
                     disabled=label_off
@@ -252,6 +249,48 @@ fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Remove the spacing between pages in scroll view".to_string()
                 />
             </Row>
+            <Row label="Page Margin">
+                <span class="flex items-center gap-3">
+                    <span class="w-10 text-right text-sm tabular-nums text-ink">
+                        {move || {
+                            let m = s.with(|st| st.layout.page_margin) as u32;
+                            if m == 0 {
+                                "Off".into()
+                            } else {
+                                format!("{m}")
+                            }
+                        }}
+                    </span>
+                    <span class="flex gap-1.5">
+                        <IconButton
+                            icon=IconName::Minus
+                            size=14
+                            title="Less margin"
+                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                            disabled=Signal::derive(move || s.with(|st| st.layout.page_margin) <= 0.0)
+                            on_click=move || {
+                                s.update(|st| {
+                                    st.layout.page_margin =
+                                        (st.layout.page_margin - 4.0).clamp(0.0, 64.0);
+                                })
+                            }
+                        />
+                        <IconButton
+                            icon=IconName::Plus
+                            size=14
+                            title="More margin"
+                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                            disabled=Signal::derive(move || s.with(|st| st.layout.page_margin) >= 64.0)
+                            on_click=move || {
+                                s.update(|st| {
+                                    st.layout.page_margin =
+                                        (st.layout.page_margin + 4.0).clamp(0.0, 64.0);
+                                })
+                            }
+                        />
+                    </span>
+                </span>
+            </Row>
         </div>
     }
 }
@@ -259,6 +298,7 @@ fn LayoutTab(state: AppState) -> impl IntoView {
 #[component]
 fn ThemeTab(state: AppState) -> impl IntoView {
     let s = state.settings;
+    let color_input: NodeRef<html::Input> = NodeRef::new();
     view! {
         <SectionLabel text="Theme Mode" />
         <div class="flex items-center justify-end gap-2 rounded-xl border border-line px-4 py-3">
@@ -272,7 +312,8 @@ fn ThemeTab(state: AppState) -> impl IntoView {
                     };
                     let active = Signal::derive(move || s.with(|st| st.appearance.base) == b);
                     let class = move || {
-                        let base = "flex h-10 w-10 items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+                        let base = "flex h-10 w-10 items-center justify-center rounded-full transition-colors \
+focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
                         if active.get() {
                             format!("{base} bg-accent-soft text-accent")
                         } else {
@@ -305,36 +346,86 @@ fn ThemeTab(state: AppState) -> impl IntoView {
                     .into_iter()
                     .map(|c| {
                         let active = Signal::derive(move || s.with(|st| st.gloss_color) == c);
-                        let bg = match c.hex() {
-                            Some(h) => h.to_string(),
-                            None => "var(--color-accent)".to_string(),
-                        };
-                        view! {
-                            <button
-                                type="button"
-                                title=c.label()
-                                aria-pressed=move || active.get().to_string()
-                                on:click=move |_| s.update(|st| st.gloss_color = c)
-                                class="flex flex-col items-center gap-1.5 rounded-lg py-1 \
-focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                            >
-                                <span
-                                    class=move || {
-                                        let base = "h-8 w-8 rounded-full border-2 border-line";
-                                        if active.get() {
-                                            format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
-                                        } else {
-                                            base.to_string()
+                        if c == GlossColor::Custom {
+                            let ring = move || {
+                                let base = "flex h-8 w-8 items-center justify-center rounded-full p-[3px]";
+                                if active.get() {
+                                    format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
+                                } else {
+                                    base.to_string()
+                                }
+                            };
+                            view! {
+                                <button
+                                    type="button"
+                                    title="Custom…"
+                                    aria-pressed=move || active.get().to_string()
+                                    on:click=move |_| {
+                                        s.update(|st| st.gloss_color = GlossColor::Custom);
+                                        if let Some(el) = color_input.get() {
+                                            el.click();
                                         }
                                     }
-                                    style=format!("background-color:{bg}")
-                                ></span>
-                                <span class="text-xs text-muted">{c.label()}</span>
-                            </button>
+                                    class="flex flex-col items-center gap-1.5 rounded-lg py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                >
+                                    <span
+                                        class=ring
+                                        style="background:conic-gradient(from 90deg,#e56b64,#e8c449,#6fd58c,#6ba3f5,#a58af0,#e56b64)"
+                                    >
+                                        <span
+                                            class="h-full w-full rounded-full border border-line"
+                                            style=move || {
+                                                format!(
+                                                    "background-color:{}",
+                                                    s.with(|st| st.gloss_custom.clone())
+                                                )
+                                            }
+                                        ></span>
+                                    </span>
+                                    <span class="text-xs text-muted">"Custom"</span>
+                                </button>
+                            }
+                            .into_any()
+                        } else {
+                            let bg = c.resolve("").unwrap_or_default();
+                            let swatch = move || {
+                                let base = "h-8 w-8 rounded-full border-2 border-line";
+                                if active.get() {
+                                    format!("{base} ring-2 ring-accent ring-offset-2 ring-offset-surface")
+                                } else {
+                                    base.to_string()
+                                }
+                            };
+                            view! {
+                                <button
+                                    type="button"
+                                    title=c.label()
+                                    aria-pressed=move || active.get().to_string()
+                                    on:click=move |_| s.update(|st| st.gloss_color = c)
+                                    class="flex flex-col items-center gap-1.5 rounded-lg py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                >
+                                    <span class=swatch style=format!("background-color:{bg}")></span>
+                                    <span class="text-xs text-muted">{c.label()}</span>
+                                </button>
+                            }
+                            .into_any()
                         }
                     })
                     .collect_view()}
             </div>
+            <input
+                node_ref=color_input
+                type="color"
+                prop:value=move || s.with(|st| st.gloss_custom.clone())
+                on:input=move |ev| {
+                    let v = event_target_value(&ev);
+                    s.update(|st| {
+                        st.gloss_custom = v;
+                        st.gloss_color = GlossColor::Custom;
+                    });
+                }
+                class="pointer-events-none absolute h-0 w-0 opacity-0"
+            />
             <div class="border-t border-line">
                 <Row label="Opacity">
                     <span class="flex items-center gap-3">

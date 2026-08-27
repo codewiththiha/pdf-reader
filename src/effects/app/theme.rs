@@ -157,17 +157,18 @@ pub fn apply_theme(state: AppState) {
 
 
     Effect::new(move || {
-        let color = state.settings.with(|s| s.gloss_color);
-        let opacity = state.settings.with(|s| s.gloss_opacity);
+        let (color, custom, opacity) = state.settings.with(|st| {
+            (st.gloss_color, st.gloss_custom.clone(), st.gloss_opacity)
+        });
         let Some(el) = document_element() else {
             return;
         };
         let Some(style) = el.dyn_into::<web_sys::HtmlElement>().ok().map(|h| h.style()) else {
             return;
         };
-        match color.hex() {
+        match color.resolve(&custom) {
             Some(hex) => {
-                let _ = style.set_property("--gloss-color", hex);
+                let _ = style.set_property("--gloss-color", &hex);
             }
             None => {
                 let _ = style.remove_property("--gloss-color");
