@@ -4,7 +4,9 @@
 //! most `MAX_CANVAS_OVERLAP` of the canvas width. Its budget is the blank gap
 //! left of the page plus that overlap allowance (minus a safety margin); the
 //! name shows in full only when its NATURAL width fits that budget, otherwise
-//! it disappears entirely — it never truncates over the page.
+//! it disappears entirely — it never truncates over the page. "Label Width
+//! Limit" scales that budget down; "Always Show Label" opts out of the
+//! auto-hide rules altogether.
 //!
 //! Shown only when a document is open, the sidebar is OFF (its identity row
 //! already shows the name) AND the titlebar is not visible (the bar contains
@@ -142,7 +144,14 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         _ = state.reader.document.title.get();
         _ = state.reader.document.path.get();
         _ = state.reader.document.outline.get();
-        _ = state.settings.with(|s| (s.layout.floating_label, s.layout.floating_label_style));
+        _ = state.settings.with(|s| {
+            (
+                s.layout.floating_label,
+                s.layout.floating_label_style,
+                s.layout.floating_label_persist,
+                s.layout.floating_label_max_pct,
+            )
+        });
         measure();
         use_window_event("resize", move |_| measure());
     });
@@ -164,11 +173,21 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         }
     };
     let shown = move || {
-        enabled()
+        let (persist, max_pct) = state.settings.with(|st| {
+            (st.layout.floating_label_persist, st.layout.floating_label_max_pct)
+        });
+        let base_ok = enabled()
             && state.reader.document.status.get() == DocStatus::Ready
+            && ctx.map(|c| !c.visible.get()).unwrap_or(true);
+        if persist {
+            // Persist mode is the reader saying "I always want this": the
+            // sidebar and the width budget stop being reasons to hide it.
+            return base_ok;
+        }
+        base_ok
             && state.ui.sidebar.get() == SidebarMode::None
-            && ctx.map(|c| !c.visible.get()).unwrap_or(true)
-            && budget.get().is_none_or(|b| label_w.get() <= b)  // None = unknown = show
+            // None = unknown = show
+            && budget.get().is_none_or(|b| label_w.get() <= b * max_pct / 100.0)
     };
 
     view! {
@@ -185,10 +204,15 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
                 node_ref=label_ref
                 class="pointer-events-none fixed left-3 top-3 block truncate text-sm font-medium \
                        text-white mix-blend-difference"
-                style:max-width=move || match budget.get() {
-                    Some(b) if b >= MIN_LABEL_W => format!("{}px", b.max(0.0).floor()),
-                    Some(_) => "0px".to_string(),
-                    None => "none".to_string(),
+                style:max-width=move || {
+                    let max_pct = state.settings.with(|st| st.layout.floating_label_max_pct);
+                    match budget.get() {
+                        Some(b) if b >= MIN_LABEL_W => {
+                            format!("{}px", (b * max_pct / 100.0).max(0.0).floor())
+                        }
+                        Some(_) => "0px".to_string(),
+                        None => "none".to_string(),
+                    }
                 }
             >
                 <span class="block transition-opacity duration-200" class=("opacity-0", move || !shown())>

@@ -231,6 +231,60 @@ fn LayoutTab(state: AppState) -> impl IntoView {
                     disabled=label_off
                 />
             </Row>
+            <Row label="Always Show Label">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.layout.floating_label_persist))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.floating_label_persist = v);
+                    })
+                    disabled=label_off
+                    title="Keep the floating label visible even when the sidebar or title bar is open"
+                        .to_string()
+                />
+            </Row>
+            <Row label="Label Width Limit">
+                <span class="flex items-center gap-3">
+                    <span class="w-10 text-right text-sm tabular-nums text-ink">
+                        {move || {
+                            format!("{}%", s.with(|st| st.layout.floating_label_max_pct) as u32)
+                        }}
+                    </span>
+                    <span class="flex gap-1.5">
+                        <IconButton
+                            icon=IconName::Minus
+                            size=14
+                            title="Lower the width limit"
+                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                            disabled=Signal::derive(move || {
+                                label_off.get()
+                                    || s.with(|st| st.layout.floating_label_max_pct) <= 10.0
+                            })
+                            on_click=move || {
+                                s.update(|st| {
+                                    st.layout.floating_label_max_pct =
+                                        (st.layout.floating_label_max_pct - 10.0).clamp(10.0, 100.0);
+                                })
+                            }
+                        />
+                        <IconButton
+                            icon=IconName::Plus
+                            size=14
+                            title="Raise the width limit"
+                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                            disabled=Signal::derive(move || {
+                                label_off.get()
+                                    || s.with(|st| st.layout.floating_label_max_pct) >= 100.0
+                            })
+                            on_click=move || {
+                                s.update(|st| {
+                                    st.layout.floating_label_max_pct =
+                                        (st.layout.floating_label_max_pct + 10.0).clamp(10.0, 100.0);
+                                })
+                            }
+                        />
+                    </span>
+                </span>
+            </Row>
             <Row label="Progress Bar">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.progress_bar))

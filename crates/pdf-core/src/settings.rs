@@ -20,6 +20,7 @@ pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
 fn on_true() -> bool { true }
 fn default_gloss_opacity() -> f64 { 0.4 }
 fn default_page_margin() -> f64 { 0.0 }
+fn default_label_max_pct() -> f64 { 100.0 }
 fn default_custom_gloss() -> String { "#a58af0".into() }
 
 fn is_hex6(s: &str) -> bool {
@@ -70,6 +71,14 @@ pub struct LayoutSettings {
     /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
     #[serde(default = "default_page_margin")]
     pub page_margin: f64,
+    /// Keep the floating label on screen even when the sidebar or title bar
+    /// would normally hide it, and ignore the width budget.
+    #[serde(default)]
+    pub floating_label_persist: bool,
+    /// Share of the measured width budget (in percent) the floating label may
+    /// consume before it fades out. `100` hides it only on a true overflow.
+    #[serde(default = "default_label_max_pct")]
+    pub floating_label_max_pct: f64,
 }
 
 impl Default for LayoutSettings {
@@ -86,6 +95,8 @@ impl Default for LayoutSettings {
             sidebar_overlay: false,
             blend_mode: false,
             page_margin: default_page_margin(),
+            floating_label_persist: false,
+            floating_label_max_pct: default_label_max_pct(),
         }
     }
 }
@@ -283,6 +294,8 @@ pub fn sanitize(settings: &mut Settings) {
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
     settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
     settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
+    settings.layout.floating_label_max_pct =
+        settings.layout.floating_label_max_pct.clamp(10.0, 100.0);
     if !is_hex6(&settings.gloss_custom) {
         settings.gloss_custom = default_custom_gloss();
     }
@@ -440,6 +453,8 @@ mod tests {
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
+        assert!(!s.floating_label_persist);
+        assert_eq!(s.floating_label_max_pct, 100.0);
 
         // Deserializing empty JSON layout object fills in the defaults
         let s: LayoutSettings = serde_json::from_str("{}").unwrap();
@@ -448,5 +463,19 @@ mod tests {
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
+        assert!(!s.floating_label_persist);
+        assert_eq!(s.floating_label_max_pct, 100.0);
+    }
+
+    #[test]
+    fn label_width_limit_is_clamped() {
+        let mut s = Settings::default();
+        s.layout.floating_label_max_pct = 420.0;
+        sanitize(&mut s);
+        assert_eq!(s.layout.floating_label_max_pct, 100.0);
+
+        s.layout.floating_label_max_pct = 0.0;
+        sanitize(&mut s);
+        assert_eq!(s.layout.floating_label_max_pct, 10.0);
     }
 }
