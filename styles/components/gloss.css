@@ -19,7 +19,7 @@
   --gloss-shadow-card:
     0 0 0 1px var(--color-line),
     0 16px 40px rgb(0 0 0 / 0.42);
-  --gloss-sweep: color-mix(in oklab, var(--color-accent) 45%, white);
+  --gloss-sweep: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 45%, white);
 }
 
 /* ---------------------------------------------------------------------
@@ -81,10 +81,10 @@ tint the reader chose, on any text.
   overflow: hidden;
   background-image: linear-gradient(
     100deg,
-    color-mix(in oklab, var(--color-accent) 34%, transparent),
-    color-mix(in oklab, var(--color-accent) 28%, transparent) 40%,
-    color-mix(in oklab, var(--color-accent) 24%, transparent) 70%,
-    color-mix(in oklab, var(--color-accent) 34%, transparent)
+    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 85%), transparent),
+    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 70%), transparent) 40%,
+    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 60%), transparent) 70%,
+    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 85%), transparent)
   );
   background-size: 300% 100%;
   mix-blend-mode: multiply;
@@ -95,7 +95,7 @@ tint the reader chose, on any text.
 :root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
 .pdf-page .glossLayer .gloss-mark:hover,
 .pdf-page .glossLayer .gloss-mark:focus-visible {
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 40%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 40%, transparent);
   outline: none;
 }
 /* Halo — the soft bleed around the stroke (the screenshot look). */
@@ -107,8 +107,8 @@ tint the reader chose, on any text.
   border-radius: 12px;
   background: radial-gradient(
     closest-side,
-    color-mix(in oklab, var(--color-accent) 50%, transparent),
-    color-mix(in oklab, var(--color-accent) 20%, transparent) 55%,
+    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 100%), transparent),
+    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 50%), transparent) 55%,
     transparent 75%
   );
   filter: blur(6px);
@@ -168,10 +168,10 @@ unmounted until the first chunk lands. */
 .pdf-page .glossLayer .gloss-mark-selected,
 :root.dark .pdf-page .glossLayer .gloss-mark-selected {
     background-image: none;
-    background-color: color-mix(in oklab, var(--color-accent) 58%, transparent);
+    background-color: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 58%, transparent);
     box-shadow:
-        0 0 0 1.5px color-mix(in oklab, var(--color-accent) 75%, transparent),
-        0 0 12px color-mix(in oklab, var(--color-accent) 35%, transparent);
+        0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 75%, transparent),
+        0 0 12px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 35%, transparent);
     opacity: 1;
     animation: gloss-select-pop 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }

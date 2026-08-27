@@ -17,9 +17,11 @@ use crate::components::app_shell::document_title::CenteredDocTitle;
 use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
+use crate::components::menus::settings_modal::SettingsModal;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use crate::components::primitives::icon::{Icon, IconName};
+use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
 use crate::components::sidebar::Sidebar;
 use crate::components::sidebar::document_info::BookInfo;
@@ -89,7 +91,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             .css_heights
             .with_untracked(|heights| heights.get(index).copied());
         if let Some(height) = measured.filter(|height| *height > 0.0) {
-            return height;
+            return height + vs.viewer.page_gap.get_untracked();
         }
         let intrinsic = vs
             .document
@@ -104,6 +106,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             .map(|size| size.height)
             .unwrap_or(0.0);
         intrinsic.unwrap_or(fallback) * vs.viewer.zoom.render.get_untracked()
+            + vs.viewer.page_gap.get_untracked()
     };
     let epoch = Signal::derive(move || {
         let count = vs.document.num_pages.get() as usize;
@@ -125,7 +128,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     };
     let virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, estimate)
-            .gap(PAGE_GAP)
+            .gap(0.0)
             .budget(RENDER_BUDGET)
             .initial(Viewport::main_only(initial_vh), 0.0)
             .pinned(pinned_sig.into())
@@ -171,6 +174,21 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
 
+    // No-gap pref → runtime gap + rescale.
+    {
+        let v = virtualizer.clone();
+        Effect::new(move |_| {
+            let no_gap = state.settings.with(|st| st.layout.no_gap);
+            let gap = if no_gap { 0.0 } else { PAGE_GAP };
+            if (vs.viewer.page_gap.get_untracked() - gap).abs() < 1e-9 {
+                return;
+            }
+            vs.viewer.page_gap.set(gap);
+            let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
+            v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
+        });
+    }
+
     fit_effect(vs, state.ui.sidebar, virtualizer.clone(), h_virtualizer.clone());
     zoom_system(vs, virtualizer.clone(), h_virtualizer.clone());
     navigation_sync(vs, virtualizer.clone(), h_virtualizer.clone());
@@ -189,8 +207,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         present: paint.present,
     });
 
+    let settings_open = RwSignal::new(false);
+    let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
+    let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
+    let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
+
     // Left: sidebar toggle + Library stay put. Open is gone. Title is centered;
-    // right is appearance + the 3-dash view menu.
+    // right is appearance + settings + the 3-dash view menu.
     let left = move || {
         view! {
             <div
@@ -232,7 +255,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let right = move || {
         view! {
             <AppearanceMenu state=state />
-            <ReaderMenu state=state />
+            <IconButton
+                icon=IconName::Settings
+                title="Reader settings"
+                on_click=move || settings_open.set(true)
+            />
+            <ReaderMenu state=state settings_open=settings_open />
         }
     };
 
@@ -290,6 +318,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                     <crate::components::document::ContinuousView
                                         state=vs
                                         virtualizer=virtualizer_view.get_value()
+                                        progress_visible=progress_visible
                                     />
                                 }
                                 .into_any(),
@@ -306,15 +335,17 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         // Corner page counter, gated on a ready document and
                         // positioned by the page; the indicator itself is
                         // reusable UI with no knowledge of AppState.
-                        <Show when=is_ready>
+                        <Show when=move || is_ready() && show_indicator.get()>
                             <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", crate::components::primitives::floating::types::z::CONTROLS)>
                                 <PageIndicator
                                     current=state.reader.viewer.page
                                     total=state.reader.document.num_pages
+                                    style=indicator_style
                                     hidden=Signal::derive(move || state.reader.gloss.selection_active.get())
                                 />
                             </div>
                         </Show>
+                        <SettingsModal state=state open=settings_open />
                         <ReaderBottomBar
                             reader=vs
                             virtualizer=virtualizer_view

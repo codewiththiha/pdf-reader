@@ -73,7 +73,8 @@ pub fn PageList(
             }
             heights[index] = height;
         });
-        virtualizer_handle.with_value(|virtualizer| virtualizer.report_size(index, height));
+        let gap = state.viewer.page_gap.get_untracked();
+        virtualizer_handle.with_value(|virtualizer| virtualizer.report_size(index, height + gap));
     });
 
     let items = v.items();

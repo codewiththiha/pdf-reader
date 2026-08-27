@@ -95,9 +95,10 @@ pub fn relayout_to(
         .css_heights
         .with_untracked(|heights| heights.clone());
     if !heights.is_empty() {
+        let gap = state.viewer.page_gap.get_untracked();
         virtualizer.rescale(factor, {
             let heights = heights.clone();
-            move |index| heights.get(index).copied().unwrap_or(0.0)
+            move |index| heights.get(index).copied().unwrap_or(0.0) + gap
         });
 
         let scroll_top = virtualizer.scroll_offset().get_untracked();

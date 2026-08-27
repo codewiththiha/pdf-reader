@@ -141,12 +141,43 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         _ = state.reader.viewer.zoom.render.get();
         _ = state.reader.document.title.get();
         _ = state.reader.document.path.get();
+        _ = state.reader.document.outline.get();
+        _ = state.settings.with(|s| (s.layout.floating_label, s.layout.floating_label_style));
         measure();
         use_window_event("resize", move |_| measure());
     });
 
+    let enabled = move || state.settings.with(|st| st.layout.floating_label);
+    let label = move || {
+        use pdf_core::settings::FloatingLabelStyle::*;
+        let st = state.settings.with(|s| s.layout.floating_label_style);
+        let r = &state.reader;
+        match st {
+            FileName => r.document.display_name(),
+            Title => r
+                .document
+                .title
+                .get()
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| r.document.display_name()),
+            Chapter => {
+                let page = r.viewer.page.get();
+                r.document
+                    .outline
+                    .with(|o| {
+                        o.iter()
+                            .filter(|n| n.page <= page)
+                            .last()
+                            .map(|n| n.title.clone())
+                    })
+                    .or_else(|| r.document.title.get())
+                    .unwrap_or_else(|| r.document.display_name())
+            }
+        }
+    };
     let shown = move || {
-        state.reader.document.status.get() == DocStatus::Ready
+        enabled()
+            && state.reader.document.status.get() == DocStatus::Ready
             && state.ui.sidebar.get() == SidebarMode::None
             && ctx.map(|c| !c.visible.get()).unwrap_or(true)
             && budget.get().is_none_or(|b| label_w.get() <= b)  // None = unknown = show
@@ -173,7 +204,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
                 }
             >
                 <span class="block transition-opacity duration-200" class=("opacity-0", move || !shown())>
-                    {move || state.reader.document.display_name()}
+                    {label}
                 </span>
             </div>
         </Portal>

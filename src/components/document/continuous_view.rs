@@ -14,6 +14,9 @@ pub fn ContinuousView(
     /// The virtualizer driving the page window, built by ReaderPage and shared
     /// with navigation sync and the zoom coordinator.
     virtualizer: Virtualizer,
+    /// Whether the thin reading-progress strip is shown.
+    #[prop(into)]
+    progress_visible: Signal<bool>,
 ) -> impl IntoView {
     crate::effects::reader::continuous_scroll::continuous_scroll(state);
     observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
@@ -46,16 +49,18 @@ pub fn ContinuousView(
     view! {
         <div class="relative h-full w-full">
             <crate::components::document::PageList state=state virtualizer=virtualizer />
-            <div
-                class=format!(
-                    "pointer-events-none absolute inset-x-0 bottom-0 {CONTROLS} h-0.5"
-                )
-            >
+            <Show when=move || progress_visible.get()>
                 <div
-                    class="h-full bg-accent/80 transition-[width] duration-100"
-                    style:width=move || format!("{}%", progress() * 100.0)
-                ></div>
-            </div>
+                    class=format!(
+                        "pointer-events-none absolute inset-x-0 bottom-0 {CONTROLS} h-0.5"
+                    )
+                >
+                    <div
+                        class="h-full bg-accent/80 transition-[width] duration-100"
+                        style:width=move || format!("{}%", progress() * 100.0)
+                    ></div>
+                </div>
+            </Show>
         </div>
     }
 }
