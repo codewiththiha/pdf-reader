@@ -148,7 +148,12 @@ body {
 }
 
 .reader-bg { background-color: var(--color-paper); }
+/* `position: relative` anchors the ::before texture below to THIS element.
+   Without a positioning context the absolutely positioned pseudo resolves
+   against whichever ancestor happens to be positioned, so the backdrop
+   texture lands off the reader surface. */
 .reader-bg.blend {
+  position: relative;
   background-color: var(--canvas-paper, var(--color-paper));
   /* The paper colour is confirmed by an async engine read one beat after
      the synchronous replay, so ease the correction instead of popping. */
