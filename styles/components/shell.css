@@ -153,15 +153,12 @@ body {
      positioning context the absolutely positioned pseudo resolves against
      whichever ancestor happens to be positioned. */
   position: relative;
-  /* The page's VISIBLE paper is --color-paper in every base: the bake
-     composites against it, and a white page pixel multiplied or screened
-     over its backdrop yields the backdrop itself (the same invariant that
-     makes .thumb-card use --color-paper). Reading it directly keeps the
-     blend backdrop byte-identical to the pages in light, dark and dim,
-     synchronously — no engine round trip, no drift towards a darker
-     sampled value, no lag. Deliberately NO transition: it would put the
-     backdrop a beat behind the pages during a tint scrub. */
-  background-color: var(--color-paper);
+  /* The engine's own composite of the live pipeline (filter + blend applied
+     to the page paper), with the token as the pre-boot fallback. It cannot be
+     --color-paper: under dim and under any tint the composite is a different
+     colour, and the backdrop then stops matching the pages. Deliberately NO
+     transition — it must move in the same frame as the canvases. */
+  background-color: var(--canvas-paper, var(--color-paper));
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
