@@ -99,24 +99,29 @@ pub fn is_space_constrained(desired: f64, fit_w: f64) -> bool {
     desired.is_finite() && fit_w.is_finite() && fit_w > 0.0 && desired > fit_w + 1e-9
 }
 
-/// Next/previous zoom preset. `dir > 0` zooms in, `dir < 0` zooms out.
+/// One step along the preset ladder. `dir > 0` zooms in, `dir < 0` zooms out.
+///
+/// The step is taken from the preset CLOSEST to `current`, then clamped into
+/// the ladder — so a reader already at the top or bottom stays put instead of
+/// wrapping to the other end or falling off the array. A non-preset scale
+/// (a fit width of 137%, say) therefore rounds onto the ladder first and
+/// steps from there, which is what makes repeated presses feel even.
 pub fn nearest_zoom(current: f64, dir: i32) -> f64 {
-    if dir > 0 {
-        ZOOM_STEPS
-            .iter()
-            .copied()
-            .find(|&z| z > current + 1e-9)
-            .unwrap_or(*ZOOM_STEPS.last().unwrap())
-    } else if dir < 0 {
-        ZOOM_STEPS
-            .iter()
-            .rev()
-            .copied()
-            .find(|&z| z < current - 1e-9)
-            .unwrap_or(ZOOM_STEPS[0])
-    } else {
-        clamp_scale(current)
+    if dir == 0 {
+        return clamp_scale(current);
     }
+    let mut closest_idx = 0usize;
+    let mut min_diff = f64::MAX;
+    for (i, &step) in ZOOM_STEPS.iter().enumerate() {
+        let diff = (step - current).abs();
+        if diff < min_diff {
+            min_diff = diff;
+            closest_idx = i;
+        }
+    }
+    let last = (ZOOM_STEPS.len() - 1) as i32;
+    let target_idx = (closest_idx as i32 + dir).clamp(0, last) as usize;
+    ZOOM_STEPS[target_idx]
 }
 
 #[cfg(test)]
@@ -240,11 +245,28 @@ mod tests {
             (1.0, -1, 0.9),
             (0.1, -1, 0.25),
             (99.0, 1, 5.0),
-            // A non-preset current value steps to the nearest adjacent preset.
-            (1.2, 1, 1.25),
+            // A non-preset current value rounds onto the ladder first, then
+            // steps: 1.2 is closest to 1.25, so zooming in lands on 1.5.
+            (1.2, 1, 1.5),
+            (1.2, -1, 1.0),
         ] {
             assert!((nearest_zoom(from, dir) - want).abs() < 1e-9, "{from} dir {dir}");
         }
+    }
+
+    /// Pressing zoom-in at the maximum (or zoom-out at the minimum) must be
+    /// a no-op, not a wrap to the other end of the ladder.
+    #[test]
+    fn stepping_at_the_ends_of_the_ladder_stays_put() {
+        assert_eq!(nearest_zoom(MAX_SCALE, 1), MAX_SCALE);
+        assert_eq!(nearest_zoom(MIN_SCALE, -1), MIN_SCALE);
+        // Repeated presses at the ceiling cannot walk off the array either.
+        assert_eq!(nearest_zoom(nearest_zoom(MAX_SCALE, 1), 1), MAX_SCALE);
+        assert_eq!(nearest_zoom(nearest_zoom(MIN_SCALE, -1), -1), MIN_SCALE);
+        // And a garbage scale lands somewhere sane rather than poisoning the
+        // ladder for every later step.
+        assert!(nearest_zoom(f64::NAN, 1).is_finite());
+        assert_eq!(nearest_zoom(1.0, 0), 1.0);
     }
 }
 

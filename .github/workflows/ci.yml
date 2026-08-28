@@ -93,8 +93,18 @@ jobs:
             -A clippy::doc_lazy_continuation \
             -A clippy::derivable_impls
 
+      # --workspace, not a bare `cargo test`: the manifest root is also the
+      # `pdf-reader` package, so a bare run tests only the app and silently
+      # skips every member crate — pdf-core (the zoom ladder and fit maths),
+      # virtual-list and virtual-list-leptos (the geometry kernel and its
+      # anchor arithmetic). Those hold the invariants the reader depends on.
+      #
+      # `pdf` (the Tauri shell) is excluded: `tauri::generate_context!`
+      # resolves `frontendDist` at compile time and panics when `../dist`
+      # does not exist, and the frontend is only built by the release
+      # pipeline. It has no unit tests of its own.
       - name: Tests
-        run: cargo test
+        run: cargo test --workspace --exclude pdf
 
       # The frontend is Rust compiled to wasm; verify it compiles for the wasm
       # target without a full `trunk build` (that lives in the release pipeline).

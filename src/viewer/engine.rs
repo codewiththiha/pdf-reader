@@ -7,26 +7,27 @@
 //! (dominant page, scroll-to-page) still go through the virtualizers
 //! directly, but only in the per-mode navigation code.
 //!
-//! There are TWO ways in, and the view mode picks between them:
+//! It runs on EVERY frame of a zoom: the tween hands it the ratio between
+//! the scale it is about to show and the scale the layout currently has, and
+//! the layout follows continuously. Scaling the layout for real is what
+//! keeps a zoom stable. The alternative — one CSS transform over a surface
+//! whose geometry is frozen — cannot work here, because a transform scales
+//! the page gaps along with the pages while the layout deliberately does
+//! not (see `virtual_list::anchor::rescale_anchor`). Every gap above the
+//! reader accumulates error through the tween and the whole sum lands at
+//! once when the transform is swapped for real geometry, which reads as the
+//! document jumping.
 //!
-//! - [`ViewerEngine::relayout_to`] moves the layout continuously, once per
-//!   animation frame. The horizontal strip uses this: its items are laid out
-//!   side by side in a flex row, so scaling them through a CSS transform
-//!   fights the browser's own flow, and letting the virtualizer's rescale
-//!   anchor do the work is both smoother and cheaper.
-//! - [`ViewerEngine::commit_geometry`] moves the layout exactly once, when a
-//!   transition lands. The vertical strip and the paginated modes use this:
-//!   their content surface is scaled by a CSS transform for the duration of
-//!   the tween, so the geometry underneath stays untouched until the commit
-//!   replaces the transform with real layout.
+//! Anchoring is therefore explicit and gap-aware: the engine works out which
+//! document point sits under the viewport centre, rescales, finds where that
+//! same point lands in the new geometry, and puts it back under the viewport
+//! centre. Page interiors scale; the fixed gap between pages does not.
 
 use leptos::prelude::*;
-use pdf_core::layout::{ViewMode, TOOLBAR_H};
+use pdf_core::layout::TOOLBAR_H;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use crate::components::primitives::hooks::dom::page_list;
-use crate::state::reader::{ReaderState, ZoomFocus};
-use crate::viewer::zoom::anchor;
+use crate::state::reader::ReaderState;
 
 /// Wraps the reader's two strip virtualizers and centralises the viewer's one
 /// relayout path. The vertical (continuous) and horizontal strips stay as
@@ -45,48 +46,22 @@ impl ViewerEngine {
         Self { vertical, horizontal }
     }
 
-    /// Rescale the strip item sizes by `factor` — the ratio between the new
-    /// and the current layout scale — anchoring the scroll so the content
-    /// under the viewport does not jump.
-    ///
-    /// This is the HORIZONTAL strip's zoom path, and it runs on EVERY frame
-    /// of a zoom: the tween hands it the ratio between the scale it is about
-    /// to show and the scale the layout currently has, and the layout
-    /// follows continuously. That continuity is the point. The virtualizer's
-    /// rescale anchor holds the reader's view steady while the sizes
-    /// underneath it move, so there is nothing to capture before the gesture
-    /// and nothing to restore after it.
+    /// Rescale both strips by `factor` — the ratio between the new and the
+    /// current layout scale — holding the document point under the viewport
+    /// centre exactly where it is.
     pub fn relayout_to(&self, state: &ReaderState, factor: f64) {
         if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
             return; // already at this geometry; nothing to move
         }
 
-        // Vertical strip: heights are the measured CSS column, carried
-        // forward by the frame's factor.
-        state.document.metrics.css_heights.update(|heights| {
-            for height in heights.iter_mut() {
-                *height *= factor;
-            }
-        });
-
-        let heights = state
-            .document
-            .metrics
-            .css_heights
-            .with_untracked(|heights| heights.clone());
-        if !heights.is_empty() {
-            let gap = state.viewer.page_gap.get_untracked();
-            self.vertical.rescale(factor, {
-                let heights = heights.clone();
-                move |index| heights.get(index).copied().unwrap_or(0.0) + gap
-            });
-        }
+        self.relayout_vertical(state, factor);
 
         // Horizontal strip: widths are exact (intrinsic × scale + margin),
         // so they are rebuilt from the intrinsic sizes at the scale this
         // relayout lands on rather than from a scaled copy of the previous
         // width — that keeps the running product free of drift across the
-        // many small factors a single tween applies.
+        // many small factors a single tween applies. The virtualizer's own
+        // rescale anchor holds the cross-axis position.
         let margin = state.viewer.page_margin.get_untracked();
         let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
@@ -96,28 +71,6 @@ impl ViewerEngine {
             self.horizontal.rescale(factor, move |index| {
                 widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
             });
-        }
-
-        // Keep the reader's own scroll signal in step with the anchored
-        // offset the rescale produced.
-        let scroll_top = self.vertical.scroll_offset().get_untracked();
-        if (scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
-            state.viewer.scroll_top.set(scroll_top);
-        }
-
-        // Growing content: re-assert the anchored offset one frame later.
-        // `rescale` writes the new offset synchronously, but the spacer that
-        // gives the scroller its scroll extent is patched by Leptos only
-        // after that call returns, so the browser clamps the write against
-        // the still-short old extent. The clamp error is worst at the end of
-        // a growing document, which is why the jump used to show on the last
-        // pages and only while content was growing.
-        if factor > 1.0 {
-            let v = self.vertical.clone();
-            let target_scroll = scroll_top;
-            request_animation_frame(move || {
-                v.scroll_to_offset(target_scroll, ScrollMode::Instant);
-            });
             let hv = self.horizontal.clone();
             let h_scroll = self.horizontal.scroll_offset().get_untracked();
             request_animation_frame(move || {
@@ -126,103 +79,113 @@ impl ViewerEngine {
         }
     }
 
-    /// Commit one zoom transaction's geometry in a single step: move every
-    /// strip's item sizes from the committed scale to `target`, then put the
-    /// focus back on the new layout.
+    /// Rescale the vertical strip and put the document point that was under
+    /// the viewport centre back under the viewport centre.
     ///
-    /// This is the VERTICAL strip's (and the paginated modes') zoom path. It
-    /// runs once, when a transition lands — deliberately NOT per frame. For
-    /// the whole tween those modes scale their content surface through one
-    /// CSS transform, so the virtualizers keep the old geometry (the mounted
-    /// window cannot churn, the dominant item cannot move) and this single
-    /// commit moves geometry, rasters and scroll together, replacing the
-    /// transform with real layout at exactly the same visual size.
-    ///
-    /// Scroll restoration is pixel arithmetic off the page centre: the focus
-    /// names the page and the viewport pixels its centre must land on, and
-    /// the new offsets are computed against the NEW geometry —
-    /// mathematically, because the DOM has not re-laid out yet at this point
-    /// (its `scrollWidth`/`scrollHeight` still answer the pre-scale extent).
-    ///
-    /// The main-axis restore is SYNCHRONOUS: the virtualizer's layout and
-    /// signals are already updated in-tick by `rescale`, so commanding the
-    /// offset immediately closes what would be a one-frame gap where the
-    /// surface had committed but the scroll still sat at the old position.
-    /// The cross axis (the DOM scroller's own `scrollLeft`) is written
-    /// directly and re-asserted once on the next frame, after the spacer has
-    /// laid out at the new extent.
-    pub fn commit_geometry(&self, state: &ReaderState, target: f64, focus: &ZoomFocus) {
-        let from = state.viewer.zoom.committed.get_untracked();
-        let factor = target / from;
-        if !factor.is_finite() || factor <= 0.0 || (factor - 1.0).abs() < 1e-12 {
-            return; // already at this geometry; nothing to move
+    /// The anchor is computed from the measurement store rather than left to
+    /// the virtualizer's own rescale anchor because the anchor has to survive
+    /// a scale the layout applies unevenly: page heights multiply by the
+    /// factor, the gap between pages stays put. Walking the column is the
+    /// only way to get that exactly right.
+    fn relayout_vertical(&self, state: &ReaderState, factor: f64) {
+        let gap = state.viewer.page_gap.get_untracked();
+        let (_, vh) = state.viewer.container_size.get_untracked();
+        let scroll_top = self.vertical.scroll_offset().get_untracked();
+
+        // The strip's content starts TOOLBAR_H below the scroller's origin —
+        // the pages scroll under a fixed toolbar — so the content point under
+        // the middle of the window sits that band short of half the height.
+        let centre_in_viewport = vh / 2.0;
+        let centre_y_doc = (scroll_top + centre_in_viewport - TOOLBAR_H).max(0.0);
+
+        let old_heights = state
+            .document
+            .metrics
+            .css_heights
+            .with_untracked(|heights| heights.clone());
+        if old_heights.is_empty() {
+            return; // nothing measured yet; no layout to hold still
         }
 
-        // Vertical strip: heights are the measured CSS column, scaled by the
-        // commit factor. (`rescale` rebuilds the layout from the closure —
-        // the factor feeds its centre-pinned anchor, which the logical
-        // restore below then overrides.)
+        // 1. Which page is under the centre, and how far into it.
+        let mut centre_index = 0usize;
+        let mut offset_inside = 0.0f64;
+        {
+            let mut offset = 0.0;
+            let last = old_heights.len() - 1;
+            for (i, height) in old_heights.iter().enumerate() {
+                let item = *height + gap;
+                if offset + item > centre_y_doc || i == last {
+                    centre_index = i;
+                    offset_inside = centre_y_doc - offset;
+                    break;
+                }
+                offset += item;
+            }
+        }
+
+        // 2. Scale the shared measurement store, then rebuild the strip's
+        //    layout from it.
         state.document.metrics.css_heights.update(|heights| {
             for height in heights.iter_mut() {
                 *height *= factor;
             }
         });
-        let heights = state
+        let new_heights = state
             .document
             .metrics
             .css_heights
             .with_untracked(|heights| heights.clone());
-        if !heights.is_empty() {
-            let gap = state.viewer.page_gap.get_untracked();
-            self.vertical.rescale(factor, {
-                let heights = heights.clone();
-                move |index| heights.get(index).copied().unwrap_or(0.0) + gap
-            });
-        }
-
-        // Horizontal strip: widths are exact (intrinsic × scale + margin).
-        let margin = state.viewer.page_margin.get_untracked();
-        let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
-            sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
+        self.vertical.rescale(factor, {
+            let new_heights = new_heights.clone();
+            move |index| new_heights.get(index).copied().unwrap_or(0.0) + gap
         });
-        if !widths.is_empty() {
-            self.horizontal.rescale(factor, move |index| {
-                widths.get(index).copied().unwrap_or(0.0) * target + 2.0 * margin
-            });
+
+        // 3. Where that same point lands now: the scaled extent of every page
+        //    above it, plus its own scaled offset inside the page it is in. A
+        //    centre that fell in the gap keeps the unscaled remainder, because
+        //    the gap is fixed chrome and never scales.
+        let mut new_centre_y_doc = 0.0;
+        for height in new_heights.iter().take(centre_index) {
+            new_centre_y_doc += *height + gap;
+        }
+        let old_h = old_heights.get(centre_index).copied().unwrap_or(0.0);
+        new_centre_y_doc += if offset_inside <= old_h {
+            offset_inside * factor
+        } else {
+            old_h * factor + (offset_inside - old_h)
+        };
+
+        // 4. Scroll so it is back under the middle of the window. The ceiling
+        //    is the virtualizer's own (`total − viewport`), not the DOM's: it
+        //    does not know about the toolbar band, and `scroll_to_offset`
+        //    clamps to it, so adopting the larger DOM range here would leave
+        //    `viewer.scroll_top` disagreeing with the offset that actually
+        //    landed at the very end of a document.
+        let max_scroll = (self.vertical.total_size().get_untracked() - vh).max(0.0);
+        let new_scroll_top =
+            (new_centre_y_doc + TOOLBAR_H - centre_in_viewport).clamp(0.0, max_scroll);
+
+        if (new_scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
+            state.viewer.scroll_top.set(new_scroll_top);
         }
 
-        // With the new layout in place, put the PAGE CENTRE back on the
-        // exact screen pixels it was captured at — synchronously on the main
-        // axis, directly on the cross axis with one next-frame re-assert.
-        //
-        // Only the vertical strip needs it. The horizontal strip never gets
-        // here (it relayouts per frame), and the paginated layouts have no
-        // strip scroll at all — the page itself is the position and the
-        // layout remounts on `viewer.page`.
-        let count = state.document.num_pages.get_untracked() as usize;
-        let index = focus.page.saturating_sub(1) as usize;
-        if state.viewer.mode.get_untracked() == ViewMode::ScrollVertical {
-            let (new_origin_x, new_origin_y) = anchor::page_center_origin(
-                self,
-                state,
-                ViewMode::ScrollVertical,
-                index,
-                count,
-                target,
-            );
-            let new_scroll_top = new_origin_y + TOOLBAR_H - focus.viewport_offset_y;
-            let new_scroll_left = new_origin_x - focus.viewport_offset_x;
+        // Synchronous: `rescale` has already updated the virtualizer's layout
+        // and signals in this tick, so commanding the offset now lands on the
+        // right frame. Deferring it left a one-frame gap where the geometry
+        // had moved and the scroll had not.
+        self.vertical
+            .scroll_to_offset(new_scroll_top, ScrollMode::Instant);
 
-            self.vertical.scroll_to_offset(new_scroll_top, ScrollMode::Instant);
-
-            if let Some(el) = page_list() {
-                el.set_scroll_left(new_scroll_left as i32);
-                request_animation_frame(move || {
-                    if let Some(el) = page_list() {
-                        el.set_scroll_left(new_scroll_left as i32);
-                    }
-                });
-            }
+        // Growing content: re-assert one frame later. The spacer that gives
+        // the scroller its scroll extent is patched by Leptos only after
+        // `rescale` returns, so the browser clamps the write against the
+        // still-short old extent — worst at the end of a growing document.
+        if factor > 1.0 {
+            let v = self.vertical.clone();
+            request_animation_frame(move || {
+                v.scroll_to_offset(new_scroll_top, ScrollMode::Instant);
+            });
         }
     }
 }

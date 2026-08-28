@@ -11,27 +11,25 @@
 //!     ↓
 //! open a transition from the scale on screen to that target
 //!     ↓
-//! tween the DISPLAY SCALE, frame by frame
+//! tween the DISPLAY SCALE — relaying the layout out through the
+//! engine on every frame, so the document resizes continuously
 //!     ↓
-//! commit the geometry and the render scale, release the freezes
+//! bring the render scale onto the target, release the freezes
 //! ```
 //!
-//! How the visual change reaches the screen depends on the view mode, and
-//! that split is deliberate — the two scroll modes are laid out by different
-//! machinery, so the zoom that is smooth in one is a fight in the other:
+//! The layout IS animated, and that is the point. Each frame hands the engine
+//! the ratio the display scale just moved through; the engine rescales the
+//! strips and holds the document point under the viewport centre exactly
+//! where it is. That is also why nothing about position is captured at
+//! transaction open — there is no seam to hide, so there is nothing to
+//! restore.
 //!
-//! - the HORIZONTAL strip relayouts every frame (`engine::relayout_to`), and
-//!   the virtualizer's own `rescale` anchor is what keeps the reader's view
-//!   steady while the item sizes underneath it move. Nothing about position
-//!   is captured, because there is no seam to hide.
-//! - the VERTICAL strip and the PAGINATED modes scale their content surface
-//!   through one CSS transform (`zoom::presentation`) for the whole tween,
-//!   and the commit replaces that transform with real layout at the same
-//!   visual size. They capture a page-centric focus and a stage pivot at
-//!   transaction open (`zoom::anchor`) and restore them at the commit, so
-//!   the page under the reader's eyes stays on the same screen pixel.
+//! Scaling a frozen surface with one CSS transform instead was tried and
+//! dropped: a transform scales the page gaps along with the pages while the
+//! layout deliberately does not, so the whole accumulated gap error landed at
+//! once when the transform was swapped for real geometry.
 //!
-//! What deliberately does NOT happen per animation frame, in either mode:
+//! What deliberately does NOT happen per animation frame:
 //!
 //! ```text
 //! virtualizer.report_size()
@@ -53,7 +51,6 @@
 //! The old thread-local controller registration is gone; `drive` runs for
 //! exactly as long as the reader page owns it.
 
-pub mod anchor;
 pub mod animation;
 pub mod config;
 pub mod coordinator;

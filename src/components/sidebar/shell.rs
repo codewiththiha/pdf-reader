@@ -2,25 +2,21 @@
 //! open/close state machine and composes the chrome row, the book-identity
 //! row, the two stacked panels, and the bottom rail (see the sibling modules).
 //!
-//! The `<aside>` is ALWAYS mounted and animates its `width` between 18rem and 0
-//! (single-phase slide, no two-phase unmount). The inner content stays fixed at
-//! `w-72` so it doesn't collapse mid-transition — `overflow-hidden` on the aside
-//! clips it while closed. When collapsed the content is made `inert` so the
-//! clipped rail can't be tab-focused / activated.
+//! The `<aside>` is ALWAYS mounted and snaps its `width` between 18rem and 0
+//! (single-phase, no two-phase unmount). The inner content stays fixed at
+//! `w-72` so it never collapses — `overflow-hidden` on the aside clips it
+//! while closed. When collapsed the content is made `inert` so the clipped
+//! rail can't be tab-focused / activated.
 //!
-//! CLOSE / OPEN. The rail labels (Thumbs / Outline) outro by
-//! being clipped as the aside shrinks — a 300ms ease-in-out the reader
-//! already has. The panels used to go `visibility:hidden` on the FIRST frame
-//! of that slide, so the thumbnail grid popped off while the labels slid
-//! away. Worse, toggling visibility on a stack of `filter` + `mix-blend-mode`
-//! canvases makes WKWebView allocate a fresh compositor layer per thumb;
-//! close-and-reopen-quickly stacked those layers into a RAM spike.
+//! THE TOGGLE IS INSTANT, deliberately. The width slide used to be a 300ms
+//! CSS transition, and every frame of it reported a new container width to
+//! the reader — which then re-resolved its fit against a half-open window,
+//! a dozen times per toggle. Removing the transition lets the flexbox math
+//! and the ResizeObserver react once, to the finished width.
 //!
-//! So the last-open panel STAYS PAINTED for the whole slide (it fades with
-//! `.sidebar-panel.is-outro` and clips with the aside). Only after the 300ms
-//! does the grid unmount, which `cancelThumb`s every live canvas and drops
-//! the backing stores. A reopen inside that window never unmounts, never
-//! re-renders, never reallocates.
+//! CLOSE / OPEN. The last-open panel stays painted through the one frame the
+//! rail takes to collapse (`collapsing`), then the grid unmounts, which
+//! `cancelThumb`s every live canvas and drops the backing stores.
 //!
 //! OPEN mounts cells immediately so warm thumbnail bitmaps can paint while
 //! the aside is moving. `intro` is paint-only: a two-frame toggle starts the
@@ -49,10 +45,11 @@ use leptos::children::ViewFn;
 
 use crate::state::SidebarMode;
 
-/// Must match the aside's `duration-300` width slide. The panel fade and
-/// the deferred canvas release both key off this so the three outros land
-/// together and a quick reopen cannot beat the unmount.
-pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
+/// How long the aside takes to change width: zero, because it no longer
+/// transitions. The panel paint and the deferred canvas release key off this
+/// so they land with the snap instead of trailing it, and so the reader's
+/// container width settles in one step rather than over a slide.
+pub(crate) const SIDEBAR_SLIDE_MS: u64 = 0;
 
 /// Selector for the sliding aside itself. The toolbar's title measurement
 /// observes this element (its width changes every frame of the slide, unlike
@@ -123,11 +120,11 @@ pub struct SidebarPaint {
     pub present: Signal<bool>,
 }
 
-/// Drive the open/close slide bookkeeping and return the paint flags.
+/// Drive the open/close bookkeeping and return the paint flags.
 ///
 /// Opening mounts thumbnail cells immediately. Closing is the only timer-gated
-/// direction: it keeps the last panel painted through the rail's width slide,
-/// then releases DOM canvases at the same instant the slide lands.
+/// direction: it keeps the last panel painted through the one frame the rail
+/// collapses in, then releases the DOM canvases.
 pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
     let last_mode = RwSignal::new(SidebarMode::Thumbs);
     let collapsing = RwSignal::new(false);
@@ -257,7 +254,7 @@ pub fn Sidebar(
 ) -> impl IntoView {
     view! {
         <aside
-            class="sidebar-aside flex h-full shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
+            class="sidebar-aside flex h-full shrink-0 flex-col overflow-hidden border-r border-line bg-surface"
             class=("w-72", move || matches!(mode.get(), SidebarMode::Thumbs | SidebarMode::Outline))
             class=("w-0", move || mode.get() == SidebarMode::None)
             class=("border-r-0", move || mode.get() == SidebarMode::None)
@@ -286,10 +283,11 @@ mod tests {
     use crate::state::SidebarMode;
 
     #[test]
-    fn the_slide_matches_the_css_duration() {
-        // The fade, the width tween and the deferred unmount must share one
-        // number. Drift here is how the thumbs popped off before the labels.
-        assert_eq!(SIDEBAR_SLIDE_MS, 300);
+    fn the_rail_snaps_instead_of_sliding() {
+        // The aside carries no width transition, so the paint and the
+        // deferred canvas release must not wait for one. A non-zero value
+        // here would hold the panel painted over an empty rail.
+        assert_eq!(SIDEBAR_SLIDE_MS, 0);
     }
 
     #[test]

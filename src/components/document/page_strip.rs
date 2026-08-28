@@ -6,13 +6,12 @@
 //! the virtualizer's `item_top`, and reporting the rendered main-axis size
 //! back into the virtualizer's size model.
 //!
-//! The two axes zoom differently, and this component is where that shows:
-//! the horizontal strip relayouts as the scale moves, while the vertical
-//! strip wraps its content in a ZOOM STAGE that a zoom transaction scales
-//! with one CSS transform pivoted on the page centre. There the document
-//! reads as one continuous surface being resized — no page's layout box
-//! moves, no gaps open between pages, and the virtualizer's geometry stays
-//! at the committed scale until the transaction's single commit.
+//! A zoom resizes this strip for real: the viewer engine rescales the
+//! virtualizer's items frame by frame and holds the document point under the
+//! viewport centre still, while the page hosts below stretch the bitmap they
+//! already hold to the new size. Nothing here animates a transform over
+//! frozen geometry — a CSS `scale()` would scale the page gaps along with the
+//! pages, and the layout deliberately does not.
 //!
 //! The strip is pure presentation. It owns no scroll policy, no wheel
 //! translation, no container binding — those live in [`ScrollShell`], which
@@ -43,24 +42,12 @@ pub fn PageStrip(
 
     let v = virtualizer;
     let handle = StoredValue::new_local(v.clone());
-    // The scale the page hosts are sized at, which the axis decides:
-    //
-    //  - the horizontal strip relayouts during a zoom, so its hosts follow
-    //    the live DISPLAY scale and CSS-stretch the bitmap they already hold
-    //    to it, frame by frame;
-    //  - the vertical strip scales its whole content surface through the
-    //    zoom stage below instead, so its hosts stay at the COMMITTED scale
-    //    and nothing about a page's layout box moves mid-zoom.
-    //
-    // Either way the crisp rasterisation follows `render_scale`
-    // (`committed`), which moves only when the transaction lands. `axis` is
-    // a plain prop, so the branch is taken once here rather than re-tested
-    // inside a per-frame signal.
-    let page_scale = if axis == Axis::Horizontal {
-        state.viewer.zoom.display.read_only()
-    } else {
-        state.viewer.zoom.committed.read_only()
-    };
+    // The live VISUAL scale. Hosts size themselves to it and CSS-stretch
+    // whatever bitmap they already hold, so a zoom resizes the page every
+    // frame without kicking off a render; the crisp rasterisation follows
+    // `render_scale` (`committed`), which moves only when the transaction
+    // lands.
+    let page_scale = state.viewer.zoom.display.read_only();
     let gesture_owns = state.viewer.gesture_owns();
     let items = v.items();
     let total_size = v.total_size();
@@ -76,29 +63,6 @@ pub fn PageStrip(
             .intrinsic
             .with(|pages| pages.iter().map(|p| p.height).fold(0.0, f64::max));
         tallest * scale
-    });
-
-    // The ZOOM STAGE transform: the presentation ratio applied to the whole
-    // content surface, pivoted on the page centre captured when the
-    // transaction opened. Absent at rest — an identity transform would
-    // needlessly hold a compositor layer forever — and never present on the
-    // horizontal axis, which relayouts and leaves `presentation` at 1.0.
-    let presentation = state.viewer.zoom.presentation;
-    let transition = state.viewer.zoom.transition;
-    let stage_transform = Signal::derive(move || {
-        let ratio = presentation.get();
-        if (ratio - 1.0).abs() < 1e-9 {
-            return None;
-        }
-        let t = transition.get_untracked()?;
-        // Strict pixel coordinates on BOTH axes, exactly the captured page
-        // centre the commit's restore math recovers the scroll from — the
-        // visual pivot and the arithmetic must be the same point or the
-        // landing reads as a small hop.
-        let origin = format!("{}px {}px", t.origin.0, t.origin.1);
-        Some(format!(
-            "transform-origin:{origin};transform:scale({ratio});will-change:transform"
-        ))
     });
 
     let scroller_class = match axis {
@@ -159,13 +123,7 @@ pub fn PageStrip(
                     view! {
                         <div
                             class="relative"
-                            style=move || {
-                                let base = format!("margin-top:{TOOLBAR_H}px");
-                                match stage_transform.get() {
-                                    Some(stage) => format!("{base};{stage}"),
-                                    None => base,
-                                }
-                            }
+                            style=move || format!("margin-top:{TOOLBAR_H}px")
                         >
                             <div aria-hidden="true" style:height=move || format!("{}px", total_size.get())></div>
                             <For

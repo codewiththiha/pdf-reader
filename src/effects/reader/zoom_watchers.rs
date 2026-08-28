@@ -8,14 +8,15 @@
 //! manual `+` all land through the same capture → tween → commit path, so
 //! they can no longer race along separate code paths.
 //!
-//! Both are DEBOUNCED by the sidebar's slide duration. A window resize and a
-//! sidebar flex transition both report a new container width on every one of
-//! their frames, and resolving against each one meant a dozen relayouts per
-//! gesture — each measured against a half-open window, so the fit width
-//! (and with it the shrink-to-fit ceiling) came out clipped at whatever
-//! intermediate width happened to arrive last. One trailing fire, after the
-//! slide has settled, resolves against the finished geometry; and because it
-//! is now a single command rather than a storm, it can afford to tween.
+//! Both are DEBOUNCED, but only just. The sidebar no longer slides — it snaps
+//! — so a toggle now reports ONE new container width instead of thirty. A
+//! window drag still reports one per frame, and a short trailing debounce
+//! coalesces those without making the page lag behind the cursor.
+//!
+//! The fire is deliberately UNTWEENED. A refit that tracks a live resize has
+//! to land in the frame it was asked for; queueing a 120ms animation against
+//! each new width had the page visibly chasing the window. Manual zooms keep
+//! their tween — they are a single gesture, not a stream.
 //!
 //! - `fit_watcher`: while a fit mode is active, any change of window,
 //!   view mode, margin, current page or document re-resolves the fit.
@@ -32,15 +33,13 @@ use leptos::prelude::*;
 use pdf_core::math::FitMode;
 
 use crate::components::primitives::hooks::use_timeout::use_debounce;
-use crate::components::sidebar::shell::SIDEBAR_SLIDE_MS;
 use crate::state::reader::ZoomCommand;
 use crate::state::{AppState, ReaderState, SidebarMode};
 
-/// One sidebar slide is long enough for every intermediate container width to
-/// have arrived, so a fire scheduled at the end of it always measures the
-/// finished window. Tied to the aside's own `duration-300` so the two cannot
-/// drift apart.
-const WATCH_DEBOUNCE: Duration = Duration::from_millis(SIDEBAR_SLIDE_MS);
+/// Trailing debounce for a refit or a window constraint. Short enough that a
+/// resize feels immediate, long enough to coalesce the burst of container
+/// sizes a single layout pass can emit.
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(10);
 
 /// Must be called once from the reader shell (ReaderPage).
 pub fn fit_watcher(state: ReaderState, sidebar: RwSignal<SidebarMode>) {
@@ -48,7 +47,9 @@ pub fn fit_watcher(state: ReaderState, sidebar: RwSignal<SidebarMode>) {
     // is one per watcher and disarms itself on cleanup, so a fire cannot
     // land on a reader that has already been disposed.
     let refit = use_debounce(WATCH_DEBOUNCE, move || {
-        state.viewer.zoom.post(ZoomCommand::Refit, true);
+        // Untweened: a fit tracks the window, so it must land in the frame it
+        // was resolved in rather than chase it for the length of a tween.
+        state.viewer.zoom.post(ZoomCommand::Refit, false);
     });
 
     Effect::new(move |_| {
@@ -78,7 +79,7 @@ pub fn fit_watcher(state: ReaderState, sidebar: RwSignal<SidebarMode>) {
 /// `fit_watcher`.
 pub fn resize_watcher(state: AppState) {
     let constrain = use_debounce(WATCH_DEBOUNCE, move || {
-        state.reader.viewer.zoom.post(ZoomCommand::Constrain, true);
+        state.reader.viewer.zoom.post(ZoomCommand::Constrain, false);
     });
 
     Effect::new(move |_| {

@@ -90,19 +90,19 @@ through and text is never doubled.
 - Shrink to fit: when the window is too narrow for the chosen zoom, the page shrinks to the space
   available and remembers the zoom to grow back to once space returns.
 - Every zoom — a button step, a preset, a fit, a window constraint — runs through one transition
-  pipeline, and the view mode picks how it reaches the screen. The horizontal strip relayouts as
-  it goes: its items are rescaled every frame and the virtualizer's own rescale anchor keeps the
-  page under your eyes exactly where it was. Vertical and the page modes scale their content
-  surface with one continuous CSS transform instead, so the document reads as a single sheet of
-  paper being resized, and one commit at the end swaps that transform for real layout at the same
-  size. Either way pages stretch the bitmap they already hold, the crisp re-render happens once at
-  the settled scale, and recently evicted pages linger a moment as zombies so the surface never pops.
-- Fit width and shrink-to-fit are debounced by the sidebar's own slide, so a window resize or a
-  sidebar toggle resolves once against the finished window rather than a dozen times against a
-  half-open one.
+  pipeline. The layout is what animates: the virtualized strips are rescaled every frame and the
+  engine holds the document point under the middle of your window exactly where it was, working
+  gap-aware because page heights scale and the space between pages does not. Pages stretch the
+  bitmap they already hold while the scale moves, the crisp re-render happens once at the settled
+  scale, and recently evicted pages linger a moment as zombies so the surface never pops.
+- The sidebar snaps open and closed rather than sliding, so a toggle reports one new window width
+  instead of thirty; fit width and shrink-to-fit then resolve against the finished window rather
+  than a half-open one.
 - Zooming a horizontal strip keeps its vertical position: the strip is always at least as tall as
   the tallest page, so the overflow — and with it the scroll position — shrinks and grows with the
   zoom instead of resetting.
+- Zooming in at 500 percent, or out at 25 percent, does nothing at all rather than wrapping to the
+  other end of the preset ladder.
 - The reader keeps written motion principles (see ARCHITECTURE.md): no entrance animations on
   document content, no per-frame virtualizer work, one bounded zombie bridge across commits.
 

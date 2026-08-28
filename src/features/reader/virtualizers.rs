@@ -126,11 +126,9 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     );
 
     // Horizontal virtualizer: created unconditionally (hook), bound only when the view mounts.
-    // Both strips estimate from the live DISPLAY scale, which is the scale
-    // the horizontal strip actually relayouts to mid-zoom and is identical
-    // to the committed scale everywhere else (the transform-scaled modes
-    // keep their geometry frozen until the commit, and the two agree at
-    // rest), so the axes can never disagree about how big a page is.
+    // Both strips estimate from the live DISPLAY scale — the scale the
+    // layout is relaid out to as a zoom runs — so the two axes can never
+    // disagree about how big a page is.
     let h_estimate = move |index: usize| {
         state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)

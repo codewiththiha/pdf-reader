@@ -8,18 +8,12 @@
 //! 1. resolves the command to a target (fit and constraint maths live in
 //!    super::target),
 //! 2. opens a transition from the scale on screen right now to that target,
-//!    capturing the document focus and the stage pivot for the modes that
-//!    need them (super::anchor),
-//! 3. tweens the live display scale (super::animation) — relaying the
-//!    horizontal strip's layout out through the engine on every frame, and
-//!    scaling the other modes' content surface through one CSS transform,
-//! 4. and on landing commits the geometry and the render scale and releases
+//! 3. tweens the live display scale (super::animation), relaying the layout
+//!    out through the engine on every frame so the document resizes
+//!    continuously under the reader's eyes,
+//! 4. and on landing brings the render scale onto the target and releases
 //!    the freezes (render suspension, page/scroll synchronisation, geometry
 //!    feedback, scroll echo).
-//!
-//! Which of the two visual paths a zoom takes is the view mode's call, not
-//! the controller's: see `crate::viewer` for why each mode picked the one it
-//! did.
 //!
 //! Around the transaction, the strips' zombie retention grace is raised so
 //! pages a moving window evicts keep their DOM (and their last bitmap)
@@ -33,12 +27,10 @@
 use std::time::Duration;
 
 use leptos::prelude::*;
-use pdf_core::layout::ViewMode;
 
 use crate::state::reader::{ReaderState, ZoomTransition};
 use crate::viewer::engine::ViewerEngine;
 
-use super::anchor;
 use super::animation::Tween;
 use super::config;
 use super::target;
@@ -112,34 +104,17 @@ impl ZoomController {
                 // Already there (or already heading there): nothing to move.
                 return;
             }
-            // The focus and the stage pivot are captured at transaction OPEN
-            // for the modes that scale through a CSS transform — a retarget
-            // keeps the original logical position, so the reader's eyes stay
-            // where they were when the gesture began. The horizontal strip
-            // relayouts continuously and never reads either one.
-            let mode = state.viewer.mode.get_untracked();
-            let (focus, origin) = in_flight
-                .map(|t| (t.focus, t.origin))
-                .unwrap_or_else(|| {
-                    (
-                        anchor::capture_focus(&engine, &state),
-                        anchor::stage_origin(&engine, &state, mode),
-                    )
-                });
             // `from` is the visual scale RIGHT NOW, so a retarget continues
             // from wherever the eye currently is instead of teleporting.
-            // `display` carries that in both designs: the transform-scaled
-            // modes keep it in lock-step with `committed × presentation`,
-            // and for the horizontal strip it is the only value that is true
-            // mid-flight — reading `committed` there would snap a chained
-            // `+ +` back to the last commit.
+            // Nothing about POSITION is captured: the layout relayouts
+            // continuously and the engine holds the reader's view still
+            // itself, frame by frame.
+            let mode = state.viewer.mode.get_untracked();
             zoom.transition.set(Some(ZoomTransition {
                 from: display,
                 to: target,
                 start_ms: js_sys::Date::now(),
                 animate,
-                focus,
-                origin,
             }));
             // Bridge the relayouts before they happen: raise the strips'
             // zombie grace so pages the moving window evicts keep their DOM
@@ -152,30 +127,16 @@ impl ZoomController {
     }
 }
 
-/// Land a transition: commit the geometry where the view mode needs it, bring
-/// every scale onto the target, and release the freezes.
+/// Land a transition: bring the render scale onto the target and release the
+/// freezes.
 ///
-/// The horizontal strip has already been relaid out frame by frame, so there
-/// is nothing left to do but settle the scales. The transform-scaled modes
-/// have been showing the target through a CSS transform over untouched
-/// geometry, so the commit is the one moment their layout, rasters and scroll
-/// move — at the same visual size the transform was already showing.
+/// There is no geometry step left to run. The last tween frame (or the first
+/// frame of an untweened landing) already relayed the layout out to exactly
+/// the target, so all that is left is for the rasters to catch up with the
+/// size the hosts are already showing.
 pub(crate) fn finish_transition(state: &ReaderState, engine: &ViewerEngine, t: &ZoomTransition) {
-    let mode = state.viewer.mode.get_untracked();
-    let is_horizontal = mode == ViewMode::ScrollHorizontal;
-
-    // Transform-scaled modes: replace the transform with real geometry,
-    // against the still-suspended virtualizers, and restore the focus on the
-    // new layout.
-    if !is_horizontal {
-        engine.commit_geometry(state, t.to, &t.focus);
-    }
-    // Every scale agrees at the target: the rasters that mount from here are
-    // crisp at exactly the size the hosts are already showing, and the stage
-    // transform drops out in the same flush that installs the real layout.
     state.viewer.zoom.committed.set(t.to);
     state.viewer.zoom.display.set(t.to);
-    state.viewer.zoom.presentation.set(1.0);
     // Releasing the transition last is what un-freezes page/scroll sync and
     // geometry feedback — everything downstream re-runs against a settled
     // scale, never a half-landed one.

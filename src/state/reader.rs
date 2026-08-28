@@ -161,38 +161,13 @@ pub enum ZoomCommand {
     Constrain,
 }
 
-/// THE zoom focus: where the centre of the page the reader is on sits on
-/// screen — the one position a transform-scaled zoom must give back once the
-/// new geometry exists.
+/// A live zoom transaction: what is animating, from where, to where. Exists
+/// for exactly the duration of the transition; `None` means idle.
 ///
-/// This is PAGE-CENTRIC, not viewport-centric: keeping the viewport centre
-/// fixed lets the page being read drift across the screen during a zoom and
-/// makes the settle feel like a jump forward or back whenever the page was
-/// not perfectly centred. Capturing where the PAGE CENTRE lands (in
-/// viewport pixels) and restoring exactly that means the page stays glued
-/// to one screen pixel through the whole transaction.
-///
-/// The horizontal strip does not use it — it relayouts continuously and its
-/// rescale anchor does the same job without a capture — but the transaction
-/// carries one for every mode so the shape of a zoom is the same everywhere.
-#[derive(Debug, Clone, Copy)]
-pub struct ZoomFocus {
-    /// 1-based page under the reader's eyes (`viewer.page`, never the
-    /// virtualizer's dominant item — that is the value most likely to move
-    /// while a transaction is in flight).
-    pub page: u32,
-    /// The page centre's on-screen x, in CSS px from the viewport's left
-    /// edge at capture time.
-    pub viewport_offset_x: f64,
-    /// The page centre's on-screen y, in CSS px from the viewport's top
-    /// edge at capture time.
-    pub viewport_offset_y: f64,
-}
-
-/// A live zoom transaction: what is animating, from where, to where, and —
-/// for the modes that scale through a CSS transform — the focus and stage
-/// pivot the commit has to restore. Exists for exactly the duration of the
-/// transition; `None` means idle.
+/// There is deliberately no position in here. The layout is rescaled on
+/// every frame of the tween and the engine holds the document point under
+/// the viewport centre exactly where it is, so a transaction has nothing to
+/// remember about where the reader was looking.
 #[derive(Debug, Clone, Copy)]
 pub struct ZoomTransition {
     /// Visual scale the tween started from, so a retarget continues from
@@ -204,37 +179,22 @@ pub struct ZoomTransition {
     pub start_ms: f64,
     /// Whether the visual scale should tween; `false` lands on the first frame.
     pub animate: bool,
-    /// The document focus captured when the transaction opened. Chained
-    /// commands (a burst of `+` presses, a sidebar slide) reuse the original
-    /// focus rather than recapturing mid-flight.
-    pub focus: ZoomFocus,
-    /// The stage point (main, cross; px in content coordinates) that sits
-    /// under the viewport centre, pinned there by the presentation
-    /// transform for the duration of the tween.
-    pub origin: (f64, f64),
 }
 
 /// The zoom pipeline scales, one type so they cannot drift apart across
-/// modules. Three absolute scales plus one ratio:
+/// modules. Three absolute scales, no ratios:
 ///
 /// - `desired` is what the reader asked for, independent of whether it
 ///   currently fits (the shrink-to-fit ceiling reads it, the readout tooltip
 ///   explains it).
 /// - `display` is the live visual scale — the scale the reader is looking at
-///   right now. It moves on every frame of a zoom in every mode, and it is
-///   what the readout, the fit maths and the overlays read.
-/// - `committed` is the scale the layout and the mounted rasters are at. It
-///   jumps exactly once per zoom transaction, when the transition commits,
-///   and it is the only scale a page render is issued at.
-/// - `presentation` is a RATIO against `committed` (1.0 at rest), and only
-///   the transform-scaled modes move it. It scales the vertical strip's
-///   content surface through one CSS transform, so that mode's layout is
-///   never touched mid-zoom.
+///   right now. It moves on every frame of a zoom, and it is what the readout,
+///   the fit maths, the page hosts and the overlays read.
+/// - `committed` is the scale the mounted rasters are crisp at. It jumps
+///   exactly once per zoom transaction, when the transition commits, and it
+///   is the only scale a page render is issued at.
 ///
-/// Which of the two the visual change travels through depends on the view
-/// mode — see `crate::viewer::zoom` for the split.
-///
-/// A fifth signal, `transition`, carries the in-flight transaction (and its
+/// A fourth signal, `transition`, carries the in-flight transaction (and its
 /// absence is what "not zooming" means). Commands queue on `commands`; the
 /// controller is their only consumer.
 #[derive(Clone, Copy)]
@@ -242,14 +202,11 @@ pub struct ZoomState {
     /// The zoom the reader asked for, independent of whether it currently
     /// fits the window.
     pub desired: RwSignal<f64>,
-    /// The live visual scale. Moves every frame of a zoom, in every mode.
+    /// The live visual scale. Moves every frame of a zoom, and the layout
+    /// relayouts to it as it moves.
     pub display: RwSignal<f64>,
-    /// The presentation ratio against `committed` (1.0 at rest). Drives the
-    /// CSS transform on the vertical strip's content surface; the horizontal
-    /// strip relayouts instead and leaves this at 1.0.
-    pub presentation: RwSignal<f64>,
-    /// The scale layout and rasters are committed at. Changes once per zoom
-    /// transaction.
+    /// The scale the mounted rasters are crisp at (page renders). Changes
+    /// once per zoom transaction.
     pub committed: RwSignal<f64>,
     /// The in-flight transition, if any. While present, page/scroll
     /// synchronisation and geometry feedback are frozen.
@@ -278,11 +235,10 @@ impl ZoomState {
 
     /// Seed every scale for a freshly opened document: no transition, no
     /// layout to animate from, the live scale and the rasters already in
-    /// agreement and the presentation stage at rest.
+    /// agreement.
     pub fn initialize(&self, scale: f64) {
         self.desired.set(scale);
         self.display.set(scale);
-        self.presentation.set(1.0);
         self.committed.set(scale);
         self.transition.set(None);
     }
@@ -293,7 +249,6 @@ impl Default for ZoomState {
         Self {
             desired: RwSignal::new(1.0),
             display: RwSignal::new(1.0),
-            presentation: RwSignal::new(1.0),
             committed: RwSignal::new(1.0),
             transition: RwSignal::new(None),
             commands: RwSignal::new(None),

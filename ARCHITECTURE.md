@@ -33,22 +33,21 @@ The app uses the adapter and keeps only app-specific policy locally:
 - page rendering, text/search overlays, and chrome
 - measurement storage in `css_heights`
 
-`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled by the viewer engine — every frame in the horizontal strip, once at the commit in the others. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
+`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled by the viewer engine on every frame of a zoom. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
 
 ## Reader motion principles
 
-1. How a zoom reaches the screen is the view mode's choice, because the two
-   scroll modes are laid out by different machinery. Both write the same
-   live display scale, so nothing downstream has to know which one ran.
-2. HORIZONTAL animates the LAYOUT: every frame rescales the strip through the
-   viewer engine, and the virtualizer's own rescale anchor holds the reader's
-   view steady while the item sizes underneath it move. Nothing is captured
-   before the zoom and nothing is restored after it.
-3. VERTICAL and the PAGINATED modes animate ONE continuous CSS transform of
-   the whole content surface (the zoom stage), pivoted on the centre of the
-   page being read. Their layout is untouched for the whole tween; the commit
-   replaces the transform with real geometry at exactly the same visual size
-   and restores that page centre on the same screen pixel.
+1. Zoom animates the LAYOUT. Every frame of the tween rescales the strips
+   through the viewer engine, so the document genuinely resizes under the
+   reader's eyes.
+2. The engine holds the document point under the viewport centre exactly
+   where it is while it does so — computed gap-aware, because page heights
+   scale and the gap between pages does not. Nothing is captured before a
+   zoom and nothing is restored after it.
+3. Zoom never scales a frozen surface with a CSS transform. A transform
+   scales the page gaps along with the pages, the layout deliberately does
+   not, and the whole accumulated difference lands at once when the transform
+   is swapped for real geometry — which reads as the document jumping.
 4. Page hosts stretch the bitmap they already hold. Nothing re-rasterises
    while the scale is moving; the crisp render is issued once, at the settled
    scale, when the transition commits.
@@ -69,7 +68,7 @@ The app uses the adapter and keeps only app-specific policy locally:
 2. `PageList` binds the scroll container, renders `v.items()`, and reports measured page heights back into both `css_heights` and the virtualizer.
 3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
-5. Zoom runs through one controller: commands resolve to a target, and the tween drives the live display scale frame by frame — relaying the horizontal strip's layout out through the engine, or scaling the other modes' content surface through one CSS transform — before one commit installs the geometry and the render scale.
+5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the engine frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
 
 ## Thumbnail panel flow
 

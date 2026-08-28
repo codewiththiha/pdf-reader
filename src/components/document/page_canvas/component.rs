@@ -9,14 +9,11 @@
 //!
 //! TWO EFFECTS, deliberately separated (see the zoom controller):
 //!
-//!   * the STRETCH effect follows the `scale` prop — the live VISUAL scale,
-//!     which callers pick per axis: the horizontal strip wires it to
-//!     `viewer.zoom.display` because it relayouts as the scale moves, while
-//!     the vertical strip and the paginated modes wire it to
-//!     `viewer.zoom.committed` and let a CSS transform on their content
-//!     surface carry the zoom instead. It only ever resizes the host so the
-//!     bitmap we already have CSS-stretches to the new size; it never
-//!     triggers a render.
+//!   * the STRETCH effect follows the `scale` prop — which callers wire to
+//!     `viewer.zoom.display`, the live VISUAL scale. It only ever resizes the
+//!     host so the bitmap we already have CSS-stretches to the new size. It
+//!     runs every frame of a zoom and never triggers a render; the crisp
+//!     rasterisation is a separate effect on the committed scale.
 //!   * the RENDER effect follows `viewer.zoom.committed` and is suspended
 //!     while a zoom transition is in flight (the `zoom_animating` prop). It
 //!     produces the one crisp rasterisation at the end of a gesture.
