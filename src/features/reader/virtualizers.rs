@@ -12,6 +12,7 @@ use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 use pdf_core::layout::RENDER_BUDGET;
 
 use crate::state::ReaderState;
+use crate::viewer::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
 
 /// The handles `ReaderPage` hands to the viewer components and effects. Both
 /// virtualizers always exist (they are hooks); a view binds only the one for
@@ -111,13 +112,17 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             800.0
         }
     };
+    // Zombie retention: an item that leaves the window mid-fling (or in a
+    // zoom's geometry commit — the controller raises the grace for that)
+    // keeps its DOM briefly instead of popping out.
     let virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, estimate)
             .gap(0.0)
             .budget(RENDER_BUDGET)
             .initial(Viewport::main_only(initial_vh), 0.0)
             .pinned(pinned_sig.into())
-            .epoch(epoch),
+            .epoch(epoch)
+            .retention(STRIP_SCROLL_GRACE_MS, MAX_ZOMBIES),
     );
 
     // Horizontal virtualizer: created unconditionally (hook), bound only when the view mounts.
@@ -137,7 +142,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             .budget(RENDER_BUDGET)
             .padding(0.0, 0.0)
             .initial(Viewport::new(1200.0, initial_vh), 0.0)
-            .epoch(epoch),
+            .epoch(epoch)
+            .retention(STRIP_SCROLL_GRACE_MS, MAX_ZOMBIES),
     );
     let h_virtualizer_view = StoredValue::new_local(h_virtualizer.clone());
 

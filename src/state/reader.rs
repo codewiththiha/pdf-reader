@@ -161,13 +161,14 @@ pub enum ZoomCommand {
     Constrain,
 }
 
-/// Where the reader's eyes are, in document coordinates — the position a
-/// zoom must give back once the new geometry exists. Page-relative and
-/// fraction-based, never pixel-absolute, so it survives pages mounting and
-/// unmounting and every intermediate scale of the animation.
+/// THE zoom focus: where the reader's eyes are, in document coordinates —
+/// the one position a zoom must give back once the new geometry exists.
+/// Page-relative and fraction-based, never pixel-absolute, so it survives
+/// pages mounting and unmounting and every intermediate scale of the
+/// animation.
 #[derive(Debug, Clone, Copy)]
-pub struct ZoomAnchor {
-    /// 1-based page the viewport is anchored to (`viewer.page`, never the
+pub struct ZoomFocus {
+    /// 1-based page under the viewport centre (`viewer.page`, never the
     /// virtualizer's dominant item — that is the value most likely to move
     /// while a transaction is in flight).
     pub page: u32,
@@ -180,13 +181,15 @@ pub struct ZoomAnchor {
     pub cross_fraction: f64,
 }
 
-/// A live zoom transaction: what is animating, from where, to where, and
-/// the document anchor that must be restored when geometry commits. Exists
-/// for exactly the duration of the transition; `None` means idle.
+/// A live zoom transaction: what is animating, from where, to where, the
+/// focus that must be restored at commit, and where the presentation stage
+/// pivots. Exists for exactly the duration of the transition; `None` means
+/// idle.
 #[derive(Debug, Clone, Copy)]
 pub struct ZoomTransition {
-    /// Scale the tween started from — the live visual scale at post time, so
-    /// a retarget continues from wherever the eye currently is.
+    /// Visual scale the tween started from — the presentation ratio at post
+    /// time times the committed scale, so a retarget continues from
+    /// wherever the eye currently is.
     pub from: f64,
     /// Resolved target scale.
     pub to: f64,
@@ -194,24 +197,32 @@ pub struct ZoomTransition {
     pub start_ms: f64,
     /// Whether the visual scale should tween; `false` lands on the first frame.
     pub animate: bool,
-    /// Document anchor captured when the transaction opened. Chained
+    /// The one document focus captured when the transaction opened. Chained
     /// commands (a burst of `+` presses, a sidebar slide) reuse the original
-    /// anchor rather than recapturing mid-flight.
-    pub anchor: ZoomAnchor,
+    /// focus rather than recapturing mid-flight.
+    pub focus: ZoomFocus,
+    /// The stage point (main, cross; px in content coordinates) that sits
+    /// under the viewport centre, pinned there by the presentation
+    /// transform for the duration of the tween.
+    pub origin: (f64, f64),
 }
 
 /// The zoom pipeline scales, one type so they cannot drift apart across
-/// modules. Three signals with three distinct meanings:
+/// modules. Two absolute scales, one presentation ratio:
 ///
 /// - `desired` is what the reader asked for, independent of whether it
 ///   currently fits (the shrink-to-fit ceiling reads it, the readout tooltip
 ///   explains it).
-/// - `current` is the live visual scale: it animates every frame of a zoom
-///   and drives the page presentation (the CSS stretch of the existing
-///   bitmaps). It is the only scale that moves during an animation.
-/// - `committed` is the scale the geometry and rasters are laid out at:
-///   virtualizer sizes, `css_heights`, and the crisp render scale. It jumps
-///   exactly once per zoom transaction, when the transition commits.
+/// - `committed` is the scale geometry and rasters are laid out at:
+///   virtualizer sizes, `css_heights`, page hosts, and the crisp render
+///   scale. It jumps exactly once per zoom transaction, when the transition
+///   commits.
+/// - `presentation` is a RATIO against `committed` (1.0 at rest), never an
+///   absolute page scale. During a zoom it scales the whole document
+///   surface — every page, gap and edge together — through one CSS
+///   transform on the presentation stage, so no page's layout box moves
+///   mid-zoom. Visual only: it feeds no geometry, no measurement, no
+///   render.
 ///
 /// A fourth signal, `transition`, carries the in-flight transaction (and
 /// its absence is what "not zooming" means). Commands queue on `commands`;
@@ -221,8 +232,9 @@ pub struct ZoomState {
     /// The zoom the reader asked for, independent of whether it currently
     /// fits the window.
     pub desired: RwSignal<f64>,
-    /// The scale the viewer visually shows right now (animates mid-zoom).
-    pub current: RwSignal<f64>,
+    /// The presentation ratio against `committed` (1.0 at rest). Scales the
+    /// zoom stage visually; never resizes a page or moves geometry.
+    pub presentation: RwSignal<f64>,
     /// The scale geometry and rasters are committed at (virtualizer sizes,
     /// page renders). Changes once per zoom transaction.
     pub committed: RwSignal<f64>,
@@ -252,10 +264,11 @@ impl ZoomState {
     }
 
     /// Seed every scale for a freshly opened document: no transition, no
-    /// layout to animate from, all three scales in agreement.
+    /// layout to animate from, the scale committed and the presentation
+    /// stage at rest.
     pub fn initialize(&self, scale: f64) {
         self.desired.set(scale);
-        self.current.set(scale);
+        self.presentation.set(1.0);
         self.committed.set(scale);
         self.transition.set(None);
     }
@@ -265,7 +278,7 @@ impl Default for ZoomState {
     fn default() -> Self {
         Self {
             desired: RwSignal::new(1.0),
-            current: RwSignal::new(1.0),
+            presentation: RwSignal::new(1.0),
             committed: RwSignal::new(1.0),
             transition: RwSignal::new(None),
             commands: RwSignal::new(None),

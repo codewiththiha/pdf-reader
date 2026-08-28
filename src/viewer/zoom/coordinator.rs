@@ -7,18 +7,26 @@
 //!
 //! 1. resolves the command to a target (fit and constraint maths live in
 //!    super::target),
-//! 2. captures the document anchor once per transaction
-//!    (super::anchor) — a chained or retargeted transition reuses the
-//!    original anchor, never a mid-flight recapture,
-//! 3. tweens the visual scale only (super::animation),
-//! 4. and on landing commits the geometry once, restores the anchor, and
-//!    releases the freezes (render suspension, page/scroll synchronisation,
-//!    geometry feedback, scroll echo).
+//! 2. captures the ONE document focus and the stage pivot once per
+//!    transaction (super::anchor) — a chained or retargeted transition
+//!    reuses them, never a mid-flight recapture,
+//! 3. tweens the PRESENTATION RATIO only (super::animation): one linear CSS
+//!    transform scales the whole document surface; the virtualizer does not
+//!    participate in the visual zoom at all,
+//! 4. and on landing commits the geometry exactly once, restores the focus,
+//!    and releases the freezes (render suspension, page/scroll
+//!    synchronisation, geometry feedback, scroll echo).
+//!
+//! Around the commit, the strips' zombie retention grace is raised so pages
+//! evicted by the geometry change keep their DOM (and their last bitmap)
+//! briefly — the bridge that makes the commit invisible.
 //!
 //! Because the controller is created with the reader page and lives exactly
 //! as long as its reactive owner, there is no global registry to leak or
 //! race: the old thread-local `CUR_ZOOM` registration is gone, and the
 //! free-function `request_zoom` entry points with it.
+
+use std::time::Duration;
 
 use leptos::prelude::*;
 
@@ -27,6 +35,7 @@ use crate::viewer::engine::ViewerEngine;
 
 use super::anchor;
 use super::animation::Tween;
+use super::config;
 use super::target;
 
 /// Scales closer than this are the same scale: a refit that lands within a
@@ -98,35 +107,50 @@ impl ZoomController {
                 // Already there (or already heading there): nothing to move.
                 return;
             }
-            // The anchor is captured at transaction OPEN. A retarget keeps
-            // the original logical position — the reader's eyes stay where
-            // they were when the gesture began.
-            let anchor = in_flight
-                .map(|t| t.anchor)
-                .unwrap_or_else(|| anchor::capture(&engine, &state));
+            // The focus and the stage pivot are captured at transaction
+            // OPEN. A retarget keeps the original logical position — the
+            // reader's eyes stay where they were when the gesture began.
+            let mode = state.viewer.mode.get_untracked();
+            let (focus, origin) = in_flight
+                .map(|t| (t.focus, t.origin))
+                .unwrap_or_else(|| (anchor::capture_focus(&engine, &state), anchor::stage_origin(mode)));
+            // `from` is the visual scale RIGHT NOW: the presentation ratio
+            // times the committed scale, so a retarget continues from
+            // wherever the eye currently is instead of teleporting.
+            let from = zoom.committed.get_untracked() * zoom.presentation.get_untracked();
             zoom.transition.set(Some(ZoomTransition {
-                from: zoom.current.get_untracked(),
+                from,
                 to: target,
                 start_ms: js_sys::Date::now(),
                 animate,
-                anchor,
+                focus,
+                origin,
             }));
+            // Bridge the commit before it happens: raise the strips' zombie
+            // grace so pages the geometry change evicts keep their DOM past
+            // the animation's end.
+            let retention = config::profile_for(mode).retention;
+            engine.vertical.set_retention_grace(retention.grace_ms);
+            engine.horizontal.set_retention_grace(retention.grace_ms);
             tween.arm(state, engine.clone());
         });
     }
 }
 
-/// Land a transition: one geometry commit at the target, the anchor put
+/// Land a transition: one geometry commit at the target, the focus put
 /// back, the freezes released. Runs from the tween loop's final frame (or
 /// its first frame, for an untweened landing).
 pub(crate) fn finish_transition(state: &ReaderState, engine: &ViewerEngine, t: &ZoomTransition) {
     // Geometry first, against the still-suspended virtualizers: sizes, one
-    // rescale per strip, the anchor restored on the new layout.
-    engine.commit_geometry(state, t.to, &t.anchor);
-    // Then the scales, so the presentation, the readout and the render
-    // pipeline all move to the target together.
-    state.viewer.zoom.current.set(t.to);
+    // rescale per strip, the focus restored on the new layout (the restore
+    // itself is one explicit synchronisation step inside the commit).
+    engine.commit_geometry(state, t.to, &t.focus);
+    // Then the scales. The presentation ratio drops back to 1.0 in the same
+    // flush that installs the target geometry and stretches the mounted
+    // hosts to it, so the transform is replaced by real geometry at the
+    // same visual size — the commit is imperceptible by construction.
     state.viewer.zoom.committed.set(t.to);
+    state.viewer.zoom.presentation.set(1.0);
     // Releasing the transition last is what un-freezes page/scroll sync and
     // geometry feedback — everything downstream re-runs against the new
     // committed geometry, never against a half-landed one.
@@ -134,4 +158,21 @@ pub(crate) fn finish_transition(state: &ReaderState, engine: &ViewerEngine, t: &
     // Nothing renders inside a transaction; sweep the rasters now that the
     // commit pass has issued its renders.
     pdf_engine::api::sweep();
+    // The zombies that shielded this commit keep their raised grace until
+    // it expires; only the GRACE resets here (their expiry was fixed when
+    // they were evicted). Guarded so a new transaction that opened in the
+    // meantime is not stepped on — its own finish will reschedule.
+    let grace = config::profile_for(state.viewer.mode.get_untracked()).retention.grace_ms;
+    let v = engine.vertical.clone();
+    let hv = engine.horizontal.clone();
+    let zoom = state.viewer.zoom;
+    let _ = set_timeout_with_handle(
+        move || {
+            if zoom.transition.get_untracked().is_none() {
+                v.reset_retention_grace();
+                hv.reset_retention_grace();
+            }
+        },
+        Duration::from_millis(grace as u64),
+    );
 }

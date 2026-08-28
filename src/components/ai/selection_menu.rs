@@ -37,7 +37,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
 
     let watch = watch_page_anchor(
         Signal::derive(move || state.reader.ai_selection.anchor.get()),
-        state.reader.viewer.zoom.current.into(),
+        state.reader.viewer.zoom.committed.into(),
         state.reader.viewer.mode.into(),
         state.reader.viewer.scroll_top.into(),
         state.reader.viewer.page.into(),
@@ -108,7 +108,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                         let Some(sel) = detail.get_untracked() else {
                             return;
                         };
-                        let scale = state.reader.viewer.zoom.current.get_untracked();
+                        let scale = state.reader.viewer.zoom.committed.get_untracked();
                         // Prefer the page-space anchor captured with the
                         // selection; fall back to a live DOM capture.
                         let mark = state

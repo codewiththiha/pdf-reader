@@ -35,13 +35,35 @@ The app uses the adapter and keeps only app-specific policy locally:
 
 `css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled exactly once per zoom transaction (when the transition commits). Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
 
+## Reader motion principles
+
+1. Zoom animates ONE linear, continuous transform of the whole document
+   surface (the zoom stage). No easing — a constant-velocity resize is what
+   makes the final commit visually imperceptible.
+2. Zoom never animates individual page layout boxes; page hosts are sized at
+   the committed scale and nothing else.
+3. Virtualizer geometry never changes mid-zoom. The virtualizer participates
+   only in the start snapshot and the final geometry commit.
+4. The virtualizer's window never drives the page number mid-zoom.
+5. A zoom commit performs exactly one geometry update, then one explicit
+   scroll synchronisation step.
+6. Recently evicted virtual items become zombies briefly (bounded set,
+   grace longer than the tween), bridging the window across the commit.
+7. Zombie items never trigger a new PDF render; they keep their DOM and
+   their last bitmap until their grace expires.
+8. Page turns and reader surfaces (popovers, search, toasts) do not
+   fade, slide or bounce in — document content appears instantly.
+9. Layout chrome (the sidebar width, overlays) may use short STRUCTURAL CSS
+   transitions; decorative entrance keyframes do not come back.
+10. Rerenders happen only at transaction boundaries, never per frame.
+
 ## Continuous reader flow
 
 1. `ReaderPage` builds one `Virtualizer` for the continuous surface.
 2. `PageList` binds the scroll container, renders `v.items()`, and reports measured page heights back into both `css_heights` and the virtualizer.
 3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
-5. Zoom runs through one controller: commands resolve to a target, a page-relative anchor is captured, the visual scale tweens by stretching the existing bitmaps, and a single commit rescales `css_heights` and the virtualizer and restores the anchor — so anchoring and mounted windows stay in sync without per-frame relayouts.
+5. Zoom runs through one controller: commands resolve to a target, the one focus and stage pivot are captured, the presentation stage scales the whole surface linearly while the virtualizer freezes, and a single commit rescales `css_heights` and the virtualizer and restores the focus — no per-frame relayouts, no per-page animation.
 
 ## Thumbnail panel flow
 

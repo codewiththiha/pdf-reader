@@ -40,7 +40,7 @@ fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
         "#thumb-scroll",
         "aside",
         ".menu-popover",
-        ".floating-search-enter",
+        "[data-search-chrome]",
     ] {
         if el.closest(sel).ok().flatten().is_some() {
             return true;

@@ -54,7 +54,7 @@ pub fn use_card_targeting(state: AppState, ctrl: GlossController) -> CardTargeti
     // height (or leaves the top, or its page unmounts).
     let watch = watch_page_anchor(
         Signal::derive(move || ctrl.open.mark.get().map(|m| PageAnchor::from_mark(&m))),
-        state.reader.viewer.zoom.current.into(),
+        state.reader.viewer.zoom.committed.into(),
         state.reader.viewer.mode.into(),
         state.reader.viewer.scroll_top.into(),
         state.reader.viewer.page.into(),

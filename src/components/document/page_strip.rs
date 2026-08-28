@@ -6,6 +6,13 @@
 //! the virtualizer's `item_top`, and reporting the rendered main-axis size
 //! back into the virtualizer's size model.
 //!
+//! The strip is pure presentation, and during a zoom that is literal: the
+//! content wrapper below the scroller is the ZOOM STAGE. A zoom transaction
+//! scales it with one CSS transform pivoted under the viewport centre, so
+//! the document reads as one continuous surface being resized — no page's
+//! layout box moves, no gaps open between pages, the virtualizer's geometry
+//! stays at the committed scale until the transaction's single commit.
+//!
 //! The strip is pure presentation. It owns no scroll policy, no wheel
 //! translation, no container binding — those live in [`ScrollShell`], which
 //! creates the scroller element this strip draws into. The page-host ids keep
@@ -15,7 +22,7 @@
 use leptos::html;
 use leptos::prelude::*;
 use pdf_core::layout::{Axis, TOOLBAR_H};
-use virtual_list_leptos::{VirtualItem, Virtualizer};
+use virtual_list_leptos::{VirtualItem, VirtualItemState, Virtualizer};
 
 use crate::components::document::PageCanvas;
 use crate::components::document::page_canvas::component::GlossOverlayProps;
@@ -35,26 +42,50 @@ pub fn PageStrip(
 
     let v = virtualizer;
     let handle = StoredValue::new_local(v.clone());
-    // The DISPLAY scale: the live visual value that animates frame by frame
-    // during a zoom. It sizes the stretched presentation of the bitmap each
-    // host already holds; the strip's geometry stays at the committed scale
-    // until the transaction's single commit lands.
-    let display_scale = state.viewer.zoom.current.read_only();
+    // The GEOMETRY scale. Page hosts are sized, stretched and rasterised at
+    // the committed scale and NOTHING else: a zoom never touches a page's
+    // layout box — it scales the whole stage (below) until the transaction
+    // commits, and the commit itself is the one moment `committed` moves.
+    let page_scale = state.viewer.zoom.committed.read_only();
     let gesture_owns = state.viewer.gesture_owns();
     let items = v.items();
     let total_size = v.total_size();
 
     // Horizontal-only: the strip is at least as tall as the tallest page at
-    // the live layout scale, so a zoom past fit-height yields real vertical
-    // scroll range. Only read for the horizontal branch, but cheap either way.
+    // the committed scale, so a zoom past fit-height yields real vertical
+    // scroll range. Geometry, so it follows `committed`, never the stage.
     let strip_h = Memo::new(move |_| {
-        let scale = state.viewer.zoom.current.get();
+        let scale = state.viewer.zoom.committed.get();
         let tallest = state
             .document
             .metrics
             .intrinsic
             .with(|pages| pages.iter().map(|p| p.height).fold(0.0, f64::max));
         tallest * scale
+    });
+
+    // The ZOOM STAGE transform: the presentation ratio applied to the whole
+    // content surface, pivoted under the viewport centre (captured when the
+    // transaction opened). Absent at rest — an identity transform would
+    // needlessly hold a compositor layer forever.
+    let presentation = state.viewer.zoom.presentation;
+    let transition = state.viewer.zoom.transition;
+    let stage_transform = Signal::derive(move || {
+        let ratio = presentation.get();
+        if (ratio - 1.0).abs() < 1e-9 {
+            return None;
+        }
+        let t = transition.get_untracked()?;
+        let origin = match axis {
+            // Vertical: the surface is full-width; the pivot is the
+            // captured main-axis point, horizontally centred.
+            Axis::Vertical => format!("50% {}px", t.origin.1),
+            // Horizontal: both axes scroll; pivot on the captured pair.
+            Axis::Horizontal => format!("{}px {}px", t.origin.0, t.origin.1),
+        };
+        Some(format!(
+            "transform-origin:{origin};transform:scale({ratio});will-change:transform"
+        ))
     });
 
     let scroller_class = match axis {
@@ -111,16 +142,27 @@ pub fn PageStrip(
             {match axis {
                 Axis::Vertical => {
                     let handle = handle.clone();
+                    let each_items = items.clone();
                     view! {
-                        <div class="relative" style=format!("margin-top:{TOOLBAR_H}px")>
+                        <div
+                            class="relative"
+                            style=move || {
+                                let base = format!("margin-top:{TOOLBAR_H}px");
+                                match stage_transform.get() {
+                                    Some(stage) => format!("{base};{stage}"),
+                                    None => base,
+                                }
+                            }
+                        >
                             <div aria-hidden="true" style:height=move || format!("{}px", total_size.get())></div>
                             <For
-                                each=move || items.get()
+                                each=move || each_items.get()
                                 key=|item: &VirtualItem| item.index
                                 children=move |item: VirtualItem| {
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let top = handle.with_value(|v| v.item_top(index));
+                                    let dormant = dormant_signal(items.clone(), index);
                                     let style = move || format!(
                                         "position:absolute;top:{}px;left:0;right:0;display:flex;justify-content:center;padding-inline:{}px",
                                         top.get(), state.viewer.page_margin.get()
@@ -129,9 +171,10 @@ pub fn PageStrip(
                                         <div id=wrapper_id(Axis::Vertical, index, page) style=style>
                                             <PageCanvas
                                                 page=page
-                                                scale=display_scale
+                                                scale=page_scale
                                                 render_scale=state.viewer.zoom.committed
                                                 zoom_animating=state.viewer.zooming()
+                                                dormant=dormant
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=format!("cont-{index}-cv")
@@ -149,19 +192,30 @@ pub fn PageStrip(
                 }
                 Axis::Horizontal => {
                     let handle = handle.clone();
+                    let each_items = items.clone();
                     view! {
                         <div
                             class="relative"
-                            style:width=move || format!("{}px", total_size.get())
-                            style:height=move || format!("max(100%, {}px)", strip_h.get().ceil())
+                            style=move || {
+                                let base = format!(
+                                    "width:{}px;height:max(100%, {}px)",
+                                    total_size.get(),
+                                    strip_h.get().ceil()
+                                );
+                                match stage_transform.get() {
+                                    Some(stage) => format!("{base};{stage}"),
+                                    None => base,
+                                }
+                            }
                         >
                             <For
-                                each=move || items.get()
+                                each=move || each_items.get()
                                 key=|item: &VirtualItem| item.index
                                 children=move |item: VirtualItem| {
                                     let index = item.index;
                                     let page = (index + 1) as u32;
                                     let left = handle.with_value(|v| v.item_top(index));
+                                    let dormant = dormant_signal(items.clone(), index);
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     let style = move || format!(
@@ -172,9 +226,10 @@ pub fn PageStrip(
                                         <div id=wrapper_id(Axis::Horizontal, index, page) style=style>
                                             <PageCanvas
                                                 page=page
-                                                scale=display_scale
+                                                scale=page_scale
                                                 render_scale=state.viewer.zoom.committed
                                                 zoom_animating=state.viewer.zooming()
+                                                dormant=dormant
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=format!("hp-{page}-cv")
@@ -202,4 +257,17 @@ fn wrapper_id(axis: Axis, index: usize, page: u32) -> String {
         Axis::Vertical => format!("cont-{index}-wrap"),
         Axis::Horizontal => format!("hp-{page}-wrap"),
     }
+}
+
+/// Whether one mounted item is currently a RETAINED ZOMBIE — freshly evicted
+/// from the window and bridged by the virtualizer's retention grace. A
+/// zombie page keeps its DOM and its last bitmap; it must not start new
+/// expensive work (a crisp re-render) for the few frames it has left.
+fn dormant_signal(items: Signal<Vec<VirtualItem>, LocalStorage>, index: usize) -> Signal<bool, LocalStorage> {
+    Signal::derive_local(move || {
+        items
+            .get()
+            .iter()
+            .any(|item| item.index == index && item.state == VirtualItemState::Zombie)
+    })
 }

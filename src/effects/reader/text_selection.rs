@@ -37,7 +37,7 @@ pub fn text_selection(state: AppState) {
             let detail = ev.detail();
             match parse_selection_detail(&detail) {
                 Some(selection) => {
-                    let scale = state.reader.viewer.zoom.current.get_untracked();
+                    let scale = state.reader.viewer.zoom.committed.get_untracked();
                     let anchor = capture_selection(scale);
                     state.reader.ai_selection.anchor.set(anchor);
                     state.reader.ai_selection.detail.set(Some(selection));

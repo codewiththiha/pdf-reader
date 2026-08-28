@@ -14,7 +14,7 @@ use pdf_core::layout::ViewMode;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::components::primitives::hooks::dom::h_page_list;
-use crate::state::reader::{ZoomAnchor, ReaderState};
+use crate::state::reader::{ReaderState, ZoomFocus};
 use crate::viewer::zoom::anchor;
 
 /// Wraps the reader's two strip virtualizers and centralises the viewer's
@@ -35,19 +35,27 @@ impl ViewerEngine {
     }
 
     /// Commit one zoom transaction's geometry: move every strip's item
-    /// sizes from the committed scale to `target`, then put the anchor back
+    /// sizes from the committed scale to `target`, then put the focus back
     /// on the new layout.
     ///
     /// This runs once, when a transition lands. It is deliberately NOT part
     /// of the animation: during the tween the virtualizers keep the old
     /// geometry (the mounted window cannot churn, the dominant item cannot
-    /// move), the pages stretch visually through the display scale, and
-    /// this single commit moves geometry, rasters and scroll together.
+    /// move) while the presentation stage scales the whole surface
+    /// visually; this single commit moves geometry, rasters and scroll
+    /// together.
     ///
     /// Scroll restoration is document-logical, not pixel arithmetic: the
-    /// anchor names a page and fractions through it, so it stays correct
+    /// focus names a page and fractions through it, so it stays correct
     /// even though the intermediate scale never had a consistent geometry.
-    pub fn commit_geometry(&self, state: &ReaderState, target: f64, anchor: &ZoomAnchor) {
+    ///
+    /// The physical scroll write is ONE explicit synchronisation step, one
+    /// frame later: `rescale`'s own write happens before Leptos has patched
+    /// the spacer to the new extent, so the browser clamps it against the
+    /// old scroll range. Rescale's centre pin and the focus are the same
+    /// point, so the intermediate frame is already visually right; the
+    /// single deferred write refines it to the exact fractional offset.
+    pub fn commit_geometry(&self, state: &ReaderState, target: f64, focus: &ZoomFocus) {
         let from = state.viewer.zoom.committed.get_untracked();
         let factor = target / from;
         if !factor.is_finite() || factor <= 0.0 || (factor - 1.0).abs() < 1e-12 {
@@ -87,17 +95,17 @@ impl ViewerEngine {
             });
         }
 
-        // With the new layout in place, restore the reader's position.
+        // With the new layout in place, restore the reader's position in
+        // ONE deferred synchronisation step (see the method docs): the
+        // spacer must have laid out at the new extent before the exact
+        // offset — main axis, and the horizontal strip's cross axis — can
+        // be written without the browser clamping it away.
         let count = state.document.num_pages.get_untracked() as usize;
-        let index = anchor.page.saturating_sub(1) as usize;
+        let index = focus.page.saturating_sub(1) as usize;
         match state.viewer.mode.get_untracked() {
             ViewMode::ScrollVertical => {
-                let offset = anchor::restore_offset(&self.vertical, index, count, anchor.main_fraction);
-                self.vertical.scroll_to_offset(offset, ScrollMode::Instant);
-                // The scroller's scrollHeight only catches up when Leptos
-                // patches the spacer, so the browser clamped the synchronous
-                // write to the still-short old height. Re-assert one frame
-                // later, once the spacer has actually laid out.
+                let offset =
+                    anchor::restore_offset(&self.vertical, index, count, focus.main_fraction);
                 let v = self.vertical.clone();
                 request_animation_frame(move || {
                     v.scroll_to_offset(offset, ScrollMode::Instant);
@@ -105,23 +113,20 @@ impl ViewerEngine {
             }
             ViewMode::ScrollHorizontal => {
                 let offset =
-                    anchor::restore_offset(&self.horizontal, index, count, anchor.main_fraction);
-                self.horizontal.scroll_to_offset(offset, ScrollMode::Instant);
-                let hv = self.horizontal.clone();
-                request_animation_frame(move || {
-                    hv.scroll_to_offset(offset, ScrollMode::Instant);
-                });
+                    anchor::restore_offset(&self.horizontal, index, count, focus.main_fraction);
                 // Cross axis: carry the captured fraction into the new
                 // overflow band. Zooming out lets the position ease to 0 as
                 // the band shrinks; zooming back in returns it. The old
                 // `scrollTop = 0` reset at the overflow boundary — the bug
                 // that threw the reader's vertical position away at minimum
                 // zoom — has no equivalent here.
-                let fraction = anchor.cross_fraction;
+                let cross = focus.cross_fraction;
+                let hv = self.horizontal.clone();
                 request_animation_frame(move || {
+                    hv.scroll_to_offset(offset, ScrollMode::Instant);
                     if let Some(el) = h_page_list() {
                         let max = (el.scroll_height() as f64 - el.client_height() as f64).max(0.0);
-                        el.set_scroll_top((fraction * max) as i32);
+                        el.set_scroll_top((cross * max) as i32);
                     }
                 });
             }

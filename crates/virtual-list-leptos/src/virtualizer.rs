@@ -19,7 +19,8 @@ use crate::core::{CoreConfig, Step, VirtualizerCore, build_layout};
 use crate::measure::observe_item;
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
-use crate::render::{Positioning, VirtualItem, VirtualRow};
+use crate::render::{Positioning, VirtualItem, VirtualItemState, VirtualRow};
+use crate::retention::{prune_retained, retain_evicted};
 use crate::surface::{DomSurface, ScrollSurface};
 
 type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
@@ -59,6 +60,8 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         .epoch
         .map(|signal| signal.get_untracked())
         .unwrap_or(0);
+    // Captured before the struct literal moves `options` into it.
+    let initial_retention_grace = options.retention_grace_ms;
 
     let inner = Rc::new(VirtualizerInner {
         surface: DomSurface::new(options.axis, options.padding_start),
@@ -78,6 +81,10 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         item_ro: RefCell::new(None),
         listeners: RefCell::new(Vec::new()),
         scroll_end_timer: RefCell::new(None),
+        retained: RefCell::new(Vec::new()),
+        retained_version: RwSignal::new(0),
+        retention_grace: Cell::new(initial_retention_grace),
+        retention_timer: RefCell::new(None),
         range_cbs: RefCell::new(Vec::new()),
         idle_cbs: RefCell::new(Vec::new()),
         items_signal: OnceCell::new(),
@@ -198,6 +205,15 @@ pub(crate) struct VirtualizerInner {
     pub listeners: RefCell<Vec<ListenerBinding>>,
     pub scroll_end_timer: RefCell<Option<TimeoutHandle>>,
 
+    /// Zombie retention bookkeeping (see `retention.rs`): evicted items
+    /// still mounted, the reactive version that items() tracks, the
+    /// currently effective grace (raised around a zoom commit), and the
+    /// expiry timer.
+    pub retained: RefCell<Vec<crate::retention::RetainedItem>>,
+    pub retained_version: RwSignal<u64>,
+    pub retention_grace: Cell<u32>,
+    pub retention_timer: RefCell<Option<TimeoutHandle>>,
+
     pub range_cbs: RefCell<Vec<RangeCallback>>,
     pub idle_cbs: RefCell<Vec<IdleCallback>>,
 
@@ -211,12 +227,82 @@ pub(crate) struct VirtualizerInner {
 }
 
 impl VirtualizerInner {
+    /// Publish a new mount window: write-if-changed, and schedule zombie
+    /// retention for the items the change evicted. Every range write in the
+    /// adapter funnels through here so retention cannot miss a transition.
+    pub(crate) fn publish_range(self: &Rc<Self>, new: Option<Window>) {
+        let old = self.range.get_untracked();
+        if old == new {
+            return;
+        }
+        let grace = self.retention_grace.get();
+        if grace > 0 && self.options.retention_max > 0 {
+            let now = now_ms();
+            let evicted =
+                retain_evicted(old, new, now, grace, self.options.retention_max);
+            if !evicted.is_empty() {
+                let mut retained = self.retained.borrow_mut();
+                // Merge: an index already retained keeps its original expiry
+                // only if it is still outside the new window; re-entry drops it.
+                *retained = prune_retained(
+                    std::mem::take(&mut *retained),
+                    new,
+                    now,
+                );
+                for item in evicted {
+                    if !retained.iter().any(|r| r.index == item.index) {
+                        retained.push(item);
+                    }
+                }
+                let max = self.options.retention_max;
+                if retained.len() > max {
+                    let drop = retained.len() - max;
+                    retained.drain(0..drop);
+                }
+                drop(retained);
+                self.retained_version.update(|v| *v += 1);
+                self.arm_retention_timer();
+            }
+        }
+        self.range.set(new);
+    }
+
+    /// Arm (once) the timer that prunes expired zombies. Re-arms itself
+    /// while anything is still retained.
+    pub(crate) fn arm_retention_timer(self: &Rc<Self>) {
+        if self.retention_timer.borrow().is_some() {
+            return;
+        }
+        let inner = self.clone();
+        if let Ok(handle) = set_timeout_with_handle(
+            move || {
+                inner.retention_timer.borrow_mut().take();
+                let now = now_ms();
+                let active = inner.core.borrow().range();
+                let mut retained = inner.retained.borrow_mut();
+                let before = retained.len();
+                *retained = prune_retained(std::mem::take(&mut *retained), active, now);
+                let changed = before != retained.len();
+                drop(retained);
+                if changed {
+                    inner.retained_version.update(|v| *v += 1);
+                }
+                if !inner.retained.borrow().is_empty() {
+                    inner.arm_retention_timer();
+                }
+            },
+            Duration::from_millis(retention_tick_ms(&self.retained.borrow(), now_ms())),
+        ) {
+            *self.retention_timer.borrow_mut() = Some(handle);
+        }
+    }
+
     /// Apply an engine step.
-    pub(crate) fn apply(&self, step: Step) {
+    pub(crate) fn apply(self: &Rc<Self>, step: Step) {
         if step.layout_changed {
             self.layout_version.update(|version| *version += 1);
         }
-        write_if_changed(self.range, step.range);
+        self.publish_range(step.range);
         if let Some(top) = step.scroll_write {
             if (top - self.scroll_top.get_untracked()).abs() > self.options.measure_epsilon {
                 self.surface.set_scroll(top, false);
@@ -229,11 +315,11 @@ impl VirtualizerInner {
     /// written by the core): signals only, no second DOM write. Instant
     /// writes carry the adopted position; smooth writes return no step and
     /// surface later through `handle_scroll`.
-    pub(crate) fn apply_local(&self, step: Step) {
+    pub(crate) fn apply_local(self: &Rc<Self>, step: Step) {
         if step.layout_changed {
             self.layout_version.update(|version| *version += 1);
         }
-        write_if_changed(self.range, step.range);
+        self.publish_range(step.range);
         write_if_changed(self.scroll_top, self.core.borrow().scroll_top());
     }
 
@@ -249,7 +335,7 @@ impl VirtualizerInner {
         let content = dom_top - self.options.padding_start;
         let step = self.core.borrow_mut().on_scroll(content);
         write_if_changed(self.scroll_top, content);
-        write_if_changed(self.range, step.range);
+        self.publish_range(step.range);
         if let Some(top) = step.scroll_write {
             self.surface.set_scroll(top, false);
         }
@@ -314,6 +400,9 @@ impl VirtualizerInner {
         if let Some(handle) = self.scroll_end_timer.borrow_mut().take() {
             handle.clear();
         }
+        if let Some(handle) = self.retention_timer.borrow_mut().take() {
+            handle.clear();
+        }
         self.surface.detach();
     }
 
@@ -347,6 +436,23 @@ where
     if signal.get_untracked() != value {
         signal.set(value);
     }
+}
+
+/// The retention clock, in milliseconds. `Date::now()` on wasm (the adapter
+/// only runs in the browser; the pure retention maths is host-testable in
+/// `retention.rs` without this).
+fn now_ms() -> f64 {
+    js_sys::Date::now()
+}
+
+/// Milliseconds until the next zombie expiry (always at least 1, so a timer
+/// is always armed into the future).
+fn retention_tick_ms(retained: &[crate::retention::RetainedItem], now: f64) -> u64 {
+    retained
+        .iter()
+        .map(|item| (item.expires_at - now).max(1.0))
+        .fold(f64::INFINITY, f64::min)
+        .ceil() as u64
 }
 
 fn dom_scroll_offset(el: &web_sys::HtmlElement, axis: crate::options::Axis) -> f64 {
@@ -433,7 +539,34 @@ impl Virtualizer {
             Signal::derive_local(move || {
                 let _ = inner.range.get();
                 let _ = inner.layout_version.get();
-                inner.core.borrow().items()
+                let _ = inner.retained_version.get();
+                let active = inner.core.borrow().items();
+                // Zombies: retained, unexpired, outside the active window.
+                // Rendered with live layout geometry so they sit exactly
+                // where the layout says, at the committed scale.
+                let now = now_ms();
+                let window = inner.core.borrow().range();
+                let retained: Vec<usize> = inner
+                    .retained
+                    .borrow()
+                    .iter()
+                    .filter(|r| r.expires_at > now)
+                    .map(|r| r.index)
+                    .filter(|index| {
+                        window.map(|w| *index < w.first || *index > w.last).unwrap_or(false)
+                    })
+                    .collect();
+                if retained.is_empty() {
+                    return active;
+                }
+                let mut items = active;
+                for index in retained {
+                    let mut item = inner.core.borrow().item_at(index);
+                    item.state = VirtualItemState::Zombie;
+                    items.push(item);
+                }
+                items.sort_by_key(|item| item.index);
+                items
             })
         })
     }
@@ -534,7 +667,7 @@ impl Virtualizer {
         {
             let step = self.inner.core.borrow_mut().on_scroll(content);
             write_if_changed(self.inner.scroll_top, content);
-            write_if_changed(self.inner.range, step.range);
+            self.inner.publish_range(step.range);
         }
     }
 
@@ -627,6 +760,22 @@ impl Virtualizer {
     /// Re-adopt the DOM scroll echo (see [`suspend_scroll_feedback`]).
     pub fn resume_scroll_feedback(&self) {
         self.inner.scroll_feedback.set(true);
+    }
+
+    /// Raise the zombie retention grace (e.g. for the duration of a zoom
+    /// transaction, whose geometry commit evicts pages that are still on
+    /// screen). Items evicted while the raised grace is in force keep it
+    /// until their own expiry. Call [`Self::reset_retention_grace`] to
+    /// return to the configured default.
+    pub fn set_retention_grace(&self, ms: u32) {
+        self.inner.retention_grace.set(ms);
+    }
+
+    /// Return the retention grace to the configured default.
+    pub fn reset_retention_grace(&self) {
+        self.inner
+            .retention_grace
+            .set(self.inner.options.retention_grace_ms);
     }
 
     /// Zoom: multiply every size by `factor` while keeping the viewport center pinned.

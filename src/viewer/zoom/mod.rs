@@ -7,13 +7,14 @@
 //! [`ZoomTransition`](crate::state::reader::ZoomTransition):
 //!
 //! ```text
-//! capture a logical anchor
+//! capture the ONE document focus and the stage pivot
 //!     ↓
 //! resolve the target (manual / fit / window constraint)
 //!     ↓
-//! tween the VISUAL scale, frame by frame
+//! tween the PRESENTATION RATIO — one linear CSS transform
+//! scaling the whole document surface, frame by frame
 //!     ↓
-//! commit geometry ONCE, restore the anchor, release the freezes
+//! commit geometry ONCE, restore the focus, release the freezes
 //! ```
 //!
 //! What deliberately does NOT happen per animation frame:
@@ -23,13 +24,15 @@
 //! virtualizer.report_size()
 //! scroll_to_index / scroll_to_offset
 //! page.set(...)
+//! a page host resizing
 //! ```
 //!
 //! Those are transaction-boundary work. The virtualizer keeps its committed
 //! geometry for the whole tween (the window cannot churn, the dominant item
-//! cannot move, the page number cannot flicker), the pages stretch their
-//! existing bitmaps through the display scale, and one commit at the end
-//! moves the geometry, the rasters and the scroll position together.
+//! cannot move, the page number cannot flicker), the zoom stage carries the
+//! entire visual change alone, and one commit at the end moves the
+//! geometry, the rasters and the scroll position together — its evicted
+//! pages bridged briefly by the virtualizer's zombie retention.
 //!
 //! Commands travel on a signal rather than a provided context because the
 //! keyboard shortcuts are wired at the app root, above the reader's reactive

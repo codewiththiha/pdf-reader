@@ -7,8 +7,26 @@
 use pdf_core::layout::ViewMode;
 use pdf_core::math::{MAX_SCALE, MIN_SCALE};
 
-/// Duration of the eased zoom tween, in milliseconds.
+/// Duration of the zoom tween, in milliseconds. Linear, not eased — see
+/// `animation.rs` for why the commit seam must not decelerate.
 const ZOOM_ANIM_MS: f64 = 200.0;
+
+/// How long an item evicted by ORDINARY SCROLLING stays mounted after it
+/// leaves the window, milliseconds. Applied where the strips are built
+/// (their virtualizers opt into retention with this grace); a zoom
+/// transaction raises it to `ZOOM_GRACE_MS` for its duration.
+pub const STRIP_SCROLL_GRACE_MS: u32 = 120;
+
+/// How long an item evicted by a ZOOM COMMIT stays mounted, milliseconds.
+/// Deliberately longer than the tween: the commit reinstalls geometry, the
+/// window jumps, and the pages it evicts are still on screen. The grace
+/// outlives the animation so there is no "animation ended but the old
+/// surface vanished before the new geometry stabilised" window.
+pub const ZOOM_GRACE_MS: u32 = 300;
+
+/// Ceiling on simultaneously retained (zombie) items per virtualizer. The
+/// bridge is bounded or it would stop being virtualization.
+pub const MAX_ZOMBIES: usize = 12;
 
 /// How (and whether) a zoom animates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -17,6 +35,16 @@ pub struct ZoomAnimationConfig {
     pub enabled: bool,
     /// Tween duration in milliseconds.
     pub duration_ms: f64,
+}
+
+/// How evicted virtual items are bridged across a window change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZoomRetentionConfig {
+    /// Grace period items evicted by a zoom commit keep their DOM, in
+    /// milliseconds. Should outlive the tween itself.
+    pub grace_ms: u32,
+    /// Hard ceiling on simultaneously retained items.
+    pub max_zombies: usize,
 }
 
 /// The zoom behaviour profile for one view mode.
@@ -28,6 +56,8 @@ pub struct ZoomProfile {
     pub max: f64,
     /// How the transition to a new scale animates.
     pub animation: ZoomAnimationConfig,
+    /// How the virtualization window is bridged across the commit.
+    pub retention: ZoomRetentionConfig,
 }
 
 impl ZoomProfile {
@@ -62,6 +92,10 @@ pub fn profile_for(_mode: ViewMode) -> ZoomProfile {
         animation: ZoomAnimationConfig {
             enabled: true,
             duration_ms: ZOOM_ANIM_MS,
+        },
+        retention: ZoomRetentionConfig {
+            grace_ms: ZOOM_GRACE_MS,
+            max_zombies: MAX_ZOMBIES,
         },
     }
 }
@@ -101,8 +135,19 @@ mod tests {
                 enabled: false,
                 duration_ms: 250.0,
             },
+            retention: profile_for(ViewMode::Single).retention,
         };
         assert_eq!(p.duration_ms(), 0.0);
         assert_eq!(profile_for(ViewMode::Single).duration_ms(), ZOOM_ANIM_MS);
+    }
+
+    #[test]
+    fn the_zoom_grace_outlives_the_tween() {
+        // The commit's evictions must still be bridged after the animation
+        // itself ends, or the old surface pops before the new geometry
+        // stabilises.
+        let p = profile_for(ViewMode::ScrollVertical);
+        assert!(p.retention.grace_ms as f64 > p.duration_ms());
+        assert!(p.retention.max_zombies > 0);
     }
 }

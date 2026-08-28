@@ -1,31 +1,40 @@
-//! The zoom anchor: a document-logical position captured before a zoom
-//! changes any geometry and restored after the new geometry commits.
+//! THE zoom focus and the stage origin: the two things a zoom transaction
+//! has to know about position.
 //!
-//! The anchor is deliberately NOT built from the virtualizer's dominant
-//! item — that is the value most likely to move while a transaction is in
-//! flight. It is built from `viewer.page` plus the actual scroll position
-//! and the actual page geometry, expressed as fractions, so it stays valid
-//! even if pages mount and unmount around it. The virtualizer is then just
-//! the tool that translates the logical anchor back into a physical scroll
-//! offset at commit time.
+//! The focus is a document-logical position captured before a zoom changes
+//! any geometry and restored after the new geometry commits. It is
+//! deliberately NOT built from the virtualizer's dominant item — that is
+//! the value most likely to move while a transaction is in flight. It is
+//! built from `viewer.page` plus the actual scroll position and the actual
+//! page geometry, expressed as fractions, so it stays valid even if pages
+//! mount and unmount around it. There is exactly ONE focus per
+//! transaction: the page under the viewport centre. The virtualizer is
+//! then just the tool that translates the logical focus back into a
+//! physical scroll offset at commit time.
+//!
+//! The stage origin is the presentation-side counterpart: the content point
+//! that sits under the viewport centre when the transaction opens, and that
+//! the stage transform pivots on. Capture and restore are logical; the
+//! pivot is geometric — two answers to the same question, "where are the
+//! reader's eyes?".
+
+use pdf_core::layout::{ViewMode, TOOLBAR_H};
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-
-use crate::components::primitives::hooks::dom::h_page_list;
-use crate::state::reader::{ZoomAnchor, ReaderState};
+use crate::components::primitives::hooks::dom::{h_page_list, page_list};
+use crate::state::reader::{ReaderState, ZoomFocus};
 use crate::viewer::engine::ViewerEngine;
 
 /// Capture where the reader's eyes are, immediately before a transaction
 /// opens. The main axis resolves around the viewport CENTRE (the point a
 /// zoom should hold under the reader's eyes), expressed as a fraction
 /// through `viewer.page`'s extent.
-pub(crate) fn capture(engine: &ViewerEngine, state: &ReaderState) -> ZoomAnchor {
+pub(crate) fn capture_focus(engine: &ViewerEngine, state: &ReaderState) -> ZoomFocus {
     let page = state.viewer.page.get_untracked().max(1);
     let mode = state.viewer.mode.get_untracked();
     match mode {
-        ViewMode::ScrollVertical => ZoomAnchor {
+        ViewMode::ScrollVertical => ZoomFocus {
             page,
             main_fraction: fraction_through(
                 &engine.vertical,
@@ -34,7 +43,7 @@ pub(crate) fn capture(engine: &ViewerEngine, state: &ReaderState) -> ZoomAnchor 
             ),
             cross_fraction: 0.0,
         },
-        ViewMode::ScrollHorizontal => ZoomAnchor {
+        ViewMode::ScrollHorizontal => ZoomFocus {
             page,
             main_fraction: fraction_through(
                 &engine.horizontal,
@@ -45,11 +54,44 @@ pub(crate) fn capture(engine: &ViewerEngine, state: &ReaderState) -> ZoomAnchor 
         },
         // Paginated modes have no strip scroll; the page IS the position and
         // the layouts remount on `page` directly.
-        _ => ZoomAnchor {
+        _ => ZoomFocus {
             page,
             main_fraction: 0.0,
             cross_fraction: 0.0,
         },
+    }
+}
+
+/// The stage pivot for a transaction: the content point (main, cross) under
+/// the viewport centre, read from the DOM scroller. The stage transform
+/// pivots here, so the surface scales in place around the reader's eyes
+/// while the scroll geometry itself stays frozen. Paginated modes return
+/// `(0, 0)` — their stage centres on the viewport (`50% 50%`), which needs
+/// no coordinates.
+pub(crate) fn stage_origin(mode: ViewMode) -> (f64, f64) {
+    match mode {
+        ViewMode::ScrollVertical => {
+            // The stage's top edge sits TOOLBAR_H below the scroller's
+            // content origin (the strip scrolls under a fixed toolbar), so
+            // the stage-local centre is the viewport centre minus that band.
+            page_list()
+                .map(|el| {
+                    let vh = el.client_height() as f64;
+                    (0.0, el.scroll_top() as f64 + vh * 0.5 - TOOLBAR_H)
+                })
+                .unwrap_or((0.0, 0.0))
+        }
+        ViewMode::ScrollHorizontal => h_page_list()
+            .map(|el| {
+                let cw = el.client_width() as f64;
+                let ch = el.client_height() as f64;
+                (
+                    el.scroll_left() as f64 + cw * 0.5,
+                    el.scroll_top() as f64 + ch * 0.5,
+                )
+            })
+            .unwrap_or((0.0, 0.0)),
+        _ => (0.0, 0.0),
     }
 }
 

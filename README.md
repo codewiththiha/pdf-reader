@@ -90,14 +90,16 @@ through and text is never doubled.
 - Shrink to fit: when the window is too narrow for the chosen zoom, the page shrinks to the space
   available and remembers the zoom to grow back to once space returns.
 - Every zoom — a button step, a preset, a fit, a window constraint — runs through one transition
-  pipeline: the reader's position is captured as a page-relative anchor, the visual scale tweens
-  by stretching the existing bitmaps, and a single geometry commit at the end moves the
-  virtualizer, the scroll position and the one crisp render together. Nothing relayouts
-  per animation frame, so the page number, the mounted window and the scroll position cannot
-  flicker mid-gesture.
+  pipeline. The reader's position is captured as a single page-relative focus, the whole document
+  surface scales together through one linear CSS transform (the zoom stage — pages never resize
+  individually mid-zoom), and one geometry commit at the end moves the virtualizer, the scroll
+  position and the crisp renders together. The commit is invisible by construction, and recently
+  evicted pages linger a moment as zombies so the surface never pops.
 - Zooming a horizontal strip preserves the vertical position as a fraction of the overflow, so
   zooming out past the point where the overflow disappears eases the position to the top instead
   of discarding it, and zooming back in returns it.
+- The reader keeps written motion principles (see ARCHITECTURE.md): no entrance animations on
+  document content, no per-frame virtualizer work, one bounded zombie bridge across commits.
 
 ### Navigation
 

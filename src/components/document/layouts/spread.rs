@@ -12,9 +12,9 @@ use crate::state::{ReaderState, TextureSignal};
 pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
-    let display_scale = state.viewer.zoom.current.read_only();
+    // Hosts live at the COMMITTED scale; a zoom scales the shell's stage.
+    let page_scale = state.viewer.zoom.committed.read_only();
     let gesture_owns = state.viewer.gesture_owns();
-    let prev_spread = StoredValue::new(0u32);
 
     view! {
         <PageShell state=state scroller_id=DUAL_PAGE_CONTAINER_ID>
@@ -28,19 +28,11 @@ pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
                     let n = state.document.num_pages.get();
                     let p1 = spread * 2 + 1;
                     let p2 = p1 + 1;
-                    let prev = prev_spread.get_value();
-                    let dir = if prev == 0 || spread > prev {
-                        "page-enter-right"
-                    } else {
-                        "page-enter-left"
-                    };
-                    prev_spread.set_value(spread);
                     view! {
-                        <div class=dir>
-                            <div class="flex items-start justify-center gap-0">
+                        <div class="flex items-start justify-center gap-0">
                                 <PageCanvas
                                     page=p1
-                                    scale=display_scale
+                                    scale=page_scale
                                     render_scale=state.viewer.zoom.committed
                                     zoom_animating=state.viewer.zooming()
                                     gesture_owns=gesture_owns
@@ -54,7 +46,7 @@ pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
                                     view! {
                                         <PageCanvas
                                             page=p2
-                                            scale=display_scale
+                                            scale=page_scale
                                             render_scale=state.viewer.zoom.committed
                                             zoom_animating=state.viewer.zooming()
                                             gesture_owns=gesture_owns
@@ -69,7 +61,6 @@ pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
                                     ().into_any()
                                 }}
                             </div>
-                        </div>
                     }
                 }
             />

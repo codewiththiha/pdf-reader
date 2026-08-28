@@ -89,6 +89,13 @@ pub fn PageCanvas(
     /// True while a zoom/layout animation is in flight (renders suspended).
     #[prop(into)]
     zoom_animating: Signal<bool>,
+    /// True while this page is a RETAINED ZOMBIE — freshly evicted from the
+    /// virtualization window and briefly kept mounted as a visual bridge.
+    /// A zombie keeps its DOM and its last bitmap; it must not start a new
+    /// rasterisation for the few frames it has left, so the render effect
+    /// stands down entirely. Absent for hosts outside a virtualized strip.
+    #[prop(optional)]
+    dormant: Option<Signal<bool, LocalStorage>>,
     /// True while a real zoom *gesture* owns the layout (as opposed to a
     /// fit-driven sidebar slide, which also animates but is not a gesture).
     /// Distinct from `zoom_animating`: a fit slide holds `zoom_animating` true
@@ -192,6 +199,13 @@ pub fn PageCanvas(
         // silently drop the subscription the first time the branch was skipped.
         let anim = zoom_animating.get();
         let s_render = render_scale.get();
+        // A zombie never starts a new render: its bitmap stays (the stretch
+        // effect resized the host at the commit), and the page unmounts when
+        // its retention grace expires. Rendering here would rasterise a page
+        // that is on its way out.
+        if dormant.as_ref().is_some_and(|d| d.get()) {
+            return;
+        }
         if s_render <= 0.0 {
             return;
         }
