@@ -15,11 +15,11 @@ use leptos::prelude::*;
 
 use pdf_core::layout::{TOOLBAR_H, ViewMode};
 use pdf_core::math::{constrained_scale, fit_scale, FitMode};
-use virtual_list_leptos::Virtualizer;
 
 use crate::state::{ReaderState, SidebarMode};
+use crate::viewer::engine::ViewerEngine;
 
-use super::zoom::{commit_scale, gesture_owns_layout, relayout_to, take_commit_echo};
+use super::zoom::{commit_scale, gesture_owns_layout, take_commit_echo};
 
 /// Must be called once from the app root (ReaderPage).
 pub fn fit_effect(
@@ -27,8 +27,7 @@ pub fn fit_effect(
     // Sidebar open/close re-runs fit so the page re-centers (app chrome
     // state passed in explicitly).
     sidebar: RwSignal<SidebarMode>,
-    virtualizer: Virtualizer,
-    h_virtualizer: Virtualizer,
+    engine: ViewerEngine,
 ) {
     // Last page we computed a fit for. Doubles as the first-run marker: it
     // starts at 0 and is only ever written with a real (>= 1) page once the
@@ -194,7 +193,7 @@ pub fn fit_effect(
                 // the same frame, and the debounce below commits the crisp
                 // render once the size settles.
                 state.viewer.zoom_animating.set(true);
-                relayout_to(state, target / cur, &virtualizer, &h_virtualizer);
+                engine.relayout_scale(&state, target / cur);
                 state.viewer.zoom.layout.set(target);
             }
         }
@@ -223,8 +222,7 @@ pub fn fit_effect(
         // Debounce: each `container_size` change re-runs this effect and clears
         // the previous timer, so the commit fires once the size has been stable
         // for ~180ms — one render per slide or per resize drag, at the end.
-        let timer_virtualizer = virtualizer.clone();
-        let timer_h_virtualizer = h_virtualizer.clone();
+        let timer_engine = engine.clone();
         let handle = set_timeout_with_handle(
             move || {
                 if first_run {
@@ -238,7 +236,7 @@ pub fn fit_effect(
                 // heights stay at the old scale and the scroll teleports.
                 let cur = state.viewer.zoom.layout.get_untracked();
                 if (target - cur).abs() >= 0.0005 {
-                    relayout_to(state, target / cur, &timer_virtualizer, &timer_h_virtualizer);
+                    timer_engine.relayout_scale(&state, target / cur);
                     state.viewer.zoom.layout.set(target);
                 }
                 let prev = state.viewer.zoom.render.get_untracked();

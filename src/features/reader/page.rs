@@ -245,8 +245,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
     });
 
-    fit_effect(vs, state.ui.sidebar, virtualizer.clone(), h_virtualizer.clone());
-    zoom_system(vs, virtualizer.clone(), h_virtualizer.clone());
+    let engine = crate::viewer::engine::ViewerEngine::new(virtualizer.clone(), h_virtualizer.clone());
+    fit_effect(vs, state.ui.sidebar, engine.clone());
+    zoom_system(vs, engine);
     navigation_sync(vs, virtualizer.clone(), h_virtualizer.clone());
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     let virtualizer_view = StoredValue::new_local(virtualizer.clone());

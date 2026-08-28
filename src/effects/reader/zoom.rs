@@ -1,22 +1,21 @@
 //! The zoom coordinator: a zoom is a layout animation of bitmaps we already
 //! painted, followed by one crisp re-render. `request_zoom` posts
-//! `(target, animate, token)`; `zoom_system` drives `display_scale` on rAF,
-//! rescales `css_heights`, and asks the virtualizer to rescale/anchor the
-//! continuous layout each frame.
+//! `(target, animate, token)`; `zoom_system` drives `zoom.layout` on rAF,
+//! asks the viewer engine to rescale/anchor the strip each frame, and commits
+//! once the gesture settles.
 //!
-//! Split out of `fit.rs`: fit (`fit_effect`) and zoom are two systems sharing
-//! a small hand-off (`commit_scale` / `gesture_owns_layout` /
-//! `take_commit_echo`).
+//! The relayout itself lives in [`crate::viewer::engine`] (the single geometry
+//! owner); this module owns the *intent* and the animation.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use pdf_core::math::clamp_scale;
 
 use crate::state::ReaderState;
+use crate::viewer::engine::ViewerEngine;
 
 /// rAF step that can re-arm itself. StoredValue already wraps a RefCell, so we
 /// only need one extra Rc for the Weak self-reference the loop upgrades.
@@ -73,125 +72,7 @@ pub(super) fn take_commit_echo() -> bool {
     COMMIT_ECHO.with(|c| c.replace(false))
 }
 
-pub fn relayout_to(
-    state: ReaderState,
-    factor: f64,
-    virtualizer: &Virtualizer,
-    h_virtualizer: &Virtualizer,
-) {
-    if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
-        return;
-    }
-
-    state.document.metrics.css_heights.update(|heights| {
-        for height in heights.iter_mut() {
-            *height *= factor;
-        }
-    });
-
-    let heights = state
-        .document
-        .metrics
-        .css_heights
-        .with_untracked(|heights| heights.clone());
-    if !heights.is_empty() {
-        let gap = state.viewer.page_gap.get_untracked();
-        virtualizer.rescale(factor, {
-            let heights = heights.clone();
-            move |index| heights.get(index).copied().unwrap_or(0.0) + gap
-        });
-
-        let scroll_top = virtualizer.scroll_offset().get_untracked();
-        if (scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
-            state.viewer.scroll_top.set(scroll_top);
-        }
-
-        // Growing content needs one more scroll assertion, one frame later.
-        //
-        // `rescale` clamps the new scroll offset against the NEW layout and emits
-        // a scroll write that `apply()` performs synchronously — but the spacer
-        // `<div>` that gives the scroll container its `scrollHeight` is patched by
-        // Leptos only after this synchronous call returns. The browser therefore
-        // clamps the write to the OLD, shorter scrollHeight. One frame later the
-        // spacer has grown, yet the scroll position stays pinned at the stale
-        // clamp. Mid-document the anchor correction hides the error; at the end
-        // of the document the clamp distance is at its maximum, which is why the
-        // jump is only visible on the last pages (and only when the content is
-        // growing — a sidebar CLOSING, not opening).
-        //
-        // Re-assert the target scroll on the next animation frame, after the
-        // spacer has been laid out at its new height.
-        if factor > 1.0 {
-            let v = virtualizer.clone();
-            let target_scroll = scroll_top;
-            request_animation_frame(move || {
-                v.scroll_to_offset(target_scroll, ScrollMode::Instant);
-            });
-        }
-    }
-
-    // Horizontal strip: widths are exact (intrinsic × scale + margin), so rescale too.
-    let new_scale = state.viewer.zoom.layout.get_untracked() * factor;
-    let margin = state.viewer.page_margin.get_untracked();
-    let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
-        sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
-    });
-    if !widths.is_empty() {
-        // In the horizontal strip the anchor is ALWAYS the screen center,
-        // never a page edge — and `rescale` already delivers exactly that:
-        // internally it pins the viewport centre (`pin_at(.., 0.5)`) and
-        // writes the anchored scroll offset through `apply()`.
-        //
-        // The old code then OVERRODE that result with a dominant-PAGE
-        // anchor: it measured the centre's offset within `dominant()` and
-        // re-derived the scroll position from that page's new origin.
-        // Whenever the viewport centre falls in the gap between two pages —
-        // the common case in a multi-page strip — `dominant()` snaps to
-        // whichever page covers more area, so the zoom re-anchored to a
-        // point inside that page and visibly yanked the strip sideways. In
-        // single-page view the centre always sits inside the page, which is
-        // why the bug never showed there.
-        //
-        // Trust the centre-anchored rescale and let it own the scroll
-        // position; the strip then zooms in pure offset space.
-        //
-        // scrollLeft is the core's; scrollTop is the DOM scroller's alone,
-        // so nothing re-anchored it and the vertical centre drifted on every
-        // zoom step. Each wrapper is strip-tall and centres its page, so the
-        // whole strip scales uniformly about its top edge — including the
-        // centring offset (H - h*s)/2 — which makes holding the vertical
-        // centre a single multiplication once the rescale has landed.
-        let list = crate::components::primitives::hooks::dom::h_page_list();
-        let (vh, old_top) = match &list {
-            Some(el) => (el.client_height() as f64, el.scroll_top() as f64),
-            None => (0.0, 0.0),
-        };
-
-        h_virtualizer.rescale(factor, move |index| {
-            widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
-        });
-
-        if let Some(el) = list {
-            if vh > 1.0 {
-                let tallest = state.document.metrics.intrinsic.with_untracked(|sizes| {
-                    sizes.iter().map(|s| s.height).fold(0.0, f64::max)
-                });
-                let new_total = vh.max(tallest * new_scale);
-                if new_total > vh + 1.0 {
-                    let center = old_top + vh / 2.0;
-                    let target = (center * factor - vh / 2.0).clamp(0.0, new_total - vh);
-                    el.set_scroll_top(target as i32);
-                } else if old_top > 0.0 {
-                    // Zoomed back to (or below) fit-height: no vertical range
-                    // is left, so release the stale offset.
-                    el.set_scroll_top(0);
-                }
-            }
-        }
-    }
-}
-
-pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: Virtualizer) {
+pub fn zoom_system(state: ReaderState, engine: ViewerEngine) {
     // While any scale animation is in flight (a zoom gesture, a sidebar slide,
     // a window-resize drag — all raise `zoom_animating` and all end in
     // `commit_scale`, which clears it), the virtualizer's DOM scroll echo must
@@ -200,8 +81,8 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: 
     // rescale pins from it, making the content oscillate instead of gliding.
     // The echo is re-adopted the moment the animation commits.
     {
-        let v = virtualizer.clone();
-        let hv = h_virtualizer.clone();
+        let v = engine.vertical.clone();
+        let hv = engine.horizontal.clone();
         Effect::new(move |_| {
             if state.viewer.zoom_animating.get() {
                 v.suspend_scroll_feedback();
@@ -227,26 +108,25 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: 
         let from = state.viewer.zoom.layout.get_untracked();
         if (target - from).abs() < 1e-9 {
             commit_scale(state, target);
-            virtualizer.resume_measurements();
-            h_virtualizer.resume_measurements();
+            engine.vertical.resume_measurements();
+            engine.horizontal.resume_measurements();
             return;
         }
 
-        virtualizer.suspend_measurements();
-        h_virtualizer.suspend_measurements();
+        engine.vertical.suspend_measurements();
+        engine.horizontal.suspend_measurements();
 
         let commit = {
-            let virtualizer = virtualizer.clone();
-            let h_virtualizer = h_virtualizer.clone();
+            let engine = engine.clone();
             move |final_scale: f64| {
                 commit_scale(state, final_scale);
-                virtualizer.resume_measurements();
-                h_virtualizer.resume_measurements();
+                engine.vertical.resume_measurements();
+                engine.horizontal.resume_measurements();
             }
         };
 
         if !animate || prefers_reduced_motion() {
-            relayout_to(state, target / from, &virtualizer, &h_virtualizer);
+            engine.relayout_scale(&state, target / from);
             commit(target);
             return;
         }
@@ -257,8 +137,7 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: 
         let step_slot: StepSlot = Rc::new(RefCell::new(None));
         let step_self = Rc::downgrade(&step_slot);
         let live_step = live.clone();
-        let step_virtualizer = virtualizer.clone();
-        let step_h_virtualizer = h_virtualizer.clone();
+        let step_engine = engine.clone();
         let step: Rc<dyn Fn()> = Rc::new(move || {
             if live_step.get() != token {
                 return;
@@ -268,7 +147,7 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: 
             let want = from + (target - from) * eased;
             let cur = state.viewer.zoom.layout.get_untracked();
 
-            relayout_to(state, want / cur, &step_virtualizer, &step_h_virtualizer);
+            step_engine.relayout_scale(&state, want / cur);
             state.viewer.zoom.layout.set(want);
 
             if t >= 1.0 {
