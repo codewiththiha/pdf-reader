@@ -141,7 +141,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         _ = state.reader.viewer.page.get();
         _ = state.reader.viewer.mode.get();
         _ = state.reader.viewer.zoom.transition.get();
-        _ = state.reader.viewer.zoom.committed.get();
+        _ = state.reader.viewer.zoom.display.get();
         _ = state.reader.document.title.get();
         _ = state.reader.document.path.get();
         _ = state.reader.document.outline.get();

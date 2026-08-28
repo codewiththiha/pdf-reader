@@ -80,7 +80,7 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
     let r = state.reader;
     let mode = r.viewer.mode;
     let full = RwSignal::new(false);
-    let percent = move || format!("{}%", (r.viewer.zoom.committed.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (r.viewer.zoom.display.get() * 100.0).round() as u32);
     let (show_keys, set_show_keys) = signal(false);
 
     view! {

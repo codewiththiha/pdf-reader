@@ -33,29 +33,30 @@ The app uses the adapter and keeps only app-specific policy locally:
 - page rendering, text/search overlays, and chrome
 - measurement storage in `css_heights`
 
-`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled exactly once per zoom transaction (when the transition commits). Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
+`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled by the viewer engine on every frame of a zoom. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
 
 ## Reader motion principles
 
-1. Zoom animates ONE linear, continuous transform of the whole document
-   surface (the zoom stage). No easing — a constant-velocity resize is what
-   makes the final commit visually imperceptible.
-2. Zoom never animates individual page layout boxes; page hosts are sized at
-   the committed scale and nothing else.
-3. Virtualizer geometry never changes mid-zoom. The virtualizer participates
-   only in the start snapshot and the final geometry commit.
-4. The virtualizer's window never drives the page number mid-zoom.
-5. A zoom commit performs exactly one geometry update, then one explicit
-   scroll synchronisation step.
+1. Zoom animates the LAYOUT. Every frame of the tween rescales both strips
+   through the viewer engine, so the document genuinely resizes under the
+   reader's eyes rather than being scaled by a presentation layer.
+2. The virtualizer's rescale anchor is what holds the reader's view steady
+   while those sizes move. Nothing is captured before a zoom and nothing is
+   restored after it.
+3. Page hosts stretch the bitmap they already hold to the live display
+   scale. Nothing re-rasterises while the scale is moving.
+4. The crisp render is issued once, at the settled scale, when the
+   transition commits.
+5. The virtualizer's window never drives the page number mid-zoom.
 6. Recently evicted virtual items become zombies briefly (bounded set,
-   grace longer than the tween), bridging the window across the commit.
+   grace longer than the tween), bridging the window across a zoom.
 7. Zombie items never trigger a new PDF render; they keep their DOM and
    their last bitmap until their grace expires.
 8. Page turns and reader surfaces (popovers, search, toasts) do not
    fade, slide or bounce in — document content appears instantly.
 9. Layout chrome (the sidebar width, overlays) may use short STRUCTURAL CSS
    transitions; decorative entrance keyframes do not come back.
-10. Rerenders happen only at transaction boundaries, never per frame.
+10. PDF renders happen only at transaction boundaries, never per frame.
 
 ## Continuous reader flow
 
@@ -63,7 +64,7 @@ The app uses the adapter and keeps only app-specific policy locally:
 2. `PageList` binds the scroll container, renders `v.items()`, and reports measured page heights back into both `css_heights` and the virtualizer.
 3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
-5. Zoom runs through one controller: commands resolve to a target, the one focus and stage pivot are captured, the presentation stage scales the whole surface linearly while the virtualizer freezes, and a single commit rescales `css_heights` and the virtualizer and restores the focus — no per-frame relayouts, no per-page animation.
+5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the engine frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale commits once, at the end.
 
 ## Thumbnail panel flow
 

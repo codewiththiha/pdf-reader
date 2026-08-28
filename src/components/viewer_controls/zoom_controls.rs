@@ -4,7 +4,7 @@
 //! The controls carry NO zoom policy: no preset ladder walking, no clamping,
 //! no fit arithmetic, no signal writes beyond the fit-mode toggle. They post
 //! [`ZoomCommand`]s and the zoom controller owns everything else. The readout
-//! reads `zoom.committed` directly, so a non-preset fit value like 137% shows
+//! reads `zoom.display` directly, so a non-preset fit value like 137% shows
 //! correctly; the tooltip explains a held-back zoom from `zoom.desired`.
 //!
 //! The popover renders through the shared window-aware `Popover`, which owns
@@ -118,9 +118,9 @@ fn zoom_readout_entry(state: AppState) -> ToolbarItem {
 fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
-    let percent = move || format!("{}%", (state.reader.viewer.zoom.committed.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (state.reader.viewer.zoom.display.get() * 100.0).round() as u32);
     let zoom_title = move || {
-        let shown = state.reader.viewer.zoom.committed.get();
+        let shown = state.reader.viewer.zoom.display.get();
         let desired = state.reader.viewer.zoom.desired.get();
         let (cw, ch) = state.reader.viewer.container_size.get();
         let held_back = state
@@ -186,14 +186,14 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                         view! {
                             <MenuItem
                                 label=format!("{}%", (z * 100.0).round() as u32)
-                                selected=Signal::derive(move || (state.reader.viewer.zoom.committed.get() - z).abs() < 1e-9)
+                                selected=Signal::derive(move || (state.reader.viewer.zoom.display.get() - z).abs() < 1e-9)
                                 on_click=move || {
                                     apply_zoom(state, z);
                                     open.set(false);
                                 }
                             >
                                 <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
-                                    {move || ((state.reader.viewer.zoom.committed.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                                    {move || ((state.reader.viewer.zoom.display.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
                                 </span>
                             </MenuItem>
                         }

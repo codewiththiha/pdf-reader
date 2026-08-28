@@ -40,7 +40,7 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
             // the settled scale. Mid-animation values are deliberately
             // avoided: nearest_zoom would usually round to the preset the
             // tween is already heading towards and swallow the press.
-            let base = in_flight.unwrap_or_else(|| zoom.committed.get_untracked());
+            let base = in_flight.unwrap_or_else(|| zoom.display.get_untracked());
             let target = profile.clamp(nearest_zoom(base, dir));
             zoom.desired.set(target);
             state.viewer.fit.set(FitMode::None);
@@ -54,7 +54,7 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
                 return None;
             }
             let dims = FitDims::of(state)?;
-            let target = dims.fit(state.viewer.fit.get_untracked(), zoom.committed.get_untracked());
+            let target = dims.fit(state.viewer.fit.get_untracked(), zoom.display.get_untracked());
             let target = profile.clamp(target);
             zoom.desired.set(target);
             Some(target)
@@ -64,7 +64,7 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
                 return None; // a fit mode owns the scale while it is active
             }
             let dims = FitDims::of(state)?;
-            let fit_w = dims.fit_width(zoom.committed.get_untracked());
+            let fit_w = dims.fit_width(zoom.display.get_untracked());
             let desired = zoom.desired.get_untracked();
             Some(profile.clamp(constrained_scale(desired, fit_w)))
         }

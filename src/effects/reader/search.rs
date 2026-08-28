@@ -83,7 +83,7 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
         let Some(list) = h_page_list() else {
             return;
         };
-        let scale = state.viewer.zoom.committed.get_untracked();
+        let scale = state.viewer.zoom.display.get_untracked();
         let before: f64 = state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes
                 .iter()
@@ -110,7 +110,7 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
     let Some(list) = page_list() else {
         return;
     };
-    let scale = state.viewer.zoom.committed.get_untracked();
+    let scale = state.viewer.zoom.display.get_untracked();
     let page_top = virtualizer.offset_of(m.page.saturating_sub(1) as usize);
 
     let top = TOOLBAR_H + page_top + m.y * scale;

@@ -31,7 +31,7 @@ pub(crate) struct ReaderVirtualizers {
 fn seed_css_heights(state: ReaderState) {
     Effect::new(move || {
         let count = state.document.num_pages.get() as usize;
-        let scale = state.viewer.zoom.committed.get();
+        let scale = state.viewer.zoom.display.get();
         let empty_intrinsic = state.document.metrics.intrinsic.with(|sizes| sizes.is_empty());
         let fallback = state
             .document
@@ -87,7 +87,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             .get_untracked()
             .map(|size| size.height)
             .unwrap_or(0.0);
-        intrinsic.unwrap_or(fallback) * state.viewer.zoom.committed.get_untracked()
+        intrinsic.unwrap_or(fallback) * state.viewer.zoom.display.get_untracked()
             + state.viewer.page_gap.get_untracked()
     };
     let epoch = Signal::derive(move || {
@@ -126,13 +126,12 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     );
 
     // Horizontal virtualizer: created unconditionally (hook), bound only when the view mounts.
-    // Both strips estimate from the COMMITTED scale — the geometry scale —
-    // so the two axes can never disagree about how big a page is mid-zoom
-    // (the live visual scale is presentation-only and nobody's geometry).
+    // Both strips estimate from the live DISPLAY scale, so the two axes can
+    // never disagree about how big a page is while a zoom is running.
     let h_estimate = move |index: usize| {
         state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
-        }) * state.viewer.zoom.committed.get_untracked()
+        }) * state.viewer.zoom.display.get_untracked()
             + 2.0 * state.viewer.page_margin.get_untracked()
     };
     let h_virtualizer = use_virtualizer(

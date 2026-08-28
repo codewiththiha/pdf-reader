@@ -16,8 +16,9 @@ use crate::state::{ReaderState, TextureSignal};
 pub fn SingleLayout(state: ReaderState) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
-    // Hosts live at the COMMITTED scale; a zoom scales the shell's stage.
-    let page_scale = state.viewer.zoom.committed.read_only();
+    // Hosts live at the live display scale; the crisp raster follows
+    // `render_scale`, which only moves when a zoom lands.
+    let page_scale = state.viewer.zoom.display.read_only();
     let gesture_owns = state.viewer.gesture_owns();
 
     view! {
