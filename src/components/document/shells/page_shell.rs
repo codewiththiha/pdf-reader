@@ -5,12 +5,12 @@ use crate::components::primitives::hooks::use_resize_observer::observe_content_s
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
 use crate::state::ReaderState;
 
-/// Shared shell for Single & Dual. The child is centered with `margin:auto`
+/// Shared shell for Single & Spread. The child is centered with `margin:auto`
 /// in the true viewport, which degrades to start-alignment on overflow —
 /// so both axes scroll exactly to the page edge, never clipped, never with
 /// phantom space.
 #[component]
-pub fn PaginatedShell(
+pub fn PageShell(
     state: ReaderState,
     scroller_id: &'static str,
     children: ChildrenFn,

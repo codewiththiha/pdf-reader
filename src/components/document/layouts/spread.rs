@@ -1,22 +1,22 @@
-//! Dual-page (spread) view: two pages side by side with no gap.
+//! Spread (`spread`) layout: two pages side by side with no gap.
 
 use leptos::prelude::*;
 
 use crate::components::document::page_canvas::component::GlossOverlayProps;
-use crate::components::document::paginated::PaginatedShell;
+use crate::components::document::shells::page_shell::PageShell;
 use crate::components::document::PageCanvas;
 use crate::components::primitives::hooks::dom::DUAL_PAGE_CONTAINER_ID;
 use crate::state::{ReaderState, TextureSignal};
 
 #[component]
-pub fn DualPageView(state: ReaderState) -> impl IntoView {
-    let texture = use_context::<TextureSignal>()
-        .expect("TextureSignal must be provided by app bootstrap");
+pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
+    let texture =
+        use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
     let display_scale = state.viewer.zoom.layout.read_only();
     let prev_spread = StoredValue::new(0u32);
 
     view! {
-        <PaginatedShell state=state scroller_id=DUAL_PAGE_CONTAINER_ID>
+        <PageShell state=state scroller_id=DUAL_PAGE_CONTAINER_ID>
             <For
                 each=move || std::iter::once({
                     let p = state.viewer.page.get().max(1);
@@ -70,6 +70,6 @@ pub fn DualPageView(state: ReaderState) -> impl IntoView {
                     }
                 }
             />
-        </PaginatedShell>
+        </PageShell>
     }
 }

@@ -253,7 +253,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     reading_progress(state);
 
     let status = state.reader.document.status;
-    let mode = state.reader.viewer.mode;
     let is_ready = move || status.get() == DocStatus::Ready;
     let paint = sidebar_paint(state.ui.sidebar);
 
@@ -428,31 +427,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
                     >
                         <Show when=is_ready>
-                            {move || match mode.get() {
-                                ViewMode::Single => view! {
-                                    <crate::components::document::SinglePageView state=vs />
-                                }
-                                .into_any(),
-                                ViewMode::Spread => view! {
-                                    <crate::components::document::DualPageView state=vs />
-                                }
-                                .into_any(),
-                                ViewMode::ScrollVertical => view! {
-                                    <crate::components::document::ContinuousView
-                                        state=vs
-                                        virtualizer=virtualizer_view.get_value()
-                                        progress_visible=progress_visible
-                                    />
-                                }
-                                .into_any(),
-                                ViewMode::ScrollHorizontal => view! {
-                                    <crate::components::document::HorizontalView
-                                        state=vs
-                                        virtualizer=h_virtualizer_view.get_value()
-                                    />
-                                }
-                                .into_any(),
-                            }}
+                            <crate::components::document::Viewer
+                                state=vs
+                                virtualizer=virtualizer_view.get_value()
+                                h_virtualizer=h_virtualizer_view.get_value()
+                                progress_visible=progress_visible
+                            />
                         </Show>
                         <FloatingDocumentTitle state=state />
                         // Corner page counter, gated on a ready document and
