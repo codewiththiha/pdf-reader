@@ -16,7 +16,7 @@ use pdf_core::math::{clamp_scale, constrained_scale, fit_scale, nearest_zoom, Fi
 
 use crate::state::reader::{ZoomCommand, ReaderState};
 
-use super::config::profile_for;
+use super::config::{profile_for, SETTLED_EPSILON};
 
 /// Resolve a command to the scale it wants, or `None` when it must stand
 /// down (no fit mode, an unmeasured container or an unmeasured document).
@@ -42,6 +42,16 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
             // tween is already heading towards and swallow the press.
             let base = in_flight.unwrap_or_else(|| zoom.display.get_untracked());
             let target = profile.clamp(nearest_zoom(base, dir));
+            // At the end of the ladder `nearest_zoom` answers with the same
+            // preset it was given, so there is nowhere to go. Bail BEFORE
+            // recording any intent: writing `desired` and clearing the fit
+            // mode here would silently drop the reader out of Fit Width just
+            // because they leaned on a zoom button that had nothing left to
+            // do. The coordinator bails on an unchanged target too; this is
+            // what keeps the state untouched.
+            if (target - base).abs() < SETTLED_EPSILON {
+                return None;
+            }
             zoom.desired.set(target);
             state.viewer.fit.set(FitMode::None);
             Some(target)

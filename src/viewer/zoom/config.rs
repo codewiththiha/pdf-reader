@@ -29,6 +29,13 @@ pub const ZOOM_GRACE_MS: u32 = 300;
 /// bridge is bounded or it would stop being virtualization.
 pub const MAX_ZOMBIES: usize = 12;
 
+/// Scales closer than this are the same scale. One margin for the whole
+/// pipeline: the resolver uses it to call a boundary step a no-op, and the
+/// coordinator uses it to decline a transition that would not move. Two
+/// numbers would mean a step one layer considers settled and the other
+/// animates.
+pub(crate) const SETTLED_EPSILON: f64 = 0.0005;
+
 /// How (and whether) a zoom animates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ZoomAnimationConfig {

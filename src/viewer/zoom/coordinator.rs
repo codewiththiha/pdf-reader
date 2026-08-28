@@ -35,11 +35,6 @@ use super::animation::Tween;
 use super::config;
 use super::target;
 
-/// Scales closer than this are the same scale: a refit that lands within a
-/// twentieth of a percent of the settled scale is not worth a transition
-/// (and not worth a re-render).
-const SETTLED_EPSILON: f64 = 0.0005;
-
 /// The one zoom authority. `Clone` so it can be handed out by value; it
 /// holds nothing but the engine reference.
 #[derive(Clone)]
@@ -100,7 +95,7 @@ impl ZoomController {
             let display = zoom.display.get_untracked();
             let in_flight = zoom.transition.get_untracked();
             let settled = in_flight.map(|t| t.to).unwrap_or(display);
-            if (target - settled).abs() < SETTLED_EPSILON {
+            if (target - settled).abs() < config::SETTLED_EPSILON {
                 // Already there (or already heading there): nothing to move.
                 return;
             }
