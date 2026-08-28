@@ -1,11 +1,24 @@
 //! The zoom tween.
 //!
-//! Every animation frame does exactly one thing: work out the scale the eye
-//! should be at, and hand the engine the ratio between that scale and the
-//! scale the layout currently has. The engine relays the strips out and the
-//! page hosts stretch their bitmaps to the new size, so the document resizes
-//! continuously — the reader watches the paper itself change size, with the
-//! virtualizer anchoring the view as the sizes underneath move.
+//! Every animation frame works out the scale the eye should be at and shows
+//! it — but HOW it is shown depends on the view mode, because the two scroll
+//! modes are laid out by fundamentally different machinery:
+//!
+//! - HORIZONTAL relayouts. Each frame hands the engine the ratio the display
+//!   scale just moved through, and the engine rescales the strip so the
+//!   layout genuinely follows. The virtualizer's rescale anchor holds the
+//!   reader's view steady while the sizes underneath move, so there is
+//!   nothing to capture before the gesture and nothing to restore after it.
+//! - VERTICAL and the PAGINATED modes transform. Each frame writes one CSS
+//!   `scale()` on the strip's content surface (`zoom.presentation`), so the
+//!   whole document resizes as one continuous surface: no page's layout box
+//!   moves, no gap opens, the virtualizer's geometry stays put and nothing
+//!   measures. Fighting that with per-frame relayouts is what made vertical
+//!   scrolling feel like it was fighting the browser's own flow.
+//!
+//! Both write the same `zoom.display`, so everything that reads "the scale
+//! the reader is looking at" — the readout, the fit maths, the overlays —
+//! is agnostic to which path the zoom took.
 //!
 //! The interpolation is an out-cubic, which is what the smooth zoom has
 //! always felt like: it covers ground early and decelerates into the target
@@ -20,6 +33,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use leptos::prelude::*;
+
+use pdf_core::layout::ViewMode;
 
 use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
 use crate::state::reader::ReaderState;
@@ -73,25 +88,42 @@ impl Tween {
                 alive.set(false);
                 return;
             };
-            let duration = config::profile_for(state.viewer.mode.get_untracked()).duration_ms();
+            let mode = state.viewer.mode.get_untracked();
+            let is_horizontal = mode == ViewMode::ScrollHorizontal;
+            let duration = config::profile_for(mode).duration_ms();
             if !t.animate || duration <= 0.0 || prefers_reduced_motion() {
-                // Landing without a tween: one relayout to the target, then
-                // the commit.
-                let from = state.viewer.zoom.display.get_untracked();
-                engine.relayout_to(&state, t.to / from);
+                // Landing without a tween. The horizontal strip still needs
+                // its layout moved to the target — there is no transform to
+                // carry it — so it gets one relayout; the commit does the
+                // same job for the transform-scaled modes.
+                if is_horizontal {
+                    let from = state.viewer.zoom.display.get_untracked();
+                    engine.relayout_to(&state, t.to / from);
+                    state.viewer.zoom.display.set(t.to);
+                }
                 finish_transition(&state, &engine, &t);
                 alive.set(false);
                 return;
             }
             let progress = ((js_sys::Date::now() - t.start_ms) / duration).clamp(0.0, 1.0);
-            // The per-frame pair: relay the layout out by the ratio the
-            // display scale is about to move through, then show it. The
-            // engine reads `display` to work out the horizontal strip's
-            // exact widths, so the relayout must come first.
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
-            let cur = state.viewer.zoom.display.get_untracked();
-            engine.relayout_to(&state, visual / cur);
-            state.viewer.zoom.display.set(visual);
+
+            if is_horizontal {
+                // The per-frame pair: relay the layout out by the ratio the
+                // display scale is about to move through, then show it. The
+                // engine reads `display` to work out the strip's exact
+                // widths, so the relayout must come first.
+                let cur = state.viewer.zoom.display.get_untracked();
+                engine.relayout_to(&state, visual / cur);
+                state.viewer.zoom.display.set(visual);
+            } else {
+                // One CSS transform on the content surface. `display` still
+                // moves so every reader of the live scale agrees, but no
+                // geometry does — the commit installs it at the end.
+                let committed = state.viewer.zoom.committed.get_untracked();
+                state.viewer.zoom.presentation.set(visual / committed);
+                state.viewer.zoom.display.set(visual);
+            }
             if progress >= 1.0 {
                 finish_transition(&state, &engine, &t);
                 alive.set(false);
