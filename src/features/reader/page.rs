@@ -246,6 +246,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let engine = crate::viewer::engine::ViewerEngine::new(virtualizer.clone(), h_virtualizer.clone());
     fit_effect(vs, state.ui.sidebar, engine.clone());
+    crate::viewer::resize_constraint::resize_constraint_effect(state, engine.clone());
     let zoom = crate::viewer::zoom::ZoomController::new(engine);
     crate::viewer::zoom::register(&zoom);
     zoom.drive(vs);

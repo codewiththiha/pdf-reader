@@ -62,6 +62,12 @@ pub struct LayoutSettings {
     pub no_gap: bool,
     #[serde(default = "on_true")]
     pub auto_scale: bool,
+    /// When the reader zooms by hand (no fit mode), still constrain the page
+    /// to the window width when the space gets tight — but never let it grow
+    /// past the zoom the reader chose. Off means a manual zoom stays exactly
+    /// where it was set and the page simply overflows and scrolls.
+    #[serde(default = "on_true")]
+    pub constrain_zoom_to_window: bool,
     #[serde(default = "on_true")]
     pub page_shadow: bool,
     #[serde(default)]
@@ -91,6 +97,7 @@ impl Default for LayoutSettings {
             progress_bar: true,
             no_gap: false,
             auto_scale: true,
+            constrain_zoom_to_window: true,
             page_shadow: true,
             sidebar_overlay: false,
             blend_mode: false,

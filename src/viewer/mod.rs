@@ -9,4 +9,5 @@
 //! touch a virtualizer.
 
 pub mod engine;
+pub mod resize_constraint;
 pub mod zoom;
