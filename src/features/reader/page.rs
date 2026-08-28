@@ -471,8 +471,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         <SettingsModal state=state open=settings_open />
                         <ReaderBottomBar
                             reader=vs
-                            virtualizer=virtualizer_view
-                            h_virtualizer=h_virtualizer_view
                         />
                         <crate::components::search::floating_search::FloatingSearch
                             state=vs
