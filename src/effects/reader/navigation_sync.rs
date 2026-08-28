@@ -5,6 +5,11 @@
 //! - page -> scroll: `scroll_to_index(Start, Auto)`
 //! - mode flip -> scroll: `scroll_to_index(Start, Instant)` when re-entering
 //!   continuous mode
+//!
+//! Both directions stand down while a zoom transaction is in flight: a zoom
+//! moves the geometry, and the transaction's anchor — not a window churn's
+//! idea of the dominant item — decides where the reader lands. Sync resumes
+//! against the committed geometry when the transition ends.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -31,7 +36,7 @@ impl NavSyncState {
     }
 }
 
-/// Must be called once from the app root (ReaderPage), alongside `fit_effect`.
+/// Must be called once from the app root (ReaderPage), alongside the zoom sources.
 pub fn navigation_sync(
     state: ReaderState,
     virtualizer: Virtualizer,
@@ -51,6 +56,14 @@ pub fn navigation_sync(
                 return;
             }
             let dominant = v.dominant().get() as u32 + 1;
+            // During a zoom transaction the virtualizer's window is frozen,
+            // but a mid-zoom wheel can still rewindow and move the dominant
+            // item through no fault of the reader. The zoom anchor already
+            // knows the page; syncing it here is what made the page number
+            // flicker to a neighbour mid-gesture.
+            if state.viewer.zooming_now() {
+                return;
+            }
             if page.get_untracked() == dominant {
                 return;
             }
@@ -65,6 +78,11 @@ pub fn navigation_sync(
         let v = virtualizer.clone();
         Effect::new(move |_| {
             if mode.get() != ViewMode::ScrollVertical {
+                return;
+            }
+            // Scroll restoration is the transaction's job; letting a page
+            // write fight the anchor mid-zoom is the other half of the loop.
+            if state.viewer.zooming_now() {
                 return;
             }
             let page = page.get();
@@ -87,6 +105,9 @@ pub fn navigation_sync(
                 return;
             }
             let dominant = v.dominant().get() as u32 + 1;
+            if state.viewer.zooming_now() {
+                return;
+            }
             if page.get_untracked() == dominant {
                 return;
             }
@@ -97,19 +118,14 @@ pub fn navigation_sync(
 
     {
         // page changes drive the horizontal strip
-        let (suppress, page, v, zooming) = (
-            nav.suppress.clone(),
-            state.viewer.page,
-            h_virtualizer.clone(),
-            state.viewer.zoom_animating,
-        );
+        let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
         Effect::new(move |_| {
             if mode.get() != ViewMode::ScrollHorizontal {
                 return;
             }
-            // While zooming, the strip is center-anchored (see zoom.rs);
-            // re-centering a page here would fight the pinch.
-            if zooming.get() {
+            // While a zoom transaction is in flight the anchor owns the
+            // strip position; re-centering a page here would fight it.
+            if state.viewer.zooming_now() {
                 return;
             }
             let page = page.get();

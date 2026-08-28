@@ -15,7 +15,7 @@ use crate::state::{ReaderState, TextureSignal};
 pub fn SingleLayout(state: ReaderState) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
-    let display_scale = state.viewer.zoom.layout.read_only();
+    let display_scale = state.viewer.zoom.current.read_only();
     let gesture_owns = state.viewer.gesture_owns();
     let prev_page = StoredValue::new(0u32);
 
@@ -37,8 +37,8 @@ pub fn SingleLayout(state: ReaderState) -> impl IntoView {
                             <PageCanvas
                                 page=page
                                 scale=display_scale
-                                render_scale=state.viewer.zoom.render
-                                zoom_animating=state.viewer.zoom_animating
+                                render_scale=state.viewer.zoom.committed
+                                zoom_animating=state.viewer.zooming()
                                 gesture_owns=gesture_owns
                                 texture=texture
                                 canvas_id=format!("sp-{page}-cv")

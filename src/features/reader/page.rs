@@ -30,7 +30,6 @@ use crate::components::sidebar::switcher::PanelSwitcher;
 use crate::components::sidebar::thumbnails_view::SidebarThumbs;
 use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
 use crate::components::viewer_controls::page_indicator::PageIndicator;
-use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::features::reader::use_reader_virtualizers;
@@ -79,7 +78,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 return;
             }
             vs.viewer.page_margin.set(m);
-            let scale = vs.viewer.zoom.layout.get_untracked();
+            let scale = vs.viewer.zoom.committed.get_untracked();
             let gap = vs.viewer.page_gap.get_untracked();
             let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
             let widths = vs
@@ -109,12 +108,17 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     });
 
     let engine = crate::viewer::engine::ViewerEngine::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
-    fit_effect(vs, state.ui.sidebar, engine.clone());
-    crate::viewer::resize_constraint::resize_constraint_effect(state, engine.clone());
+    // The zoom controller is created and driven here, and lives exactly as
+    // long as this page's reactive owner. Everything downstream only posts
+    // commands; nothing else writes a zoom scale or rescales a strip.
     let zoom = crate::viewer::zoom::ZoomController::new(engine);
-    crate::viewer::zoom::register(&zoom);
     zoom.drive(vs);
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
+    // The zoom sources come last, after the controller that consumes them:
+    // fit recomputation on window/mode/page/margin changes, and the
+    // shrink-to-fit re-resolution on resizes of a manually zoomed reader.
+    crate::effects::reader::zoom_watchers::fit_watcher(vs, state.ui.sidebar);
+    crate::effects::reader::zoom_watchers::resize_watcher(state);
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     reading_progress(state);
 

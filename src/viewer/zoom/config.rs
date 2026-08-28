@@ -1,0 +1,108 @@
+//! Zoom behaviour knobs, in one place: the clamped scale range and the
+//! animation profile. Today every view mode shares the same numbers; the
+//! per-mode split exists so horizontal, vertical and paginated zooms can be
+//! tuned independently later without scattering mode checks through the
+//! pipeline.
+
+use pdf_core::layout::ViewMode;
+use pdf_core::math::{MAX_SCALE, MIN_SCALE};
+
+/// Duration of the eased zoom tween, in milliseconds.
+const ZOOM_ANIM_MS: f64 = 200.0;
+
+/// How (and whether) a zoom animates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomAnimationConfig {
+    /// Whether zooms tween at all; `false` lands on the first frame.
+    pub enabled: bool,
+    /// Tween duration in milliseconds.
+    pub duration_ms: f64,
+}
+
+/// The zoom behaviour profile for one view mode.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomProfile {
+    /// Smallest scale the reader can settle at.
+    pub min: f64,
+    /// Largest scale the reader can settle at.
+    pub max: f64,
+    /// How the transition to a new scale animates.
+    pub animation: ZoomAnimationConfig,
+}
+
+impl ZoomProfile {
+    /// Clamp a proposed scale into the profile's range. A non-finite input
+    /// (NaN, infinity — a corrupt measurement upstream) collapses to the
+    /// minimum rather than poisoning every derived geometry.
+    pub fn clamp(&self, scale: f64) -> f64 {
+        if !scale.is_finite() {
+            return self.min;
+        }
+        scale.clamp(self.min, self.max)
+    }
+
+    /// Effective tween duration: zero when animation is disabled (the tween
+    /// then degenerates to an immediate landing).
+    pub fn duration_ms(&self) -> f64 {
+        if self.animation.enabled {
+            self.animation.duration_ms
+        } else {
+            0.0
+        }
+    }
+}
+
+/// The profile for a view mode. Identical values today on purpose: the
+/// refactor that introduced this config changed the zoom *architecture*,
+/// not the numbers, so behaviour stays put until a profile needs to diverge.
+pub fn profile_for(_mode: ViewMode) -> ZoomProfile {
+    ZoomProfile {
+        min: MIN_SCALE,
+        max: MAX_SCALE,
+        animation: ZoomAnimationConfig {
+            enabled: true,
+            duration_ms: ZOOM_ANIM_MS,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_honours_the_range_and_survives_garbage() {
+        let p = profile_for(ViewMode::ScrollVertical);
+        assert_eq!(p.clamp(0.01), MIN_SCALE);
+        assert_eq!(p.clamp(999.0), MAX_SCALE);
+        assert_eq!(p.clamp(1.25), 1.25);
+        // NaN must not leak into geometry.
+        assert_eq!(p.clamp(f64::NAN), MIN_SCALE);
+    }
+
+    #[test]
+    fn every_mode_shares_the_same_profile_for_now() {
+        let baseline = profile_for(ViewMode::ScrollVertical);
+        for mode in [
+            ViewMode::Single,
+            ViewMode::Spread,
+            ViewMode::ScrollHorizontal,
+        ] {
+            assert_eq!(profile_for(mode), baseline);
+        }
+    }
+
+    #[test]
+    fn a_disabled_animation_collapses_to_an_instant_landing() {
+        let p = ZoomProfile {
+            min: MIN_SCALE,
+            max: MAX_SCALE,
+            animation: ZoomAnimationConfig {
+                enabled: false,
+                duration_ms: 250.0,
+            },
+        };
+        assert_eq!(p.duration_ms(), 0.0);
+        assert_eq!(profile_for(ViewMode::Single).duration_ms(), ZOOM_ANIM_MS);
+    }
+}

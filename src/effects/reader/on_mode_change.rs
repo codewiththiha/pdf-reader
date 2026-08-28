@@ -19,11 +19,9 @@ pub(super) fn on_mode_change(
         let continuous = state.viewer.mode.get() == ViewMode::ScrollVertical;
         let horizontal = state.viewer.mode.get() == ViewMode::ScrollHorizontal;
         if continuous && !was_continuous {
-            // A fit debounce interrupted by the flip can strand `zoom_animating`
-            // true, which would keep every re-mounted page's render effect in
-            // the suspended branch — a blank viewer. The flip is an explicit
-            // user action, so the flag is released before the re-entry render.
-            state.viewer.zoom_animating.set(false);
+            // A zoom transition still in flight self-terminates (its commit
+            // branches by the NEW mode), so nothing here needs to release a
+            // suspended-render flag anymore — there is no flag to strand.
             let page = state.viewer.page.get_untracked();
             let v = virtualizer.clone();
             request_animation_frame(move || {
@@ -37,7 +35,6 @@ pub(super) fn on_mode_change(
             });
         }
         if horizontal && !was_horizontal {
-            state.viewer.zoom_animating.set(false);
             let page = state.viewer.page.get_untracked();
             let v = h_virtualizer.clone();
             request_animation_frame(move || {

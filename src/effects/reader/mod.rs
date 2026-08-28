@@ -1,10 +1,10 @@
 //! Reader effects: the reactive systems that keep the reader in sync
-//! (scroll/page navigation sync, fit/zoom, search, selection tracking,
+//! (scroll/page navigation sync, zoom sources, search, selection tracking,
 //! reading progress).
 
 pub mod auto_scroll;
 pub mod vertical_scroll_sync;
-pub mod fit_mode;
+pub mod zoom_watchers;
 pub mod link_navigation;
 pub mod on_mode_change;
 pub mod navigation_sync;

@@ -25,12 +25,12 @@ pub(crate) struct ReaderVirtualizers {
 }
 
 /// Keeps `css_heights` fully seeded from intrinsic sizes: it is the shared
-/// measurement store backing the vertical virtualizer and the zoom-rescale
+/// measurement store backing the vertical virtualizer and the zoom commit
 /// path, not a second layout model.
 fn seed_css_heights(state: ReaderState) {
     Effect::new(move || {
         let count = state.document.num_pages.get() as usize;
-        let scale = state.viewer.zoom.render.get();
+        let scale = state.viewer.zoom.committed.get();
         let empty_intrinsic = state.document.metrics.intrinsic.with(|sizes| sizes.is_empty());
         let fallback = state
             .document
@@ -86,7 +86,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             .get_untracked()
             .map(|size| size.height)
             .unwrap_or(0.0);
-        intrinsic.unwrap_or(fallback) * state.viewer.zoom.render.get_untracked()
+        intrinsic.unwrap_or(fallback) * state.viewer.zoom.committed.get_untracked()
             + state.viewer.page_gap.get_untracked()
     };
     let epoch = Signal::derive(move || {
@@ -121,10 +121,13 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     );
 
     // Horizontal virtualizer: created unconditionally (hook), bound only when the view mounts.
+    // Both strips estimate from the COMMITTED scale — the geometry scale —
+    // so the two axes can never disagree about how big a page is mid-zoom
+    // (the live visual scale is presentation-only and nobody's geometry).
     let h_estimate = move |index: usize| {
         state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
-        }) * state.viewer.zoom.layout.get_untracked()
+        }) * state.viewer.zoom.committed.get_untracked()
             + 2.0 * state.viewer.page_margin.get_untracked()
     };
     let h_virtualizer = use_virtualizer(
@@ -150,8 +153,8 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         let v = virtualizer.clone();
         Effect::new(move |_| {
             let mut pin = None;
-            if state.viewer.zoom_animating.get() {
-                let dominant = v.dominant().get();
+            if state.viewer.zoom.transition.get().is_some() {
+                let dominant = v.dominant().get_untracked();
                 pin = Some((dominant, dominant));
             }
             if let Some((first, last)) = state.viewer.selected_pages.get() {

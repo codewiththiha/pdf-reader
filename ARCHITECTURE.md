@@ -33,7 +33,7 @@ The app uses the adapter and keeps only app-specific policy locally:
 - page rendering, text/search overlays, and chrome
 - measurement storage in `css_heights`
 
-`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled during zoom/layout animation. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
+`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled exactly once per zoom transaction (when the transition commits). Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
 
 ## Continuous reader flow
 
@@ -41,7 +41,7 @@ The app uses the adapter and keeps only app-specific policy locally:
 2. `PageList` binds the scroll container, renders `v.items()`, and reports measured page heights back into both `css_heights` and the virtualizer.
 3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
-5. Fit and zoom rescale `css_heights` and apply the same rescale to the virtualizer so anchoring and mounted windows stay in sync.
+5. Zoom runs through one controller: commands resolve to a target, a page-relative anchor is captured, the visual scale tweens by stretching the existing bitmaps, and a single commit rescales `css_heights` and the virtualizer and restores the anchor — so anchoring and mounted windows stay in sync without per-frame relayouts.
 
 ## Thumbnail panel flow
 

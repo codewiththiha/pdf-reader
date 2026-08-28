@@ -139,31 +139,137 @@ impl Default for DocumentState {
     }
 }
 
-/// The zoom-pipeline scales, one type so they cannot drift apart across
-/// modules (was a data clump of loose `f64` signals).
+/// One zoom intent, posted by whichever surface wants the zoom to change
+/// (toolbar buttons, keyboard steps, the fit watcher, the resize watcher).
+///
+/// The [`crate::viewer::zoom::ZoomController`] is the only consumer: a
+/// command is resolved against the current window, mode and page, and lands
+/// through the one transition pipeline. Nobody executes a zoom by writing
+/// the scale signals directly.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ZoomCommand {
+    /// A manual zoom to an absolute scale (a preset menu entry).
+    Set(f64),
+    /// One step along the preset ladder: `+1` zooms in, `-1` zooms out.
+    Step(i32),
+    /// Re-resolve the active fit mode (width / page) against the current
+    /// window, view mode and page. Stands down when no fit mode is active.
+    Refit,
+    /// Re-resolve a manual zoom against the current window: the effective
+    /// scale is `min(desired, fit-width)`, so a narrowed window shrinks the
+    /// page without ever forgetting the zoom the reader chose.
+    Constrain,
+}
+
+/// Where the reader's eyes are, in document coordinates — the position a
+/// zoom must give back once the new geometry exists. Page-relative and
+/// fraction-based, never pixel-absolute, so it survives pages mounting and
+/// unmounting and every intermediate scale of the animation.
+#[derive(Debug, Clone, Copy)]
+pub struct ZoomAnchor {
+    /// 1-based page the viewport is anchored to (`viewer.page`, never the
+    /// virtualizer's dominant item — that is the value most likely to move
+    /// while a transaction is in flight).
+    pub page: u32,
+    /// `0..1` position through that page along the strip's main axis.
+    pub main_fraction: f64,
+    /// `0..1` position through the horizontal strip's vertical (cross-axis)
+    /// overflow. Carried as a fraction so zooming out through the point
+    /// where the overflow disappears eases the offset to 0 instead of
+    /// discarding it, and zooming back in returns it.
+    pub cross_fraction: f64,
+}
+
+/// A live zoom transaction: what is animating, from where, to where, and
+/// the document anchor that must be restored when geometry commits. Exists
+/// for exactly the duration of the transition; `None` means idle.
+#[derive(Debug, Clone, Copy)]
+pub struct ZoomTransition {
+    /// Scale the tween started from — the live visual scale at post time, so
+    /// a retarget continues from wherever the eye currently is.
+    pub from: f64,
+    /// Resolved target scale.
+    pub to: f64,
+    /// `Date::now()` at (re)targeting; a retarget restarts the clock.
+    pub start_ms: f64,
+    /// Whether the visual scale should tween; `false` lands on the first frame.
+    pub animate: bool,
+    /// Document anchor captured when the transaction opened. Chained
+    /// commands (a burst of `+` presses, a sidebar slide) reuse the original
+    /// anchor rather than recapturing mid-flight.
+    pub anchor: ZoomAnchor,
+}
+
+/// The zoom pipeline scales, one type so they cannot drift apart across
+/// modules. Three signals with three distinct meanings:
+///
+/// - `desired` is what the reader asked for, independent of whether it
+///   currently fits (the shrink-to-fit ceiling reads it, the readout tooltip
+///   explains it).
+/// - `current` is the live visual scale: it animates every frame of a zoom
+///   and drives the page presentation (the CSS stretch of the existing
+///   bitmaps). It is the only scale that moves during an animation.
+/// - `committed` is the scale the geometry and rasters are laid out at:
+///   virtualizer sizes, `css_heights`, and the crisp render scale. It jumps
+///   exactly once per zoom transaction, when the transition commits.
+///
+/// A fourth signal, `transition`, carries the in-flight transaction (and
+/// its absence is what "not zooming" means). Commands queue on `commands`;
+/// the controller is their only consumer.
 #[derive(Clone, Copy)]
 pub struct ZoomState {
-    /// Committed zoom level (what the last render used after settle); drives
-    /// the percentage readout.
-    pub level: RwSignal<f64>,
-    /// Zoom the layout is laid out at right now; drives CSS size, never render.
-    pub layout: RwSignal<f64>,
-    /// Zoom actually used for rasterising (equals `level` after fit resolves).
-    pub render: RwSignal<f64>,
-    /// The zoom the READER asked for, independent of whether it currently fits.
-    pub requested: RwSignal<f64>,
-    /// `(target_zoom, animate, token)` — token makes every request unique.
-    pub request: RwSignal<Option<(f64, bool, u64)>>,
+    /// The zoom the reader asked for, independent of whether it currently
+    /// fits the window.
+    pub desired: RwSignal<f64>,
+    /// The scale the viewer visually shows right now (animates mid-zoom).
+    pub current: RwSignal<f64>,
+    /// The scale geometry and rasters are committed at (virtualizer sizes,
+    /// page renders). Changes once per zoom transaction.
+    pub committed: RwSignal<f64>,
+    /// The in-flight transition, if any. While present, page/scroll
+    /// synchronisation and geometry feedback are frozen.
+    pub transition: RwSignal<Option<ZoomTransition>>,
+    /// `(command, animate, token)` — the token makes every post unique, so
+    /// two identical steps in a row both land.
+    pub commands: RwSignal<Option<(ZoomCommand, bool, u64)>>,
+    /// Monotonic command counter backing the token above.
+    pub seq: RwSignal<u64>,
+}
+
+impl ZoomState {
+    /// Post a zoom intent to the controller. `animate` asks for the eased
+    /// tween; callers passing `false` get a first-frame landing.
+    pub fn post(&self, cmd: ZoomCommand, animate: bool) {
+        let token = self.seq.get_untracked() + 1;
+        self.seq.set(token);
+        self.commands.set(Some((cmd, animate, token)));
+    }
+
+    /// The scale the in-flight transition is heading to, if any. Manual
+    /// steps chain from this so a fast `+ +` advances two presets.
+    pub fn in_flight_target(&self) -> Option<f64> {
+        self.transition.get_untracked().map(|t| t.to)
+    }
+
+    /// Seed every scale for a freshly opened document: no transition, no
+    /// layout to animate from, all three scales in agreement.
+    pub fn initialize(&self, scale: f64) {
+        self.desired.set(scale);
+        self.current.set(scale);
+        self.committed.set(scale);
+        self.transition.set(None);
+    }
 }
 
 impl Default for ZoomState {
     fn default() -> Self {
         Self {
-            level: RwSignal::new(1.0),
-            layout: RwSignal::new(1.0),
-            render: RwSignal::new(1.0),
-            requested: RwSignal::new(1.0),
-            request: RwSignal::new(None),
+            desired: RwSignal::new(1.0),
+            current: RwSignal::new(1.0),
+            committed: RwSignal::new(1.0),
+            transition: RwSignal::new(None),
+            commands: RwSignal::new(None),
+            seq: RwSignal::new(0),
         }
     }
 }
@@ -179,8 +285,6 @@ pub struct ViewerSignals {
     pub zoom: ZoomState,
     /// (width, height) of the viewer content area in CSS px.
     pub container_size: RwSignal<(f64, f64)>,
-    /// True while a zoom animation is in flight; renders/geometry are suspended.
-    pub zoom_animating: RwSignal<bool>,
     /// Inclusive `(first, last)` 1-based page range of the reader's current
     /// text selection, or `None` when no text is selected.
     ///
@@ -213,14 +317,28 @@ impl ViewerSignals {
         self.page_margin.set(0.0);
     }
 
+    /// True while a zoom transaction is in flight: renders are suspended,
+    /// page/scroll synchronisation and geometry feedback are frozen, and the
+    /// mounted window is pinned around the dominant page.
+    pub fn zooming(&self) -> Signal<bool> {
+        let transition = self.zoom.transition;
+        Signal::derive(move || transition.get().is_some())
+    }
+
+    /// Untracked variant of [`Self::zooming`] for rAF/scroll callbacks and
+    /// effect guards that must not subscribe to the transition.
+    pub fn zooming_now(&self) -> bool {
+        self.zoom.transition.get_untracked().is_some()
+    }
+
     /// True only while a manual zoom animation is in flight (fit is `None`,
     /// so the reader is zooming by hand rather than re-fitting). When set,
     /// the layouts hand the canvas to the gesture so a fit-driven refit can
     /// never fight the pinch.
     pub fn gesture_owns(&self) -> Signal<bool> {
-        let zoom_animating = self.zoom_animating;
+        let transition = self.zoom.transition;
         let fit = self.fit;
-        Signal::derive(move || zoom_animating.get() && fit.get_untracked() == FitMode::None)
+        Signal::derive(move || transition.get().is_some() && fit.get_untracked() == FitMode::None)
     }
 }
 
@@ -233,7 +351,6 @@ impl Default for ViewerSignals {
             scroll_top: RwSignal::new(0.0),
             zoom: ZoomState::default(),
             container_size: RwSignal::new((800.0, 600.0)),
-            zoom_animating: RwSignal::new(false),
             selected_pages: RwSignal::new(None),
             auto_scroll: RwSignal::new(false),
             page_gap: RwSignal::new(PAGE_GAP),

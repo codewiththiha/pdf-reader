@@ -76,8 +76,8 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     let measure = move || {
         request_animation_frame(move || {
             // Mid-zoom relayout: geometry is moving; the effect re-runs when
-            // zoom_animating drops, so skipping here loses nothing.
-            if state.reader.viewer.zoom_animating.get_untracked() { return; }
+            // the zoom transition ends, so skipping here loses nothing.
+            if state.reader.viewer.zooming_now() { return; }
 
             // THE page under the eyes, by id — never an arbitrary mounted
             // page. The id format is the anchor module's; duplicating it here
@@ -130,7 +130,7 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
 
     // Re-measure whenever geometry or identity can change, and on resize.
     //
-    // `zoom_animating` is tracked so the effect re-runs when a gesture SETTLES
+    // The zoom transition is tracked so the effect re-runs when a gesture SETTLES
     // (the rAF below skips while the flag is up): a zoom-in that fills the
     // viewer with the page must collapse the budget and hide the label, a
     // zoom-out must bring it back. Without this the label would sit over the
@@ -140,8 +140,8 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         _ = state.reader.viewer.container_size.get();
         _ = state.reader.viewer.page.get();
         _ = state.reader.viewer.mode.get();
-        _ = state.reader.viewer.zoom_animating.get();
-        _ = state.reader.viewer.zoom.render.get();
+        _ = state.reader.viewer.zoom.transition.get();
+        _ = state.reader.viewer.zoom.committed.get();
         _ = state.reader.document.title.get();
         _ = state.reader.document.path.get();
         _ = state.reader.document.outline.get();

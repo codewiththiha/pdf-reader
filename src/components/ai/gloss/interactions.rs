@@ -162,7 +162,7 @@ pub fn use_page_flip_collapse(state: AppState, ctrl: GlossController) {
 /// highlight behind.
 pub fn use_zoom_reset(state: AppState, ctrl: GlossController) {
     Effect::new(move |_| {
-        if !state.reader.viewer.zoom_animating.get() {
+        if !state.reader.viewer.zooming_now() {
             return;
         }
         if state.reader.ai_selection.popover_open.get_untracked() {

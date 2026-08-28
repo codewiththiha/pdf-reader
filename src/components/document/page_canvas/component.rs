@@ -7,15 +7,16 @@
 //!    rendered CSS-px size through `on_geometry`.
 //!  - registers on first render, unregisters (cancels) when disposed.
 //!
-//! TWO EFFECTS, deliberately separated (see `effects::fit`):
+//! TWO EFFECTS, deliberately separated (see the zoom controller):
 //!
 //!   * the STRETCH effect follows the `scale` prop — which callers wire to
-//!     `viewer.zoom.layout`. It only ever resizes the host so the bitmap we
-//!     already have CSS-stretches to the new layout size. It runs every frame
-//!     of a zoom and never triggers a render.
-//!   * the RENDER effect follows `viewer.zoom.render` and is suspended while
-//!     `viewer.zoom_animating` is true. It produces the one crisp rasterisation
-//!     at the end of a gesture.
+//!     `viewer.zoom.current`, the live VISUAL scale. It only ever resizes the
+//!     host so the bitmap we already have CSS-stretches to the new size. It
+//!     runs every frame of a zoom and never triggers a render; the strip
+//!     geometry stays at the committed scale until the transaction commits.
+//!   * the RENDER effect follows `viewer.zoom.committed` and is suspended
+//!     while a zoom transition is in flight (the `zoom_animating` prop). It
+//!     produces the one crisp rasterisation at the end of a gesture.
 //!
 //! Keeping these in ONE effect was the ghost/double-image bug: a scale change
 //! resized the host and kicked off a render in the same run, so every
@@ -219,9 +220,9 @@ pub fn PageCanvas(
         // through to the masked-render path below, but at the DISPLAY scale
         // (read untracked so we don't subscribe to per-frame display_scale
         // changes — the effect must NOT re-run every frame of the slide).
-        // `on_geometry` already ignores writes while `zoom_animating`, and
-        // `commit_scale` re-renders crisply at `render_scale` when the
-        // gesture settles. The stretch effect keeps tracking `display_scale`
+        // `on_geometry` already ignores writes while a zoom transition is
+        // in flight, and the transaction's commit re-renders crisply at the
+        // committed scale when the gesture settles. The stretch effect keeps tracking `display_scale`
         // afterwards, so the first-paint bitmap CSS-stretches with the slide.
         if anim {
             if has_geo {

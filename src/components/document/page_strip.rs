@@ -35,7 +35,11 @@ pub fn PageStrip(
 
     let v = virtualizer;
     let handle = StoredValue::new_local(v.clone());
-    let display_scale = state.viewer.zoom.layout.read_only();
+    // The DISPLAY scale: the live visual value that animates frame by frame
+    // during a zoom. It sizes the stretched presentation of the bitmap each
+    // host already holds; the strip's geometry stays at the committed scale
+    // until the transaction's single commit lands.
+    let display_scale = state.viewer.zoom.current.read_only();
     let gesture_owns = state.viewer.gesture_owns();
     let items = v.items();
     let total_size = v.total_size();
@@ -44,7 +48,7 @@ pub fn PageStrip(
     // the live layout scale, so a zoom past fit-height yields real vertical
     // scroll range. Only read for the horizontal branch, but cheap either way.
     let strip_h = Memo::new(move |_| {
-        let scale = state.viewer.zoom.layout.get();
+        let scale = state.viewer.zoom.current.get();
         let tallest = state
             .document
             .metrics
@@ -63,11 +67,17 @@ pub fn PageStrip(
     // Report a rendered page's main-axis extent back into the virtualizer.
     // Vertical uses the measured height (+ gap); horizontal uses the measured
     // width (+ the two horizontal margins, which are part of the main span).
+    // BOTH axes refuse to report while a zoom transaction is in flight: the
+    // rendered size belongs to the committed geometry, and a mid-tween page
+    // stretching to the visual scale would feed the virtualizer a size from
+    // a geometry model that does not exist yet. (Only the vertical axis used
+    // to be guarded — the asymmetry let the horizontal strip's window model
+    // drift during the exact frames it needed to stay still.)
     let on_geometry = match axis {
         Axis::Vertical => {
             let handle = handle.clone();
             Callback::new(move |(page, _w, height): (u32, f64, f64)| {
-                if state.viewer.zoom_animating.get_untracked() {
+                if state.viewer.zooming_now() {
                     return;
                 }
                 let index = page.saturating_sub(1) as usize;
@@ -84,6 +94,9 @@ pub fn PageStrip(
         Axis::Horizontal => {
             let handle = handle.clone();
             Callback::new(move |(_page, w, _h): (u32, f64, f64)| {
+                if state.viewer.zooming_now() {
+                    return;
+                }
                 if w > 0.0 {
                     let m = state.viewer.page_margin.get_untracked();
                     handle
@@ -117,8 +130,8 @@ pub fn PageStrip(
                                             <PageCanvas
                                                 page=page
                                                 scale=display_scale
-                                                render_scale=state.viewer.zoom.render
-                                                zoom_animating=state.viewer.zoom_animating
+                                                render_scale=state.viewer.zoom.committed
+                                                zoom_animating=state.viewer.zooming()
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=format!("cont-{index}-cv")
@@ -160,8 +173,8 @@ pub fn PageStrip(
                                             <PageCanvas
                                                 page=page
                                                 scale=display_scale
-                                                render_scale=state.viewer.zoom.render
-                                                zoom_animating=state.viewer.zoom_animating
+                                                render_scale=state.viewer.zoom.committed
+                                                zoom_animating=state.viewer.zooming()
                                                 gesture_owns=gesture_owns
                                                 texture=texture
                                                 canvas_id=format!("hp-{page}-cv")

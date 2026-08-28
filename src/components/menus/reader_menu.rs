@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
 use pdf_core::layout::ViewMode;
-use pdf_core::math::{nearest_zoom, FitMode};
+use pdf_core::math::FitMode;
 
 use crate::components::app_shell::toolbar_popover::MenuPopover;
 use crate::components::primitives::icon::{Icon, IconName};
@@ -14,7 +14,7 @@ use crate::components::primitives::kbd::Kbd;
 use crate::components::primitives::menu_item::MenuItem;
 use crate::components::primitives::separator::Separator;
 use crate::components::primitives::shortcut_row::ShortcutRow;
-use crate::components::viewer_controls::zoom_controls::{apply_zoom, step_base};
+use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
 
 #[component]
@@ -80,7 +80,7 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
     let r = state.reader;
     let mode = r.viewer.mode;
     let full = RwSignal::new(false);
-    let percent = move || format!("{}%", (r.viewer.zoom.level.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (r.viewer.zoom.committed.get() * 100.0).round() as u32);
     let (show_keys, set_show_keys) = signal(false);
 
     view! {
@@ -102,13 +102,13 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                     <IconButton
                         icon=IconName::ZoomOut
                         title="Zoom out (-)"
-                        on_click=move || apply_zoom(state, nearest_zoom(step_base(state), -1))
+                        on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(-1), true)
                     />
                     <span class="text-sm font-medium tabular-nums text-ink">{percent}</span>
                     <IconButton
                         icon=IconName::ZoomIn
                         title="Zoom in (+)"
-                        on_click=move || apply_zoom(state, nearest_zoom(step_base(state), 1))
+                        on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(1), true)
                     />
                 </div>
                 // ── 4 view modes | separator | fit width / fit page ──

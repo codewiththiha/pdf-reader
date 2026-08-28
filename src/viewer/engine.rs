@@ -1,21 +1,25 @@
 //! [`ViewerEngine`]: the single owner of the virtualized scroll geometry.
 //!
 //! The core contract is that the engine is the *only* place layout is
-//! rescaled. Zoom and fit compute a *target* and ask the engine to apply a
-//! scale factor; the engine owns the relayout (both the vertical and the
-//! horizontal path) so a gesture and a refit cannot diverge along separate
-//! code paths. Non-rescale geometry reads (dominant page, scroll-to-page)
-//! still go through the virtualizers directly, but only in the per-mode
-//! navigation code.
+//! rescaled, and that it happens exactly once per zoom transaction — at the
+//! commit boundary, never per animation frame. The zoom controller decides
+//! the target and owns the anchor; the engine translates that into the one
+//! geometry change: scale the measurement store, rescale both strips, and
+//! restore the document anchor on the new layout. Non-rescale geometry
+//! reads (dominant page, scroll-to-page) still go through the virtualizers
+//! directly, but only in the per-mode navigation code.
 
 use leptos::prelude::*;
+use pdf_core::layout::ViewMode;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use crate::state::ReaderState;
+use crate::components::primitives::hooks::dom::h_page_list;
+use crate::state::reader::{ZoomAnchor, ReaderState};
+use crate::viewer::zoom::anchor;
 
-/// Wraps the reader's two strip virtualizers and centralises the viewer's one
-/// relayout path. The vertical (continuous) and horizontal strips stay as
-/// separate virtualizers — they are created as separate hooks in
+/// Wraps the reader's two strip virtualizers and centralises the viewer's
+/// one geometry commit. The vertical (continuous) and horizontal strips stay
+/// as separate virtualizers — they are created as separate hooks in
 /// `ReaderPage` — but resizing a strip's items is done only here.
 #[derive(Clone)]
 pub struct ViewerEngine {
@@ -30,25 +34,35 @@ impl ViewerEngine {
         Self { vertical, horizontal }
     }
 
-    /// Rescale the strip item sizes by `factor` (the ratio between the new and
-    /// current layout scale), anchoring the scroll so the content under the
-    /// viewport does not jump.
+    /// Commit one zoom transaction's geometry: move every strip's item
+    /// sizes from the committed scale to `target`, then put the anchor back
+    /// on the new layout.
     ///
-    /// This is the single relayout path for the whole viewer: it keeps the
-    /// vertical `css_heights` + vertical strip and the horizontal strip in
-    /// step, exactly as the old `relayout_to` did, so a gesture and a refit
-    /// cannot diverge along separate code paths.
-    pub fn relayout_scale(&self, state: &ReaderState, factor: f64) {
-        if factor <= 0.0 || !factor.is_finite() || (factor - 1.0).abs() < 1e-12 {
-            return;
+    /// This runs once, when a transition lands. It is deliberately NOT part
+    /// of the animation: during the tween the virtualizers keep the old
+    /// geometry (the mounted window cannot churn, the dominant item cannot
+    /// move), the pages stretch visually through the display scale, and
+    /// this single commit moves geometry, rasters and scroll together.
+    ///
+    /// Scroll restoration is document-logical, not pixel arithmetic: the
+    /// anchor names a page and fractions through it, so it stays correct
+    /// even though the intermediate scale never had a consistent geometry.
+    pub fn commit_geometry(&self, state: &ReaderState, target: f64, anchor: &ZoomAnchor) {
+        let from = state.viewer.zoom.committed.get_untracked();
+        let factor = target / from;
+        if !factor.is_finite() || factor <= 0.0 || (factor - 1.0).abs() < 1e-12 {
+            return; // already at this geometry; nothing to move
         }
 
+        // Vertical strip: heights are the measured CSS column, scaled by the
+        // commit factor. (`rescale` rebuilds the layout from the closure —
+        // the factor feeds its centre-pinned anchor, which the logical
+        // restore below then overrides.)
         state.document.metrics.css_heights.update(|heights| {
             for height in heights.iter_mut() {
                 *height *= factor;
             }
         });
-
         let heights = state
             .document
             .metrics
@@ -56,81 +70,64 @@ impl ViewerEngine {
             .with_untracked(|heights| heights.clone());
         if !heights.is_empty() {
             let gap = state.viewer.page_gap.get_untracked();
-            self.vertical.rescale(
-                factor,
-                {
-                    let heights = heights.clone();
-                    move |index| heights.get(index).copied().unwrap_or(0.0) + gap
-                },
-            );
-            relayout_vertical_scroll(state, &self.vertical, factor);
+            self.vertical.rescale(factor, {
+                let heights = heights.clone();
+                move |index| heights.get(index).copied().unwrap_or(0.0) + gap
+            });
         }
 
         // Horizontal strip: widths are exact (intrinsic × scale + margin).
-        relayout_horizontal(state, &self.horizontal, factor);
-    }
-}
-
-/// Re-assert the anchored scroll one frame later. `rescale` clamps the new
-/// offset against the new layout and writes it synchronously, but the spacer
-/// that gives the scroller its `scrollHeight` is patched by Leptos only after
-/// that call returns, so the browser clamps the write to the still-short old
-/// height. The clamp error is worst at the end of a growing document, which is
-/// why the jump showed on the last pages (and only when content was growing —
-/// a sidebar CLOSING). Re-asserting on the next frame, after the spacer has
-/// laid out, removes it.
-fn relayout_vertical_scroll(state: &ReaderState, v: &Virtualizer, factor: f64) {
-    let scroll_top = v.scroll_offset().get_untracked();
-    if (scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
-        state.viewer.scroll_top.set(scroll_top);
-    }
-    // Only re-assert on zoom-in. Zooming out shrinks the content, so the
-    // browser keeps the offset within the (now longer) scroll range on its
-    // own and there is nothing clamped to recover. Zooming in grows content
-    // past the old spacer height, so the clamped write needs a re-assert.
-    if factor > 1.0 {
-        let v = v.clone();
-        let target_scroll = scroll_top;
-        request_animation_frame(move || {
-            v.scroll_to_offset(target_scroll, ScrollMode::Instant);
+        let margin = state.viewer.page_margin.get_untracked();
+        let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
+            sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
         });
-    }
-}
-
-/// The horizontal strip's widths are exact (intrinsic × scale + margin), so
-/// the rescale is pure width math; the vertical centring is a single
-/// multiplication once the anchored rescale has landed. (`scrollLeft` is the
-/// core's; `scrollTop` is the DOM scroller's alone.)
-fn relayout_horizontal(state: &ReaderState, hv: &Virtualizer, factor: f64) {
-    let new_scale = state.viewer.zoom.layout.get_untracked() * factor;
-    let margin = state.viewer.page_margin.get_untracked();
-    let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
-        sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
-    });
-    if widths.is_empty() {
-        return;
-    }
-    let list = crate::components::primitives::hooks::dom::h_page_list();
-    let (vh, old_top) = match &list {
-        Some(el) => (el.client_height() as f64, el.scroll_top() as f64),
-        None => (0.0, 0.0),
-    };
-    hv.rescale(factor, move |index| {
-        widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
-    });
-    if let Some(el) = list {
-        if vh > 1.0 {
-            let tallest = state.document.metrics.intrinsic.with_untracked(|sizes| {
-                sizes.iter().map(|s| s.height).fold(0.0, f64::max)
+        if !widths.is_empty() {
+            self.horizontal.rescale(factor, move |index| {
+                widths.get(index).copied().unwrap_or(0.0) * target + 2.0 * margin
             });
-            let new_total = vh.max(tallest * new_scale);
-            if new_total > vh + 1.0 {
-                let center = old_top + vh / 2.0;
-                let target = (center * factor - vh / 2.0).clamp(0.0, new_total - vh);
-                el.set_scroll_top(target as i32);
-            } else if old_top > 0.0 {
-                el.set_scroll_top(0);
+        }
+
+        // With the new layout in place, restore the reader's position.
+        let count = state.document.num_pages.get_untracked() as usize;
+        let index = anchor.page.saturating_sub(1) as usize;
+        match state.viewer.mode.get_untracked() {
+            ViewMode::ScrollVertical => {
+                let offset = anchor::restore_offset(&self.vertical, index, count, anchor.main_fraction);
+                self.vertical.scroll_to_offset(offset, ScrollMode::Instant);
+                // The scroller's scrollHeight only catches up when Leptos
+                // patches the spacer, so the browser clamped the synchronous
+                // write to the still-short old height. Re-assert one frame
+                // later, once the spacer has actually laid out.
+                let v = self.vertical.clone();
+                request_animation_frame(move || {
+                    v.scroll_to_offset(offset, ScrollMode::Instant);
+                });
             }
+            ViewMode::ScrollHorizontal => {
+                let offset =
+                    anchor::restore_offset(&self.horizontal, index, count, anchor.main_fraction);
+                self.horizontal.scroll_to_offset(offset, ScrollMode::Instant);
+                let hv = self.horizontal.clone();
+                request_animation_frame(move || {
+                    hv.scroll_to_offset(offset, ScrollMode::Instant);
+                });
+                // Cross axis: carry the captured fraction into the new
+                // overflow band. Zooming out lets the position ease to 0 as
+                // the band shrinks; zooming back in returns it. The old
+                // `scrollTop = 0` reset at the overflow boundary — the bug
+                // that threw the reader's vertical position away at minimum
+                // zoom — has no equivalent here.
+                let fraction = anchor.cross_fraction;
+                request_animation_frame(move || {
+                    if let Some(el) = h_page_list() {
+                        let max = (el.scroll_height() as f64 - el.client_height() as f64).max(0.0);
+                        el.set_scroll_top((fraction * max) as i32);
+                    }
+                });
+            }
+            // Paginated layouts have no strip scroll; the page itself is the
+            // position and the layout remounts on `viewer.page`.
+            _ => {}
         }
     }
 }

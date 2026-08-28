@@ -1,7 +1,11 @@
-//! Zoom controls: zoom in/out (stepping through the presets in math::ZOOM_STEPS),
-//! fit width / fit page, and a percent readout + popover replacing the old preset
-//! Select. Any manual zoom clears the fit mode. The readout reads `viewer.zoom.level`
-//! directly, so a non-preset fit value like 137% shows correctly.
+//! Zoom controls: zoom in/out, fit width / fit page, and a percent readout +
+//! popover replacing the old preset Select.
+//!
+//! The controls carry NO zoom policy: no preset ladder walking, no clamping,
+//! no fit arithmetic, no signal writes beyond the fit-mode toggle. They post
+//! [`ZoomCommand`]s and the zoom controller owns everything else. The readout
+//! reads `zoom.committed` directly, so a non-preset fit value like 137% shows
+//! correctly; the tooltip explains a held-back zoom from `zoom.desired`.
 //!
 //! The popover renders through the shared window-aware `Popover`, which owns
 //! outside-click/Escape dismissal, viewport clamping and the titlebar hold.
@@ -17,39 +21,17 @@ use crate::components::primitives::menu_item::MenuItem;
 use crate::components::primitives::separator::Separator;
 use crate::components::primitives::tooltip::Tooltip;
 use pdf_core::layout::TOOLBAR_H;
-use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
+use pdf_core::math::{fit_scale, is_space_constrained, FitMode, ZOOM_STEPS};
 use crate::components::app_shell::adaptive_toolbar::ToolbarItem;
 use crate::components::app_shell::toolbar_popover::MenuPopover;
+use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
-use crate::viewer::zoom::request_zoom;
 
-/// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
-/// coordinator.
-///
-/// It must NOT write `scale`/`render_scale` itself. Doing that was the original
-/// bug: the scale changed instantly while the wrappers' `top:` offsets and the
-/// spacer height only caught up as each render resolved, so the scroll offset
-/// ended up pointing at a different page. `request_zoom` animates the layout
-/// and re-anchors the scroll in the same frames, then renders once.
+/// Apply a manual zoom level. A plain command post: the controller clears the
+/// fit mode, clamps the target, captures the anchor and runs the transition —
+/// the button knows nothing about any of that machinery.
 pub(crate) fn apply_zoom(state: AppState, scale: f64) {
-    state.reader.viewer.fit.set(FitMode::None);
-    request_zoom(state.reader, scale, true);
-}
-
-/// The zoom a `+`/`-` step should be measured from: the target of an in-flight
-/// gesture if there is one, else what is on screen. See `shortcuts::zoom_by`
-/// for why neither `scale` nor `display_scale` alone is correct — without this,
-/// clicking `+` twice quickly moves only one preset.
-pub(crate) fn step_base(state: AppState) -> f64 {
-    state
-        .reader
-        .viewer
-        .zoom
-        .request
-        .get_untracked()
-        .filter(|_| state.reader.viewer.zoom_animating.get_untracked())
-        .map(|(target, _, _)| target)
-        .unwrap_or_else(|| state.reader.viewer.zoom.layout.get_untracked())
+    state.reader.viewer.zoom.post(ZoomCommand::Set(scale), true);
 }
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
@@ -65,7 +47,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
                     <div class="flex items-center gap-1">
                         <Tooltip text="Zoom out (-)">
                             <Button
-                                on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), -1))
+                                on_click=move |_| state.reader.viewer.zoom.post(ZoomCommand::Step(-1), true)
                                 variant=ButtonVariant::Ghost
                                 title="Zoom out (-)"
                             >
@@ -74,7 +56,7 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
                         </Tooltip>
                         <Tooltip text="Zoom in (+)">
                             <Button
-                                on_click=move |_| apply_zoom(state, nearest_zoom(step_base(state), 1))
+                                on_click=move |_| state.reader.viewer.zoom.post(ZoomCommand::Step(1), true)
                                 variant=ButtonVariant::Ghost
                                 title="Zoom in (+)"
                             >
@@ -91,12 +73,12 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
                         <MenuItem
                             icon=IconName::ZoomOut
                             label="Out"
-                            on_click=move || apply_zoom(state, nearest_zoom(step_base(state), -1))
+                            on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(-1), true)
                         />
                         <MenuItem
                             icon=IconName::ZoomIn
                             label="In"
-                            on_click=move || apply_zoom(state, nearest_zoom(step_base(state), 1))
+                            on_click=move || state.reader.viewer.zoom.post(ZoomCommand::Step(1), true)
                         />
                     </div>
                 }
@@ -136,10 +118,10 @@ fn zoom_readout_entry(state: AppState) -> ToolbarItem {
 fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
-    let percent = move || format!("{}%", (state.reader.viewer.zoom.level.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (state.reader.viewer.zoom.committed.get() * 100.0).round() as u32);
     let zoom_title = move || {
-        let shown = state.reader.viewer.zoom.level.get();
-        let desired = state.reader.viewer.zoom.requested.get();
+        let shown = state.reader.viewer.zoom.committed.get();
+        let desired = state.reader.viewer.zoom.desired.get();
         let (cw, ch) = state.reader.viewer.container_size.get();
         let held_back = state
             .reader
@@ -204,14 +186,14 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                         view! {
                             <MenuItem
                                 label=format!("{}%", (z * 100.0).round() as u32)
-                                selected=Signal::derive(move || (state.reader.viewer.zoom.level.get() - z).abs() < 1e-9)
+                                selected=Signal::derive(move || (state.reader.viewer.zoom.committed.get() - z).abs() < 1e-9)
                                 on_click=move || {
                                     apply_zoom(state, z);
                                     open.set(false);
                                 }
                             >
                                 <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
-                                    {move || ((state.reader.viewer.zoom.level.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                                    {move || ((state.reader.viewer.zoom.committed.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
                                 </span>
                             </MenuItem>
                         }

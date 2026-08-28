@@ -89,10 +89,15 @@ through and text is never doubled.
 - Fit width and fit page, recomputed on window resize and sidebar toggle.
 - Shrink to fit: when the window is too narrow for the chosen zoom, the page shrinks to the space
   available and remembers the zoom to grow back to once space returns.
-- Zoom is an anchored layout animation. The existing bitmap is stretched to the target size
-  immediately and one crisp render is issued at the end, rather than re-rendering every frame.
-- Fit recomputation is debounced so scrolling a mixed-size book does not trigger a zoom on every
-  row.
+- Every zoom — a button step, a preset, a fit, a window constraint — runs through one transition
+  pipeline: the reader's position is captured as a page-relative anchor, the visual scale tweens
+  by stretching the existing bitmaps, and a single geometry commit at the end moves the
+  virtualizer, the scroll position and the one crisp render together. Nothing relayouts
+  per animation frame, so the page number, the mounted window and the scroll position cannot
+  flicker mid-gesture.
+- Zooming a horizontal strip preserves the vertical position as a fraction of the overflow, so
+  zooming out past the point where the overflow disappears eases the position to the top instead
+  of discarding it, and zooming back in returns it.
 
 ### Navigation
 

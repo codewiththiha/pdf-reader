@@ -169,15 +169,12 @@ pub fn open_path(state: AppState, path: String) {
                 let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =
                     fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, TOOLBAR_H, 1.0);
-                // Direct writes are correct HERE and nowhere else: this is the
-                // initial scale for a brand-new document, so there is no layout
-                // to animate from and nothing to anchor to. All three scales
-                // must start in agreement.
-                state.reader.viewer.zoom_animating.set(false);
-                state.reader.viewer.zoom.request.set(None);
-                state.reader.viewer.zoom.level.set(s);
-                state.reader.viewer.zoom.layout.set(s);
-                state.reader.viewer.zoom.render.set(s);
+                // Seeding the zoom state is correct HERE and nowhere else:
+                // this is the initial scale for a brand-new document, so
+                // there is no layout to animate from and nothing to anchor
+                // to. All three scales start in agreement, with no
+                // transition in flight.
+                state.reader.viewer.zoom.initialize(s);
 
                 // Jump to the saved page once the view has mounted and seeded
                 // its page heights — the same `page.set()` path outline /
@@ -260,7 +257,7 @@ pub fn open_path(state: AppState, path: String) {
                 // all cache blits instead of 20+ concurrent pdf.js renders
                 // fighting the width animation (same call the auto-center
                 // idle prefetch uses). Deferred ~600ms so the reader has
-                // settled first (fit_effect, first paint, cover render);
+                // settled first (the fit watcher, first paint, cover render);
                 // sequential awaits keep the engine queue from bursting.
                 // 0.25 mirrors THUMB_SCALE (panels/thumbnails/geometry.rs).
                 let warm_state = state;
