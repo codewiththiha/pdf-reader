@@ -19,7 +19,6 @@ use crate::components::primitives::tooltip::Tooltip;
 use pdf_core::layout::TOOLBAR_H;
 use pdf_core::math::{fit_scale, is_space_constrained, nearest_zoom, FitMode, ZOOM_STEPS};
 use crate::components::app_shell::adaptive_toolbar::ToolbarItem;
-use crate::components::app_shell::OverflowRow;
 use crate::components::app_shell::toolbar_popover::MenuPopover;
 use crate::state::AppState;
 use crate::viewer::zoom::request_zoom;
@@ -54,7 +53,6 @@ pub(crate) fn step_base(state: AppState) -> f64 {
 }
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
-#[allow(dead_code)]
 pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
     vec![
         // Zoom out + zoom in are one entry so they collapse together and stay
@@ -110,7 +108,6 @@ pub fn zoom_entries(state: AppState) -> Vec<ToolbarItem> {
     ]
 }
 
-#[allow(dead_code)]
 fn zoom_readout_entry(state: AppState) -> ToolbarItem {
     ToolbarItem {
         id: "zoom-readout",
@@ -126,17 +123,15 @@ fn zoom_readout_entry(state: AppState) -> ToolbarItem {
             }
             .into_any()
         }),
-        collapsed: Arc::new(move |done| {
-            view! {
-                <OverflowRow icon=IconName::ZoomIn label="Zoom" done=done on_click=move || {} />
-            }
-            .into_any()
-        }),
+        // This entry is `keep_mounted` with `priority: u32::MAX`, so it never
+        // actually collapses — its inline readout always stays in the bar.
+        // The overflow slot is therefore always empty, so leave it as a no-op
+        // view rather than a dead "Zoom" row that pretends to do something.
+        collapsed: Arc::new(|_done| ().into_any()),
     }
 }
 
 /// Percent readout + preset popover, extracted so it can be a single entry.
-#[allow(dead_code)]
 #[component]
 fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);

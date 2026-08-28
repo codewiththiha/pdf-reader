@@ -15,7 +15,6 @@
 use leptos::html;
 use leptos::prelude::*;
 use pdf_core::layout::{Axis, TOOLBAR_H};
-use pdf_core::math::FitMode;
 use virtual_list_leptos::{VirtualItem, Virtualizer};
 
 use crate::components::document::PageCanvas;
@@ -37,9 +36,7 @@ pub fn PageStrip(
     let v = virtualizer;
     let handle = StoredValue::new_local(v.clone());
     let display_scale = state.viewer.zoom.layout.read_only();
-    let gesture_owns = Signal::derive(move || {
-        state.viewer.zoom_animating.get() && state.viewer.fit.get_untracked() == FitMode::None
-    });
+    let gesture_owns = state.viewer.gesture_owns();
     let items = v.items();
     let total_size = v.total_size();
 

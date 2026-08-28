@@ -84,6 +84,10 @@ fn relayout_vertical_scroll(state: &ReaderState, v: &Virtualizer, factor: f64) {
     if (scroll_top - state.viewer.scroll_top.get_untracked()).abs() >= 0.5 {
         state.viewer.scroll_top.set(scroll_top);
     }
+    // Only re-assert on zoom-in. Zooming out shrinks the content, so the
+    // browser keeps the offset within the (now longer) scroll range on its
+    // own and there is nothing clamped to recover. Zooming in grows content
+    // past the old spacer height, so the clamped write needs a re-assert.
     if factor > 1.0 {
         let v = v.clone();
         let target_scroll = scroll_top;

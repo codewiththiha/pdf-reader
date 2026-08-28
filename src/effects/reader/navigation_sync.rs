@@ -16,7 +16,7 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 
-use super::nav_mode_flip::mode_flip;
+use super::on_mode_change::on_mode_change;
 
 /// Shared suppression flag for the two one-way syncs.
 pub(super) struct NavSyncState {
@@ -40,7 +40,7 @@ pub fn navigation_sync(
     let nav = NavSyncState::new();
     let mode = state.viewer.mode;
 
-    mode_flip(state, virtualizer.clone(), h_virtualizer.clone());
+    on_mode_change(state, virtualizer.clone(), h_virtualizer.clone());
 
     {
         let suppress = nav.suppress.clone();

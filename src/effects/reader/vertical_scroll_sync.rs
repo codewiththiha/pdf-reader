@@ -42,7 +42,7 @@ use crate::components::primitives::hooks::dom::page_list;
 type ScrollListener = Closure<dyn FnMut(Event)>;
 
 /// Must be called once when the continuous view mounts.
-pub fn continuous_scroll(state: ReaderState) {
+pub fn vertical_scroll_sync(state: ReaderState) {
     let scroll_top = state.viewer.scroll_top;
 
     // The (element, JS function) pair is parked here so `on_cleanup` (which

@@ -34,9 +34,19 @@ fn view_mode_entry(state: AppState) -> ToolbarItem {
                                 title: "Single page view",
                             },
                             SegmentOption {
+                                value: ViewMode::Spread,
+                                label: SegmentedLabel::Icon(IconName::DualPage),
+                                title: "Two-page spread view",
+                            },
+                            SegmentOption {
                                 value: ViewMode::ScrollVertical,
                                 label: SegmentedLabel::Icon(IconName::Continuous),
-                                title: "Continuous scroll view",
+                                title: "Vertical scroll view",
+                            },
+                            SegmentOption {
+                                value: ViewMode::ScrollHorizontal,
+                                label: SegmentedLabel::Icon(IconName::HScroll),
+                                title: "Horizontal scroll view",
                             },
                         ]
                         value={mode.read_only()}
@@ -58,9 +68,19 @@ fn view_mode_entry(state: AppState) -> ToolbarItem {
                                 title: "Single page view",
                             },
                             SegmentOption {
+                                value: ViewMode::Spread,
+                                label: SegmentedLabel::IconText(IconName::DualPage, "Spread"),
+                                title: "Two-page spread view",
+                            },
+                            SegmentOption {
                                 value: ViewMode::ScrollVertical,
-                                label: SegmentedLabel::IconText(IconName::Continuous, "Continuous"),
-                                title: "Continuous scroll view",
+                                label: SegmentedLabel::IconText(IconName::Continuous, "Vertical"),
+                                title: "Vertical scroll view",
+                            },
+                            SegmentOption {
+                                value: ViewMode::ScrollHorizontal,
+                                label: SegmentedLabel::IconText(IconName::HScroll, "Horizontal"),
+                                title: "Horizontal scroll view",
                             },
                         ]
                         value={mode.read_only()}

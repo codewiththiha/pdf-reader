@@ -8,7 +8,7 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 
-pub(super) fn mode_flip(
+pub(super) fn on_mode_change(
     state: ReaderState,
     virtualizer: Virtualizer,
     h_virtualizer: Virtualizer,

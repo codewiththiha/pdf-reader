@@ -3,10 +3,10 @@
 //! reading progress).
 
 pub mod auto_scroll;
-pub mod continuous_scroll;
+pub mod vertical_scroll_sync;
 pub mod fit_mode;
 pub mod link_navigation;
-pub mod nav_mode_flip;
+pub mod on_mode_change;
 pub mod navigation_sync;
 pub mod page_selection;
 pub mod reading_progress;

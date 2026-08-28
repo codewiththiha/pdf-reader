@@ -2,7 +2,7 @@
 //! search state and the AI text-selection state. Pure UI chrome (sidebar,
 //! toast) lives in `state/ui` + `state/app`; pure domain logic in `pdf-core`.
 
-use leptos::prelude::{Get, GetUntracked, Memo, RwSignal, Set};
+use leptos::prelude::{Get, GetUntracked, Memo, RwSignal, Set, Signal};
 use serde::Deserialize;
 
 use pdf_core::appearance::TextureMode;
@@ -211,6 +211,16 @@ impl ViewerSignals {
         self.auto_scroll.set(false);
         self.page_gap.set(PAGE_GAP);
         self.page_margin.set(0.0);
+    }
+
+    /// True only while a manual zoom animation is in flight (fit is `None`,
+    /// so the reader is zooming by hand rather than re-fitting). When set,
+    /// the layouts hand the canvas to the gesture so a fit-driven refit can
+    /// never fight the pinch.
+    pub fn gesture_owns(&self) -> Signal<bool> {
+        let zoom_animating = self.zoom_animating;
+        let fit = self.fit;
+        Signal::derive(move || zoom_animating.get() && fit.get_untracked() == FitMode::None)
     }
 }
 

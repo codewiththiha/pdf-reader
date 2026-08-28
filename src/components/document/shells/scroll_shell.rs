@@ -32,11 +32,11 @@ pub fn ScrollShell(
     observe_content_size(scroller_id, state.viewer.container_size);
 
     // The vertical strip mirrors its scroll offset into `viewer.scroll_top`.
-    // `continuous_scroll` additionally restores the saved offset on mount and
+    // `vertical_scroll_sync` additionally restores the saved offset on mount and
     // keeps the signal in sync from the DOM; both write the same signal so
     // they stay consistent. Horizontal has no scroll_top to mirror.
     if axis == Axis::Vertical {
-        crate::effects::reader::continuous_scroll::continuous_scroll(state);
+        crate::effects::reader::vertical_scroll_sync::vertical_scroll_sync(state);
         {
             let scroll_top = state.viewer.scroll_top;
             let offset = virtualizer.scroll_offset();

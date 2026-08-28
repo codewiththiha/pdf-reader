@@ -45,7 +45,9 @@ pub fn fit_effect(
         let margin = state.viewer.page_margin.get();
         let page = state.viewer.page.get();
         let _animating = state.viewer.zoom_animating.get();
-        let _sidebar_open = sidebar.get() != SidebarMode::None;
+        // Reading the sidebar makes this effect re-run when it opens/closes,
+        // because that changes the available container width.
+        let _ = sidebar.get();
 
         // A manual zoom clears the fit mode (see `ZoomController::zoom_to`),
         // so `fit == None` is the concrete signal that the reader is zooming

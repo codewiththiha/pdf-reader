@@ -23,6 +23,7 @@ use pdf_core::math::FitMode;
 
 use crate::state::ReaderState;
 use crate::viewer::engine::ViewerEngine;
+use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
 
 /// rAF step that can re-arm itself.
 type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
@@ -33,14 +34,6 @@ const ZOOM_ANIM_MS: f64 = 200.0;
 fn ease_out_cubic(t: f64) -> f64 {
     let u = 1.0 - t.clamp(0.0, 1.0);
     1.0 - u * u * u
-}
-
-fn prefers_reduced_motion() -> bool {
-    web_sys::window()
-        .and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok())
-        .flatten()
-        .map(|m| m.matches())
-        .unwrap_or(false)
 }
 
 /// The one zoom authority. `Copy` so it can be handed out by value; it holds
