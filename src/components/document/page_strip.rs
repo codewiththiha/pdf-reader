@@ -76,13 +76,11 @@ pub fn PageStrip(
             return None;
         }
         let t = transition.get_untracked()?;
-        let origin = match axis {
-            // Vertical: the surface is full-width; the pivot is the
-            // captured main-axis point, horizontally centred.
-            Axis::Vertical => format!("50% {}px", t.origin.1),
-            // Horizontal: both axes scroll; pivot on the captured pair.
-            Axis::Horizontal => format!("{}px {}px", t.origin.0, t.origin.1),
-        };
+        // Strict pixel coordinates on BOTH axes, exactly the captured page
+        // centre the commit's restore math recovers the scroll from — the
+        // visual pivot and the arithmetic must be the same point or the
+        // landing reads as a small hop.
+        let origin = format!("{}px {}px", t.origin.0, t.origin.1);
         Some(format!(
             "transform-origin:{origin};transform:scale({ratio});will-change:transform"
         ))

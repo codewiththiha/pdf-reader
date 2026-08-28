@@ -13,7 +13,7 @@ use leptos::prelude::*;
 use pdf_core::layout::{ViewMode, TOOLBAR_H};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use crate::components::primitives::hooks::dom::h_page_list;
+use crate::components::primitives::hooks::dom::{h_page_list, page_list};
 use crate::state::reader::{ReaderState, ZoomFocus};
 use crate::viewer::zoom::anchor;
 
@@ -45,16 +45,21 @@ impl ViewerEngine {
     /// visually; this single commit moves geometry, rasters and scroll
     /// together.
     ///
-    /// Scroll restoration is document-logical, not pixel arithmetic: the
-    /// focus names a page and fractions through it, so it stays correct
-    /// even though the intermediate scale never had a consistent geometry.
+    /// Scroll restoration is pixel arithmetic off the page centre: the
+    /// focus names the page and the viewport pixels its centre must land
+    /// on, and the new offsets are computed against the NEW geometry —
+    /// mathematically, because the DOM has not re-laid out yet at this
+    /// point (its `scrollWidth`/`scrollHeight` still answer the pre-scale
+    /// extent).
     ///
-    /// The physical scroll write is ONE explicit synchronisation step, one
-    /// frame later: `rescale`'s own write happens before Leptos has patched
-    /// the spacer to the new extent, so the browser clamps it against the
-    /// old scroll range. Rescale's centre pin and the focus are the same
-    /// point, so the intermediate frame is already visually right; the
-    /// single deferred write refines it to the exact fractional offset.
+    /// The main-axis restore is SYNCHRONOUS: the virtualizer's layout and
+    /// signals are already updated in-tick by `rescale`, so commanding the
+    /// offset immediately closes what used to be a one-frame gap where the
+    /// surface had committed but the scroll still sat at the old position.
+    /// The cross axis (the DOM scroller's own dimension — `scrollLeft` on
+    /// the vertical strip, `scrollTop` on the horizontal one) is written
+    /// directly and re-asserted once on the next frame, after the spacer
+    /// has laid out at the new extent.
     pub fn commit_geometry(&self, state: &ReaderState, target: f64, focus: &ZoomFocus) {
         let from = state.viewer.zoom.committed.get_untracked();
         let factor = target / from;
@@ -96,40 +101,48 @@ impl ViewerEngine {
         }
 
         // With the new layout in place, put the PAGE CENTRE back on the
-        // exact screen pixels it was captured at — the page the reader is
-        // on stays glued to one spot; everything else scales around it.
-        // ONE deferred synchronisation step (see the method docs): the
-        // spacer must have laid out at the new extent before the offset can
-        // be written without the browser clamping it against the old range.
+        // exact screen pixels it was captured at — synchronously on the
+        // main axis (the virtualizer already holds the new geometry, and
+        // deferring here was the one-frame flicker), directly on the cross
+        // axis with a single next-frame re-assert (that axis is the DOM
+        // scroller's alone, and its extent only exists after the spacer
+        // lays out).
         let count = state.document.num_pages.get_untracked() as usize;
         let index = focus.page.saturating_sub(1) as usize;
         match state.viewer.mode.get_untracked() {
             ViewMode::ScrollVertical => {
-                let (_, new_origin_y) =
-                    anchor::page_center_origin(self, ViewMode::ScrollVertical, index, count);
+                let (new_origin_x, new_origin_y) =
+                    anchor::page_center_origin(self, state, ViewMode::ScrollVertical, index, count, target);
                 let new_scroll_top = new_origin_y + TOOLBAR_H - focus.viewport_offset_y;
-                let v = self.vertical.clone();
-                request_animation_frame(move || {
-                    v.scroll_to_offset(new_scroll_top, ScrollMode::Instant);
-                });
+                let new_scroll_left = new_origin_x - focus.viewport_offset_x;
+
+                self.vertical.scroll_to_offset(new_scroll_top, ScrollMode::Instant);
+
+                if let Some(el) = page_list() {
+                    el.set_scroll_left(new_scroll_left as i32);
+                    request_animation_frame(move || {
+                        if let Some(el) = page_list() {
+                            el.set_scroll_left(new_scroll_left as i32);
+                        }
+                    });
+                }
             }
             ViewMode::ScrollHorizontal => {
                 let (new_origin_x, new_origin_y) =
-                    anchor::page_center_origin(self, ViewMode::ScrollHorizontal, index, count);
+                    anchor::page_center_origin(self, state, ViewMode::ScrollHorizontal, index, count, target);
                 let new_scroll_left = new_origin_x - focus.viewport_offset_x;
                 let new_scroll_top = new_origin_y - focus.viewport_offset_y;
-                let hv = self.horizontal.clone();
-                request_animation_frame(move || {
-                    hv.scroll_to_offset(new_scroll_left, ScrollMode::Instant);
-                    // Cross axis: clamped against the (possibly vanished)
-                    // overflow band, so a zoom out past the point where the
-                    // page fits simply parks at the band's edge instead of
-                    // throwing the position away.
-                    if let Some(el) = h_page_list() {
-                        let max_y = (el.scroll_height() as f64 - el.client_height() as f64).max(0.0);
-                        el.set_scroll_top(new_scroll_top.clamp(0.0, max_y) as i32);
-                    }
-                });
+
+                self.horizontal.scroll_to_offset(new_scroll_left, ScrollMode::Instant);
+
+                if let Some(el) = h_page_list() {
+                    el.set_scroll_top(new_scroll_top as i32);
+                    request_animation_frame(move || {
+                        if let Some(el) = h_page_list() {
+                            el.set_scroll_top(new_scroll_top as i32);
+                        }
+                    });
+                }
             }
             // Paginated layouts have no strip scroll; the page itself is the
             // position and the layout remounts on `viewer.page`.

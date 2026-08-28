@@ -14,6 +14,12 @@
 //! The focus is built from `viewer.page` — never the virtualizer's
 //! dominant item, the value most likely to move while a transaction is in
 //! flight. There is exactly ONE focus per transaction.
+//!
+//! Cross-axis centres are computed MATHEMATICALLY (intrinsic sizes ×
+//! scale), never from DOM `scrollWidth`/`scrollHeight`: at commit time the
+//! DOM has not re-laid out yet, so those queries answer the PRE-scale
+//! geometry and the restore would park the page on its old centre instead
+//! of tracking the zoom.
 
 use pdf_core::layout::{ViewMode, TOOLBAR_H};
 
@@ -24,20 +30,24 @@ use crate::state::reader::{ReaderState, ZoomFocus};
 use crate::viewer::engine::ViewerEngine;
 
 /// The centre of page `index`, in the strip's CONTENT coordinates — the
-/// point the stage transform pivots on.
+/// point the stage transform pivots on — at `scale`.
 ///
 /// Vertical: y is the middle of the page's extent (virtualizer offsets),
-/// x is the strip's horizontal centre (pages are centred, so the page
-/// centre is the scroller's mid-width).
+/// x is the centre of the content width — the widest page at `scale` plus
+/// the two horizontal margins, or the viewport when the content fits.
 /// Horizontal: x is the middle of the page's main-axis extent, y is the
-/// vertical centre of the strip (every page is centred by
-/// `align-items: center`, so the strip's mid-height is each page's centre
-/// whether the strip overflows or not).
+/// centre of the strip's height — the tallest page at `scale`, or the
+/// viewport when the strip fits. Both cross-axis values come from the
+/// intrinsic sizes and the scale, so the answer is correct even in the
+/// same tick as the commit's rescale (the DOM would still be reporting
+/// the old extent).
 pub(crate) fn page_center_origin(
     engine: &ViewerEngine,
+    state: &ReaderState,
     mode: ViewMode,
     index: usize,
     count: usize,
+    scale: f64,
 ) -> (f64, f64) {
     match mode {
         ViewMode::ScrollVertical => {
@@ -48,9 +58,16 @@ pub(crate) fn page_center_origin(
                 engine.vertical.total_size().get_untracked()
             };
             let y = (start + end) * 0.5;
-            let x = page_list()
-                .map(|el| el.client_width() as f64 * 0.5)
+
+            let client_w = page_list()
+                .map(|el| el.client_width() as f64)
                 .unwrap_or(0.0);
+            let max_w = state.document.metrics.intrinsic.with_untracked(|sizes| {
+                sizes.iter().map(|s| s.width).fold(0.0, f64::max)
+            });
+            let margin = state.viewer.page_margin.get_untracked();
+            let content_w = (max_w * scale + margin * 2.0).max(client_w);
+            let x = content_w * 0.5;
             (x, y)
         }
         ViewMode::ScrollHorizontal => {
@@ -61,9 +78,15 @@ pub(crate) fn page_center_origin(
                 engine.horizontal.total_size().get_untracked()
             };
             let x = (start + end) * 0.5;
-            let y = h_page_list()
-                .map(|el| el.scroll_height() as f64 * 0.5)
+
+            let client_h = h_page_list()
+                .map(|el| el.client_height() as f64)
                 .unwrap_or(0.0);
+            let max_h = state.document.metrics.intrinsic.with_untracked(|sizes| {
+                sizes.iter().map(|s| s.height).fold(0.0, f64::max)
+            });
+            let content_h = (max_h * scale).max(client_h);
+            let y = content_h * 0.5;
             (x, y)
         }
         // Paginated modes have no strip scroll; the shell's stage pivots on
@@ -73,12 +96,13 @@ pub(crate) fn page_center_origin(
 }
 
 /// The stage pivot for a transaction: the centre of the page the reader is
-/// on.
+/// on, at the committed scale.
 pub(crate) fn stage_origin(engine: &ViewerEngine, state: &ReaderState, mode: ViewMode) -> (f64, f64) {
     let page = state.viewer.page.get_untracked().max(1);
     let index = (page - 1) as usize;
     let count = state.document.num_pages.get_untracked() as usize;
-    page_center_origin(engine, mode, index, count)
+    let scale = state.viewer.zoom.committed.get_untracked();
+    page_center_origin(engine, state, mode, index, count, scale)
 }
 
 /// Capture where the reader's eyes are, immediately before a transaction
@@ -90,8 +114,9 @@ pub(crate) fn capture_focus(engine: &ViewerEngine, state: &ReaderState) -> ZoomF
     let index = (page - 1) as usize;
     let count = state.document.num_pages.get_untracked() as usize;
     let mode = state.viewer.mode.get_untracked();
+    let scale = state.viewer.zoom.committed.get_untracked();
 
-    let (origin_x, origin_y) = page_center_origin(engine, mode, index, count);
+    let (origin_x, origin_y) = page_center_origin(engine, state, mode, index, count, scale);
 
     let (viewport_offset_x, viewport_offset_y) = match mode {
         // The strip's content starts TOOLBAR_H below the scroller's origin
