@@ -222,13 +222,13 @@ pub fn PageCanvas(
         // Measured on one sidebar toggle, that was 3 of 11 renders — wasted
         // work whose only visible effect is a page popping in at the wrong
         // size. The thumbnail underlay below covers the gap, and the commit
-        // pass (~200ms later) renders it once, correctly.
+        // pass (~120ms later) renders it once, correctly.
         //
         // COLD-CACHE FIRST PAINT. If the page has NO bitmap yet
         // (`!has_geo`) AND the thumbnail cache misses (`blit_thumb` returns
         // false — e.g. the sidebar was never opened this session), the page
-        // would sit as an EMPTY TRANSPARENT CANVAS for the entire 300ms slide
-        // + 120ms commit debounce. That is why "the one in view just
+        // would sit as an EMPTY TRANSPARENT CANVAS for the whole slide
+        // + the transaction's commit. That is why "the one in view just
         // disappeared" and the stretch animation was invisible: the node
         // that was supposed to stretch had no bitmap to stretch. Fix: fall
         // through to the masked-render path below, but at the DISPLAY scale

@@ -39,7 +39,11 @@ pub fn fit_watcher(state: ReaderState, sidebar: RwSignal<SidebarMode>) {
         if fit == FitMode::None {
             return; // a manual zoom owns the scale; stand down entirely
         }
-        state.viewer.zoom.post(ZoomCommand::Refit, true);
+        // Snap, don't tween. A window resize arrives as a burst of
+        // per-frame sizes; queueing a 120ms animation against each one had
+        // the page visibly lagging and fighting the window. The reflow is
+        // instantaneous and reads as part of the resize itself.
+        state.viewer.zoom.post(ZoomCommand::Refit, false);
     });
 }
 
@@ -60,6 +64,8 @@ pub fn resize_watcher(state: AppState) {
         let _ = state.reader.viewer.container_size.get();
         let _ = state.reader.viewer.page_margin.get();
         let _ = state.reader.viewer.page.get();
-        state.reader.viewer.zoom.post(ZoomCommand::Constrain, true);
+        // Snap for the same reason as the fit watcher: constraints track a
+        // continuous resize and must land in the same frame it happened.
+        state.reader.viewer.zoom.post(ZoomCommand::Constrain, false);
     });
 }

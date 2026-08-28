@@ -10,7 +10,7 @@
 //! directly, but only in the per-mode navigation code.
 
 use leptos::prelude::*;
-use pdf_core::layout::ViewMode;
+use pdf_core::layout::{ViewMode, TOOLBAR_H};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::components::primitives::hooks::dom::h_page_list;
@@ -95,38 +95,39 @@ impl ViewerEngine {
             });
         }
 
-        // With the new layout in place, restore the reader's position in
+        // With the new layout in place, put the PAGE CENTRE back on the
+        // exact screen pixels it was captured at — the page the reader is
+        // on stays glued to one spot; everything else scales around it.
         // ONE deferred synchronisation step (see the method docs): the
-        // spacer must have laid out at the new extent before the exact
-        // offset — main axis, and the horizontal strip's cross axis — can
-        // be written without the browser clamping it away.
+        // spacer must have laid out at the new extent before the offset can
+        // be written without the browser clamping it against the old range.
         let count = state.document.num_pages.get_untracked() as usize;
         let index = focus.page.saturating_sub(1) as usize;
         match state.viewer.mode.get_untracked() {
             ViewMode::ScrollVertical => {
-                let offset =
-                    anchor::restore_offset(&self.vertical, index, count, focus.main_fraction);
+                let (_, new_origin_y) =
+                    anchor::page_center_origin(self, ViewMode::ScrollVertical, index, count);
+                let new_scroll_top = new_origin_y + TOOLBAR_H - focus.viewport_offset_y;
                 let v = self.vertical.clone();
                 request_animation_frame(move || {
-                    v.scroll_to_offset(offset, ScrollMode::Instant);
+                    v.scroll_to_offset(new_scroll_top, ScrollMode::Instant);
                 });
             }
             ViewMode::ScrollHorizontal => {
-                let offset =
-                    anchor::restore_offset(&self.horizontal, index, count, focus.main_fraction);
-                // Cross axis: carry the captured fraction into the new
-                // overflow band. Zooming out lets the position ease to 0 as
-                // the band shrinks; zooming back in returns it. The old
-                // `scrollTop = 0` reset at the overflow boundary — the bug
-                // that threw the reader's vertical position away at minimum
-                // zoom — has no equivalent here.
-                let cross = focus.cross_fraction;
+                let (new_origin_x, new_origin_y) =
+                    anchor::page_center_origin(self, ViewMode::ScrollHorizontal, index, count);
+                let new_scroll_left = new_origin_x - focus.viewport_offset_x;
+                let new_scroll_top = new_origin_y - focus.viewport_offset_y;
                 let hv = self.horizontal.clone();
                 request_animation_frame(move || {
-                    hv.scroll_to_offset(offset, ScrollMode::Instant);
+                    hv.scroll_to_offset(new_scroll_left, ScrollMode::Instant);
+                    // Cross axis: clamped against the (possibly vanished)
+                    // overflow band, so a zoom out past the point where the
+                    // page fits simply parks at the band's edge instead of
+                    // throwing the position away.
                     if let Some(el) = h_page_list() {
-                        let max = (el.scroll_height() as f64 - el.client_height() as f64).max(0.0);
-                        el.set_scroll_top((cross * max) as i32);
+                        let max_y = (el.scroll_height() as f64 - el.client_height() as f64).max(0.0);
+                        el.set_scroll_top(new_scroll_top.clamp(0.0, max_y) as i32);
                     }
                 });
             }

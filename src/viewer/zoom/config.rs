@@ -8,8 +8,9 @@ use pdf_core::layout::ViewMode;
 use pdf_core::math::{MAX_SCALE, MIN_SCALE};
 
 /// Duration of the zoom tween, in milliseconds. Linear, not eased — see
-/// `animation.rs` for why the commit seam must not decelerate.
-const ZOOM_ANIM_MS: f64 = 200.0;
+/// `animation.rs` for why the commit seam must not decelerate. 120ms keeps
+/// a manual step feeling immediate while still reading as motion.
+const ZOOM_ANIM_MS: f64 = 120.0;
 
 /// How long an item evicted by ORDINARY SCROLLING stays mounted after it
 /// leaves the window, milliseconds. Applied where the strips are built

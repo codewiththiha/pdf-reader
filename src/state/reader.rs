@@ -161,24 +161,28 @@ pub enum ZoomCommand {
     Constrain,
 }
 
-/// THE zoom focus: where the reader's eyes are, in document coordinates —
-/// the one position a zoom must give back once the new geometry exists.
-/// Page-relative and fraction-based, never pixel-absolute, so it survives
-/// pages mounting and unmounting and every intermediate scale of the
-/// animation.
+/// THE zoom focus: where the centre of the page the reader is on sits on
+/// screen — the one position a zoom must give back once the new geometry
+/// exists.
+///
+/// This is PAGE-CENTRIC, not viewport-centric: keeping the viewport centre
+/// fixed lets the page being read drift across the screen during a zoom and
+/// makes the settle feel like a jump forward or back whenever the page was
+/// not perfectly centred. Capturing where the PAGE CENTRE lands (in
+/// viewport pixels) and restoring exactly that means the page stays glued
+/// to one screen pixel through the whole transaction.
 #[derive(Debug, Clone, Copy)]
 pub struct ZoomFocus {
-    /// 1-based page under the viewport centre (`viewer.page`, never the
+    /// 1-based page under the reader's eyes (`viewer.page`, never the
     /// virtualizer's dominant item — that is the value most likely to move
     /// while a transaction is in flight).
     pub page: u32,
-    /// `0..1` position through that page along the strip's main axis.
-    pub main_fraction: f64,
-    /// `0..1` position through the horizontal strip's vertical (cross-axis)
-    /// overflow. Carried as a fraction so zooming out through the point
-    /// where the overflow disappears eases the offset to 0 instead of
-    /// discarding it, and zooming back in returns it.
-    pub cross_fraction: f64,
+    /// The page centre's on-screen x, in CSS px from the viewport's left
+    /// edge at capture time.
+    pub viewport_offset_x: f64,
+    /// The page centre's on-screen y, in CSS px from the viewport's top
+    /// edge at capture time.
+    pub viewport_offset_y: f64,
 }
 
 /// A live zoom transaction: what is animating, from where, to where, the

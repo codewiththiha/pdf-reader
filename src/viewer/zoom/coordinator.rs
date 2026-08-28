@@ -113,7 +113,7 @@ impl ZoomController {
             let mode = state.viewer.mode.get_untracked();
             let (focus, origin) = in_flight
                 .map(|t| (t.focus, t.origin))
-                .unwrap_or_else(|| (anchor::capture_focus(&engine, &state), anchor::stage_origin(mode)));
+                .unwrap_or_else(|| (anchor::capture_focus(&engine, &state), anchor::stage_origin(&engine, &state, mode)));
             // `from` is the visual scale RIGHT NOW: the presentation ratio
             // times the committed scale, so a retarget continues from
             // wherever the eye currently is instead of teleporting.
