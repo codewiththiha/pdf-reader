@@ -95,14 +95,17 @@ through and text is never doubled.
   gap-aware because page heights scale and the space between pages does not. Pages stretch the
   bitmap they already hold while the scale moves, the crisp re-render happens once at the settled
   scale, and recently evicted pages linger a moment as zombies so the surface never pops.
-- The sidebar snaps open and closed rather than sliding, so a toggle reports one new window width
-  instead of thirty; fit width and shrink-to-fit then resolve against the finished window rather
+- The sidebar slides its width over 300ms and the page follows it: while a fit owns the width the
+  page host may flex-shrink, so the column narrows with the rail instead of jumping when the refit
+  lands. Every frame of the slide still reports a new container width, but the refit is debounced
+  past the end of it, so fit width and shrink-to-fit resolve against the finished window rather
   than a half-open one.
 - Zooming a horizontal strip keeps its vertical position: the strip is always at least as tall as
   the tallest page, so the overflow — and with it the scroll position — shrinks and grows with the
   zoom instead of resetting.
 - Zooming in at 500 percent, or out at 25 percent, does nothing at all rather than wrapping to the
-  other end of the preset ladder.
+  other end of the preset ladder — and it leaves the active fit mode alone, so leaning on a button
+  that has nothing left to do cannot quietly take you out of fit width.
 - The reader keeps written motion principles (see ARCHITECTURE.md): no entrance animations on
   document content, no per-frame virtualizer work, one bounded zombie bridge across commits.
 

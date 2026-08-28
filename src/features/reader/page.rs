@@ -295,6 +295,18 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         id=VIEWER_SLOT_ID
                         class="relative min-w-0 flex-1 overflow-hidden"
                         class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
+                        // A fit guarantees the page is no wider than its line, so only
+                        // while one owns the width may the host flex-shrink. That is what
+                        // lets the column follow the sidebar slide and a window drag
+                        // instead of snapping; a hand-picked scale keeps `flex-shrink: 0`
+                        // (see `.pdf-page` in styles/pdf-page.css). The horizontal strip is
+                        // excluded outright: it fits to the viewport HEIGHT, so its pages
+                        // are wider than the window on purpose and must overflow, never
+                        // renegotiate.
+                        class=("fit-reflow", move || {
+                            vs.viewer.fit.get() != FitMode::None
+                                && vs.viewer.mode.get() != ViewMode::ScrollHorizontal
+                        })
                     >
                         <Show when=is_ready>
                             <crate::components::document::Viewer

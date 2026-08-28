@@ -28,12 +28,19 @@
      descendants, like overflow:clip, never the element's own shadow). */
 
   /* The page host is a flex child with an EXPLICIT inline width/height set by
-     PageCanvas. Flex items default to `flex-shrink: 1`, so any moment the host
-     is wider than its container — mid-zoom, or mid-sidebar-slide — the browser
-     shrinks the width while the inline height stays put, and the page visibly
-     squishes (a letter page went from a 0.77 aspect to 0.58) before snapping
-     back. The inline size is the source of truth for page geometry; never let
-     layout renegotiate it. */
+     PageCanvas, and the inline size is the source of truth for page geometry:
+     a width that layout renegotiates while the height stays put squishes the
+     paper (a letter page went from a 0.77 aspect to 0.58). So by default the
+     host never lets the flex engine touch it.
+
+     `.fit-reflow` opts a surface into the shrink, and ReaderPage grants it only
+     while a FIT owns the width — there the page is no wider than its line at
+     rest, so a shrink can only ever be the transient where the container is
+     mid-slide (the sidebar opening) or mid-drag (the window narrowing). That is
+     what lets the column follow the chrome instead of snapping when the refit
+     finally lands. `.zoom-animating` takes it straight back out for the frames
+     a transition owns, because a tween leaves the host momentarily wider than
+     the line on purpose. */
   flex-shrink: 0;
   contain: content;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 8px 24px -6px rgb(0 0 0 / 0.22);
@@ -43,6 +50,25 @@
   --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
   --scale-round-x: 1px;
   --scale-round-y: 1px;
+}
+
+/* REFLOW. While a FIT owns the width the page can never exceed its line, so
+   letting it shrink is safe — and it is what makes the column follow the
+   sidebar for the length of the slide instead of jumping when the refit
+   lands. ReaderPage toggles this on the viewer slot (see `fit-reflow`). */
+.fit-reflow .pdf-page {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* ZOOM GUARD, and the guard for every hand-picked scale. A zoom tween leaves
+   the host wider than its line on purpose, and a manual zoom may overflow the
+   container permanently; neither may be renegotiated by the flex engine.
+   Declared after `.fit-reflow` so its equal-specificity rule wins the cascade
+   while a transition is in flight. PageCanvas toggles the tag from the
+   `zoom_animating` prop. */
+.pdf-page.zoom-animating {
+  flex-shrink: 0;
 }
 
 .no-page-shadow .pdf-page {

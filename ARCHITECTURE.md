@@ -60,7 +60,15 @@ The app uses the adapter and keeps only app-specific policy locally:
    fade, slide or bounce in — document content appears instantly.
 9. Layout chrome (the sidebar width, overlays) may use short STRUCTURAL CSS
    transitions; decorative entrance keyframes do not come back.
-10. PDF renders happen only at transaction boundaries, never per frame.
+10. The page host is sized by its inline width/height, which ARE the page
+    geometry, so it never lets the flex engine renegotiate them — a shrink
+    takes the width while the height stays and the paper visibly squishes.
+    The one exception is a fit-driven reflow: while a fit owns the width the
+    page cannot exceed its line, so `.fit-reflow` grants the shrink for the
+    frames a sidebar slide or a window drag is in flight, and `.zoom-animating`
+    takes it back out for the frames a transition owns. The horizontal strip
+    never gets it: it fits to the viewport height and overflows on purpose.
+11. PDF renders happen only at transaction boundaries, never per frame.
 
 ## Continuous reader flow
 

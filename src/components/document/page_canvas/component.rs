@@ -116,18 +116,31 @@ pub fn PageCanvas(
     // ambient provider. A Memo so only a real texture change rebuilds the
     // host class.
     let texture = Memo::new(move |_| texture.get());
+    // The class is derived, not memoised on `texture` alone: `zoom-animating`
+    // flips at the two ends of every transition, and a memo keyed only on the
+    // texture would pin the guard class in place for the whole session. It
+    // rides the same reactive `class` attribute the host already has, so the
+    // tag lands in the frame the transition opens and leaves in the frame it
+    // commits.
     let host_class = move || {
         let t = texture.get();
-        let base = if t == TextureMode::None {
+        let mut base = if t == TextureMode::None {
             "pdf-page".to_string()
         } else {
             format!("pdf-page texture-{}", t.as_str())
         };
-        if class.is_empty() {
-            base
-        } else {
-            format!("{base} {class}")
+        // Tag the host while a transition owns the layout so its inline size is
+        // off the table for the flex engine. Keep it a SINGLE token: a reactive
+        // class toggle is one `classList.add` call. See `.pdf-page` in
+        // styles/pdf-page.css.
+        if zoom_animating.get() {
+            base.push_str(" zoom-animating");
         }
+        if !class.is_empty() {
+            base.push(' ');
+            base.push_str(&class);
+        }
+        base
     };
 
     let registered = Rc::new(Cell::new(false));
