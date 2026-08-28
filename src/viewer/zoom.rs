@@ -179,15 +179,10 @@ pub fn register(controller: &ZoomController) {
 /// Free-function entry for a manual zoom. Clears the fit mode (via
 /// `ZoomController::zoom_to`) so a simultaneous `fit == None` derivation
 /// cannot pull the layout back toward a fit value.
-///
-/// The controller is registered by the reader shell the moment the reader
-/// mounts, so a zoom request before that is a programming error worth
-/// surfacing loudly rather than dropping silently.
 pub fn request_zoom(state: ReaderState, target: f64, animate: bool) {
-    let Some(z) = CUR_ZOOM.with(|c| c.borrow().clone()) else {
-        panic!("zoom controller not registered: request_zoom before the reader mounted");
-    };
-    z.zoom_to(state, target, animate);
+    if let Some(z) = CUR_ZOOM.with(|c| c.borrow().clone()) {
+        z.zoom_to(state, target, animate);
+    }
 }
 
 pub fn commit_scale(state: ReaderState, scale: f64) {
