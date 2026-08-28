@@ -47,7 +47,7 @@ pub fn navigation_sync(
         let page = state.viewer.page;
         let v = virtualizer.clone();
         Effect::new(move |_| {
-            if mode.get() != ViewMode::Continuous {
+            if mode.get() != ViewMode::ScrollVertical {
                 return;
             }
             let dominant = v.dominant().get() as u32 + 1;
@@ -64,7 +64,7 @@ pub fn navigation_sync(
         let page = state.viewer.page;
         let v = virtualizer.clone();
         Effect::new(move |_| {
-            if mode.get() != ViewMode::Continuous {
+            if mode.get() != ViewMode::ScrollVertical {
                 return;
             }
             let page = page.get();
@@ -83,7 +83,7 @@ pub fn navigation_sync(
         // dominant page follows the horizontal strip
         let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
         Effect::new(move |_| {
-            if mode.get() != ViewMode::Horizontal {
+            if mode.get() != ViewMode::ScrollHorizontal {
                 return;
             }
             let dominant = v.dominant().get() as u32 + 1;
@@ -104,7 +104,7 @@ pub fn navigation_sync(
             state.viewer.zoom_animating,
         );
         Effect::new(move |_| {
-            if mode.get() != ViewMode::Horizontal {
+            if mode.get() != ViewMode::ScrollHorizontal {
                 return;
             }
             // While zooming, the strip is center-anchored (see zoom.rs);

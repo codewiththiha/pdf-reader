@@ -61,7 +61,7 @@ pub fn PageList(
         });
     }
 
-    let display_scale = state.viewer.zoom.display.read_only();
+    let display_scale = state.viewer.zoom.layout.read_only();
     let virtualizer_handle = StoredValue::new_local(v.clone());
     let on_geometry = Callback::new(move |(page, _width, height): (u32, f64, f64)| {
         if state.viewer.zoom_animating.get_untracked() {

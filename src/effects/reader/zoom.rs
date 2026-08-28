@@ -41,7 +41,7 @@ fn prefers_reduced_motion() -> bool {
 
 pub fn request_zoom(state: ReaderState, target: f64, animate: bool) {
     let target = clamp_scale(target);
-    state.viewer.zoom.desired.set(target);
+    state.viewer.zoom.requested.set(target);
     set_gesture_owns_layout(true);
     let token = ZOOM_TOKEN.with(|t| {
         let next = t.get() + 1;
@@ -131,7 +131,7 @@ pub fn relayout_to(
     }
 
     // Horizontal strip: widths are exact (intrinsic × scale + margin), so rescale too.
-    let new_scale = state.viewer.zoom.display.get_untracked() * factor;
+    let new_scale = state.viewer.zoom.layout.get_untracked() * factor;
     let margin = state.viewer.page_margin.get_untracked();
     let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
         sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
@@ -224,7 +224,7 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: 
         let live = live_token.get_value();
         live.set(token);
 
-        let from = state.viewer.zoom.display.get_untracked();
+        let from = state.viewer.zoom.layout.get_untracked();
         if (target - from).abs() < 1e-9 {
             commit_scale(state, target);
             virtualizer.resume_measurements();
@@ -266,10 +266,10 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: 
             let t = ((js_sys::Date::now() - start) / ZOOM_ANIM_MS).clamp(0.0, 1.0);
             let eased = ease_out_cubic(t);
             let want = from + (target - from) * eased;
-            let cur = state.viewer.zoom.display.get_untracked();
+            let cur = state.viewer.zoom.layout.get_untracked();
 
             relayout_to(state, want / cur, &step_virtualizer, &step_h_virtualizer);
-            state.viewer.zoom.display.set(want);
+            state.viewer.zoom.layout.set(want);
 
             if t >= 1.0 {
                 commit(target);
@@ -288,8 +288,8 @@ pub fn zoom_system(state: ReaderState, virtualizer: Virtualizer, h_virtualizer: 
 pub(super) fn commit_scale(state: ReaderState, scale: f64) {
     set_gesture_owns_layout(false);
     COMMIT_ECHO.with(|c| c.set(true));
-    state.viewer.zoom.display.set(scale);
-    state.viewer.zoom.scale.set(scale);
+    state.viewer.zoom.layout.set(scale);
+    state.viewer.zoom.level.set(scale);
     state.viewer.zoom.render.set(scale);
     state.viewer.zoom_animating.set(false);
     // The scale is settled and the pages have (or will) be re-rendered at it:

@@ -49,7 +49,7 @@ fn tick(state: ReaderState) {
     let delta = AUTO_SCROLL_PX_PER_SEC * dt;
 
     let done = match mode {
-        pdf_core::layout::ViewMode::Continuous => page_list()
+        pdf_core::layout::ViewMode::ScrollVertical => page_list()
             .map(|el| {
                 step(
                     &el,
@@ -61,7 +61,7 @@ fn tick(state: ReaderState) {
                 )
             })
             .unwrap_or(false),
-        pdf_core::layout::ViewMode::Horizontal => h_page_list()
+        pdf_core::layout::ViewMode::ScrollHorizontal => h_page_list()
             .map(|el| {
                 step(
                     &el,

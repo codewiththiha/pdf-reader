@@ -139,29 +139,30 @@ impl Default for DocumentState {
     }
 }
 
-/// The five zoom-pipeline scales, one newtype so they cannot drift apart
-/// across modules (was a data clump of loose `f64` signals).
+/// The zoom-pipeline scales, one type so they cannot drift apart across
+/// modules (was a data clump of loose `f64` signals).
 #[derive(Clone, Copy)]
 pub struct ZoomState {
-    /// Committed scale (what the last render used after settle).
-    pub scale: RwSignal<f64>,
-    /// Scale the layout is painted at right now; drives CSS size, never render.
-    pub display: RwSignal<f64>,
-    /// Scale actually used for rasterising (equals `scale` after fit resolves).
+    /// Committed zoom level (what the last render used after settle); drives
+    /// the percentage readout.
+    pub level: RwSignal<f64>,
+    /// Zoom the layout is laid out at right now; drives CSS size, never render.
+    pub layout: RwSignal<f64>,
+    /// Zoom actually used for rasterising (equals `level` after fit resolves).
     pub render: RwSignal<f64>,
     /// The zoom the READER asked for, independent of whether it currently fits.
-    pub desired: RwSignal<f64>,
-    /// `(target_scale, animate, token)` — token makes every request unique.
+    pub requested: RwSignal<f64>,
+    /// `(target_zoom, animate, token)` — token makes every request unique.
     pub request: RwSignal<Option<(f64, bool, u64)>>,
 }
 
 impl Default for ZoomState {
     fn default() -> Self {
         Self {
-            scale: RwSignal::new(1.0),
-            display: RwSignal::new(1.0),
+            level: RwSignal::new(1.0),
+            layout: RwSignal::new(1.0),
             render: RwSignal::new(1.0),
-            desired: RwSignal::new(1.0),
+            requested: RwSignal::new(1.0),
             request: RwSignal::new(None),
         }
     }
@@ -216,7 +217,7 @@ impl ViewerSignals {
 impl Default for ViewerSignals {
     fn default() -> Self {
         Self {
-            mode: RwSignal::new(ViewMode::Continuous),
+            mode: RwSignal::new(ViewMode::ScrollVertical),
             page: RwSignal::new(1),
             fit: RwSignal::new(FitMode::None),
             scroll_top: RwSignal::new(0.0),

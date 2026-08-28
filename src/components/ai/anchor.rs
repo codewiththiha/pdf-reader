@@ -36,7 +36,7 @@ pub fn host_id_for(page: u32, single: bool) -> String {
         if single {
             ViewMode::Single
         } else {
-            ViewMode::Continuous
+            ViewMode::ScrollVertical
         },
     )
 }
@@ -44,9 +44,9 @@ pub fn host_id_for(page: u32, single: bool) -> String {
 pub fn host_id_for_mode(page: u32, mode: ViewMode) -> String {
     match mode {
         ViewMode::Single => format!("sp-{page}-pg"),
-        ViewMode::Dual => format!("dp-{page}-pg"),
-        ViewMode::Horizontal => format!("hp-{page}-pg"),
-        ViewMode::Continuous => format!("cont-{}-pg", page.saturating_sub(1)),
+        ViewMode::Spread => format!("dp-{page}-pg"),
+        ViewMode::ScrollHorizontal => format!("hp-{page}-pg"),
+        ViewMode::ScrollVertical => format!("cont-{}-pg", page.saturating_sub(1)),
     }
 }
 

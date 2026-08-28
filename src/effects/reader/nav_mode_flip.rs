@@ -13,11 +13,11 @@ pub(super) fn mode_flip(
     virtualizer: Virtualizer,
     h_virtualizer: Virtualizer,
 ) {
-    let mut was_continuous = state.viewer.mode.get_untracked() == ViewMode::Continuous;
-    let mut was_horizontal = state.viewer.mode.get_untracked() == ViewMode::Horizontal;
+    let mut was_continuous = state.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
+    let mut was_horizontal = state.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
     Effect::new(move |_| {
-        let continuous = state.viewer.mode.get() == ViewMode::Continuous;
-        let horizontal = state.viewer.mode.get() == ViewMode::Horizontal;
+        let continuous = state.viewer.mode.get() == ViewMode::ScrollVertical;
+        let horizontal = state.viewer.mode.get() == ViewMode::ScrollHorizontal;
         if continuous && !was_continuous {
             // A fit debounce interrupted by the flip can strand `zoom_animating`
             // true, which would keep every re-mounted page's render effect in

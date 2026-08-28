@@ -175,8 +175,8 @@ pub fn open_path(state: AppState, path: String) {
                 // must start in agreement.
                 state.reader.viewer.zoom_animating.set(false);
                 state.reader.viewer.zoom.request.set(None);
-                state.reader.viewer.zoom.scale.set(s);
-                state.reader.viewer.zoom.display.set(s);
+                state.reader.viewer.zoom.level.set(s);
+                state.reader.viewer.zoom.layout.set(s);
                 state.reader.viewer.zoom.render.set(s);
 
                 // Jump to the saved page once the view has mounted and seeded

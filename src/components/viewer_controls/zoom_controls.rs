@@ -1,6 +1,6 @@
 //! Zoom controls: zoom in/out (stepping through the presets in math::ZOOM_STEPS),
 //! fit width / fit page, and a percent readout + popover replacing the old preset
-//! Select. Any manual zoom clears the fit mode. The readout reads `viewer.zoom.scale`
+//! Select. Any manual zoom clears the fit mode. The readout reads `viewer.zoom.level`
 //! directly, so a non-preset fit value like 137% shows correctly.
 //!
 //! The popover renders through the shared window-aware `Popover`, which owns
@@ -50,7 +50,7 @@ pub(crate) fn step_base(state: AppState) -> f64 {
         .get_untracked()
         .filter(|_| state.reader.viewer.zoom_animating.get_untracked())
         .map(|(target, _, _)| target)
-        .unwrap_or_else(|| state.reader.viewer.zoom.display.get_untracked())
+        .unwrap_or_else(|| state.reader.viewer.zoom.layout.get_untracked())
 }
 
 /// Toolbar entries for the collision-aware reader bar (fit, zoom, readout).
@@ -141,10 +141,10 @@ fn zoom_readout_entry(state: AppState) -> ToolbarItem {
 fn ZoomReadout(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let root_ref: NodeRef<html::Div> = NodeRef::new();
-    let percent = move || format!("{}%", (state.reader.viewer.zoom.scale.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (state.reader.viewer.zoom.level.get() * 100.0).round() as u32);
     let zoom_title = move || {
-        let shown = state.reader.viewer.zoom.scale.get();
-        let desired = state.reader.viewer.zoom.desired.get();
+        let shown = state.reader.viewer.zoom.level.get();
+        let desired = state.reader.viewer.zoom.requested.get();
         let (cw, ch) = state.reader.viewer.container_size.get();
         let held_back = state
             .reader
@@ -209,14 +209,14 @@ fn ZoomReadout(state: AppState) -> impl IntoView {
                         view! {
                             <MenuItem
                                 label=format!("{}%", (z * 100.0).round() as u32)
-                                selected=Signal::derive(move || (state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9)
+                                selected=Signal::derive(move || (state.reader.viewer.zoom.level.get() - z).abs() < 1e-9)
                                 on_click=move || {
                                     apply_zoom(state, z);
                                     open.set(false);
                                 }
                             >
                                 <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
-                                    {move || ((state.reader.viewer.zoom.scale.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
+                                    {move || ((state.reader.viewer.zoom.level.get() - z).abs() < 1e-9).then(|| view! { <Icon name=IconName::Check size=14/> })}
                                 </span>
                             </MenuItem>
                         }

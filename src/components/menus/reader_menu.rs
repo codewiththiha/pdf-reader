@@ -80,7 +80,7 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
     let r = state.reader;
     let mode = r.viewer.mode;
     let full = RwSignal::new(false);
-    let percent = move || format!("{}%", (r.viewer.zoom.scale.get() * 100.0).round() as u32);
+    let percent = move || format!("{}%", (r.viewer.zoom.level.get() * 100.0).round() as u32);
     let (show_keys, set_show_keys) = signal(false);
 
     view! {
@@ -114,9 +114,9 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                 // ── 4 view modes | separator | fit width / fit page ──
                 <div class="flex items-center justify-center gap-1 px-2 py-1">
                     <ModeButton state=state m=ViewMode::Single icon=IconName::SinglePage title="Single page" />
-                    <ModeButton state=state m=ViewMode::Dual icon=IconName::DualPage title="Two pages" />
-                    <ModeButton state=state m=ViewMode::Continuous icon=IconName::Continuous title="Vertical scroll" />
-                    <ModeButton state=state m=ViewMode::Horizontal icon=IconName::HScroll title="Horizontal scroll" />
+                    <ModeButton state=state m=ViewMode::Spread icon=IconName::DualPage title="Two pages" />
+                    <ModeButton state=state m=ViewMode::ScrollVertical icon=IconName::Continuous title="Vertical scroll" />
+                    <ModeButton state=state m=ViewMode::ScrollHorizontal icon=IconName::HScroll title="Horizontal scroll" />
                     <div class="mx-1 h-6 w-px shrink-0 bg-line"></div>
                     <FitButton state=state f=FitMode::Width icon=IconName::FitWidth title="Fit width" />
                     <FitButton state=state f=FitMode::Page icon=IconName::FitPage title="Fit page" />

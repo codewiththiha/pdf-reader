@@ -63,7 +63,7 @@ pub fn fit_effect(
             }
         });
         // Margins shrink the usable width.
-        let horizontal = mode == ViewMode::Horizontal;
+        let horizontal = mode == ViewMode::ScrollHorizontal;
         let cw_eff = (cw - 2.0 * margin).max(1.0);
         // Horizontal joins the paginated modes here: the strip owns the full
         // window height and the auto-hiding title bar overlays it, exactly
@@ -78,7 +78,7 @@ pub fn fit_effect(
         // individual pages in a strip — each virtual item is one page — so
         // doubling the page width there halved the fit scale and "Fit
         // Width" zoomed out to half the size it should be.
-        let spread = matches!(mode, ViewMode::Dual);
+        let spread = matches!(mode, ViewMode::Spread);
         let (pw_eff, ph_eff) = if spread { (pw * 2.0, ph) } else { (pw, ph) };
         let pad = if mode.is_paginated() || horizontal { 0.0 } else { TOOLBAR_H };
 
@@ -107,7 +107,7 @@ pub fn fit_effect(
                 return;
             }
             let t = pdf_core::math::clamp_scale((ch_eff - pad).max(1.0) / ph_eff.max(1.0));
-            state.viewer.zoom.desired.set(t);
+            state.viewer.zoom.requested.set(t);
             t
         } else if fit != FitMode::None {
             let t = fit_scale(
@@ -117,12 +117,12 @@ pub fn fit_effect(
                 pw_eff,
                 ph_eff,
                 pad,
-                state.viewer.zoom.scale.get_untracked(),
+                state.viewer.zoom.level.get_untracked(),
             );
             // A fit mode IS a deliberate choice, so it owns the ceiling too.
             // Without this, leaving fit mode would resurrect a `desired_scale`
             // from some earlier gesture and the page would jump to it.
-            state.viewer.zoom.desired.set(t);
+            state.viewer.zoom.requested.set(t);
             t
         } else if cw_eff > 1.0 {
             let fit_w = fit_scale(
@@ -132,9 +132,9 @@ pub fn fit_effect(
                 pw_eff,
                 ph_eff,
                 pad,
-                state.viewer.zoom.scale.get_untracked(),
+                state.viewer.zoom.level.get_untracked(),
             );
-            let desired = state.viewer.zoom.desired.get_untracked();
+            let desired = state.viewer.zoom.requested.get_untracked();
             constrained_scale(desired, fit_w)
         } else {
             // Container not measured yet: a zero width would "fit" nothing and
@@ -187,7 +187,7 @@ pub fn fit_effect(
         // mixed-size book would zoom on every row boundary. Those wait for
         // the debounce below, which fires once the reader pauses.
         if !first_run && !page_changed {
-            let cur = state.viewer.zoom.display.get_untracked();
+            let cur = state.viewer.zoom.layout.get_untracked();
             if (target - cur).abs() >= 0.0005 {
                 // Sidebar slide / window resize / refit: one dance. Display
                 // leads (the stretch effect follows it), the layout moves in
@@ -195,7 +195,7 @@ pub fn fit_effect(
                 // render once the size settles.
                 state.viewer.zoom_animating.set(true);
                 relayout_to(state, target / cur, &virtualizer, &h_virtualizer);
-                state.viewer.zoom.display.set(target);
+                state.viewer.zoom.layout.set(target);
             }
         }
 
@@ -215,7 +215,7 @@ pub fn fit_effect(
         // in `commit_scale`, whose echo makes the next run return early and
         // breaks the cycle.
         let settled = (target - state.viewer.zoom.render.get_untracked()).abs() < 0.0005
-            && (target - state.viewer.zoom.display.get_untracked()).abs() < 0.0005;
+            && (target - state.viewer.zoom.layout.get_untracked()).abs() < 0.0005;
         if settled && !state.viewer.zoom_animating.get_untracked() {
             return;
         }
@@ -236,10 +236,10 @@ pub fn fit_effect(
                 // scrolling a mixed-size book does not zoom on every row).
                 // Do that relayout NOW, before the crisp render, or the
                 // heights stay at the old scale and the scroll teleports.
-                let cur = state.viewer.zoom.display.get_untracked();
+                let cur = state.viewer.zoom.layout.get_untracked();
                 if (target - cur).abs() >= 0.0005 {
                     relayout_to(state, target / cur, &timer_virtualizer, &timer_h_virtualizer);
-                    state.viewer.zoom.display.set(target);
+                    state.viewer.zoom.layout.set(target);
                 }
                 let prev = state.viewer.zoom.render.get_untracked();
                 if (target - prev).abs() >= 0.0005 {

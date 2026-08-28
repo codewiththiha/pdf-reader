@@ -74,12 +74,12 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
     let mode = state.viewer.mode.get_untracked();
     // Dual is paginated like Single: setting the page shows the spread that
     // contains the match.
-    if mode == ViewMode::Single || mode == ViewMode::Dual {
+    if mode == ViewMode::Single || mode == ViewMode::Spread {
         state.viewer.page.set(m.page);
         return;
     }
 
-    if mode == ViewMode::Horizontal {
+    if mode == ViewMode::ScrollHorizontal {
         let Some(list) = h_page_list() else {
             return;
         };

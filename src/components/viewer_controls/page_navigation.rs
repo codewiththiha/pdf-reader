@@ -63,7 +63,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
         if n == 0 {
             return true;
         }
-        if mode.get() == ViewMode::Dual {
+        if mode.get() == ViewMode::Spread {
             spread_start(p) >= last_spread_start(n)
         } else {
             p >= n
@@ -78,7 +78,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     title="Previous page (ArrowLeft)"
                     disabled=Signal::derive(prev_disabled)
                     on_click=move || {
-                        if prev_state.viewer.mode.get() == ViewMode::Dual {
+                        if prev_state.viewer.mode.get() == ViewMode::Spread {
                             let next = spread_start(prev_state.viewer.page.get())
                                 .saturating_sub(2)
                                 .max(1);
@@ -106,7 +106,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                         Ok(n) => {
                             let max = commit_state.document.num_pages.get().max(1);
                             let clamped = n.clamp(1, max);
-                            if commit_state.viewer.mode.get() == ViewMode::Dual {
+                            if commit_state.viewer.mode.get() == ViewMode::Spread {
                                 // Snap typed input onto the spread that contains it.
                                 commit_state.viewer.page.set(spread_start(clamped));
                             } else {
@@ -143,7 +143,7 @@ pub fn PageNavigation(state: ReaderState) -> impl IntoView {
                     disabled=Signal::derive(next_disabled)
                     on_click=move || {
                         let n = next_state.document.num_pages.get();
-                        if next_state.viewer.mode.get() == ViewMode::Dual {
+                        if next_state.viewer.mode.get() == ViewMode::Spread {
                             let next = (spread_start(next_state.viewer.page.get()) + 2)
                                 .min(last_spread_start(n));
                             next_state.viewer.page.set(next);

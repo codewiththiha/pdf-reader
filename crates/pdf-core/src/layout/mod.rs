@@ -21,33 +21,59 @@ pub const TOOLBAR_H: f64 = 48.0;
 /// its raw is ~64MB worst case, so the ceiling is what keeps idle RAM sane.
 pub const RENDER_BUDGET: Budget = Budget::screenfuls(0.5, 3);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    Vertical,
+    Horizontal,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
+    /// One page at a time. Paginated.
     Single,
     /// Two pages side by side, no gap (a "spread"). Paginated.
-    Dual,
+    Spread,
     #[default]
-    Continuous,
+    /// All pages in one vertical strip; wheel/keys scroll vertically.
+    ScrollVertical,
     /// All pages in one horizontal strip; wheel/keys scroll horizontally.
-    Horizontal,
+    ScrollHorizontal,
 }
 
 impl ViewMode {
     pub fn all() -> [ViewMode; 4] {
         [
             ViewMode::Single,
-            ViewMode::Dual,
-            ViewMode::Continuous,
-            ViewMode::Horizontal,
+            ViewMode::Spread,
+            ViewMode::ScrollVertical,
+            ViewMode::ScrollHorizontal,
         ]
     }
 
     /// Auto-scroll only makes sense on the two scrolling modes.
     pub fn can_scroll(self) -> bool {
-        matches!(self, ViewMode::Continuous | ViewMode::Horizontal)
+        matches!(self, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal)
     }
 
     pub fn is_paginated(self) -> bool {
-        matches!(self, ViewMode::Single | ViewMode::Dual)
+        matches!(self, ViewMode::Single | ViewMode::Spread)
+    }
+
+    pub fn is_horizontal(self) -> bool {
+        self == ViewMode::ScrollHorizontal
+    }
+
+    pub fn is_vertical(self) -> bool {
+        self == ViewMode::ScrollVertical
+    }
+
+    /// The scroll axis for the scrolling modes. The paginated modes have
+    /// neither a strip nor a main axis, so they return `None`.
+    pub fn axis(self) -> Option<Axis> {
+        match self {
+            ViewMode::ScrollVertical => Some(Axis::Vertical),
+            ViewMode::ScrollHorizontal => Some(Axis::Horizontal),
+            _ => None,
+        }
     }
 }

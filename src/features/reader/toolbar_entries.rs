@@ -34,7 +34,7 @@ fn view_mode_entry(state: AppState) -> ToolbarItem {
                                 title: "Single page view",
                             },
                             SegmentOption {
-                                value: ViewMode::Continuous,
+                                value: ViewMode::ScrollVertical,
                                 label: SegmentedLabel::Icon(IconName::Continuous),
                                 title: "Continuous scroll view",
                             },
@@ -58,7 +58,7 @@ fn view_mode_entry(state: AppState) -> ToolbarItem {
                                 title: "Single page view",
                             },
                             SegmentOption {
-                                value: ViewMode::Continuous,
+                                value: ViewMode::ScrollVertical,
                                 label: SegmentedLabel::IconText(IconName::Continuous, "Continuous"),
                                 title: "Continuous scroll view",
                             },

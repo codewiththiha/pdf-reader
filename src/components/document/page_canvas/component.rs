@@ -10,7 +10,7 @@
 //! TWO EFFECTS, deliberately separated (see `effects::fit`):
 //!
 //!   * the STRETCH effect follows the `scale` prop — which callers wire to
-//!     `viewer.zoom.display`. It only ever resizes the host so the bitmap we
+//!     `viewer.zoom.layout`. It only ever resizes the host so the bitmap we
 //!     already have CSS-stretches to the new layout size. It runs every frame
 //!     of a zoom and never triggers a render.
 //!   * the RENDER effect follows `viewer.zoom.render` and is suspended while

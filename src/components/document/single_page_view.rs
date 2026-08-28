@@ -27,7 +27,7 @@ use crate::state::TextureSignal;
 pub fn SinglePageView(state: ReaderState) -> impl IntoView {
     let texture = use_context::<TextureSignal>()
         .expect("TextureSignal must be provided by app bootstrap");
-    let display_scale = state.viewer.zoom.display.read_only();
+    let display_scale = state.viewer.zoom.layout.read_only();
     let prev_page = StoredValue::new(0u32);
 
     view! {

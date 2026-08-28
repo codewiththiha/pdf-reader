@@ -64,7 +64,7 @@ fn last_spread_start(state: ReaderState) -> u32 {
 }
 
 fn page_prev(state: ReaderState) {
-    if state.viewer.mode.get() == ViewMode::Dual {
+    if state.viewer.mode.get() == ViewMode::Spread {
         state
             .viewer
             .page
@@ -76,7 +76,7 @@ fn page_prev(state: ReaderState) {
 
 fn page_next(state: ReaderState) {
     let n = state.document.num_pages.get();
-    if state.viewer.mode.get() == ViewMode::Dual {
+    if state.viewer.mode.get() == ViewMode::Spread {
         state
             .viewer
             .page
@@ -224,7 +224,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
     match ev.key().as_str() {
         "ArrowLeft" => {
             ev.prevent_default();
-            if mode == ViewMode::Horizontal {
+            if mode == ViewMode::ScrollHorizontal {
                 if !is_chrome_scroll_target(ev) && !ev.repeat() {
                     begin_line_hold(-1.0, true);
                 }
@@ -234,7 +234,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
         }
         "ArrowRight" => {
             ev.prevent_default();
-            if mode == ViewMode::Horizontal {
+            if mode == ViewMode::ScrollHorizontal {
                 if !is_chrome_scroll_target(ev) && !ev.repeat() {
                     begin_line_hold(1.0, true);
                 }
@@ -250,7 +250,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             if is_paginated(mode) {
                 ev.prevent_default();
                 page_prev(state);
-            } else if mode == ViewMode::Continuous && !is_chrome_scroll_target(ev) {
+            } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 if !ev.repeat() {
                     begin_line_hold(-1.0, false);
@@ -261,7 +261,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             if is_paginated(mode) {
                 ev.prevent_default();
                 page_next(state);
-            } else if mode == ViewMode::Continuous && !is_chrome_scroll_target(ev) {
+            } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 if !ev.repeat() {
                     begin_line_hold(1.0, false);
@@ -269,22 +269,22 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             }
         }
         "PageUp" => {
-            if mode == ViewMode::Continuous && !is_chrome_scroll_target(ev) {
+            if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(false);
                 scroll_reader_page_y(-1.0, !ev.repeat());
-            } else if mode == ViewMode::Horizontal && !is_chrome_scroll_target(ev) {
+            } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(true);
                 scroll_reader_page_x(-1.0, !ev.repeat());
             }
         }
         "PageDown" => {
-            if mode == ViewMode::Continuous && !is_chrome_scroll_target(ev) {
+            if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(false);
                 scroll_reader_page_y(1.0, !ev.repeat());
-            } else if mode == ViewMode::Horizontal && !is_chrome_scroll_target(ev) {
+            } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(true);
                 scroll_reader_page_x(1.0, !ev.repeat());
@@ -296,11 +296,11 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
                 .and_then(|t| t.dyn_into::<web_sys::HtmlButtonElement>().ok())
                 .is_some();
             if !on_button && !is_chrome_scroll_target(ev) {
-                if mode == ViewMode::Continuous {
+                if mode == ViewMode::ScrollVertical {
                     ev.prevent_default();
                     focus_scroll_list(false);
                     scroll_reader_page_y(if ev.shift_key() { -1.0 } else { 1.0 }, !ev.repeat());
-                } else if mode == ViewMode::Horizontal {
+                } else if mode == ViewMode::ScrollHorizontal {
                     ev.prevent_default();
                     focus_scroll_list(true);
                     scroll_reader_page_x(if ev.shift_key() { -1.0 } else { 1.0 }, !ev.repeat());

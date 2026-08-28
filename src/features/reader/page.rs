@@ -142,7 +142,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let h_estimate = move |index: usize| {
         vs.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
-        }) * vs.viewer.zoom.display.get_untracked()
+        }) * vs.viewer.zoom.layout.get_untracked()
             + 2.0 * vs.viewer.page_margin.get_untracked()
     };
     let h_virtualizer = use_virtualizer(
@@ -216,7 +216,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 return;
             }
             vs.viewer.page_margin.set(m);
-            let scale = vs.viewer.zoom.display.get_untracked();
+            let scale = vs.viewer.zoom.layout.get_untracked();
             let gap = vs.viewer.page_gap.get_untracked();
             let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
             let widths = vs
@@ -240,7 +240,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
         prev_mode.set_value(mode);
         let auto = state.settings.with(|s| s.layout.auto_scale);
-        if matches!(mode, ViewMode::Dual | ViewMode::Horizontal) || (auto && mode.is_paginated()) {
+        if matches!(mode, ViewMode::Spread | ViewMode::ScrollHorizontal) || (auto && mode.is_paginated()) {
             vs.viewer.fit.set(FitMode::Width);
         }
     });
@@ -433,11 +433,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                     <crate::components::document::SinglePageView state=vs />
                                 }
                                 .into_any(),
-                                ViewMode::Dual => view! {
+                                ViewMode::Spread => view! {
                                     <crate::components::document::DualPageView state=vs />
                                 }
                                 .into_any(),
-                                ViewMode::Continuous => view! {
+                                ViewMode::ScrollVertical => view! {
                                     <crate::components::document::ContinuousView
                                         state=vs
                                         virtualizer=virtualizer_view.get_value()
@@ -445,7 +445,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                     />
                                 }
                                 .into_any(),
-                                ViewMode::Horizontal => view! {
+                                ViewMode::ScrollHorizontal => view! {
                                     <crate::components::document::HorizontalView
                                         state=vs
                                         virtualizer=h_virtualizer_view.get_value()

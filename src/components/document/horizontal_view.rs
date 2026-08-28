@@ -38,7 +38,7 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
     // zooming past fit-height turns into REAL vertical scroll range — which
     // is what flips the wheel handler into leaving vertical pans alone.
     let strip_h = Memo::new(move |_| {
-        let scale = state.viewer.zoom.display.get();
+        let scale = state.viewer.zoom.layout.get();
         let tallest = state
             .document
             .metrics
@@ -117,7 +117,7 @@ pub fn HorizontalView(state: ReaderState, virtualizer: Virtualizer) -> impl Into
         });
     }
     observe_content_size(H_PAGE_LIST_ID, state.viewer.container_size);
-    let display_scale = state.viewer.zoom.display.read_only();
+    let display_scale = state.viewer.zoom.layout.read_only();
     let handle = StoredValue::new_local(v.clone());
     let items = v.items();
     let total_size = v.total_size();
