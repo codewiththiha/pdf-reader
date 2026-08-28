@@ -22,7 +22,7 @@ use crate::components::app_shell::adaptive_toolbar::ToolbarItem;
 use crate::components::app_shell::OverflowRow;
 use crate::components::app_shell::toolbar_popover::MenuPopover;
 use crate::state::AppState;
-use crate::effects::reader::zoom::request_zoom;
+use crate::viewer::zoom::request_zoom;
 
 /// Apply a manual zoom level: exit fit mode, then hand the target to the zoom
 /// coordinator.

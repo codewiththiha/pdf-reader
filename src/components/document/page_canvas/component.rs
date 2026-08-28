@@ -88,6 +88,12 @@ pub fn PageCanvas(
     /// True while a zoom/layout animation is in flight (renders suspended).
     #[prop(into)]
     zoom_animating: Signal<bool>,
+    /// True while a real zoom *gesture* owns the layout (as opposed to a
+    /// fit-driven sidebar slide, which also animates but is not a gesture).
+    /// Distinct from `zoom_animating`: a fit slide holds `zoom_animating` true
+    /// but is not a gesture.
+    #[prop(into)]
+    gesture_owns: Signal<bool>,
     /// The page texture mode (from the app shell, derived from settings).
     #[prop(into)]
     texture: Signal<TextureMode>,
@@ -237,7 +243,7 @@ pub fn PageCanvas(
             // commit lands on an unchanged scale, nothing ever re-triggers
             // this effect and the page stays blank until you leave and come
             // back. Gate only pages that already have pixels.
-            if !crate::effects::reader::zoom::gesture_owns_layout() && painted.get() {
+            if !gesture_owns.get_untracked() && painted.get() {
                 return;
             }
             // FALLTHROUGH: first render at the DISPLAY scale so the gesture

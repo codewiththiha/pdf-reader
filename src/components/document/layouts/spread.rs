@@ -1,6 +1,7 @@
 //! Spread (`spread`) layout: two pages side by side with no gap.
 
 use leptos::prelude::*;
+use pdf_core::math::FitMode;
 
 use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::components::document::shells::page_shell::PageShell;
@@ -13,6 +14,9 @@ pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
     let display_scale = state.viewer.zoom.layout.read_only();
+    let gesture_owns = Signal::derive(move || {
+        state.viewer.zoom_animating.get() && state.viewer.fit.get_untracked() == FitMode::None
+    });
     let prev_spread = StoredValue::new(0u32);
 
     view! {
@@ -42,6 +46,7 @@ pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
                                     scale=display_scale
                                     render_scale=state.viewer.zoom.render
                                     zoom_animating=state.viewer.zoom_animating
+                                    gesture_owns=gesture_owns
                                     texture=texture
                                     canvas_id=format!("dp-{p1}-cv")
                                     host_id=format!("dp-{p1}-pg")
@@ -55,6 +60,7 @@ pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
                                             scale=display_scale
                                             render_scale=state.viewer.zoom.render
                                             zoom_animating=state.viewer.zoom_animating
+                                            gesture_owns=gesture_owns
                                             texture=texture
                                             canvas_id=format!("dp-{p2}-cv")
                                             host_id=format!("dp-{p2}-pg")

@@ -9,3 +9,4 @@
 //! touch a virtualizer.
 
 pub mod engine;
+pub mod zoom;

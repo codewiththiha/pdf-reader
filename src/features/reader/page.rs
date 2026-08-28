@@ -37,7 +37,6 @@ use crate::components::viewer_controls::page_indicator::PageIndicator;
 use crate::effects::reader::fit_mode::fit_effect;
 use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
-use crate::effects::reader::zoom::zoom_system;
 use crate::services::document::close_document;
 use crate::state::AppState;
 use crate::state::SidebarMode;
@@ -247,7 +246,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let engine = crate::viewer::engine::ViewerEngine::new(virtualizer.clone(), h_virtualizer.clone());
     fit_effect(vs, state.ui.sidebar, engine.clone());
-    zoom_system(vs, engine);
+    let zoom = crate::viewer::zoom::ZoomController::new(engine);
+    crate::viewer::zoom::register(&zoom);
+    zoom.drive(vs);
     navigation_sync(vs, virtualizer.clone(), h_virtualizer.clone());
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     let virtualizer_view = StoredValue::new_local(virtualizer.clone());

@@ -4,22 +4,21 @@
 //! crisp RENDER is debounced 180ms after the size settles, so a slide yields
 //! exactly one re-render.
 //!
-//! The zoom machinery (gesture animation, anchoring, commit) lives in the
-//! sibling `zoom` module; `fit_effect` hands scale changes to it via
-//! `request_zoom`/`commit_scale` and reads `gesture_owns_layout` /
-//! `take_commit_echo` to stay out of a gesture's way.
+//! Fit acts only while a fit mode is active. A manual zoom clears the fit mode
+//! (see `ZoomController::zoom_to`), so `fit == None` is what lets `fit_effect`
+//! stand down and stop fighting the gesture; there is no separate
+//! "gesture owns the layout" flag anymore.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 
 use pdf_core::layout::{TOOLBAR_H, ViewMode};
-use pdf_core::math::{constrained_scale, fit_scale, FitMode};
+use pdf_core::math::{fit_scale, FitMode};
 
 use crate::state::{ReaderState, SidebarMode};
 use crate::viewer::engine::ViewerEngine;
-
-use super::zoom::{commit_scale, gesture_owns_layout, take_commit_echo};
+use crate::viewer::zoom::commit_scale;
 
 /// Must be called once from the app root (ReaderPage).
 pub fn fit_effect(
@@ -46,11 +45,18 @@ pub fn fit_effect(
         let margin = state.viewer.page_margin.get();
         let page = state.viewer.page.get();
         let _animating = state.viewer.zoom_animating.get();
-        if gesture_owns_layout() {
+        let _sidebar_open = sidebar.get() != SidebarMode::None;
+
+        // A manual zoom clears the fit mode (see `ZoomController::zoom_to`),
+        // so `fit == None` is the concrete signal that the reader is zooming
+        // by hand. A fit mode is a deliberate choice the reader can override
+        // with a manual gesture; when there is none, this effect stands down
+        // entirely rather than re-deriving a fit-width target that fights the
+        // gesture as it animates (the old code imposed that ceiling and made
+        // a manual zoom in a scrolling mode snap back toward fit).
+        if fit == FitMode::None {
             return;
         }
-        let just_committed = take_commit_echo();
-        let _sidebar_open = sidebar.get() != SidebarMode::None;
         let Some(p1) = state.document.page1_size.get() else {
             return;
         };
@@ -93,6 +99,10 @@ pub fn fit_effect(
             return;
         }
 
+        // `fit == None` already returned above, so the target is always a
+        // genuine fit here. `set_fit`/`zoom_to` (via the controller) keep the
+        // `requested` value in sync so leaving a fit mode never resurrects a
+        // stale gesture scale.
         let target = if horizontal {
             // The horizontal strip's only real constraint is viewport
             // HEIGHT: several pages are visible at once, so "fit width" has
@@ -108,7 +118,7 @@ pub fn fit_effect(
             let t = pdf_core::math::clamp_scale((ch_eff - pad).max(1.0) / ph_eff.max(1.0));
             state.viewer.zoom.requested.set(t);
             t
-        } else if fit != FitMode::None {
+        } else {
             let t = fit_scale(
                 fit,
                 cw_eff,
@@ -118,27 +128,8 @@ pub fn fit_effect(
                 pad,
                 state.viewer.zoom.level.get_untracked(),
             );
-            // A fit mode IS a deliberate choice, so it owns the ceiling too.
-            // Without this, leaving fit mode would resurrect a `desired_scale`
-            // from some earlier gesture and the page would jump to it.
             state.viewer.zoom.requested.set(t);
             t
-        } else if cw_eff > 1.0 {
-            let fit_w = fit_scale(
-                FitMode::Width,
-                cw_eff,
-                ch_eff,
-                pw_eff,
-                ph_eff,
-                pad,
-                state.viewer.zoom.level.get_untracked(),
-            );
-            let desired = state.viewer.zoom.requested.get_untracked();
-            constrained_scale(desired, fit_w)
-        } else {
-            // Container not measured yet: a zero width would "fit" nothing and
-            // slam the page to the minimum scale.
-            return;
         };
 
         // --- the sidebar slide ------------------------------------------------
@@ -166,21 +157,11 @@ pub fn fit_effect(
         // frame — once the spacer has actually been laid out at the new
         // height — so the stale-scrollHeight clamp cannot compound across
         // the burst.
-        if just_committed {
-            // A gesture just landed: leave it exactly where the reader put it.
-            //
-            // The shrink-to-fit ceiling answers "the space got smaller", NOT
-            // "the reader asked for more". Reconciling here applied the ceiling
-            // to the gesture itself, so from a fit-width start every `+` was
-            // computed, animated, and then immediately undone — the zoom
-            // control looked broken because the page could never grow past the
-            // window. Zooming in past the fit is deliberate and allowed; the
-            // page simply overflows and scrolls, as in every desktop reader.
-            //
-            // The ceiling still applies on the next real container change,
-            // which is the case it was written for.
-            return;
-        }
+        //
+        // A manual gesture that just landed leaves `fit == None` (see the
+        // early return above), so its scale is never reconciled against a fit
+        // ceiling here — a manual zoom can grow past the fit and simply
+        // overflow and scroll, as in every desktop reader.
         // Sidebar / window changes follow the layout on every frame so the
         // page does not squish. A PAGE change must not: scrolling through a
         // mixed-size book would zoom on every row boundary. Those wait for

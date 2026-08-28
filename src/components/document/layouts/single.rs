@@ -4,6 +4,7 @@
 //! `SinglePageView` for the load-bearing keying).
 
 use leptos::prelude::*;
+use pdf_core::math::FitMode;
 
 use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::components::document::shells::page_shell::PageShell;
@@ -16,6 +17,9 @@ pub fn SingleLayout(state: ReaderState) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
     let display_scale = state.viewer.zoom.layout.read_only();
+    let gesture_owns = Signal::derive(move || {
+        state.viewer.zoom_animating.get() && state.viewer.fit.get_untracked() == FitMode::None
+    });
     let prev_page = StoredValue::new(0u32);
 
     view! {
@@ -38,6 +42,7 @@ pub fn SingleLayout(state: ReaderState) -> impl IntoView {
                                 scale=display_scale
                                 render_scale=state.viewer.zoom.render
                                 zoom_animating=state.viewer.zoom_animating
+                                gesture_owns=gesture_owns
                                 texture=texture
                                 canvas_id=format!("sp-{page}-cv")
                                 host_id=format!("sp-{page}-pg")

@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use pdf_core::math::{nearest_zoom, FitMode};
-use crate::effects::reader::zoom::request_zoom;
+use crate::viewer::zoom::request_zoom;
 use crate::state::ReaderState;
 
 /// Applies a manual zoom step and exits fit mode.
