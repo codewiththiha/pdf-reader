@@ -105,6 +105,10 @@ export type PipelineCache = {
 export type PaperInfo = { color: string; rgb: [number, number, number] };
 export type FilterMatrix = { m: number[]; o: number[] };
 
+/** Where the blend backdrop takes its paper colour from — the engine side of
+ * the reader's `layout.blend_scope` setting. */
+export type BlendScope = "single" | "document" | "continuous";
+
 export type SearchRect = { x: number; y: number; w: number; h: number };
 export type TextIndexEntry = { str: string; x: number; y: number; w: number; h: number };
 export type SearchMatch = SearchRect & { page: number; index: number; text: string };
@@ -172,6 +176,9 @@ export type PDFReaderApi = {
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
+  setBlendScope: (scope: BlendScope) => void;
+  setBlendPages: (cur: number, next: number) => void;
+  setBlendProgress: (mix: number) => void;
   sweep: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;

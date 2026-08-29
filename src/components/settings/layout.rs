@@ -5,7 +5,7 @@
 
 use leptos::prelude::*;
 
-use pdf_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
+use pdf_core::settings::{BlendScope, FloatingLabelStyle, PageIndicatorStyle};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::icon::IconName;
@@ -19,6 +19,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     let s = state.settings;
     let indicator_off = Signal::derive(move || !s.with(|st| st.layout.page_indicator));
     let label_off = Signal::derive(move || !s.with(|st| st.layout.floating_label));
+    let blend_off = Signal::derive(move || !s.with(|st| st.layout.blend_mode));
     view! {
         <SectionLabel text="Reader chrome" />
         <div class="divide-y divide-line rounded-xl border border-line">
@@ -248,6 +249,21 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                         s.update(|st| st.layout.blend_mode = v);
                     })
                     title="Paint the reader background with the page's own paper colour".to_string()
+                />
+            </Row>
+            <Row label="Blend Source">
+                <StyleSelect
+                    value=Signal::derive(move || s.with(|st| st.layout.blend_scope))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.blend_scope = v);
+                    })
+                    options=vec![
+                        (BlendScope::Single, "Single Page"),
+                        (BlendScope::Document, "Whole Document"),
+                        (BlendScope::Continuous, "Continuous"),
+                    ]
+                    label_of=|v: &BlendScope| v.label()
+                    disabled=blend_off
                 />
             </Row>
         </div>

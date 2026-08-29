@@ -3,6 +3,7 @@
 //! reading progress).
 
 pub mod auto_scroll;
+pub mod blend_backdrop;
 pub mod vertical_scroll_sync;
 pub mod zoom_watchers;
 pub mod link_navigation;

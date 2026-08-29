@@ -128,6 +128,23 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 
+    // --- Engine: blend backdrop scopes ---
+    // Where the blend backdrop takes its paper colour from ("single" |
+    // "document" | "continuous") and, in the continuous scope, the page pair
+    // the backdrop blends between plus how far the viewport has travelled
+    // between them. Rust resolves the pair from the dominant page and the
+    // progress from the strip geometry; the engine owns the colours
+    // (detection, the per-document cache, the per-page palette) and the
+    // interpolated --pdf-paper it publishes.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setBlendScope")]
+    pub fn set_blend_scope(scope: &str);
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setBlendPages")]
+    pub fn set_blend_pages(cur: u32, next: u32);
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setBlendProgress")]
+    pub fn set_blend_progress(mix: f64);
+
     /// Release rasters/caches the engine no longer needs (advisory
     /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,
     /// scroll idle — so memory drops immediately instead of waiting for the

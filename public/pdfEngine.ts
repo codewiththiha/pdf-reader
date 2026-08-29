@@ -35,6 +35,12 @@ import {
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
+import {
+  cancelPaperWork,
+  setBlendPages,
+  setBlendProgress,
+  setBlendScope,
+} from "./engine/paper";
 import { installSelectionTracker } from "./engine/selection";
 import {
   ENGINE_VERSION,
@@ -110,6 +116,7 @@ async function destroy(): Promise<void> {
   setPdf(null);
   setNumPages(0);
   setCurrentPath(null);
+  cancelPaperWork();
   disposeScratch();
 }
 
@@ -238,6 +245,9 @@ globalThis.PDFReader = {
   clearHighlights,
   refreshTheme,
   setScrubMode,
+  setBlendScope,
+  setBlendPages,
+  setBlendProgress,
   sweep: () => {
     sweepPdf();
   },

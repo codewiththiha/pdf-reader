@@ -12,6 +12,7 @@ use wasm_bindgen::JsValue;
 use crate::bridge;
 use crate::types::{CoverResult, OpenResult, RenderResult, ThumbResult};
 use pdf_core::search::SearchResponse;
+use pdf_core::settings::BlendScope;
 
 #[derive(Debug, Clone)]
 pub struct EngineError {
@@ -269,6 +270,43 @@ pub fn set_scrub_mode(on: bool) {
         return;
     }
     bridge::set_scrub_mode(on);
+}
+
+// --- Blend backdrop scopes -------------------------------------------------
+
+/// Tell the engine where the blend backdrop takes its paper colour from.
+///
+/// The engine owns the colour side of every scope: detection off the raw
+/// rasters, the per-document cache that survives reopens, the all-pages
+/// scan, and the per-page palette the continuous scope blends through. This
+/// call (fire-and-forget, like the theme calls) is how a settings change
+/// reaches it — the CSS class that shows the backdrop at all stays on the
+/// Rust side.
+pub fn set_blend_scope(scope: BlendScope) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::set_blend_scope(scope.engine_id());
+}
+
+/// Name the two adjacent pages the continuous scope blends between. The
+/// engine resolves (and caches) each page's colour, sampling the next page
+/// ahead of the reader so the colour is known before they arrive.
+pub fn set_blend_pages(cur: u32, next: u32) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::set_blend_pages(cur, next);
+}
+
+/// How far the viewport has travelled from the pair's first page to its
+/// second, 0..1. Called per scroll tick; the engine lerps the pair's colours
+/// at exactly this progress and republishes `--pdf-paper`.
+pub fn set_blend_progress(mix: f64) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::set_blend_progress(mix);
 }
 
 /// Release rasters/caches the engine no longer needs. Call after zoom

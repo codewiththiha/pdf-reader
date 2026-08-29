@@ -45,6 +45,48 @@ pub enum FloatingLabelStyle {
     Chapter,
 }
 
+/// Where blend mode takes the paper colour from.
+///
+/// `Single` is the original behaviour: the dominant colour of one page (the
+/// first page whose raster renders) stands in for the whole document.
+/// `Document` scans every page — capped at [`BLEND_SCAN_MAX_PAGES`] — for one
+/// colour the book as a whole is dominated by. `Continuous` resolves a colour
+/// per page and blends between adjacent pages while the reader scrolls. The
+/// first two cache their result per document so reopening a book reuses the
+/// colour it already found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlendScope {
+    #[default]
+    Single,
+    Document,
+    Continuous,
+}
+
+impl BlendScope {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Single => "Single Page",
+            Self::Document => "Whole Document",
+            Self::Continuous => "Continuous",
+        }
+    }
+
+    /// The scope id the TS engine's `setBlendScope` expects.
+    pub fn engine_id(&self) -> &'static str {
+        match self {
+            Self::Single => "single",
+            Self::Document => "document",
+            Self::Continuous => "continuous",
+        }
+    }
+}
+
+/// How many pages the `Document` scan may render while hunting for the book's
+/// dominant colour. A cap, not a target: the scan stops early on shorter
+/// books, and pages past the cap are simply not sampled.
+pub const BLEND_SCAN_MAX_PAGES: usize = 100;
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {
     #[serde(default = "on_true")]
@@ -77,6 +119,11 @@ pub struct LayoutSettings {
     pub sidebar_overlay: bool,
     #[serde(default)]
     pub blend_mode: bool,
+    /// Which pages blend mode samples the paper colour from. Only meaningful
+    /// while `blend_mode` is on; the setting outlives the switch so turning
+    /// blend back on returns to the scope the reader chose.
+    #[serde(default)]
+    pub blend_scope: BlendScope,
     /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
     #[serde(default = "default_page_margin")]
     pub page_margin: f64,
@@ -104,6 +151,7 @@ impl Default for LayoutSettings {
             page_shadow: true,
             sidebar_overlay: false,
             blend_mode: false,
+            blend_scope: BlendScope::default(),
             page_margin: default_page_margin(),
             floating_label_persist: false,
             floating_label_max_pct: default_label_max_pct(),
@@ -599,6 +647,7 @@ mod tests {
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
+        assert_eq!(s.blend_scope, BlendScope::Single);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
 
@@ -613,8 +662,29 @@ mod tests {
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
+        assert_eq!(s.blend_scope, BlendScope::Single);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
+    }
+
+    #[test]
+    fn blend_scope_survives_a_round_trip_and_loads_by_snake_case() {
+        // A blob saved before the setting existed carries no key and must
+        // load as the original single-page behaviour; once the reader picks a
+        // scope, the id round-trips untouched.
+        let s: LayoutSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.blend_scope, BlendScope::Single);
+
+        let mut s = LayoutSettings::default();
+        s.blend_scope = BlendScope::Continuous;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"blend_scope\":\"continuous\""), "{json}");
+        let back: LayoutSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.blend_scope, BlendScope::Continuous);
+
+        let s: LayoutSettings =
+            serde_json::from_str(r#"{"blend_scope":"document"}"#).unwrap();
+        assert_eq!(s.blend_scope, BlendScope::Document);
     }
 
     #[test]

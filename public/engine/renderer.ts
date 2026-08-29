@@ -211,9 +211,9 @@ export async function renderPageInternal(
 
   // `target` still holds raw pixels here (bakeRaster runs below): the one
   // point in the pipeline where the document's own paper is intact, so this
-  // is where the blend backdrop learns it. One ≤96×96 sample, ≤3 attempts
-  // per document, no extra render.
-  maybeDetectPaper(target);
+  // is where the blend backdrop learns it. One ≤96×96 sample — per page in
+  // the continuous scope, ≤3 attempts in the others, no extra render.
+  maybeDetectPaper(st.page, target);
 
   if (needsBake && pipeline) {
     // Keep the unbaked `target` on the page. Slider scrub restores it and

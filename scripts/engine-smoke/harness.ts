@@ -265,7 +265,7 @@ interface FakeWindow {
   devicePixelRatio: number;
   innerWidth: number;
   innerHeight: number;
-  localStorage: { getItem(): string | null; setItem(): void };
+  localStorage: { getItem(k: string): string | null; setItem(k: string, v: string): void };
   addEventListener(): void;
   dispatchEvent(): boolean;
   getComputedStyle: (el: { _style?: string }) => {
@@ -287,11 +287,19 @@ export let fakeComputed: { "--canvas-filter": string; "--canvas-blend": string; 
   "--canvas-blend": "normal",
 };
 
+/** The store behind the harness localStorage stub. */
+export const fakeLocalStorage = new Map<string, string>();
+
 export const fakeWindow: FakeWindow = {
   devicePixelRatio: 2,
   innerWidth: 1280,
   innerHeight: 800,
-  localStorage: { getItem: () => null, setItem() {} },
+  // Real-enough storage: the engine's per-document paper cache
+  // (pdfreader.blend-paper.v1) reads and writes through globalThis.localStorage.
+  localStorage: {
+    getItem: (k: string) => fakeLocalStorage.get(k) ?? null,
+    setItem: (k: string, v: string) => { fakeLocalStorage.set(k, v); },
+  },
   addEventListener() {},
   dispatchEvent() { return true; },
   getComputedStyle: (_el) => ({
@@ -317,6 +325,18 @@ export const fakeWindow: FakeWindow = {
 };
 
 // ---------- pdf.js stub ----------
+// Per-page paint colours, defaulting to paper white. The blend-scope test
+// paints distinct pages so detection, the document scan and the continuous
+// interpolation have something to tell apart; every other scenario sees the
+// same all-white book it always did.
+const fakePageColors = new Map<number, string>();
+export function setFakePageColors(colors: Record<number, string>): void {
+  fakePageColors.clear();
+  for (const [page, color] of Object.entries(colors)) {
+    fakePageColors.set(Number(page), color);
+  }
+}
+
 function fakePage(n: number) {
   return {
     n,
@@ -326,7 +346,7 @@ function fakePage(n: number) {
       convertToViewportPoint: (x: number, y: number): [number, number] => [x, y],
     }),
     render: ({ canvasContext }: { canvasContext: FakeCtx }) => {
-      canvasContext.fillStyle = "#ffffff";
+      canvasContext.fillStyle = fakePageColors.get(n) ?? "#ffffff";
       canvasContext.fillRect(0, 0, canvasContext.canvas.width, canvasContext.canvas.height);
       return { promise: Promise.resolve(), cancel() {} };
     },
@@ -355,6 +375,7 @@ const sandbox: Record<string, unknown> = {
   globalThis: {} as Record<string, unknown>,
   document: fakeDocument,
   window: fakeWindow,
+  localStorage: fakeWindow.localStorage,
   requestAnimationFrame: fakeWindow.requestAnimationFrame,
   cancelAnimationFrame: fakeWindow.cancelAnimationFrame,
   setTimeout,
@@ -422,6 +443,9 @@ interface PDFReaderHandle {
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
+  setBlendScope(scope: "single" | "document" | "continuous"): void;
+  setBlendPages(cur: number, next: number): void;
+  setBlendProgress(mix: number): void;
   unregisterPage(canvasId: string): void;
   destroy(): Promise<void>;
   stats(): StatsPayload;

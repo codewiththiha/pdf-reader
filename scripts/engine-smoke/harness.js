@@ -239,11 +239,18 @@ export let fakeComputed = {
     "--canvas-filter": "none",
     "--canvas-blend": "normal",
 };
+/** The store behind the harness localStorage stub. */
+export const fakeLocalStorage = new Map();
 export const fakeWindow = {
     devicePixelRatio: 2,
     innerWidth: 1280,
     innerHeight: 800,
-    localStorage: { getItem: () => null, setItem() { } },
+    // Real-enough storage: the engine's per-document paper cache
+    // (pdfreader.blend-paper.v1) reads and writes through globalThis.localStorage.
+    localStorage: {
+        getItem: (k) => fakeLocalStorage.get(k) ?? null,
+        setItem: (k, v) => { fakeLocalStorage.set(k, v); },
+    },
     addEventListener() { },
     dispatchEvent() { return true; },
     getComputedStyle: (_el) => ({
@@ -272,6 +279,17 @@ export const fakeWindow = {
     },
 };
 // ---------- pdf.js stub ----------
+// Per-page paint colours, defaulting to paper white. The blend-scope test
+// paints distinct pages so detection, the document scan and the continuous
+// interpolation have something to tell apart; every other scenario sees the
+// same all-white book it always did.
+const fakePageColors = new Map();
+export function setFakePageColors(colors) {
+    fakePageColors.clear();
+    for (const [page, color] of Object.entries(colors)) {
+        fakePageColors.set(Number(page), color);
+    }
+}
 function fakePage(n) {
     return {
         n,
@@ -281,7 +299,7 @@ function fakePage(n) {
             convertToViewportPoint: (x, y) => [x, y],
         }),
         render: ({ canvasContext }) => {
-            canvasContext.fillStyle = "#ffffff";
+            canvasContext.fillStyle = fakePageColors.get(n) ?? "#ffffff";
             canvasContext.fillRect(0, 0, canvasContext.canvas.width, canvasContext.canvas.height);
             return { promise: Promise.resolve(), cancel() { } };
         },
@@ -308,6 +326,7 @@ const sandbox = {
     globalThis: {},
     document: fakeDocument,
     window: fakeWindow,
+    localStorage: fakeWindow.localStorage,
     requestAnimationFrame: fakeWindow.requestAnimationFrame,
     cancelAnimationFrame: fakeWindow.cancelAnimationFrame,
     setTimeout,

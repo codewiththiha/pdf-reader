@@ -9,7 +9,7 @@ import type {
   PDFDocumentProxy,
 } from "./types";
 import { errorInfo, fail, releaseCanvas } from "./canvas";
-import { resetPaperTries } from "./paper";
+import { resetPaperForDocument } from "./paper";
 import {
   currentPath,
   loadingTask,
@@ -295,11 +295,13 @@ export async function open(path: string): Promise<OpenResult> {
     if (destroy) await destroy();
     const doc = await openDocument(path);
     setPdf(doc);
-    // A new document means a fresh paper-detection budget (engine/paper.ts);
-    // the previous one was cleared by the destroy above.
-    resetPaperTries();
     setNumPages(doc.numPages);
     setCurrentPath(path);
+    // A new document means a fresh paper-detection budget and palette
+    // (engine/paper.ts) — plus, when the cache remembers this book, its
+    // colours published right away. Runs after setCurrentPath so the cache
+    // can key on the path.
+    resetPaperForDocument();
 
     let title: string | null = null;
     let author: string | null = null;
