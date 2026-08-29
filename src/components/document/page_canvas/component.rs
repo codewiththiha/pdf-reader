@@ -96,10 +96,12 @@ pub fn PageCanvas(
     /// stands down entirely. Absent for hosts outside a virtualized strip.
     #[prop(optional)]
     dormant: Option<Signal<bool, LocalStorage>>,
-    /// True while a real zoom *gesture* owns the layout (as opposed to a
-    /// fit-driven sidebar slide, which also animates but is not a gesture).
-    /// Distinct from `zoom_animating`: a fit slide holds `zoom_animating` true
-    /// but is not a gesture.
+    /// True while a real zoom *gesture* owns the layout. Distinct from
+    /// `zoom_animating`, which is also held by every resize-driven animation — a
+    /// fit slide, or a window drag carrying a hand-picked zoom — for the whole
+    /// burst of container sizes. Those follow the window; they are not a
+    /// gesture, and rendering at their mid-burst display scale would only
+    /// produce a bitmap that the next frame has already superseded.
     #[prop(into)]
     gesture_owns: Signal<bool>,
     /// The page texture mode (from the app shell, derived from settings).
@@ -116,31 +118,21 @@ pub fn PageCanvas(
     // ambient provider. A Memo so only a real texture change rebuilds the
     // host class.
     let texture = Memo::new(move |_| texture.get());
-    // The class is derived, not memoised on `texture` alone: `zoom-animating`
-    // flips at the two ends of every transition, and a memo keyed only on the
-    // texture would pin the guard class in place for the whole session. It
-    // rides the same reactive `class` attribute the host already has, so the
-    // tag lands in the frame the transition opens and leaves in the frame it
-    // commits.
+    // Nothing transient rides the host class: the page's inline size is never
+    // off the table for the flex engine, so there is no guard tag to toggle and
+    // the memo stays keyed on the one input that changes it.
     let host_class = move || {
         let t = texture.get();
-        let mut base = if t == TextureMode::None {
+        let base = if t == TextureMode::None {
             "pdf-page".to_string()
         } else {
             format!("pdf-page texture-{}", t.as_str())
         };
-        // Tag the host while a transition owns the layout so its inline size is
-        // off the table for the flex engine. Keep it a SINGLE token: a reactive
-        // class toggle is one `classList.add` call. See `.pdf-page` in
-        // styles/pdf-page.css.
-        if zoom_animating.get() {
-            base.push_str(" zoom-animating");
+        if class.is_empty() {
+            base
+        } else {
+            format!("{base} {class}")
         }
-        if !class.is_empty() {
-            base.push(' ');
-            base.push_str(&class);
-        }
-        base
     };
 
     let registered = Rc::new(Cell::new(false));

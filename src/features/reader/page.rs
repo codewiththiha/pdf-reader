@@ -115,10 +115,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     zoom.drive(vs);
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom sources come last, after the controller that consumes them:
-    // fit recomputation on window/mode/page/margin changes, and the
-    // shrink-to-fit re-resolution on resizes of a manually zoomed reader.
-    crate::effects::reader::zoom_watchers::fit_watcher(vs, state.ui.sidebar);
-    crate::effects::reader::zoom_watchers::resize_watcher(state);
+    // a container follow on every frame of a sidebar slide or a window drag,
+    // and a debounced refit when a fit's other inputs move (mode, page, fit).
+    crate::effects::reader::zoom_watchers::follow_watcher(vs, state.ui.sidebar);
+    crate::effects::reader::zoom_watchers::fit_watcher(vs);
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     reading_progress(state);
 
@@ -295,18 +295,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         id=VIEWER_SLOT_ID
                         class="relative min-w-0 flex-1 overflow-hidden"
                         class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
-                        // A fit guarantees the page is no wider than its line, so only
-                        // while one owns the width may the host flex-shrink. That is what
-                        // lets the column follow the sidebar slide and a window drag
-                        // instead of snapping; a hand-picked scale keeps `flex-shrink: 0`
-                        // (see `.pdf-page` in styles/pdf-page.css). The horizontal strip is
-                        // excluded outright: it fits to the viewport HEIGHT, so its pages
-                        // are wider than the window on purpose and must overflow, never
-                        // renegotiate.
-                        class=("fit-reflow", move || {
-                            vs.viewer.fit.get() != FitMode::None
-                                && vs.viewer.mode.get() != ViewMode::ScrollHorizontal
-                        })
                     >
                         <Show when=is_ready>
                             <crate::components::document::Viewer

@@ -140,7 +140,7 @@ impl Default for DocumentState {
 }
 
 /// One zoom intent, posted by whichever surface wants the zoom to change
-/// (toolbar buttons, keyboard steps, the fit watcher, the resize watcher).
+/// (toolbar buttons, keyboard steps, the fit watcher, the follow watcher).
 ///
 /// The [`crate::viewer::zoom::ZoomController`] is the only consumer: a
 /// command is resolved against the current window, mode and page, and lands
@@ -159,6 +159,15 @@ pub enum ZoomCommand {
     /// scale is `min(desired, fit-width)`, so a narrowed window shrinks the
     /// page without ever forgetting the zoom the reader chose.
     Constrain,
+    /// The space around the page moved — a sidebar slide or a window drag.
+    /// Resolves to whichever of the two above owns the scale (a fit mode when
+    /// one is active, the shrink-to-fit ceiling when the reader zoomed by
+    /// hand) and is posted on EVERY frame of the burst, because a scale that
+    /// waits for the burst to end leaves the host wider than the box it now
+    /// has to fit in and the flex engine squishes the paper. Its geometry
+    /// lands in the frame it was asked for; its crisp render is held until the
+    /// container has been quiet, so the burst costs one raster pass.
+    Follow,
 }
 
 /// A live zoom transaction: what is animating, from where, to where. Exists
@@ -179,6 +188,12 @@ pub struct ZoomTransition {
     pub start_ms: f64,
     /// Whether the visual scale should tween; `false` lands on the first frame.
     pub animate: bool,
+    /// True while this is a container [`ZoomCommand::Follow`] transaction. The
+    /// distinction is load-bearing twice over: a follow's commit is HELD (the
+    /// controller lands its geometry in the frame the size was reported and the
+    /// settle deadline renders once the burst stops), and a watcher may only
+    /// retarget a transaction of this kind — never a gesture's tween.
+    pub following: bool,
 }
 
 /// The zoom pipeline scales, one type so they cannot drift apart across
@@ -318,10 +333,18 @@ impl ViewerSignals {
     /// so the reader is zooming by hand rather than re-fitting). When set,
     /// the layouts hand the canvas to the gesture so a fit-driven refit can
     /// never fight the pinch.
+    ///
+    /// A container follow is deliberately excluded even though it opens a
+    /// transition too: a window drag with a hand-picked zoom is not a gesture,
+    /// and pages must not start rasterising at a display scale that is already
+    /// obsolete two frames later.
     pub fn gesture_owns(&self) -> Signal<bool> {
         let transition = self.zoom.transition;
         let fit = self.fit;
-        Signal::derive(move || transition.get().is_some() && fit.get_untracked() == FitMode::None)
+        Signal::derive(move || {
+            fit.get_untracked() == FitMode::None
+                && transition.get().is_some_and(|t| !t.following)
+        })
     }
 }
 

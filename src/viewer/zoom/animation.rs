@@ -25,6 +25,14 @@
 //! retarget mid-flight (a burst of `+` presses, a sidebar still sliding) is
 //! adopted seamlessly: the tween continues from wherever the eye currently
 //! is towards the new target, on a restarted clock.
+//!
+//! A container follow does not normally come through this loop: its target is
+//! whatever the container allows RIGHT NOW, so the controller lands it in the
+//! very frame the new size was reported and holds the commit for the end of the
+//! burst. Easing towards a moving target would have the page visibly chasing
+//! the window — covering a fraction of each new gap per frame and never quite
+//! arriving. The loop can still be handed one (a follow taking over while a
+//! tween is already running), so it knows how to land it without committing it.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -32,7 +40,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
-use crate::state::reader::ReaderState;
+use crate::state::reader::{ReaderState, ZoomTransition};
 use crate::viewer::engine::ViewerEngine;
 
 use super::config;
@@ -40,6 +48,34 @@ use super::coordinator::finish_transition;
 
 /// rAF step that can re-arm itself.
 type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
+/// Land a transaction: relay the layout out to its target, then show it.
+///
+/// Answers `false` when the scale has nowhere to go — the target is the one
+/// already on screen — in which case NOTHING was written. That is not a micro-
+/// optimisation: a Leptos `set` notifies even when the value is unchanged, so an
+/// unconditional write on a settled target re-runs every mounted page's stretch
+/// effect and rebuilds both strips for a factor of one. A container follow asks
+/// for the landing on every frame of a burst, so it hits that case whenever the
+/// scale is pinned (the minimum, or a hand-picked zoom capped at `desired`).
+///
+/// Two callers, deliberately: the controller calls it in the task that reported
+/// a new container size, and the tween loop calls it for every untweened
+/// landing. Both go through here so that "the layout moved and the display scale
+/// agrees with it" stays one rule rather than two that can drift apart.
+pub(crate) fn land(state: &ReaderState, engine: &ViewerEngine, t: &ZoomTransition) -> bool {
+    let cur = state.viewer.zoom.display.get_untracked();
+    if (t.to - cur).abs() < config::SETTLED_EPSILON {
+        return false;
+    }
+    // Only the scrolling modes have a strip to rescale; for the paginated ones
+    // the single mounted host stretches to the display scale on its own.
+    if !state.viewer.mode.get_untracked().is_paginated() {
+        engine.relayout_to(state, t.to / cur);
+    }
+    state.viewer.zoom.display.set(t.to);
+    true
+}
 
 /// The tween's progress curve: covers ground early, decelerates onto the
 /// target scale instead of stopping dead on it.
@@ -87,14 +123,22 @@ impl Tween {
             // Only the scrolling modes have a strip to rescale.
             let scrolls = !mode.is_paginated();
             let duration = config::profile_for(mode).duration_ms();
-            if !t.animate || duration <= 0.0 || prefers_reduced_motion() {
+            if !t.animate || t.following || duration <= 0.0 || prefers_reduced_motion() {
                 // Landing without a tween: one relayout to the target, then
                 // the commit.
-                if scrolls {
-                    let from = state.viewer.zoom.display.get_untracked();
-                    engine.relayout_to(&state, t.to / from);
+                land(&state, &engine, &t);
+                if t.following {
+                    // A held follow LANDS but must not commit: the burst it
+                    // is riding has another frame coming, and a raster pass per
+                    // frame of a slide is the storm the held transaction exists
+                    // to avoid. The controller's settle
+                    // deadline commits it once the container stops moving. Going
+                    // idle here instead of re-arming is what lets the next frame
+                    // own the next rAF: `arm` adopts whatever transition is on the
+                    // signal.
+                    alive.set(false);
+                    return;
                 }
-                state.viewer.zoom.display.set(t.to);
                 finish_transition(&state, &engine, &t);
                 alive.set(false);
                 return;

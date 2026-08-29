@@ -95,11 +95,15 @@ through and text is never doubled.
   gap-aware because page heights scale and the space between pages does not. Pages stretch the
   bitmap they already hold while the scale moves, the crisp re-render happens once at the settled
   scale, and recently evicted pages linger a moment as zombies so the surface never pops.
-- The sidebar slides its width over 300ms and the page follows it: while a fit owns the width the
-  page host may flex-shrink, so the column narrows with the rail instead of jumping when the refit
-  lands. Every frame of the slide still reports a new container width, but the refit is debounced
-  past the end of it, so fit width and shrink-to-fit resolve against the finished window rather
-  than a half-open one.
+- The sidebar slides its width over 300ms and the page rides the slide: every frame of it reports
+  a new container width, and the layout follows each one, so the column narrows with the rail
+  instead of snapping when a debounced refit finally lands. The crisp re-render is what waits — it
+  is issued once the width has been quiet — and the page host never lets flex-shrink resize it, so
+  there is no frame of squished paper either way.
+- The same follow covers a window drag, with or without a fit: a hand-picked zoom shrinks to stay
+  out of the way as the window narrows and grows back to exactly the zoom you chose when the room
+  comes back, because the ceiling is computed from the remembered zoom rather than from the last
+  frame's scale.
 - Zooming a horizontal strip keeps its vertical position: the strip is always at least as tall as
   the tallest page, so the overflow — and with it the scroll position — shrinks and grows with the
   zoom instead of resetting.

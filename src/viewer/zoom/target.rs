@@ -7,7 +7,9 @@
 //! clears the fit mode (a fit ceiling must never fight a gesture), a fit
 //! refresh writes `desired` to the resolved fit, and a window constraint
 //! deliberately leaves `desired` untouched — the reader's chosen zoom is
-//! the ceiling it returns to when space comes back.
+//! the ceiling it returns to when space comes back. A container follow answers
+//! with whichever of those two owns the scale right now, so the same numbers
+//! govern a slide, a drag and a pause after one.
 
 use leptos::prelude::*;
 
@@ -16,10 +18,11 @@ use pdf_core::math::{clamp_scale, constrained_scale, fit_scale, nearest_zoom, Fi
 
 use crate::state::reader::{ZoomCommand, ReaderState};
 
-use super::config::{profile_for, SETTLED_EPSILON};
+use super::config::{profile_for, SETTLED_EPSILON, ZoomProfile};
 
 /// Resolve a command to the scale it wants, or `None` when it must stand
-/// down (no fit mode, an unmeasured container or an unmeasured document).
+/// down (nothing to re-resolve, an unmeasured container, an unmeasured
+/// document).
 ///
 /// `in_flight` is the target of a transition already running; manual steps
 /// chain from it so a fast `+ +` advances two presets rather than resolving
@@ -56,29 +59,58 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
             state.viewer.fit.set(FitMode::None);
             Some(target)
         }
-        ZoomCommand::Refit => {
-            // A refit with no fit mode active would resolve to the current
-            // scale AND clobber `desired` — the watcher never posts one, but
-            // the resolver must be safe on its own terms.
-            if state.viewer.fit.get_untracked() == FitMode::None {
-                return None;
-            }
-            let dims = FitDims::of(state)?;
-            let target = dims.fit(state.viewer.fit.get_untracked(), zoom.display.get_untracked());
-            let target = profile.clamp(target);
-            zoom.desired.set(target);
-            Some(target)
-        }
-        ZoomCommand::Constrain => {
-            if state.viewer.fit.get_untracked() != FitMode::None {
-                return None; // a fit mode owns the scale while it is active
-            }
-            let dims = FitDims::of(state)?;
-            let fit_w = dims.fit_width(zoom.display.get_untracked());
-            let desired = zoom.desired.get_untracked();
-            Some(profile.clamp(constrained_scale(desired, fit_w)))
+        ZoomCommand::Refit => fit_owned_target(state, &profile),
+        ZoomCommand::Constrain => ceiling_target(state, &profile),
+        // The space around the page moved. Both watchers' cases are the same
+        // question — what does the current width deserve? — and exactly one of
+        // them owns the answer: a fit mode does while it is active, the
+        // shrink-to-fit ceiling otherwise. Dispatching here instead of letting
+        // the watcher choose keeps the two from disagreeing about who is in
+        // charge, which is how a slide used to end with the page at a scale
+        // neither of them had asked for.
+        ZoomCommand::Follow => {
+            fit_owned_target(state, &profile).or_else(|| ceiling_target(state, &profile))
         }
     }
+}
+
+/// The scale the active fit mode wants, recorded as the reader's own choice.
+///
+/// `None` with no fit mode: a refit of a hand-picked zoom would resolve to the
+/// current scale AND clobber `desired`, resurrecting an old number as the
+/// ceiling. Callers post it only while a fit is active; this is what keeps the
+/// resolver safe on its own terms.
+fn fit_owned_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
+    let fit = state.viewer.fit.get_untracked();
+    if fit == FitMode::None {
+        return None;
+    }
+    let dims = FitDims::of(state)?;
+    let target = profile.clamp(dims.fit(fit, state.viewer.zoom.display.get_untracked()));
+    // A fit mode IS a deliberate choice, so it owns the ceiling too. Without
+    // this, leaving the fit mode would resurrect a `desired` from some earlier
+    // gesture and the page would jump to it.
+    state.viewer.zoom.desired.set(target);
+    Some(target)
+}
+
+/// The ceiling a hand-picked zoom has against the space available.
+///
+/// When the room is too small the page is SHRUNK TO FIT instead of being
+/// cropped, because a cropped page hides content with no affordance to recover
+/// it. `desired` is deliberately left alone, which is what makes the trip
+/// lossless: when the room comes back the page grows again and stops exactly at
+/// the zoom the reader chose. Computing from `desired` — never from the live
+/// scale times a container ratio — is also why a slide does not accumulate
+/// rounding and land somewhere the reader never asked for.
+fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
+    if state.viewer.fit.get_untracked() != FitMode::None {
+        return None; // a fit mode owns the scale while it is active
+    }
+    let dims = FitDims::of(state)?;
+    let zoom = state.viewer.zoom;
+    let fit_w = dims.fit_width(zoom.display.get_untracked());
+    Some(profile.clamp(constrained_scale(zoom.desired.get_untracked(), fit_w)))
 }
 
 /// The plain-geometry inputs of a fit computation, separated from the

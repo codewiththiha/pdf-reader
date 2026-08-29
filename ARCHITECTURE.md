@@ -50,8 +50,13 @@ The app uses the adapter and keeps only app-specific policy locally:
    is swapped for real geometry — which reads as the document jumping.
 4. Page hosts stretch the bitmap they already hold. Nothing re-rasterises
    while the scale is moving; the crisp render is issued once, at the settled
-   scale, when the transition commits.
-5. The virtualizer's window never drives the page number mid-zoom.
+   scale, when the transition commits. A container follow is what makes that
+   rule non-trivial: a sidebar slide or a window drag relays the layout out on
+   every frame and holds its COMMIT until the size has been quiet, so the burst
+   costs one render pass rather than one per frame.
+5. The virtualizer's window never drives the page number mid-zoom — and it
+   catches the page up when the transaction lands, which is what keeps a long
+   held follow from leaving the counter on a page the reader has scrolled past.
 6. Recently evicted virtual items become zombies briefly (bounded set,
    grace longer than the tween), bridging the window across a zoom.
 7. Zombie items never trigger a new PDF render; they keep their DOM and
@@ -63,11 +68,12 @@ The app uses the adapter and keeps only app-specific policy locally:
 10. The page host is sized by its inline width/height, which ARE the page
     geometry, so it never lets the flex engine renegotiate them — a shrink
     takes the width while the height stays and the paper visibly squishes.
-    The one exception is a fit-driven reflow: while a fit owns the width the
-    page cannot exceed its line, so `.fit-reflow` grants the shrink for the
-    frames a sidebar slide or a window drag is in flight, and `.zoom-animating`
-    takes it back out for the frames a transition owns. The horizontal strip
-    never gets it: it fits to the viewport height and overflows on purpose.
+    There is no reflow exception for a resize, and none is needed: the layout
+    follows the container on every frame of a slide or a drag, so the host is
+    never left wider than its line for a frame the reader can see. A
+    hand-picked zoom that overflows the window keeps overflowing — that is the
+    page scrolling rather than squishing, exactly as a fit page in the
+    horizontal strip does.
 11. PDF renders happen only at transaction boundaries, never per frame.
 
 ## Continuous reader flow

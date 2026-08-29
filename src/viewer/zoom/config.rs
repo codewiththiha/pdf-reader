@@ -29,6 +29,15 @@ pub const ZOOM_GRACE_MS: u32 = 300;
 /// bridge is bounded or it would stop being virtualization.
 pub const MAX_ZOMBIES: usize = 12;
 
+/// How long the space around the page must be quiet before a container follow
+/// commits its crisp render, milliseconds. The layout follows a sidebar slide or
+/// a window drag frame by frame; the rasters wait for the end of the burst, so a
+/// slide costs one render pass at the size the reader settled on instead of one
+/// per frame. The same window doubles as the pause a fit-driven refit waits for
+/// after a page turn, where following the layout per frame would mean zooming at
+/// every row boundary of a mixed-size book.
+pub const FOLLOW_SETTLE_MS: u64 = 180;
+
 /// Scales closer than this are the same scale. One margin for the whole
 /// pipeline: the resolver uses it to call a boundary step a no-op, and the
 /// coordinator uses it to decline a transition that would not move. Two
