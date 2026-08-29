@@ -120,10 +120,12 @@ through and text is never doubled.
 
 ### Motion
 
-Every animation the reader models is a switch, and the master for all of them sits in Settings →
-Layout. What a switch turns off is the interpolation, never the change: the end frame still
-arrives, in the frame the change is asked for. That is what makes freezing the reader safe — a
-disabled animation loses nothing, it just skips the frames in between.
+Every motion the reader *interpolates* is a switch, and the master for all of them sits in
+Settings → Layout. What a switch turns off is the interpolation, never the change: the end frame
+still arrives, in the frame the change is asked for. That is what makes freezing the reader safe —
+a disabled animation loses nothing, it just skips the frames in between. The converse also holds,
+and is why some resizes have no switch: a motion that is the only way to stay correct is not
+decorative, so it is not offered.
 
 - **Animations** (the master, in the Layout tab) collapses everything, including the
   micro-transitions that have no switch of their own: menu pops, toasts, the theme cross-fade,
@@ -132,12 +134,14 @@ disabled animation loses nothing, it just skips the frames in between.
   switches keep their saved values through it, so turning the master back on returns exactly the
   set of motions you had chosen.
 - **Sidebar slide** — the rail tweens its width over 300ms. Off, it appears at its new width, and
-  the panel it was holding open is released in the same frame instead of waiting out a slide.
-- **Canvas follows the sidebar**, **canvas follows the window** — the page re-fits on every frame
-  of a rail slide, or of a window drag. Off, it takes the new space in one step once the burst has
-  stopped, and a page too wide for the window overflows and scrolls for as long as it is being
-  shown. Two switches because they are two different complaints: a page that rides the rail is
-  usually wanted, a document that re-zooms while you drag the window usually is not.
+  the panel it was holding open is released in the same frame instead of waiting out a slide. The
+  page follows the rail either way, and that is what keeps a frozen slide to one step.
+- **Canvas follows the window** — the page re-fits on every frame of a window drag. Off, it takes
+  the new space in one step once the drag has stopped, and a page too wide for the window overflows
+  and scrolls for as long as it is being shown. A rail slide is deliberately not gated here: the
+  page has to follow the rail, because the alternative is a page sitting outside the space it was
+  given. Dragging a window is different — one relayout per drag frame is a real cost, and nothing
+  is wrong in the meantime — so it is the burst that is offered up.
 - **Zoom in / out** — a zoom eases to its target over the profile's duration. Off, every zoom
   (button step, preset, fit, window constraint) lands on the first frame.
 - **Scroll to page** — a jump to a page, a search hit or a keyboard page turn glides the column

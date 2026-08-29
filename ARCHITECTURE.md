@@ -82,9 +82,14 @@ The app uses the adapter and keeps only app-specific policy locally:
 12. A switched-off animation never skips the CHANGE, only the frames. Each gate
     sits where the interpolation happens, not where the change is decided:
     `animation.rs` declines to tween, `follow_watcher` drops the per-frame posts
-    and lands the end frame once the burst is quiet, `scroll_mode` resolves to
-    `Instant`, and the rail's class list gains `no-slide`. So a frozen reader is
-    not a reader with fewer features — it is the same geometry, arriving at once.
+    of a *gated* burst (a window drag) and lands the end frame once it is quiet,
+    `scroll_mode` resolves to `Instant`, and the rail's class list gains
+    `no-slide`. So a frozen reader is not a reader with fewer features — it is
+    the same geometry, arriving at once. The one resize that is never gated is
+    the follow of the sidebar's own width: there the frames ARE the correctness
+    (a page may not be wider than the box the flex engine gave it), and landing
+    in the frame the container was measured is what keeps a frozen slide to a
+    single step instead of a step followed by a correction.
 
 ## Continuous reader flow
 

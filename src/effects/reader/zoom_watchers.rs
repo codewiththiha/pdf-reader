@@ -23,11 +23,15 @@
 //!   commit until the container has been quiet, so a slide costs one raster
 //!   pass instead of one per frame.
 //!
-//!   Which of the two bursts is running decides which switch in the Animations
-//!   tab owns it (the viewport width moves on a window drag and not on a rail
-//!   slide, which is the tell). Whichever one is off, the follow does not stop
-//!   happening — it stops being animated: the frames are dropped and the end
-//!   frame lands in one step once the burst goes quiet.
+//!   Only the WINDOW half of that has a switch (Animations → "Canvas Follows
+//!   Window"), and the tell is the viewport itself: it moves on a drag and not
+//!   when the rail takes the reader's column. With that switch off the follow
+//!   does not stop happening — it stops being animated: the frames are dropped
+//!   and the end frame lands once the burst goes quiet. The rail half is not
+//!   switchable, because following a measured container is what makes an
+//!   instant resize instant: deferring it left the page cropped for the whole
+//!   settle window, and the crop is what flipped the strip's overflow, which is
+//!   a second, worse frame.
 //! - `fit_watcher`: the world under the scale changed in a way that is not a
 //!   burst — a view-mode flip, a new document, and (only while the Auto Resize
 //!   setting is on) a page turn in a mixed-size book. Single events, so they
@@ -53,7 +57,7 @@ use leptos::prelude::*;
 use pdf_core::math::FitMode;
 
 use crate::components::primitives::hooks::use_timeout::use_debounce;
-use crate::components::primitives::hooks::use_viewport::viewport_size;
+use crate::components::primitives::hooks::use_viewport::use_viewport;
 use crate::state::reader::ZoomCommand;
 use crate::state::{AppState, SidebarMode};
 use crate::viewer::zoom::config::FOLLOW_SETTLE_MS;
@@ -163,15 +167,28 @@ pub fn fit_watcher(state: AppState) {
 /// both ways, because the ceiling is computed from the remembered `desired` and
 /// never from the live scale times a container ratio.
 ///
+/// What following costs is memory, not frames: a held transaction raises the
+/// strip's eviction grace for as long as it is open, so a long burst keeps the
+/// pages it has already drawn (DOM node and last bitmap) alive until the commit,
+/// where `sweep()` releases them. A deferred follow has a shorter burst and so
+/// holds less; that is the whole trade, and the frame it saves is the one that
+/// left the page cropped.
+///
+/// It follows on EVERY frame, and that is the point rather than an oversight:
+/// a `land()` handed to the next animation frame paints after the container
+/// has already shrunk, and a page row the flex engine may not resize is then a
+/// few pixels wider than its box — a scrollbar flicker for the length of the
+/// burst. Landing in the frame the size was reported is what the follow costs
+/// (one relayout per frame, one raster at the end) and what it buys.
+///
 /// Must be called once from the reader shell (ReaderPage), alongside
 /// `fit_watcher`.
 pub fn follow_watcher(state: AppState, sidebar: RwSignal<SidebarMode>) {
     let vs = state.reader.viewer;
-    // The same end frame, delivered late instead of frame by frame. A
-    // suppressed follow does not skip the refit — it renders only the frame the
-    // burst was heading to, once the space has stopped moving. Debounced by the
-    // window a held follow already commits on, so the two cadences agree about
-    // when "finished" means finished.
+    // The same end frame, delivered late instead of frame by frame, for the one
+    // burst that is allowed to skip its frames. Debounced by the window a held
+    // follow already commits on, so the two cadences agree about when
+    // "finished" means finished.
     let late = use_debounce(REFIT_DEBOUNCE, move || {
         if matches!(
             posting_gate(vs.zoom.transition.get_untracked()),
@@ -181,12 +198,16 @@ pub fn follow_watcher(state: AppState, sidebar: RwSignal<SidebarMode>) {
         }
         vs.zoom.post(ZoomCommand::Follow, false);
     });
-    // The last viewport size, which is how a burst is attributed to a switch.
-    // `viewport_size` is the WINDOW's own box: the rail takes the reader's
-    // column without moving it, so a container that changed while the viewport
-    // did not is the sidebar, and anything else is a window drag. A memory, not
-    // a dependency — hence `StoredValue`.
-    let last_viewport = StoredValue::new_local(viewport_size());
+    // The window's own box, as a signal fed by a `resize` listener rather than a
+    // `getBoundingClientRect` here: this effect runs on every frame of a burst,
+    // and a layout read inside a ResizeObserver callback forces the very flush
+    // the follow exists to avoid. The listener fires before the observer's
+    // callback in the same rendering update, so the value is never stale.
+    let viewport = use_viewport();
+    // What the viewport measured the last time this ran — a memory, not a
+    // dependency; the effect must not subscribe to the resize signal, or it
+    // would run twice per frame and attribute one of them to the wrong switch.
+    let last_viewport = StoredValue::new_local(viewport.get_untracked());
 
     Effect::new(move |_| {
         let _ = vs.container_size.get();
@@ -196,16 +217,17 @@ pub fn follow_watcher(state: AppState, sidebar: RwSignal<SidebarMode>) {
         // value itself is not: the page is sized from the space that is
         // actually available, whatever took it.
         let _ = sidebar.get();
-        let viewport = viewport_size();
+        let now = viewport.get_untracked();
         let before = last_viewport.get_value();
-        last_viewport.set_value(viewport);
-        let window_dragged =
-            (viewport.0 - before.0).abs() >= 0.5 || (viewport.1 - before.1).abs() >= 0.5;
-        // Does the switch that owns this burst want the frames? `motion` is the
-        // settings as the shell projected them, master included, so this asks
-        // one question. UNTRACKED, deliberately: the flag that turns a follow
-        // off must not be what re-triggers a follow.
-        if !vs.motion.get_untracked().canvas_follows(window_dragged) {
+        last_viewport.set_value(now);
+        // The rail takes the reader's column without moving the window, so an
+        // unchanged viewport means this frame is the sidebar's — and the
+        // sidebar's follow is unconditional (see the module doc for why
+        // deferring it is worse than doing it). Only a window drag may wait.
+        // UNTRACKED read of the switch, deliberately: the flag that turns a
+        // follow off must not be what re-triggers a follow.
+        let window_dragged = (now.0 - before.0).abs() >= 0.5 || (now.1 - before.1).abs() >= 0.5;
+        if window_dragged && !vs.motion.get_untracked().canvas_resize {
             late.trigger();
             return;
         }

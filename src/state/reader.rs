@@ -289,9 +289,10 @@ impl Default for ZoomState {
 pub struct Motion {
     /// The rail tweens its width (`SIDEBAR_SLIDE_MS`) instead of snapping.
     pub sidebar_slide: bool,
-    /// The page rides the rail: the canvas flexes on every frame of a slide.
-    pub canvas_sidebar: bool,
     /// The page rides a window drag: the canvas flexes on every frame of it.
+    /// Riding the RAIL is not in here on purpose — a container that was
+    /// measured is answered in the same frame, animation or no animation, and
+    /// deferring it is what cropped the page for a visible instant.
     pub canvas_resize: bool,
     /// A zoom eases to its target over the profile's duration.
     pub zoom: bool,
@@ -300,25 +301,12 @@ pub struct Motion {
 }
 
 impl Motion {
-    /// Whether the page flexes with the container on a frame of the current
-    /// burst. The two bursts have separate switches because a reader often
-    /// wants the page to ride a rail slide and not a window drag (or the other
-    /// way round); `window` says which one is moving.
-    pub const fn canvas_follows(&self, window: bool) -> bool {
-        if window {
-            self.canvas_resize
-        } else {
-            self.canvas_sidebar
-        }
-    }
-
     /// The one place the master switch is honoured. Off, no detail can bring
     /// an animation back on; the Animations tab hides itself for the same
     /// reason, so the detail switches are never shown lying.
     pub const fn from_prefs(p: &AnimationSettings) -> Self {
         Self {
             sidebar_slide: p.enabled && p.sidebar_slide,
-            canvas_sidebar: p.enabled && p.canvas_sidebar,
             canvas_resize: p.enabled && p.canvas_resize,
             zoom: p.enabled && p.zoom,
             scroll_glide: p.enabled && p.scroll_jumps,
@@ -333,7 +321,6 @@ impl Default for Motion {
     fn default() -> Self {
         Self {
             sidebar_slide: true,
-            canvas_sidebar: true,
             canvas_resize: true,
             zoom: true,
             scroll_glide: true,
@@ -589,13 +576,7 @@ mod tests {
         let all_on = AnimationSettings::default();
         assert!(all_on.enabled);
         let m = Motion::from_prefs(&all_on);
-        assert!(
-            m.sidebar_slide
-                && m.canvas_sidebar
-                && m.canvas_resize
-                && m.zoom
-                && m.scroll_glide
-        );
+        assert!(m.sidebar_slide && m.canvas_resize && m.zoom && m.scroll_glide);
 
         // With the master off, no detail can bring an animation back.
         let mut frozen = AnimationSettings::default();
@@ -603,7 +584,6 @@ mod tests {
         assert!(frozen.zoom && frozen.sidebar_slide);
         let m = Motion::from_prefs(&frozen);
         assert!(!m.sidebar_slide);
-        assert!(!m.canvas_sidebar);
         assert!(!m.canvas_resize);
         assert!(!m.zoom);
         assert!(!m.scroll_glide);
@@ -617,15 +597,27 @@ mod tests {
         p.zoom = false;
         let m = Motion::from_prefs(&p);
         assert!(!m.zoom);
-        assert!(m.sidebar_slide && m.canvas_sidebar && m.canvas_resize);
+        assert!(m.sidebar_slide && m.canvas_resize);
         assert!(m.scroll_glide);
     }
 
     #[test]
     fn page_aspect_falls_back_to_portrait_when_unmeasured_or_degenerate() {
         assert_eq!(page_aspect(None), DEFAULT_PAGE_ASPECT);
-        assert_eq!(page_aspect(Some(PageSize { width: 0.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
+        assert_eq!(
+            page_aspect(Some(PageSize {
+                width: 0.0,
+                height: 792.0
+            })),
+            DEFAULT_PAGE_ASPECT
+        );
         // A negative width is just as degenerate: never divide by it.
-        assert_eq!(page_aspect(Some(PageSize { width: -612.0, height: 792.0 })), DEFAULT_PAGE_ASPECT);
+        assert_eq!(
+            page_aspect(Some(PageSize {
+                width: -612.0,
+                height: 792.0
+            })),
+            DEFAULT_PAGE_ASPECT
+        );
     }
 }

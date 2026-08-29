@@ -98,8 +98,25 @@ pub(crate) struct Tween {
 
 impl Tween {
     pub(crate) fn new() -> Self {
+        let alive = Rc::new(Cell::new(false));
+        // Teardown has to be able to stop this loop, because the loop is driven
+        // from a rAF callback and an owner's cleanup cannot cancel one of those:
+        // the callback is already queued when the page goes away. The flag is
+        // what the queued frame checks before it reads anything.
+        //
+        // Parked through a stored id rather than captured directly for the same
+        // reason `use_debounce` does it: a cleanup closure may not hold an `Rc`,
+        // and the store is dropped before the closure could reach it, hence the
+        // `try_` read. Called from the reader's owner — this is built in a
+        // component body, next to `drive`.
+        let store = StoredValue::new_local(Some(alive.clone()));
+        on_cleanup(move || {
+            if let Some(flag) = store.try_get_value().flatten() {
+                flag.set(false);
+            }
+        });
         Self {
-            alive: Rc::new(Cell::new(false)),
+            alive,
             slot: Rc::new(RefCell::new(None)),
         }
     }
@@ -114,6 +131,15 @@ impl Tween {
         let alive = self.alive.clone();
         let weak = Rc::downgrade(&self.slot);
         let step: Rc<dyn Fn()> = Rc::new(move || {
+            // Stopped, or disposed? Both answers mean the same thing here: do
+            // not touch a signal. The check has to come first because reading a
+            // graph whose owner has been cleaned up does not hand back `None`, it
+            // unwinds through a callback nobody owns — and `!alive` is the one
+            // piece of evidence that is still safe to read, since the flag lives
+            // in the loop's own `Rc` and `new` clears it on cleanup.
+            if !alive.get() {
+                return;
+            }
             // Idle? The loop dies here until the next `arm`.
             let Some(t) = state.viewer.zoom.transition.get_untracked() else {
                 alive.set(false);
@@ -151,7 +177,7 @@ impl Tween {
                     alive.set(false);
                     return;
                 }
-                finish_transition(&state, &engine, &t);
+                finish_transition(&state, &t);
                 alive.set(false);
                 return;
             }
@@ -167,7 +193,7 @@ impl Tween {
             }
             state.viewer.zoom.display.set(visual);
             if progress >= 1.0 {
-                finish_transition(&state, &engine, &t);
+                finish_transition(&state, &t);
                 alive.set(false);
                 return;
             }

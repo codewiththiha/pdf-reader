@@ -132,14 +132,19 @@ pub struct AnimationSettings {
     /// auto-hide). Off, the Animations tab is not offered either.
     #[serde(default = "on_true")]
     pub enabled: bool,
-    /// The sidebar rail tweens its width instead of appearing at it.
+    /// The sidebar rail tweens its width instead of appearing at it. The page
+    /// ALWAYS rides that tween — there is no switch for it, because following a
+    /// measured container is not an animation: it is the resize. Deferring it
+    /// would show a page cropped at the old scale for the whole settle window,
+    /// which is worse than the slide itself; and with the slide off, answering
+    /// in the frame the rail moved is what makes ONE step out of the whole
+    /// change. A WINDOW drag is the burst with a switch of its own, below:
+    /// there, skipping frames is the point, because the alternative is a relayout
+    /// plus a raster per drag frame.
     #[serde(default = "on_true")]
     pub sidebar_slide: bool,
-    /// The page rides the rail: its scale follows the container on every frame
-    /// of a slide. Off, it takes the new width in one step when the rail stops.
-    #[serde(default = "on_true")]
-    pub canvas_sidebar: bool,
-    /// The same, for a window drag.
+    /// The page re-fits on every frame of a window drag. Off, it re-fits once,
+    /// when the drag stops.
     #[serde(default = "on_true")]
     pub canvas_resize: bool,
     /// A zoom eases to its target instead of appearing there.
@@ -155,7 +160,6 @@ impl Default for AnimationSettings {
         Self {
             enabled: true,
             sidebar_slide: true,
-            canvas_sidebar: true,
             canvas_resize: true,
             zoom: true,
             scroll_jumps: true,
@@ -541,7 +545,7 @@ mod tests {
     fn every_animation_is_on_until_told_otherwise() {
         let a = AnimationSettings::default();
         assert!(a.enabled);
-        assert!(a.sidebar_slide && a.canvas_sidebar && a.canvas_resize);
+        assert!(a.sidebar_slide && a.canvas_resize);
         assert!(a.zoom && a.scroll_jumps);
 
         // A blob saved before this group existed is `Settings` with the key
@@ -553,7 +557,7 @@ mod tests {
         // one — a stored master-off must not silently turn the details on.
         let a: AnimationSettings = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
         assert!(!a.enabled);
-        assert!(a.zoom && a.sidebar_slide && a.canvas_sidebar && a.canvas_resize);
+        assert!(a.zoom && a.sidebar_slide && a.canvas_resize);
     }
 
     #[test]

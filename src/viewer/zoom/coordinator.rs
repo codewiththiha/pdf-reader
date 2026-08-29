@@ -36,6 +36,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
+use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::state::reader::{ReaderState, ZoomCommand, ZoomTransition};
 use crate::viewer::engine::ViewerEngine;
 
@@ -108,62 +109,60 @@ impl ZoomController {
         // mid-zoom; the suspension makes that airtight at the virtualizer
         // too), and — on landing — the flush order, because the last
         // relayout must finish before buffered measurements re-enter.
-        {
-            let v = engine.vertical.clone();
-            let hv = engine.horizontal.clone();
-            Effect::new(move |_| {
-                if state.viewer.zoom.transition.get().is_some() {
-                    v.suspend_scroll_feedback();
-                    hv.suspend_scroll_feedback();
-                    v.suspend_measurements();
-                    hv.suspend_measurements();
-                } else {
-                    v.resume_scroll_feedback();
-                    hv.resume_scroll_feedback();
-                    v.resume_measurements();
-                    hv.resume_measurements();
-                }
-            });
-        }
+        //
+        // The grace that bridges a commit's evictions outlives the transaction
+        // that raised it, so it is released on a timer rather than on the
+        // commit — and the timer belongs to THIS owner, not to whoever happened
+        // to be running when the transaction landed. An owner-scoped debounce
+        // gives that for free: a pending fire is cleared on cleanup, where an
+        // unowned `set_timeout` would let a fire land on a disposed reader, and
+        // re-arming postpones the reset instead of queueing a second one.
+        let v = engine.vertical.clone();
+        let hv = engine.horizontal.clone();
+        let grace_v = v.clone();
+        let grace_hv = hv.clone();
+        let grace = use_debounce(
+            Duration::from_millis(u64::from(config::ZOOM_GRACE_MS)),
+            move || {
+                grace_v.reset_retention_grace();
+                grace_hv.reset_retention_grace();
+            },
+        );
+        Effect::new(move |_| {
+            if state.viewer.zoom.transition.get().is_some() {
+                v.suspend_scroll_feedback();
+                hv.suspend_scroll_feedback();
+                v.suspend_measurements();
+                hv.suspend_measurements();
+                // A transaction owns the bridge now; the reset it wants is the
+                // one it schedules at its own end.
+                grace.cancel();
+            } else {
+                v.resume_scroll_feedback();
+                hv.resume_scroll_feedback();
+                v.resume_measurements();
+                hv.resume_measurements();
+                grace.trigger();
+            }
+        });
 
         let tween = Tween::new();
 
-        // The held commit's deadline. A generation counter rather than a
-        // stored timer handle: each frame of a burst stamps a new generation
-        // and the superseded fires become no-ops, so a post that lands while
-        // an earlier deadline is outstanding can never strand the transaction
-        // uncommitted (which would strand the freezes with it — nothing would
-        // render until the next zoom). Same token idiom `post` uses.
-        let settle_gen = StoredValue::new_local(0u64);
-        let arm_settle = {
-            let settle_engine = engine.clone();
-            move || {
-                let generation = settle_gen.get_value() + 1;
-                settle_gen.set_value(generation);
-                let held_engine = settle_engine.clone();
-                let _ = set_timeout_with_handle(
-                    move || {
-                        // Superseded? A later frame of the burst re-armed the
-                        // deadline, or a real gesture took the transaction over
-                        // and commits itself. Either way this fire owes
-                        // nothing.
-                        if settle_gen.get_value() != generation {
-                            return;
-                        }
-                        let zoom = state.viewer.zoom;
-                        if let Some(t) = zoom.transition.get_untracked() {
-                            // Only ever a follow: a transaction that was opened
-                            // or replaced in the meantime carries its own commit.
-                            if t.following {
-                                finish_transition(&state, &held_engine, &t);
-                            }
-                        }
-                    },
-                    Duration::from_millis(config::FOLLOW_SETTLE_MS),
-                )
-                .ok();
+        // The held commit's deadline: a burst re-arms ONE fire rather than
+        // queueing one per frame, so the transaction commits once the container
+        // has gone quiet — and the newest post always owns that fire, which is
+        // what keeps a follow from stranding uncommitted (and the freezes with
+        // it, so nothing would render until the next zoom).
+        let settle = use_debounce(Duration::from_millis(config::FOLLOW_SETTLE_MS), move || {
+            let zoom = state.viewer.zoom;
+            if let Some(t) = zoom.transition.get_untracked() {
+                // Only ever a follow: a transaction that was opened or
+                // replaced in the meantime carries its own commit.
+                if t.following {
+                    finish_transition(&state, &t);
+                }
             }
-        };
+        });
 
         Effect::new(move |_| {
             let Some((cmd, animate, _token)) = state.viewer.zoom.commands.get() else {
@@ -186,7 +185,7 @@ impl ZoomController {
             // still moving rasterises at a width the reader is already past.
             let following = holds_commit(cmd);
             if following {
-                arm_settle();
+                settle.trigger();
             }
             let display = zoom.display.get_untracked();
             let in_flight = zoom.transition.get_untracked();
@@ -250,9 +249,10 @@ impl ZoomController {
 /// Every transaction ends here, and only the calls differ: a tween and a
 /// discrete refit commit on the frame they land, while a container follow is
 /// committed by the settle deadline above — once per burst, at the size the
-/// container stopped at. Setting the scales is a no-op write when a follow has
+/// container stopped at. It schedules nothing, and that is deliberate: see the
+/// note on the grace bridge at the end. Setting the scales is a no-op write when a follow has
 /// been landing all along, so a held commit is quiet even when it moves nothing.
-pub(crate) fn finish_transition(state: &ReaderState, engine: &ViewerEngine, t: &ZoomTransition) {
+pub(crate) fn finish_transition(state: &ReaderState, t: &ZoomTransition) {
     state.viewer.zoom.committed.set(t.to);
     state.viewer.zoom.display.set(t.to);
     // Releasing the transition last is what un-freezes page/scroll sync and
@@ -262,23 +262,11 @@ pub(crate) fn finish_transition(state: &ReaderState, engine: &ViewerEngine, t: &
     // Nothing renders inside a transaction; sweep the rasters now that the
     // render scale has moved.
     pdf_engine::api::sweep();
-    // The zombies that shielded this transaction keep their raised grace
-    // until it expires; only the GRACE resets here (their expiry was fixed
-    // when they were evicted). Guarded so a new transaction that opened in
-    // the meantime is not stepped on — its own finish will reschedule.
-    let grace = config::profile_for(state.viewer.mode.get_untracked()).retention.grace_ms;
-    let v = engine.vertical.clone();
-    let hv = engine.horizontal.clone();
-    let zoom = state.viewer.zoom;
-    let _ = set_timeout_with_handle(
-        move || {
-            if zoom.transition.get_untracked().is_none() {
-                v.reset_retention_grace();
-                hv.reset_retention_grace();
-            }
-        },
-        Duration::from_millis(grace as u64),
-    );
+    // The raised zombie grace is NOT lowered here. The bridge timer in `drive`
+    // does that one grace window later, from the effect that watches this very
+    // signal — so this function only writes signals and returns, which is what
+    // lets both of its callers (the settle deadline, and the tween loop out of
+    // a rAF callback) reach it from outside any owner of their own.
 }
 
 #[cfg(test)]

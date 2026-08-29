@@ -52,6 +52,7 @@ use leptos::prelude::*;
 
 use leptos::children::ViewFn;
 
+use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::state::SidebarMode;
 
 /// How long the aside takes to change width. The panel paint and the deferred
@@ -59,8 +60,9 @@ use crate::state::SidebarMode;
 /// than trailing it, and the aside's own CSS transition is declared with the
 /// matching `duration-300` — keep the two in step.
 ///
-/// The reader can freeze the tween, which does not shorten this number: the
-/// switch releases the close hold instead of arming a timer on it.
+/// The reader can freeze the tween, which does not shorten this number: with
+/// the switch off the aside jumps to its end width and the close hold is
+/// released on the spot, so the timer this constant feeds never runs.
 pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
 
 /// Selector for the sliding aside itself. The toolbar's title measurement
@@ -142,10 +144,21 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>, no_slide: Signal<bool>) -> Sid
     let collapsing = RwSignal::new(false);
     let intro = RwSignal::new(false);
     let cells_mounted = RwSignal::new(false);
-    let collapse_timer = StoredValue::new_local(None::<TimeoutHandle>);
     // Whether the previous mode was closed. Tab changes do not re-run the
     // open path, while a real None → panel transition does.
     let was_closed = StoredValue::new_local(true);
+    // The end of the outro: hold the panel and its canvases for one slide,
+    // then release. A debounce rather than a hand-rolled handle, because
+    // `on_cleanup` then clears a fire that is still pending — which a stored
+    // handle only did if the NEXT close arrived first, leaving a reader that was
+    // gone writing to signals that were. Re-arming postpones the release instead
+    // of queueing a second one, which is what a burst of toggles should do.
+    let outro = use_debounce(Duration::from_millis(SIDEBAR_SLIDE_MS), move || {
+        collapsing.set(false);
+        // The engine cache remains; only live DOM canvases are released, so a
+        // later open can synchronously blit.
+        cells_mounted.set(false);
+    });
 
     Effect::new(move |_| {
         let now = mode.get();
@@ -154,10 +167,7 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>, no_slide: Signal<bool>) -> Sid
         if now != SidebarMode::None {
             last_mode.set(now);
             collapsing.set(false);
-            if let Some(h) = collapse_timer.get_value() {
-                h.clear();
-                collapse_timer.set_value(None);
-            }
+            outro.cancel();
             if was {
                 // Let cached thumbnails ride the width slide. Cold cells keep
                 // their own skeleton until renderThumb completes.
@@ -189,20 +199,7 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>, no_slide: Signal<bool>) -> Sid
                 cells_mounted.set(false);
             } else {
                 collapsing.set(true);
-                if let Some(h) = collapse_timer.get_value() {
-                    h.clear();
-                }
-                let handle = set_timeout_with_handle(
-                    move || {
-                        collapsing.set(false);
-                        // The engine cache remains; only live DOM canvases are
-                        // released, so a later open can synchronously blit.
-                        cells_mounted.set(false);
-                    },
-                    Duration::from_millis(SIDEBAR_SLIDE_MS),
-                )
-                .ok();
-                collapse_timer.set_value(handle);
+                outro.trigger();
             }
         }
     });
@@ -297,8 +294,8 @@ pub fn Sidebar(
 #[cfg(test)]
 mod tests {
     use super::{
-        panel_is_shown, sidebar_is_present, thumbnail_cells_are_live, thumbs_should_stay_mounted,
-        SIDEBAR_SLIDE_MS,
+        SIDEBAR_SLIDE_MS, panel_is_shown, sidebar_is_present, thumbnail_cells_are_live,
+        thumbs_should_stay_mounted,
     };
     use crate::state::SidebarMode;
 

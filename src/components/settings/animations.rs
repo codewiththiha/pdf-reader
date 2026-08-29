@@ -1,5 +1,8 @@
-//! The Animations tab: one switch per motion the reader models, so a reader who
-//! wants the rail to slide but not the page to chase it can have exactly that.
+//! The Animations tab: one switch per motion the reader interpolates. Not one
+//! per motion the reader HAS — the page following the sidebar is deliberately
+//! missing, because the alternative to following the rail's width is showing a
+//! page that does not fit it. The rows here are the frames a reader may not want
+//! to sit through, never a behaviour they may skip.
 //!
 //! This tab is only OFFERED while the master switch (Layout → Animations) is
 //! on, and the rows here are never the whole story: the master is ANDed into
@@ -9,8 +12,8 @@
 //! is gone.
 //!
 //! What each row turns off is the INTERPOLATION, never the change: the end
-//! frame still arrives, in the frame it is asked for — or, for a follow that
-//! was riding a burst of container sizes, once the burst goes quiet.
+//! frame still arrives, in the frame it is asked for — or, for a burst of window
+//! sizes with its switch off, once the burst goes quiet, in one step.
 
 use leptos::prelude::*;
 
@@ -33,17 +36,6 @@ pub(crate) fn AnimationsTab(state: AppState) -> impl IntoView {
                     })
                     title="Tween the rail's width as it opens and closes. Off, it appears at its \
                            new width."
-                        .to_string()
-                />
-            </Row>
-            <Row label="Canvas Follows Sidebar">
-                <Switch
-                    checked=Signal::derive(move || s.with(|st| st.animations.canvas_sidebar))
-                    on_change=Callback::new(move |v| {
-                        s.update(|st| st.animations.canvas_sidebar = v);
-                    })
-                    title="Re-fit the page on every frame of the rail's slide. Off, it takes the \
-                           new width in one step, when the rail stops."
                         .to_string()
                 />
             </Row>

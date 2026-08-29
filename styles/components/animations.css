@@ -27,8 +27,8 @@
 /* Settings → Layout → Animations off. The same collapse, on request: the
    reader has no switch per micro-transition (menu pops, toasts, the theme
    cross-fade, hover fades), so the master addresses all of them at once. The
-   motions the reader DOES model — the rail's slide, the canvas following the
-   container, a zoom's tween, a glide between pages — are gated in Rust off
+   motions the reader DOES model — the rail's slide, the canvas following a
+   window drag, a zoom's tween, a glide between pages — are gated in Rust off
    `state::reader::Motion`, which has already applied this same switch; this
    rule is what makes the master honest for the rest. */
 html.animations-off,
