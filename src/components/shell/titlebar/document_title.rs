@@ -9,7 +9,7 @@ use crate::components::primitives::hooks::dom::{
     by_id, by_id_warn, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,
 };
 use crate::components::primitives::hooks::use_resize_observer::observe_elements;
-use crate::components::sidebar::shell::SIDEBAR_ASIDE_SELECTOR;
+use crate::components::shell::sidebar::container::SIDEBAR_ASIDE_SELECTOR;
 
 use crate::state::AppState;
 
@@ -17,7 +17,7 @@ use crate::state::AppState;
 const GAP_LEFT: f64 = 4.0;
 /// Breathing room before the trailing control cluster.
 const GAP_RIGHT: f64 = 12.0;
-const TITLE_MIN_LABEL_W: f64 = crate::components::app_shell::constants::MIN_DOC_TITLE_WIDTH;
+const TITLE_MIN_LABEL_W: f64 = crate::components::shell::titlebar::constants::MIN_DOC_TITLE_WIDTH;
 
 /// Measure the title's real slot in toolbar-row coordinates. This remains
 /// correct through the sidebar close slide because it uses the live rects,

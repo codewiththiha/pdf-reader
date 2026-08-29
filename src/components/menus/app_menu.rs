@@ -16,7 +16,7 @@ use wasm_bindgen::JsValue;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::menu_item::MenuItem;
-use crate::components::app_shell::toolbar_popover::MenuPopover;
+use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::components::primitives::shortcut_row::ShortcutRow;
 
 #[component]

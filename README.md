@@ -362,13 +362,12 @@ src/
   components/
     primitives/           button, icon, switch, tooltip, popover, floating
                           positioning, motion and interaction hooks
-    app_shell/            custom title bar, traffic lights, floating document
-                          title, the toolbar popover host
+    shell/                the unified application shell: the ShellController
+                          (one source of truth for layout), the titlebar
+                          family, the sidebar rail family
     menus/                app menu, appearance menu, reader menu
     settings/             the settings modal and its tabs (layout, theme,
                           animations)
-    sidebar/              sidebar shell, header, switcher, document info,
-                          outline and thumbnails
     document/             page canvas, page strip, the viewer and its scroll
                           shells (continuous, single, two-page)
     viewer_controls/      bottom bar, overlay scrollbar, page indicator,

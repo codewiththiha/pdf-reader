@@ -10,7 +10,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::app_shell::toolbar_popover::MenuPopover;
+use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::menu_item::MenuItem;
 

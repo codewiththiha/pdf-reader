@@ -6,7 +6,7 @@
 //! * Escape / outside-press dismissal comes from [`super::dismiss`];
 //! * the open/close transition is reported through `on_open_change` rather
 //!   than the popover reaching into app chrome itself (the app-shell
-//!   [`crate::components::app_shell::toolbar_popover::ToolbarPopover`] owns
+//!   [`crate::components::shell::titlebar::toolbar_popover::ToolbarPopover`] owns
 //!   the titlebar-hold behaviour).
 //!
 //! Width is a prop so each menu can size itself. `position: fixed` escapes

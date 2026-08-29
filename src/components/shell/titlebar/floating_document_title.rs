@@ -13,7 +13,7 @@
 //! that ignores the rail reads as text laid over the sidebar (docked) or
 //! floating above it (overlay). "Always" means the title bar and the width
 //! budget stop being reasons to hide; the rail is still a reason. It follows
-//! [`SidebarChromeCtx::present`], so the label stays out of the way for the
+//! [`ShellController::rail_present`], so the label stays out of the way for the
 //! whole close slide rather than reappearing on the frame the mode flips.
 //!
 //! Shown only when a document is open, the sidebar is off, and — unless
@@ -55,11 +55,10 @@ use leptos::portal::Portal;
 use leptos::prelude::*;
 
 use pdf_engine::types::DocStatus;
-use crate::state::SidebarMode;
-use crate::state::AppState;
 use crate::components::ai::anchor::host_id_for_mode;
-use crate::components::app_shell::title_bar::TitleBarCtx;
-use crate::components::sidebar::shell::SidebarChromeCtx;
+use crate::components::shell::controller::ShellController;
+use crate::components::shell::titlebar::root::TitleBarCtx;
+use crate::state::AppState;
 use crate::components::primitives::hooks::dom::{by_id, VIEWER_SLOT_ID};
 use crate::components::primitives::hooks::use_window_event::use_window_event;
 
@@ -73,7 +72,8 @@ const MIN_LABEL_W: f64 = 40.0;
 #[component]
 pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
-    let chrome = use_context::<SidebarChromeCtx>();
+    let shell = use_context::<ShellController>()
+        .expect("the page provides the shell controller");
     // The blending node is the positioned <div> (see the view's CRITICAL
     // note); scroll_width() there is the natural text width, as before.
     let label_ref: NodeRef<html::Div> = NodeRef::new();
@@ -188,12 +188,8 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         }
         // The rail owns the top-left corner in either mode: docked, its
         // identity row already shows the name; floating, it is painted right
-        // under this label. Fall back to the raw mode when no page provides
-        // the chrome context (the library route has no sidebar at all).
-        let rail_off = match chrome {
-            Some(chrome) => !chrome.present.get(),
-            None => state.ui.sidebar.get() == SidebarMode::None,
-        };
+        // under this label.
+        let rail_off = !shell.rail_present().get();
         // Persist means auto-hide does not: the title bar and the width budget
         // stop being reasons to disappear. The rail is not a budget.
         if state.settings.with(|st| st.layout.floating_label_persist) {

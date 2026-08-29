@@ -1,33 +1,30 @@
 //! Native traffic lights: on while the bar is pinned/hovered, or while the
-//! sidebar is painted. A short hide grace absorbs the end-of-close hover-band
+//! rail is painted. A short hide grace absorbs the end-of-close hover-band
 //! handoff: the rail releases chrome, then the expanded band can immediately
 //! put the stationary pointer back over the bar.
 //!
 //! TWO HOSTS, ONE PAIR OF LIGHTS. The lights are native and pinned to the
-//! window's top-left, so whichever surface owns that corner is the one they sit
-//! on: the title bar's 88px gutter when the rail is down, the rail's own header
-//! gutter when it is up — docked or floating, the header reserves the same 88px
-//! either way. `present` therefore lights them on its own, while the bar's
-//! hover only does so where the bar still has a gutter to offer.
+//! window's top-left, so whichever surface owns that corner is the one they
+//! sit on: the title bar's 88px gutter when the rail is down, the rail's
+//! own header gutter when it is up — docked or floating, the header
+//! reserves the same 88px either way. The shell controller's
+//! `rail_present` therefore lights them on its own (for the whole paint —
+//! open, or the close slide still running — and independent of the
+//! pointer, because the rail's header is not hover-gated), while the bar's
+//! hover only does so where the controller's `bar_gutter` says the bar
+//! still has a gutter to offer.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::app_shell::title_bar::TitleBarCtx;
+use crate::components::shell::controller::ShellController;
+use crate::components::shell::titlebar::root::TitleBarCtx;
 
 #[component]
-pub fn TrafficLights(
-    /// The rail is painted, so its header is hosting the lights. Lit for the
-    /// whole paint — open, or the close slide still running — and independent
-    /// of the pointer, because the rail's header is not hover-gated.
-    #[prop(into)] present: Signal<bool>,
-    /// The title bar itself reserves the 88px gutter. Off in overlay mode: the
-    /// bar keeps its full width there and its leading control moves into the
-    /// space the lights would have taken, so a hover must not bring them back
-    /// on top of it. The rail still hosts them when it is up.
-    #[prop(into)] bar_gutter: Signal<bool>,
-) -> impl IntoView {
+pub fn TrafficLights() -> impl IntoView {
+    let shell = use_context::<ShellController>()
+        .expect("the page provides the shell controller");
     let ctx = use_context::<TitleBarCtx>();
     let last_sent = StoredValue::new_local(None::<bool>);
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
@@ -36,7 +33,7 @@ pub fn TrafficLights(
         let Some(ctx) = ctx else {
             return;
         };
-        let on = present.get() || (bar_gutter.get() && ctx.visible.get());
+        let on = shell.rail_present().get() || (shell.bar_gutter().get() && ctx.visible.get());
         if on {
             // Never send the end-of-slide false if hover re-enters on the
             // following frame.

@@ -105,6 +105,6 @@ The thumbnail sidebar is a separate grid virtualizer:
 
 - width-aware row windowing lives in `virtual-list`
 - DOM/reactive wiring lives in `virtual-list-leptos`
-- panel-specific constants stay in `src/components/panels/thumbnails`
+- panel-specific constants stay in `src/components/shell/sidebar/panels/thumbnails`
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.

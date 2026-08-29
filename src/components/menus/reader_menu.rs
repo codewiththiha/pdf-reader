@@ -7,7 +7,7 @@ use wasm_bindgen::JsValue;
 use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 
-use crate::components::app_shell::toolbar_popover::MenuPopover;
+use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::kbd::Kbd;

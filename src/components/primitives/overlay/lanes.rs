@@ -44,7 +44,7 @@ use leptos::prelude::*;
 pub struct Lanes(u8);
 
 impl Lanes {
-    /// Anchored menus and popovers ([`MenuPopover`](crate::components::app_shell::toolbar_popover::MenuPopover)-hosted).
+    /// Anchored menus and popovers ([`MenuPopover`](crate::components::shell::titlebar::toolbar_popover::MenuPopover)-hosted).
     pub const POPOVER: Self = Self(1 << 0);
     /// Modal dialogs, of which the reader has exactly one today: settings.
     pub const MODAL: Self = Self(1 << 1);

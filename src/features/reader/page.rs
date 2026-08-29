@@ -1,27 +1,29 @@
 //! The `/reader` route: sidebar + viewer slot + the app title bar, plus the
-//! floating doc title, page pill, bottom
-//! bar and floating search. The viewer slot switches on viewer.mode.
+//! floating doc title, page pill, bottom bar and floating search. The viewer
+//! slot switches on viewer.mode.
 //!
-//! Slot wiring is the SINGLE coordinator's job — branches
-//! must not edit this file.
-
-use std::time::Duration;
+//! Slot wiring is the SINGLE coordinator's job — branches must not edit this
+//! file. The shell's layout truth lives in one `ShellController` built here
+//! and provided as context; the rail's two mount points (`PushRail` in the
+//! flex row, `OverlayRail` above the reader surface) and every chrome
+//! component ask it instead of recomputing layout facts.
 
 use leptos::prelude::*;
 
-use crate::components::app_shell::app_title_bar::AppTitleBar;
-use crate::components::app_shell::document_title::CenteredDocTitle;
-use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
+use crate::components::shell::controller::ShellController;
+use crate::components::shell::sidebar::overlay::OverlayRail;
+use crate::components::shell::sidebar::push::PushRail;
+use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
+use crate::components::shell::titlebar::document_title::CenteredDocTitle;
+use crate::components::shell::titlebar::floating_document_title::FloatingDocumentTitle;
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
 use crate::components::settings::modal::SettingsModal;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
-use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
-use crate::components::sidebar::shell::{SidebarChromeCtx, sidebar_paint};
 use crate::features::reader::rail::ReaderRail;
 use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
 use crate::components::viewer_controls::page_indicator::PageIndicator;
@@ -30,7 +32,6 @@ use crate::effects::reader::reading_progress::reading_progress;
 use crate::features::reader::use_reader_virtualizers;
 use crate::services::document::close_document;
 use crate::state::AppState;
-use crate::state::SidebarMode;
 use pdf_core::layout::{PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
 use pdf_engine::types::DocStatus;
@@ -40,6 +41,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // The viewer slice of app state, handed to the reusable viewer components
     // and effects (all field paths match the app-level state).
     let vs = state.reader;
+
+    // The shell's layout brain: one controller for the whole page, provided
+    // as context for the title bar, the traffic lights, the floating label
+    // and both rail mount points. It owns the open/close slide machine, so
+    // the chrome stays aligned with the rail's pixels for the whole length
+    // of a slide.
+    let shell = ShellController::reader(state);
+    provide_context(shell);
 
     let rv = use_reader_virtualizers(vs);
 
@@ -122,63 +131,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let status = state.reader.document.status;
     let is_ready = move || status.get() == DocStatus::Ready;
-    // Whether the rail's width tween is frozen. `viewer.motion` is the shell's
-    // projection of Settings → Animations, master already applied, so this is
-    // the EFFECTIVE switch and not the stored one. Three consumers, one class
-    // each: the aside, the overlay wrapper's transform, and the close hold that
-    // keeps the last panel painted for the length of a slide that never runs.
-    let no_slide = Signal::derive(move || !vs.viewer.motion.get().sidebar_slide);
-    let paint = sidebar_paint(state.ui.sidebar, no_slide);
-
-    let overlay_sb = Signal::derive(move || state.settings.with(|st| st.layout.sidebar_overlay));
-    let sb_hover = use_hover_visibility(Duration::from_millis(250), move || !overlay_sb.get());
-    let last_panel = RwSignal::new(SidebarMode::Thumbs);
-    Effect::new(move |_| {
-        let m = state.ui.sidebar.get();
-        if m != SidebarMode::None {
-            last_panel.set(m);
-        }
-    });
-    let prev_vis = StoredValue::new_local(false);
-    Effect::new(move |_| {
-        // edge-triggered hover open/close
-        let vis = sb_hover.visible.get();
-        let was = prev_vis.get_value();
-        prev_vis.set_value(vis);
-        if !overlay_sb.get() {
-            return;
-        }
-        if vis && !was && state.ui.sidebar.get() == SidebarMode::None {
-            state.ui.sidebar.set(last_panel.get());
-        } else if !vis && was && state.ui.sidebar.get() != SidebarMode::None {
-            state.ui.sidebar.set(SidebarMode::None);
-        }
-    });
-    // The bar's left inset, the native traffic lights and the floating label
-    // all follow the RAIL, not the layout mode: a floating rail covers the same
-    // top-left pixels as a docked one, so the label gets out of the way for
-    // either. The bar itself only yields to a DOCKED rail — see
-    // `app_title_bar.rs`.
-    let rail_painted = paint.present;
-    provide_context(SidebarChromeCtx {
-        present: rail_painted,
-    });
-
-    let sb_request_show = RwSignal::new(0u32);
-    let sb_request_hide = RwSignal::new(0u32);
-
-    let show_fn = sb_hover.show.clone();
-    Effect::new(move |_| {
-        if sb_request_show.get() > 0 {
-            show_fn();
-        }
-    });
-    let hide_fn = sb_hover.hide_later.clone();
-    Effect::new(move |_| {
-        if sb_request_hide.get() > 0 {
-            hide_fn();
-        }
-    });
 
     let settings_open = RwSignal::new(false);
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
@@ -188,13 +140,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // Left: sidebar toggle + Library. Title is centered; right is appearance +
     // settings + the 3-dash view menu.
     //
-    // Overlay mode drops the toggle: the rail opens by brushing the window's
-    // left edge and closes from its own header, so a second switch in the bar
-    // only competes with both. The Library button stays exactly where it is —
-    // the rail floats above the bar and covers it while it is up, which is the
-    // rail's job, not this cluster's. The cluster is always mounted so the row
-    // keeps its left edge (and `#toolbar-leading`, the measurement anchor the
-    // library title uses) wherever the mode puts it.
+    // The sidebar toggle's visibility is the controller's rule: overlay mode
+    // drops it (the rail opens by brushing the window's left edge and closes
+    // from its own header, so a second switch in the bar only competes with
+    // both). The Library button stays exactly where it is — the rail floats
+    // above the bar and covers it while it is up, which is the rail's job,
+    // not this cluster's. The cluster is always mounted so the row keeps its
+    // left edge (and `#toolbar-leading`, the measurement anchor the library
+    // title uses) wherever the mode puts it.
     let left = move || {
         view! {
             <div
@@ -202,10 +155,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 data-tauri-drag-region="true"
                 class="flex shrink-0 items-center gap-1"
             >
-                <Show when=move || !overlay_sb.get() && state.ui.sidebar.get() == SidebarMode::None>
+                <Show when=move || shell.show_sidebar_toggle().get()>
                     <Tooltip text="Toggle sidebar">
                         <Button
-                            on_click=move |_| state.ui.sidebar.set(SidebarMode::Thumbs)
+                            on_click=move |_| shell.toggle_sidebar()
                             variant=ButtonVariant::Ghost
                             title="Toggle sidebar"
                         >
@@ -245,19 +198,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
     };
 
-    // The floating rail's two shapes, as literals rather than an interpolation:
-    // the class list is the contract the aside keeps too, and a `format!` per
-    // frame invites a token to go missing.
-    //
-    // `fixed`, not `absolute`: this wrapper sits OUTSIDE `.reader-bg` (see the
-    // note in `features/reader/rail.rs`), so there is no positioned ancestor
-    // left to resolve against and the viewport is the honest box.
-    const OVERLAY_STATIC: &str = "fixed inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl";
-    const OVERLAY_SLIDES: &str = concat!(
-        "fixed inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl",
-        " transition-transform duration-300 ease-in-out"
-    );
-
     view! {
         <AppTitleBar state=state left=left center=center right=right>
             // overflow-hidden clips the hidden ReaderBottomBar's slide-down translate
@@ -267,20 +207,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 class=("blend", move || state.settings.with(|st| st.layout.blend_mode))
             >
                 <div class="relative flex min-h-0 flex-1">
-                    <Show when=move || overlay_sb.get() && state.ui.sidebar.get() == SidebarMode::None>
-                        <div
-                            class="absolute inset-y-0 left-0 z-[var(--z-bar)] w-1.5"
-                            on:mouseenter=move |_| sb_request_show.update(|n| *n += 1)
-                        />
-                    </Show>
                     // DOCKED: the rail is a flex sibling of `<main>`, so the
-                    // page gives up the width. `contents` drops the wrapper out
-                    // of the box tree so the `<aside>` is the flex item itself.
-                    <Show when=move || !overlay_sb.get()>
-                        <div class="contents">
-                            <ReaderRail state=state paint=paint no_slide=no_slide />
-                        </div>
-                    </Show>
+                    // page gives up the width. `PushRail` renders nothing
+                    // while the controller says the layout is overlay.
+                    <PushRail shell=shell>
+                        <ReaderRail state=state shell=shell />
+                    </PushRail>
                     <main
                         id=VIEWER_SLOT_ID
                         class="relative min-w-0 flex-1 overflow-hidden"
@@ -320,28 +252,20 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     </main>
                 </div>
             </div>
-            // OVERLAY: the rail mounts OUTSIDE `.reader-bg`, for the reason the
-            // modal below spells out. `.reader-bg` is a stacking context at
-            // z-index 0, so a rail inside it paints under the title bar's band
-            // and hands the band its whole 48px header — the close, search and
-            // More buttons live there, and so do the native traffic lights,
-            // which the header's 88px gutter reserves for them. Out here its
-            // own z-popover outranks the bar, so the rail covers the bar's left
-            // corner (the Library button included) and takes the lights with
-            // it, and the bar reads as one full-width surface either way.
-            <Show when=move || overlay_sb.get()>
-                <div
-                    class=move || if no_slide.get() { OVERLAY_STATIC } else { OVERLAY_SLIDES }
-                    class=(
-                        "-translate-x-full",
-                        move || state.ui.sidebar.get() == SidebarMode::None,
-                    )
-                    on:mouseenter=move |_| sb_request_show.update(|n| *n += 1)
-                    on:mouseleave=move |_| sb_request_hide.update(|n| *n += 1)
-                >
-                    <ReaderRail state=state paint=paint no_slide=no_slide />
-                </div>
-            </Show>
+            // OVERLAY: `OverlayRail` mounts OUTSIDE `.reader-bg`, for the
+            // reason the modal below spells out. `.reader-bg` is a stacking
+            // context at z-index 0, so a rail inside it paints under the
+            // title bar's band and hands the band its whole 48px header —
+            // the close, search and More buttons live there, and so do the
+            // native traffic lights, which the header's 88px gutter reserves
+            // for them. Out here its own z-popover outranks the bar, so the
+            // rail covers the bar's left corner (the Library button
+            // included) and takes the lights with it, and the bar reads as
+            // one full-width surface either way. It renders nothing while
+            // the controller says the layout is docked.
+            <OverlayRail shell=shell>
+                <ReaderRail state=state shell=shell />
+            </OverlayRail>
             // The settings modal belongs to the window, not to the viewer: as a
             // child of `main` it sat inside `.reader-bg`, which is a stacking
             // context (position:relative + z-index:0), so the title bar's band

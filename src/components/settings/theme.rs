@@ -12,7 +12,7 @@ use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::separator::Separator;
-use crate::components::app_shell::toolbar_popover::MenuPopover;
+use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::state::AppState;
 
 #[component]
