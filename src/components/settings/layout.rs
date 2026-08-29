@@ -81,7 +81,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                         s.update(|st| st.layout.floating_label_persist = v);
                     })
                     disabled=label_off
-                    title="Keep the floating label visible even when the sidebar or title bar is open"
+                    title="Keep the floating label visible even when the title bar is open (the sidebar always hides it)"
                         .to_string()
                 />
             </Row>

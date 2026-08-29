@@ -6,12 +6,19 @@
 //! name shows in full only when its NATURAL width fits that budget, otherwise
 //! it disappears entirely — it never truncates over the page. "Label Width
 //! Limit" scales that budget down; "Always Show Label" opts out of the
-//! auto-hide rules altogether.
+//! auto-hide rules — except the one that matters most:
 //!
-//! Shown only when a document is open and — unless "Always Show Label" is on
-//! — the sidebar is OFF (its identity row already shows the name) AND the
-//! titlebar is not visible (the bar contains
-//! the name).
+//! THE RAIL ALWAYS WINS. The label is portaled to `<body>` and sits at the
+//! window's top-left, which is exactly where the rail's header is, so a label
+//! that ignores the rail reads as text laid over the sidebar (docked) or
+//! floating above it (overlay). "Always" means the title bar and the width
+//! budget stop being reasons to hide; the rail is still a reason. It follows
+//! [`SidebarChromeCtx::present`], so the label stays out of the way for the
+//! whole close slide rather than reappearing on the frame the mode flips.
+//!
+//! Shown only when a document is open, the sidebar is off, and — unless
+//! "Always Show Label" is on — the titlebar is not visible (the bar contains
+//! the name) and the name fits its budget.
 //!
 //! Blend contract: `mix-blend-difference` blends only against what is painted
 //! *inside the element's isolation group* (its nearest ancestor stacking
@@ -52,6 +59,7 @@ use crate::state::SidebarMode;
 use crate::state::AppState;
 use crate::components::ai::anchor::host_id_for_mode;
 use crate::components::app_shell::title_bar::TitleBarCtx;
+use crate::components::sidebar::shell::SidebarChromeCtx;
 use crate::components::primitives::hooks::dom::{by_id, VIEWER_SLOT_ID};
 use crate::components::primitives::hooks::use_window_event::use_window_event;
 
@@ -65,6 +73,7 @@ const MIN_LABEL_W: f64 = 40.0;
 #[component]
 pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
+    let chrome = use_context::<SidebarChromeCtx>();
     // The blending node is the positioned <div> (see the view's CRITICAL
     // note); scroll_width() there is the natural text width, as before.
     let label_ref: NodeRef<html::Div> = NodeRef::new();
@@ -177,13 +186,21 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
         if !enabled() || state.reader.document.status.get() != DocStatus::Ready {
             return false;
         }
-        // Persist means NEVER auto-hide: the title bar, the sidebar and the
-        // width budget all stop being reasons to disappear.
+        // The rail owns the top-left corner in either mode: docked, its
+        // identity row already shows the name; floating, it is painted right
+        // under this label. Fall back to the raw mode when no page provides
+        // the chrome context (the library route has no sidebar at all).
+        let rail_off = match chrome {
+            Some(chrome) => !chrome.present.get(),
+            None => state.ui.sidebar.get() == SidebarMode::None,
+        };
+        // Persist means auto-hide does not: the title bar and the width budget
+        // stop being reasons to disappear. The rail is not a budget.
         if state.settings.with(|st| st.layout.floating_label_persist) {
-            return true;
+            return rail_off;
         }
         let max_pct = state.settings.with(|st| st.layout.floating_label_max_pct);
-        state.ui.sidebar.get() == SidebarMode::None
+        rail_off
             && ctx.map(|c| !c.visible.get()).unwrap_or(true)
             // None = unknown = show
             && budget.get().is_none_or(|b| label_w.get() <= b * max_pct / 100.0)
@@ -208,6 +225,8 @@ pub fn FloatingDocumentTitle(state: AppState) -> impl IntoView {
                     // fills the viewer the gap is ~0, so the budget falls
                     // under MIN_LABEL_W and this returned "0px" — the label
                     // was truncated to nothing no matter what `shown` said.
+                    // The rail case never reaches here: `shown` is already off
+                    // and the fade hides the text.
                     if state.settings.with(|st| st.layout.floating_label_persist) {
                         return "min(70vw, 560px)".to_string();
                     }

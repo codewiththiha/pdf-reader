@@ -107,12 +107,17 @@ pub(crate) fn sidebar_is_present(mode: SidebarMode, collapsing: bool) -> bool {
 }
 
 /// Chrome-facing view of the open/close slide. The page that runs
-/// [`sidebar_paint`] provides this; the title bar above the sidebar reads it
-/// so its chrome (left inset, native traffic lights) follows the paint, not
-/// the raw mode.
+/// [`sidebar_paint`] provides this; the title bar above the sidebar and the
+/// floating label read it, so chrome follows the paint rather than the raw
+/// mode (the mode flips to `None` on the close click, three hundred milliseconds
+/// before the rail is out of the way).
 #[derive(Clone, Copy)]
 pub struct SidebarChromeCtx {
-    /// Sidebar open, or its close slide still running.
+    /// The rail is on screen: open, or its close slide still running — in
+    /// DOCKED or in overlay mode. The title bar's left inset, the native
+    /// traffic lights and the floating label key off this, which is why it is
+    /// not "the docked column": a floating rail covers the same pixels and
+    /// steals the same chrome.
     pub present: Signal<bool>,
 }
 

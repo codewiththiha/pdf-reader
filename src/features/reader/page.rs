@@ -159,9 +159,18 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             state.ui.sidebar.set(SidebarMode::None);
         }
     });
+    // The bar's left inset, the native traffic lights and the floating label
+    // all follow the RAIL, not the layout mode: a floating rail covers the same
+    // top-left pixels as a docked one, so the bar yields the same way (its band
+    // starts after the rail, the lights stay lit, and the label gets out).
+    let rail_painted = paint.present;
     provide_context(SidebarChromeCtx {
-        present: Signal::derive(move || paint.present.get() && !overlay_sb.get()),
+        present: rail_painted,
     });
+    // Floating, and on screen: the rail covers the bar's left cluster, which
+    // is why that cluster steps out (see `left` below). `SidebarChromeCtx`
+    // carries only the paint; who yields to the rail is the page's decision.
+    let floating_rail = Signal::derive(move || rail_painted.get() && overlay_sb.get());
 
     let sb_request_show = RwSignal::new(0u32);
     let sb_request_hide = RwSignal::new(0u32);
@@ -184,14 +193,20 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
 
-    // Left: sidebar toggle + Library stay put. Open is gone. Title is centered;
-    // right is appearance + settings + the 3-dash view menu.
+    // Left: sidebar toggle + Library. Title is centered; right is appearance +
+    // settings + the 3-dash view menu. While a FLOATING rail is up this whole
+    // cluster is put out of sight — the rail owns that side of the window and its
+    // header carries the traffic-light inset, so the bar stays clean instead of
+    // stacking controls under a rail that covers them. `invisible`, not
+    // unmounted: the row keeps its left edge (and `#toolbar-leading`, the
+    // measurement anchor the library title uses) exactly where it is.
     let left = move || {
         view! {
             <div
                 id=TOOLBAR_LEADING_ID
                 data-tauri-drag-region="true"
                 class="flex shrink-0 items-center gap-1"
+                class=("invisible", move || floating_rail.get())
             >
                 <Show when=move || state.ui.sidebar.get() == SidebarMode::None>
                     <Tooltip text="Toggle sidebar">
@@ -340,7 +355,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 />
                             </div>
                         </Show>
-                        <SettingsModal state=state open=settings_open />
                         <ReaderBottomBar
                             reader=vs
                         />
@@ -353,6 +367,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     </main>
                 </div>
             </div>
+            // The settings modal belongs to the window, not to the viewer: as a
+            // child of `main` it sat inside `.reader-bg`, which is a stacking
+            // context (position:relative + z-index:0), so the title bar's band
+            // — a SIBLING of `.reader-bg` at z-bar — painted over the top of an
+            // open modal. As a sibling of the page, its own z-popover token
+            // outranks the bar, which is what a modal is supposed to do.
+            <SettingsModal state=state open=settings_open />
         </AppTitleBar>
     }
 }

@@ -35,10 +35,13 @@ pub fn AppTitleBar(
     });
     // The open floating search holds the bar (like an open popover).
     let extra_hold = Signal::derive(move || state.reader.search.visible.get());
-    // The sidebar owns the left inset while it is painted, not merely while
-    // its mode is open. The mode flips to `None` on the close click, but the
-    // aside keeps sliding for 300ms; the reader page publishes that window as
-    // `present`. Pages without a sidebar fall back to the raw mode.
+    // The sidebar owns the left inset while it is PAINTED: not merely while its
+    // mode is open (the mode flips to `None` on the close click, but the aside
+    // keeps sliding for 300ms — the reader page publishes that window as
+    // `present`), and not only when docked: a floating rail covers the same
+    // top-left pixels, so the band starts after it and the native traffic
+    // lights stay lit over the rail's own header. Pages without a sidebar fall
+    // back to the raw mode.
     let chrome = use_context::<SidebarChromeCtx>();
     let band_inset = Signal::derive(move || match chrome {
         Some(chrome) => chrome.present.get(),
