@@ -114,8 +114,10 @@ pub const MIN_CARD_H: f64 = 140.0;
 pub const MAX_CARD_H_FRAC: f64 = 0.8;
 
 /// Gap-aware, side-aware card placement: the card goes on whichever side of
-/// the anchor has more free space (never covering the stroke), is centered
-/// vertically on the mark, and clamped into the viewport margin. Shrinks the
+/// the anchor has more free space (never covering the stroke), sits a little
+/// BELOW the mark's midline (`y_bias` — dead-centre reads as pasted onto the
+/// line; a hand's-width below reads as attached to it, the way a footnote
+/// hangs off its word), and clamped into the viewport margin. Shrinks the
 /// card when the viewport is too small to host it at the requested size.
 ///
 /// Pure: unit-testable on the host via `cargo test -p pdf-core gloss`.
@@ -129,6 +131,7 @@ pub fn place_card(
     radius: f64,
     gap: f64,
     margin: f64,
+    y_bias: f64,
 ) -> GlossBox {
     let w = size_w.min((view_w - margin * 2.0).max(MIN_CARD_W));
     // Guard against min > max panics on degenerate viewports.
@@ -140,7 +143,8 @@ pub fn place_card(
         anchor.x - gap - w
     };
     let x = x.clamp(margin, (view_w - w - margin).max(margin));
-    let y = (anchor.y + anchor.h * 0.5 - h * 0.5).clamp(margin, (view_h - h - margin).max(margin));
+    let y = (anchor.y + anchor.h * 0.5 - h * 0.5 + y_bias)
+        .clamp(margin, (view_h - h - margin).max(margin));
     GlossBox { x, y, w, h, r: radius }
 }
 
@@ -242,7 +246,7 @@ mod tests {
     fn place_card_prefers_the_roomier_side() {
         // Anchor near the left edge: plenty of room on the right.
         let anchor = GlossBox { x: 100.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
-        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 0.0);
         assert!((card.x - (anchor.x + anchor.w + 16.0)).abs() < 1e-9);
     }
 
@@ -250,7 +254,7 @@ mod tests {
     fn place_card_flips_left_when_the_right_edge_is_closer() {
         // space_right = 1920 - 1860 = 60 < anchor.x = 1800 → left side.
         let anchor = GlossBox { x: 1800.0, y: 400.0, w: 60.0, h: 16.0, r: 0.0 };
-        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 0.0);
         assert!((card.x - (anchor.x - 16.0 - card.w)).abs() < 1e-9);
     }
 
@@ -258,7 +262,7 @@ mod tests {
     fn place_card_stays_inside_the_viewport_margin_and_shrinks_to_fit() {
         // Tiny viewport, oversized request: everything clamps inboard.
         let anchor = GlossBox { x: 0.0, y: 0.0, w: 40.0, h: 12.0, r: 0.0 };
-        let card = place_card(anchor, 800.0, 2000.0, 500.0, 400.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 800.0, 2000.0, 500.0, 400.0, 12.0, 16.0, 12.0, 0.0);
         assert!(card.x >= 12.0 - 1e-9);
         assert!(card.y >= 12.0 - 1e-9);
         assert!(card.x + card.w <= 500.0 - 12.0 + 1e-6);
@@ -269,12 +273,20 @@ mod tests {
     }
 
     #[test]
-    fn place_card_centers_vertically_on_the_anchor() {
+    fn place_card_hangs_below_the_anchor_midline() {
+        // Dead-centre read as pasted onto the line; the bias drops the card a
+        // touch so it hangs off the word like a footnote. The clamp still owns
+        // the last word near the edges.
         let anchor = GlossBox { x: 400.0, y: 500.0, w: 80.0, h: 20.0, r: 0.0 };
-        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 18.0, 16.0, 12.0);
+        let card = place_card(anchor, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 12.0);
         let anchor_mid = anchor.y + anchor.h * 0.5;
         let card_mid = card.y + card.h * 0.5;
-        assert!((anchor_mid - card_mid).abs() < 1e-9);
+        assert!((card_mid - anchor_mid - 12.0).abs() < 1e-9);
+        // …and a bias that would push the card out the bottom stops at the
+        // viewport margin instead of leaving the screen.
+        let low = GlossBox { x: 400.0, y: 1000.0, w: 80.0, h: 20.0, r: 0.0 };
+        let card = place_card(low, 360.0, 300.0, 1920.0, 1080.0, 12.0, 16.0, 12.0, 12.0);
+        assert!(card.y + card.h <= 1080.0 - 12.0 + 1e-9);
     }
 
     #[test]

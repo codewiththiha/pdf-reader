@@ -1,25 +1,25 @@
 /* =====================================================================
-   Gloss word-card: the in-page highlighter stroke (persisted mark + the
-   "thinking" drift/sweep/halo) and the surface that springs open from it
-   and morphs back down onto it. A port of the Gloss reference's visual
-   layer, with the Marginalia highlighter look for the mark itself.
+   Gloss word-card: the in-page highlighter stroke (the persisted mark and
+   its "thinking" pulse) and the surface that springs open from it and
+   morphs back down onto it.
 
    Position / size / radius are written PER FRAME by the spring effect in
    Rust, so the geometry properties deliberately carry NO transition — a
    transition here would fight the rAF loop and double-motion the card.
 
-   Every colour is an existing theme token; --color-accent is whatever the
-   active appearance tint is, so the stroke/chip/morph follow the reader's
-   chosen hue automatically. Nothing here touches tokens.css or pdf-page.css.
+   The look is deliberately quiet. The mark is ONE flat translucent pass of
+   the reader's chosen gloss colour (a real highlighter does not gradient),
+   and thinking is a slow opacity pulse — the drift/sweep/halo stack it used
+   to wear was three animations doing one job. Every colour is mixed from
+   the user's gloss colour (or the live accent), so the stroke suits any
+   tint, on any text.
    ===================================================================== */
 
 :root {
-  /* Aliased to the shared floating elevation token: one value, one source. */
+  /* One elevation for every floating surface — the card is a panel like the
+     menus, not a special object with its own heavier shadow. */
   --gloss-shadow-menu: var(--shadow-float);
-  --gloss-shadow-card:
-    0 0 0 1px var(--color-line),
-    0 16px 40px rgb(0 0 0 / 0.42);
-  --gloss-sweep: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 45%, white);
+  --gloss-shadow-card: var(--shadow-float);
 }
 
 /* ---------------------------------------------------------------------
@@ -51,14 +51,9 @@
 /* ---------------------------------------------------------------------
 Persisted gloss highlighter — one exact-fit stroke per mark in the
 glossLayer (same trade-off as the link layer: above the text layer,
-pointer-events only on the strokes). Two layers per mark, like a real
-highlighter pass:
-  the box   = a translucent multi-stop accent gradient, small radius,
-              canvas glyphs read straight through it;
-  ::before  = the halo, a blurred bleed of ink past the stroke;
-  ::after   = the light sweep, only alive while processing.
-Every colour is mixed from --color-accent, so the stroke suits whatever
-tint the reader chose, on any text.
+pointer-events only on the strokes). One layer per mark: a flat
+translucent pass of the gloss colour, exact-fit, small radius, canvas
+glyphs reading straight through it.
 --------------------------------------------------------------------- */
 .pdf-page .glossLayer {
   position: absolute;
@@ -68,22 +63,18 @@ tint the reader chose, on any text.
 }
 .pdf-page .glossLayer .gloss-mark {
   position: absolute;
-  z-index: 0;                 /* stacking context: keeps the halo inside */
+  z-index: 0;
   pointer-events: auto;
   cursor: pointer;
   border-radius: 3px;         /* exact-fit stroke, not a pill */
   overflow: hidden;
-  background-image: linear-gradient(
-    100deg,
-    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 85%), transparent),
-    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 70%), transparent) 40%,
-    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 60%), transparent) 70%,
-    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 85%), transparent)
+  background: color-mix(
+    in oklab,
+    var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 80%),
+    transparent
   );
-  background-size: 300% 100%;
   mix-blend-mode: multiply;
   transition: box-shadow 150ms ease;
-  animation: gloss-breathe 4.2s ease-in-out infinite;
 }
 .pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
 :root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
@@ -92,55 +83,17 @@ tint the reader chose, on any text.
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 40%, transparent);
   outline: none;
 }
-/* Halo — the soft bleed around the stroke (the screenshot look). */
-.pdf-page .glossLayer .gloss-mark::before {
-  content: "";
-  position: absolute;
-  inset: -9px;
-  z-index: -1;
-  border-radius: 12px;
-  background: radial-gradient(
-    closest-side,
-    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 100%), transparent),
-    color-mix(in oklab, var(--gloss-color, var(--color-accent)) calc(var(--gloss-opacity, 0.4) * 50%), transparent) 55%,
-    transparent 75%
-  );
-  filter: blur(6px);
-  opacity: 0.8;
-  pointer-events: none;
-}
-/* Sweep band — parked off-stroke until processing runs it across. */
-.pdf-page .glossLayer .gloss-mark::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(100deg, transparent 32%, var(--gloss-sweep) 50%, transparent 68%);
-  background-size: 260% 100%;
-  background-position: 130% 0;
-  opacity: 0;
-  pointer-events: none;
-}
-/* Processing: the stroke thinks. Gradient drifts, the sweep runs across,
-the halo pulses. This is the ONLY processing UI — the surface stays
-unmounted until the first chunk lands. */
+/* Processing: the stroke thinks — one slow opacity pulse, nothing else.
+   This is the ONLY processing UI; the surface stays unmounted until the
+   first chunk lands. */
 .pdf-page .glossLayer .gloss-mark-processing,
 :root.dark .pdf-page .glossLayer .gloss-mark-processing {
-  animation:
-    gloss-breathe 4.2s ease-in-out infinite,
-    gloss-drift 2.6s linear infinite;
+  animation: gloss-think 1.4s ease-in-out infinite;
 }
-.pdf-page .glossLayer .gloss-mark-processing::after {
-  opacity: 1;
-  animation: gloss-sweep 1.5s linear infinite;
+@keyframes gloss-think {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
 }
-.pdf-page .glossLayer .gloss-mark-processing::before {
-  animation: gloss-halo-pulse 1.3s ease-in-out infinite alternate;
-}
-@keyframes gloss-drift { from { background-position: 0% 0; } to { background-position: -200% 0; } }
-@keyframes gloss-sweep { from { background-position: 130% 0; } to { background-position: -130% 0; } }
-@keyframes gloss-halo-pulse { from { opacity: 0.5; } to { opacity: 1; } }
-@keyframes gloss-breathe { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.7; } }
 
 /* ---------------------------------------------------------------------
    Multi-select mode (long-press initiated). No checkboxes: selection is
@@ -161,8 +114,7 @@ unmounted until the first chunk lands. */
 /* Defined AFTER the processing rules so it wins the animation tie. */
 .pdf-page .glossLayer .gloss-mark-selected,
 :root.dark .pdf-page .glossLayer .gloss-mark-selected {
-    background-image: none;
-    background-color: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 58%, transparent);
+    background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 58%, transparent);
     box-shadow:
         0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 75%, transparent),
         0 0 12px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 35%, transparent);
@@ -214,6 +166,7 @@ unmounted until the first chunk lands. */
 @media (prefers-reduced-motion: reduce) {
     .pdf-page .glossLayer-selecting .gloss-mark,
     .pdf-page .glossLayer .gloss-mark-selected,
+    .pdf-page .glossLayer .gloss-mark-processing,
     .gloss-context-menu,
     .gloss-select-bar,
     .gloss-undo-toast {

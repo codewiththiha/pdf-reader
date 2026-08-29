@@ -1,12 +1,12 @@
 //! The Theme tab of the reader settings modal: AI highlight palette (with a
-//! custom colour picker) and gloss opacity.
+//! custom colour picker), gloss opacity and the word card's density.
 
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_core::settings::GlossColor;
+use pdf_core::settings::{GlossColor, GlossDensity};
 
-use crate::components::settings::common::Row;
+use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
@@ -22,7 +22,7 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
     let custom_anchor: NodeRef<html::Div> = NodeRef::new();
 
     view! {
-        <SectionLabel text="AI Highlight Colors" />
+        <SectionLabel text="AI Appearance" />
         <div class="rounded-xl border border-line">
             <div class="grid grid-cols-6 gap-2 px-4 py-4">
                 {GlossColor::all()
@@ -131,6 +131,20 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                             />
                         </span>
                     </span>
+                </Row>
+                <Row label="Card Density">
+                    <StyleSelect
+                        value=Signal::derive(move || s.with(|st| st.gloss_density))
+                        on_change=Callback::new(move |v| {
+                            s.update(|st| st.gloss_density = v);
+                        })
+                        options=vec![
+                            (GlossDensity::Compact, "Compact"),
+                            (GlossDensity::Comfortable, "Comfortable"),
+                        ]
+                        label_of=|v: &GlossDensity| v.label()
+                        disabled=Signal::derive(move || false)
+                    />
                 </Row>
             </div>
         </div>

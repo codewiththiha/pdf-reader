@@ -213,6 +213,25 @@ impl GlossColor {
     }
 }
 
+/// How much air the AI word card carries: the padding, line heights and
+/// section gaps of the gloss card's body. Compact is the default because a
+/// definition is scanned, not read like a page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum GlossDensity {
+    #[default]
+    Compact,
+    Comfortable,
+}
+
+impl GlossDensity {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Compact => "Compact",
+            Self::Comfortable => "Comfortable",
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -242,6 +261,12 @@ pub struct Settings {
     pub gloss_opacity: f64,
     #[serde(default = "default_custom_gloss")]
     pub gloss_custom: String,
+    /// The AI word card's spacing. Blobs saved before the field existed
+    /// deserialize as Compact — the card had grown visibly airy and the
+    /// denser layout is the better default even for readers who never open
+    /// Settings.
+    #[serde(default)]
+    pub gloss_density: GlossDensity,
 
     // --- legacy fields, read once then dropped -------------------------------
     #[serde(skip_serializing, default)]
@@ -271,6 +296,7 @@ impl Default for Settings {
             gloss_color: GlossColor::default(),
             gloss_opacity: default_gloss_opacity(),
             gloss_custom: default_custom_gloss(),
+            gloss_density: GlossDensity::default(),
             theme_id: None,
             texture: None,
             noise_enabled: None,
