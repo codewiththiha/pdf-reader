@@ -1,7 +1,11 @@
 //! Shared pieces of the reader settings modal: the tab switcher, the labelled
-//! `Row` wrapper, and the generic `StyleSelect` dropdown. `LayoutTab` and
-//! `ThemeTab` (in their own files) build on these; `SettingsModal` is the
-//! shell that hosts them.
+//! `Row` wrapper, and the generic `StyleSelect` dropdown. The tabs (in their
+//! own files) build on these; `modal` is the shell that hosts them.
+//!
+//! `TabButton` takes the tab to display as a SEPARATE signal from the one it
+//! writes, because the tab set is not fixed: the Animations tab only exists
+//! while its master switch is on, and the shell resolves that in a derived read
+//! so nothing has to overwrite what the reader selected.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -14,11 +18,14 @@ use crate::components::primitives::menu_item::MenuItem;
 pub(crate) enum Tab {
     Layout,
     Theme,
+    /// Hosted only while `Settings::animations.enabled` is on (see `modal`).
+    Animations,
 }
 
 #[component]
 pub(crate) fn TabButton(
     tab: RwSignal<Tab>,
+    active: Signal<Tab>,
     t: Tab,
     icon: IconName,
     label: &'static str,
@@ -26,7 +33,7 @@ pub(crate) fn TabButton(
     let class = move || {
         let base = "flex h-9 items-center justify-center rounded-lg transition-all \
 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-        if tab.get() == t {
+        if active.get() == t {
             format!("{base} gap-2 bg-accent-soft px-4 text-sm font-medium text-accent")
         } else {
             format!("{base} w-9 text-muted hover:text-ink")
@@ -36,11 +43,11 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
         <button
             type="button"
             on:click=move |_| tab.set(t)
-            aria-pressed=move || (tab.get() == t).to_string()
+            aria-pressed=move || (active.get() == t).to_string()
             class=class
         >
             <Icon name=icon size=17 />
-            {move || (tab.get() == t).then(|| view! { <span>{label}</span> })}
+            {move || (active.get() == t).then(|| view! { <span>{label}</span> })}
         </button>
     }
 }

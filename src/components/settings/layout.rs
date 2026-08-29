@@ -1,11 +1,13 @@
 //! The Layout tab of the reader settings modal: page indicator, floating
-//! label, page chrome, window-fit and zoom behaviour.
+//! label, page chrome, window-fit and zoom behaviour — and the master switch
+//! for the reader's motion, which is a layout decision before it is a theme
+//! one, and which decides whether the Animations tab exists at all.
 
 use leptos::prelude::*;
 
 use pdf_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
 
-use crate::components::menus::settings_common::{Row, StyleSelect};
+use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::section_label::SectionLabel;
@@ -230,6 +232,20 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                         s.update(|st| st.layout.blend_mode = v);
                     })
                     title="Paint the reader background with the page's own paper colour".to_string()
+                />
+            </Row>
+        </div>
+        <SectionLabel text="Motion" />
+        <div class="divide-y divide-line rounded-xl border border-line">
+            <Row label="Animations">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.animations.enabled))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.animations.enabled = v);
+                    })
+                    title="Everything that moves in the reader. Off, a change lands as its end \
+                           frame and the Animations tab goes away with the switches it holds."
+                        .to_string()
                 />
             </Row>
         </div>

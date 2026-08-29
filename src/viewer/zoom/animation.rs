@@ -123,7 +123,19 @@ impl Tween {
             // Only the scrolling modes have a strip to rescale.
             let scrolls = !mode.is_paginated();
             let duration = config::profile_for(mode).duration_ms();
-            if !t.animate || t.following || duration <= 0.0 || prefers_reduced_motion() {
+            // Three reasons not to interpolate: the poster asked for the first
+            // frame, this is a container follow (it must sit in the window, not
+            // chase it), the profile has no duration, the OS asked for reduced
+            // motion, or the reader switched zoom animation off. The last two
+            // are read here rather than at every `post` so the settings cannot
+            // be bypassed by a surface that forgot to ask.
+            let reader_allows = state.viewer.motion.get_untracked().zoom;
+            if !t.animate
+                || t.following
+                || duration <= 0.0
+                || !reader_allows
+                || prefers_reduced_motion()
+            {
                 // Landing without a tween: one relayout to the target, then
                 // the commit.
                 land(&state, &engine, &t);

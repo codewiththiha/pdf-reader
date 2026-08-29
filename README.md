@@ -15,6 +15,7 @@ optional paper textures and film grain, all persisted between sessions.
 - [Features](#features)
   - [Document viewing](#document-viewing)
   - [Zoom and fit](#zoom-and-fit)
+  - [Motion](#motion)
   - [Navigation](#navigation)
   - [Search](#search)
   - [Appearance system](#appearance-system)
@@ -117,6 +118,32 @@ through and text is never doubled.
 - The reader keeps written motion principles (see ARCHITECTURE.md): no entrance animations on
   document content, no per-frame virtualizer work, one bounded zombie bridge across commits.
 
+### Motion
+
+Every animation the reader models is a switch, and the master for all of them sits in Settings →
+Layout. What a switch turns off is the interpolation, never the change: the end frame still
+arrives, in the frame the change is asked for. That is what makes freezing the reader safe — a
+disabled animation loses nothing, it just skips the frames in between.
+
+- **Animations** (the master, in the Layout tab) collapses everything, including the
+  micro-transitions that have no switch of their own: menu pops, toasts, the theme cross-fade,
+  hover fades. It is the reader's own `prefers-reduced-motion`, and while it is off the Animations
+  tab is not shown at all, because there is nothing left there for it to offer. The other
+  switches keep their saved values through it, so turning the master back on returns exactly the
+  set of motions you had chosen.
+- **Sidebar slide** — the rail tweens its width over 300ms. Off, it appears at its new width, and
+  the panel it was holding open is released in the same frame instead of waiting out a slide.
+- **Canvas follows the sidebar**, **canvas follows the window** — the page re-fits on every frame
+  of a rail slide, or of a window drag. Off, it takes the new space in one step once the burst has
+  stopped, and a page too wide for the window overflows and scrolls for as long as it is being
+  shown. Two switches because they are two different complaints: a page that rides the rail is
+  usually wanted, a document that re-zooms while you drag the window usually is not.
+- **Zoom in / out** — a zoom eases to its target over the profile's duration. Off, every zoom
+  (button step, preset, fit, window constraint) lands on the first frame.
+- **Scroll to page** — a jump to a page, a search hit or a keyboard page turn glides the column
+  over. Off, it lands there. The continuous scroll under a *held* arrow is not gated: that is the
+  scrolling itself, not a decoration on top of it.
+
 ### Navigation
 
 - Page counter with direct page entry.
@@ -218,7 +245,9 @@ there is no feedback loop between the label and the layout.
 ### Persistence
 
 Settings are stored in local storage under `pdfreader.settings.v1` and cover appearance, the
-active preset, user presets, default zoom and the last opened path.
+active preset, user presets, default zoom, the layout and motion switches, and the last opened
+path. A group added later simply defaults: a document opened by an older build keeps the behaviour
+it had, because every new switch defaults to what the app used to do.
 
 The appearance model changed shape during development, from six fixed themes to base mode plus
 computed tint plus presets, but the storage key was deliberately not bumped. A new key would have
@@ -231,7 +260,9 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 ### Accessibility and motion
 
 - `prefers-reduced-motion` is honoured: page-turn animations, the animated grain and general
-  transitions are disabled or reduced to a negligible duration.
+  transitions are disabled or reduced to a negligible duration. Settings → Layout → Animations
+  applies the same collapse on request, and Settings → Animations then narrows it per motion (see
+  [Motion](#motion)).
 - Interactive controls carry `aria-label`, `aria-pressed`, `aria-current` and `aria-disabled`
   as appropriate, and icon-only segments carry a title so they are labelled for screen readers
   and on hover.
@@ -328,6 +359,8 @@ src/
                          kbd, hue picker, popover, adaptive toolbar, option/menu rows
     chrome/              title bar + floating document title
     menus/               appearance menu (presets/base/texture/noise) and more menu
+    settings/            the reader settings modal: the shell, the shared tab
+                         chrome, and one module per tab (layout, theme, animations)
     overlays/            toast host and drag-drop feedback
     reader/              reader-only controls: page indicator, bottom controls, zoom
     sidebar/             sidebar coordinator + header, book info, panel switcher

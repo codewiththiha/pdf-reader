@@ -22,6 +22,12 @@
 //!   the refit finally lands. Only the crisp RENDER waits: a follow holds its
 //!   commit until the container has been quiet, so a slide costs one raster
 //!   pass instead of one per frame.
+//!
+//!   Which of the two bursts is running decides which switch in the Animations
+//!   tab owns it (the viewport width moves on a window drag and not on a rail
+//!   slide, which is the tell). Whichever one is off, the follow does not stop
+//!   happening — it stops being animated: the frames are dropped and the end
+//!   frame lands in one step once the burst goes quiet.
 //! - `fit_watcher`: the world under the scale changed in a way that is not a
 //!   burst — a view-mode flip, a new document, and (only while the Auto Resize
 //!   setting is on) a page turn in a mixed-size book. Single events, so they
@@ -47,8 +53,9 @@ use leptos::prelude::*;
 use pdf_core::math::FitMode;
 
 use crate::components::primitives::hooks::use_timeout::use_debounce;
+use crate::components::primitives::hooks::use_viewport::viewport_size;
 use crate::state::reader::ZoomCommand;
-use crate::state::{AppState, ReaderState, SidebarMode};
+use crate::state::{AppState, SidebarMode};
 use crate::viewer::zoom::config::FOLLOW_SETTLE_MS;
 use crate::viewer::zoom::coordinator::{Gate, posting_gate};
 
@@ -158,15 +165,51 @@ pub fn fit_watcher(state: AppState) {
 ///
 /// Must be called once from the reader shell (ReaderPage), alongside
 /// `fit_watcher`.
-pub fn follow_watcher(state: ReaderState, sidebar: RwSignal<SidebarMode>) {
+pub fn follow_watcher(state: AppState, sidebar: RwSignal<SidebarMode>) {
+    let vs = state.reader.viewer;
+    // The same end frame, delivered late instead of frame by frame. A
+    // suppressed follow does not skip the refit — it renders only the frame the
+    // burst was heading to, once the space has stopped moving. Debounced by the
+    // window a held follow already commits on, so the two cadences agree about
+    // when "finished" means finished.
+    let late = use_debounce(REFIT_DEBOUNCE, move || {
+        if matches!(
+            posting_gate(vs.zoom.transition.get_untracked()),
+            Gate::StandDown
+        ) {
+            return; // a gesture took the transaction over; it commits itself
+        }
+        vs.zoom.post(ZoomCommand::Follow, false);
+    });
+    // The last viewport size, which is how a burst is attributed to a switch.
+    // `viewport_size` is the WINDOW's own box: the rail takes the reader's
+    // column without moving it, so a container that changed while the viewport
+    // did not is the sidebar, and anything else is a window drag. A memory, not
+    // a dependency — hence `StoredValue`.
+    let last_viewport = StoredValue::new_local(viewport_size());
+
     Effect::new(move |_| {
-        let _ = state.viewer.container_size.get();
-        let _ = state.viewer.page_margin.get();
+        let _ = vs.container_size.get();
+        let _ = vs.page_margin.get();
         // Tracked so a toggle starts the follow on the frame the rail MOVES,
         // not only once its animation has begun resizing the container. The
         // value itself is not: the page is sized from the space that is
         // actually available, whatever took it.
         let _ = sidebar.get();
+        let viewport = viewport_size();
+        let before = last_viewport.get_value();
+        last_viewport.set_value(viewport);
+        let window_dragged =
+            (viewport.0 - before.0).abs() >= 0.5 || (viewport.1 - before.1).abs() >= 0.5;
+        // Does the switch that owns this burst want the frames? `motion` is the
+        // settings as the shell projected them, master included, so this asks
+        // one question. UNTRACKED, deliberately: the flag that turns a follow
+        // off must not be what re-triggers a follow.
+        if !vs.motion.get_untracked().canvas_follows(window_dragged) {
+            late.trigger();
+            return;
+        }
+        late.cancel();
         // The transaction is read UNTRACKED, on purpose. Tracking it is what
         // forced a one-shot "I just committed, do not re-apply the ceiling"
         // echo onto the old implementation, and this pipeline does not need
@@ -175,11 +218,11 @@ pub fn follow_watcher(state: ReaderState, sidebar: RwSignal<SidebarMode>) {
         // the fit stays put until then, exactly as it does in every desktop
         // reader.
         if matches!(
-            posting_gate(state.viewer.zoom.transition.get_untracked()),
+            posting_gate(vs.zoom.transition.get_untracked()),
             Gate::StandDown
         ) {
             return; // a gesture owns the transaction; let it land first
         }
-        state.viewer.zoom.post(ZoomCommand::Follow, false);
+        vs.zoom.post(ZoomCommand::Follow, false);
     });
 }

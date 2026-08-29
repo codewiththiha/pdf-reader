@@ -8,12 +8,19 @@
 //! while closed. When collapsed the content is made `inert` so the clipped
 //! rail can't be tab-focused / activated.
 //!
-//! THE TOGGLE SLIDES. The aside tweens its width over `SIDEBAR_SLIDE_MS`, and
-//! the page host is free to flex-shrink, so the reader's column follows the
-//! rail as it moves instead of snapping twice. Every frame of that slide does
-//! report a new container width, but the fit watcher's debounce collapses the
-//! burst and `.sidebar-aside { contain: layout style }` keeps the reflow from
-//! escaping the aside, so a half-open window is never re-fitted a dozen times.
+//! THE TOGGLE SLIDES, unless told not to. The aside tweens its width over
+//! `SIDEBAR_SLIDE_MS`, and `.sidebar-aside { contain: layout style }` keeps the
+//! reflow from escaping the aside. The page follows the rail on every frame of
+//! that slide — that is `follow_watcher`'s container follow, not a refit, and
+//! the burst costs one raster pass because a follow holds its commit until the
+//! container goes quiet.
+//!
+//! Settings → Animations owns two of the motions here. "Sidebar Slide" freezes
+//! the width tween itself (`no_slide`, which adds the `no-slide` class and
+//! releases the close hold in the same frame, because nothing is left waiting
+//! on a slide that never runs); "Canvas Rides Sidebar" switches the per-frame
+//! follow off, which leaves the page at its old scale for the length of the
+//! slide and lands the new one in one step after it.
 //!
 //! CLOSE / OPEN. The last-open panel stays painted for the whole width slide
 //! (`collapsing`), then the grid unmounts, which `cancelThumb`s every live
@@ -51,6 +58,9 @@ use crate::state::SidebarMode;
 /// canvas release key off this so they land with the end of the slide rather
 /// than trailing it, and the aside's own CSS transition is declared with the
 /// matching `duration-300` — keep the two in step.
+///
+/// The reader can freeze the tween, which does not shorten this number: the
+/// switch releases the close hold instead of arming a timer on it.
 pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
 
 /// Selector for the sliding aside itself. The toolbar's title measurement
@@ -127,7 +137,7 @@ pub struct SidebarPaint {
 /// Opening mounts thumbnail cells immediately. Closing is the only timer-gated
 /// direction: it keeps the last panel painted through the rail's width slide,
 /// then releases DOM canvases at the same instant the slide lands.
-pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
+pub fn sidebar_paint(mode: RwSignal<SidebarMode>, no_slide: Signal<bool>) -> SidebarPaint {
     let last_mode = RwSignal::new(SidebarMode::Thumbs);
     let collapsing = RwSignal::new(false);
     let intro = RwSignal::new(false);
@@ -170,8 +180,11 @@ pub fn sidebar_paint(mode: RwSignal<SidebarMode>) -> SidebarPaint {
             was_closed.set_value(true);
             intro.set(false);
             // The initial closed state has no outro. Every panel → None
-            // transition holds cells and chrome for the actual width slide.
-            if was {
+            // transition holds cells and chrome for the actual width slide —
+            // and with the tween frozen there IS no slide to wait out, so
+            // holding them would leave the title bar's inset released a
+            // timer late by a rail that is already gone.
+            if was || no_slide.get_untracked() {
                 collapsing.set(false);
                 cells_mounted.set(false);
             } else {
@@ -249,6 +262,10 @@ pub(crate) fn thumbs_should_stay_mounted(
 #[component]
 pub fn Sidebar(
     mode: RwSignal<SidebarMode>,
+    // `no_slide` freezes the width tween (Settings → Animations). Read TRACKED
+    // here, unlike the effects that consult the same flag: the class has to
+    // move in the frame the switch does.
+    #[prop(into)] no_slide: Signal<bool>,
     #[prop(into)] header: ViewFn,
     #[prop(optional, into)] info_row: Option<ViewFn>,
     #[prop(into)] panels: ViewFn,
@@ -260,6 +277,7 @@ pub fn Sidebar(
             class=("w-72", move || matches!(mode.get(), SidebarMode::Thumbs | SidebarMode::Outline))
             class=("w-0", move || mode.get() == SidebarMode::None)
             class=("border-r-0", move || mode.get() == SidebarMode::None)
+            class=("no-slide", move || no_slide.get())
         >
             <div
                 class="flex h-full w-72 min-h-0 flex-col"

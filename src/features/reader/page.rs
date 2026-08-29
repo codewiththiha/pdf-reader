@@ -14,7 +14,7 @@ use crate::components::app_shell::document_title::CenteredDocTitle;
 use crate::components::app_shell::floating_document_title::FloatingDocumentTitle;
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
-use crate::components::menus::settings_modal::SettingsModal;
+use crate::components::settings::modal::SettingsModal;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
@@ -115,17 +115,25 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     zoom.drive(vs);
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom sources come last, after the controller that consumes them:
-    // a container follow on every frame of a sidebar slide or a window drag,
-    // and a debounced refit when a fit's other inputs move (mode, and the page
-    // too — but only while the Auto Resize setting is on).
-    crate::effects::reader::zoom_watchers::follow_watcher(vs, state.ui.sidebar);
+    // a container follow on every frame of a sidebar slide or a window drag
+    // (each of those two bursts has its own switch, and with its switch off the
+    // follow lands the end frame once instead of frame by frame), and a
+    // debounced refit when a fit's other inputs move (mode, and the page too —
+    // but only while the Auto Resize setting is on).
+    crate::effects::reader::zoom_watchers::follow_watcher(state, state.ui.sidebar);
     crate::effects::reader::zoom_watchers::fit_watcher(state);
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     reading_progress(state);
 
     let status = state.reader.document.status;
     let is_ready = move || status.get() == DocStatus::Ready;
-    let paint = sidebar_paint(state.ui.sidebar);
+    // Whether the rail's width tween is frozen. `viewer.motion` is the shell's
+    // projection of Settings → Animations, master already applied, so this is
+    // the EFFECTIVE switch and not the stored one. Three consumers, one class
+    // each: the aside, the overlay wrapper's transform, and the close hold that
+    // keeps the last panel painted for the length of a slide that never runs.
+    let no_slide = Signal::derive(move || !vs.viewer.motion.get().sidebar_slide);
+    let paint = sidebar_paint(state.ui.sidebar, no_slide);
 
     let overlay_sb = Signal::derive(move || state.settings.with(|st| st.layout.sidebar_overlay));
     let sb_hover = use_hover_visibility(Duration::from_millis(250), move || !overlay_sb.get());
@@ -228,6 +236,16 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
     };
 
+    // The overlay rail's three shapes, as literals rather than an
+    // interpolation: the class list is the contract the aside keeps too, and a
+    // `format!` per frame invites a token to go missing.
+    const OVERLAY_INERT: &str = "contents";
+    const OVERLAY_STATIC: &str = "absolute inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl";
+    const OVERLAY_SLIDES: &str = concat!(
+        "absolute inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl",
+        " transition-transform duration-300 ease-in-out"
+    );
+
     view! {
         <AppTitleBar state=state left=left center=center right=right>
             // overflow-hidden clips the hidden ReaderBottomBar's slide-down translate
@@ -245,10 +263,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     </Show>
                     <div
                         class=move || {
-                            if overlay_sb.get() {
-                                "absolute inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl transition-transform duration-300 ease-in-out"
+                            if !overlay_sb.get() {
+                                OVERLAY_INERT
+                            } else if no_slide.get() {
+                                OVERLAY_STATIC
                             } else {
-                                "contents"
+                                OVERLAY_SLIDES
                             }
                         }
                         class=(
@@ -260,6 +280,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     >
                         <Sidebar
                             mode=state.ui.sidebar
+                            no_slide=no_slide
                             header=move || view! { <SidebarHeader reader=vs sidebar=state.ui.sidebar /> }
                             info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
                             panels=move || view! {

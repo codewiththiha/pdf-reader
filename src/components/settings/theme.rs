@@ -6,7 +6,7 @@ use leptos::prelude::*;
 
 use pdf_core::settings::GlossColor;
 
-use crate::components::menus::settings_common::Row;
+use crate::components::settings::common::Row;
 use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;

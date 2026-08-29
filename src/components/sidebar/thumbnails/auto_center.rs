@@ -194,9 +194,15 @@ fn arm_glide(g: Glide) {
             }
             // Auto, not Instant: the glide is the settle path, and Auto
             // resolves to instant anyway when the distance is more than
-            // two screenfuls.
+            // two screenfuls. The reader's scroll switch can shorten that to
+            // always-instant, which is the same landing without the ride.
             GlideVerdict::Fire(target) => {
-                virtualizer.scroll_to_offset(target, ScrollMode::Auto);
+                let mode = if state.viewer.motion.get_untracked().scroll_glide {
+                    ScrollMode::Auto
+                } else {
+                    ScrollMode::Instant
+                };
+                virtualizer.scroll_to_offset(target, mode);
                 timer.set_value(None);
                 prefetch_neighborhood(page);
             }
@@ -254,7 +260,15 @@ impl AutoCenter {
                     let target = center_target(&v, page, state.document.page1_aspect(), vh);
                     if let Some(target) = target {
                         reveal_drive.set(f64::NEG_INFINITY);
-                        v.scroll_to_offset(target, ScrollMode::Smooth);
+                        // "Take me to where I am" is a request to ARRIVE, and
+                        // the smooth scroll that expresses it is an animation
+                        // like any other: off, the rail lands there.
+                        let mode = if state.viewer.motion.get_untracked().scroll_glide {
+                            ScrollMode::Smooth
+                        } else {
+                            ScrollMode::Instant
+                        };
+                        v.scroll_to_offset(target, mode);
                     }
                 },
             );

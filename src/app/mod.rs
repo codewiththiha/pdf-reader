@@ -13,6 +13,7 @@ use crate::components::overlays::toast::ToastHost;
 use crate::effects::reader::link_navigation::link_navigation;
 use crate::effects::reader::page_selection::page_selection;
 use crate::effects::reader::text_selection::text_selection;
+use crate::effects::app::motion::publish_motion;
 use crate::effects::app::theme::apply_theme;
 use crate::state::AppState;
 use bootstrap::{create_app_state, provide_app_contexts};
@@ -24,10 +25,13 @@ pub fn App() -> impl IntoView {
     provide_context(state);
     provide_app_contexts(state);
 
-    // App-root hooks: theme (both pages), global keyboard shortcuts, internal
-    // PDF link jumps, and text-selection tracking (page-range pinning for
+    // App-root hooks: theme (both pages), motion prefs, global keyboard
+    // shortcuts, internal PDF link jumps, and text-selection tracking (page-range pinning for
     // virtualization, plus the AI selection detail).
     apply_theme(state);
+    // Motion prefs, for the reader's own pipeline and for the CSS the app
+    // does not model (the master's reach).
+    publish_motion(state);
     shortcuts(state);
     link_navigation(state);
     page_selection(state);

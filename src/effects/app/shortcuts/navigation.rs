@@ -155,19 +155,21 @@ fn scroll_reader_page_x(dir: f64, smooth: bool) {
     scroll_reader_x(dir * page_scroll_px(list.client_width() as f64), smooth);
 }
 
-fn begin_line_hold(dir: f64, horizontal: bool) {
+fn begin_line_hold(dir: f64, horizontal: bool, glide: bool) {
     HOLD_DIR.with(|d| d.set(dir));
     HOLD_AXIS.with(|a| a.set(if horizontal { 2 } else { 1 }));
     let now = js_sys::Date::now();
     HOLD_DOWN_AT.with(|t| t.set(now));
     HOLD_LAST.with(|t| t.set(now));
-    // Tap = one smooth nudge. If the key is still down after HOLD_DELAY
-    // the rAF loop takes over as a continuous glide.
+    // A tap is one smooth nudge — an ANIMATION, so `glide` (the reader's
+    // scroll switch) decides whether it eases or lands. The hold that follows
+    // is not: the rAF loop below IS the scrolling, frames and all, and it runs
+    // whether or not the tap glided.
     focus_scroll_list(horizontal);
     if horizontal {
-        scroll_reader_line_x(dir, true);
+        scroll_reader_line_x(dir, glide);
     } else {
-        scroll_reader_line_y(dir, true);
+        scroll_reader_line_y(dir, glide);
     }
     if HOLD_RAF.with(|r| r.get()) {
         return;
@@ -221,12 +223,16 @@ fn is_paginated(mode: ViewMode) -> bool {
 /// scroll hold in continuous/horizontal), PageUp/Down and Space.
 pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::KeyboardEvent) {
     let mode = state.viewer.mode.get();
+    // Whether this keypress may GLIDE anywhere. Untracked: the switch that
+    // turns the glide off must not be what triggers one, and a keypress reads
+    // the world as it is the moment it lands.
+    let glide = state.viewer.motion.get_untracked().scroll_glide;
     match ev.key().as_str() {
         "ArrowLeft" => {
             ev.prevent_default();
             if mode == ViewMode::ScrollHorizontal {
                 if !is_chrome_scroll_target(ev) && !ev.repeat() {
-                    begin_line_hold(-1.0, true);
+                    begin_line_hold(-1.0, true, glide);
                 }
             } else {
                 page_prev(state);
@@ -236,7 +242,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             ev.prevent_default();
             if mode == ViewMode::ScrollHorizontal {
                 if !is_chrome_scroll_target(ev) && !ev.repeat() {
-                    begin_line_hold(1.0, true);
+                    begin_line_hold(1.0, true, glide);
                 }
             } else {
                 page_next(state);
@@ -253,7 +259,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 if !ev.repeat() {
-                    begin_line_hold(-1.0, false);
+                    begin_line_hold(-1.0, false, glide);
                 }
             }
         }
@@ -264,7 +270,7 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             } else if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 if !ev.repeat() {
-                    begin_line_hold(1.0, false);
+                    begin_line_hold(1.0, false, glide);
                 }
             }
         }
@@ -272,22 +278,22 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
             if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(false);
-                scroll_reader_page_y(-1.0, !ev.repeat());
+                scroll_reader_page_y(-1.0, glide && !ev.repeat());
             } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(true);
-                scroll_reader_page_x(-1.0, !ev.repeat());
+                scroll_reader_page_x(-1.0, glide && !ev.repeat());
             }
         }
         "PageDown" => {
             if mode == ViewMode::ScrollVertical && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(false);
-                scroll_reader_page_y(1.0, !ev.repeat());
+                scroll_reader_page_y(1.0, glide && !ev.repeat());
             } else if mode == ViewMode::ScrollHorizontal && !is_chrome_scroll_target(ev) {
                 ev.prevent_default();
                 focus_scroll_list(true);
-                scroll_reader_page_x(1.0, !ev.repeat());
+                scroll_reader_page_x(1.0, glide && !ev.repeat());
             }
         }
         " " => {
@@ -299,11 +305,13 @@ pub(super) fn handle_navigation_shortcut(state: ReaderState, ev: &leptos::ev::Ke
                 if mode == ViewMode::ScrollVertical {
                     ev.prevent_default();
                     focus_scroll_list(false);
-                    scroll_reader_page_y(if ev.shift_key() { -1.0 } else { 1.0 }, !ev.repeat());
+                    let dir = if ev.shift_key() { -1.0 } else { 1.0 };
+                    scroll_reader_page_y(dir, glide && !ev.repeat());
                 } else if mode == ViewMode::ScrollHorizontal {
                     ev.prevent_default();
                     focus_scroll_list(true);
-                    scroll_reader_page_x(if ev.shift_key() { -1.0 } else { 1.0 }, !ev.repeat());
+                    let dir = if ev.shift_key() { -1.0 } else { 1.0 };
+                    scroll_reader_page_x(dir, glide && !ev.repeat());
                 }
             }
         }

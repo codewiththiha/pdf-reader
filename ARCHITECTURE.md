@@ -64,7 +64,11 @@ The app uses the adapter and keeps only app-specific policy locally:
 8. Page turns and reader surfaces (popovers, search, toasts) do not
    fade, slide or bounce in — document content appears instantly.
 9. Layout chrome (the sidebar width, overlays) may use short STRUCTURAL CSS
-   transitions; decorative entrance keyframes do not come back.
+   transitions; decorative entrance keyframes do not come back. Whether they run
+   at all is the reader's call: Settings → Layout holds the master switch, and
+   Settings → Animations holds one switch per motion the reader models. Both are
+   projected into `state::reader::Motion` by the shell, which is what every gate
+   reads — the master is applied once, there, and nothing downstream asks twice.
 10. The page host is sized by its inline width/height, which ARE the page
     geometry, so it never lets the flex engine renegotiate them — a shrink
     takes the width while the height stays and the paper visibly squishes.
@@ -75,6 +79,12 @@ The app uses the adapter and keeps only app-specific policy locally:
     page scrolling rather than squishing, exactly as a fit page in the
     horizontal strip does.
 11. PDF renders happen only at transaction boundaries, never per frame.
+12. A switched-off animation never skips the CHANGE, only the frames. Each gate
+    sits where the interpolation happens, not where the change is decided:
+    `animation.rs` declines to tween, `follow_watcher` drops the per-frame posts
+    and lands the end frame once the burst is quiet, `scroll_mode` resolves to
+    `Instant`, and the rail's class list gains `no-slide`. So a frozen reader is
+    not a reader with fewer features — it is the same geometry, arriving at once.
 
 ## Continuous reader flow
 

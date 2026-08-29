@@ -8,8 +8,9 @@
    may keep short STRUCTURAL CSS transitions, and zooms scale one
    continuous surface linearly (see src/viewer/zoom).
 
-   What remains here is only the global reduced-motion safety net, which
-   collapses any remaining transition for users who prefer it.
+   What remains here is the global reduced-motion safety net, the identical
+   collapse the reader's own master switch asks for, and the one transition a
+   settings row owns directly: the sidebar's width tween.
    ===================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
@@ -21,4 +22,31 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Settings → Layout → Animations off. The same collapse, on request: the
+   reader has no switch per micro-transition (menu pops, toasts, the theme
+   cross-fade, hover fades), so the master addresses all of them at once. The
+   motions the reader DOES model — the rail's slide, the canvas following the
+   container, a zoom's tween, a glide between pages — are gated in Rust off
+   `state::reader::Motion`, which has already applied this same switch; this
+   rule is what makes the master honest for the rest. */
+html.animations-off,
+html.animations-off *,
+html.animations-off *::before,
+html.animations-off *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Settings → Animations → "Sidebar Slide" off (the master off reaches this
+   through the same projection). The selector is two classes deep, so it
+   outranks the aside's own `.transition-[width]` utility without `!important`,
+   and it touches nothing inside the aside — `contain: layout style` and the
+   `overflow-hidden` clip both keep working, which is what makes a frozen rail
+   behave like a rail that was never transitioned rather than a hidden one. */
+.sidebar-aside.no-slide {
+  transition: none;
 }

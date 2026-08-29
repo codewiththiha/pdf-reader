@@ -111,6 +111,58 @@ impl Default for LayoutSettings {
     }
 }
 
+/// What may animate, and what may not.
+///
+/// `enabled` is the master, and it lives in the Layout tab because it is a
+/// layout-scale decision: the reader either moves or it does not. The detail
+/// switches are the Animations tab, and that tab — like every animation here —
+/// only exists while the master is on. The projection that applies the master is
+/// `Motion::from_prefs` in the app crate, so no consumer has to remember to ask
+/// twice.
+///
+/// Turning a switch off never skips the change itself. It renders the END frame
+/// instantly: the zoom still lands at its target, the page still gets the width
+/// the new space allows, the column still arrives where it was sent — with no
+/// frames in between. That is what makes the whole group safe to freeze:
+/// nothing is lost, only interpolated.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AnimationSettings {
+    /// Every animation in the reader, including the ones with no switch of
+    /// their own (menu pops, toasts, the theme cross-fade, the title bar's
+    /// auto-hide). Off, the Animations tab is not offered either.
+    #[serde(default = "on_true")]
+    pub enabled: bool,
+    /// The sidebar rail tweens its width instead of appearing at it.
+    #[serde(default = "on_true")]
+    pub sidebar_slide: bool,
+    /// The page rides the rail: its scale follows the container on every frame
+    /// of a slide. Off, it takes the new width in one step when the rail stops.
+    #[serde(default = "on_true")]
+    pub canvas_sidebar: bool,
+    /// The same, for a window drag.
+    #[serde(default = "on_true")]
+    pub canvas_resize: bool,
+    /// A zoom eases to its target instead of appearing there.
+    #[serde(default = "on_true")]
+    pub zoom: bool,
+    /// Jumping to a page (or to a search hit) glides the column there.
+    #[serde(default = "on_true")]
+    pub scroll_jumps: bool,
+}
+
+impl Default for AnimationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            sidebar_slide: true,
+            canvas_sidebar: true,
+            canvas_resize: true,
+            zoom: true,
+            scroll_jumps: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GlossColor {
@@ -176,6 +228,8 @@ pub struct Settings {
     #[serde(default)]
     pub layout: LayoutSettings,
     #[serde(default)]
+    pub animations: AnimationSettings,
+    #[serde(default)]
     pub gloss_color: GlossColor,
     #[serde(default = "default_gloss_opacity")]
     pub gloss_opacity: f64,
@@ -203,6 +257,7 @@ impl Default for Settings {
             last_path: None,
             titlebar_pinned: false,
             layout: LayoutSettings::default(),
+            animations: AnimationSettings::default(),
             gloss_color: GlossColor::default(),
             gloss_opacity: default_gloss_opacity(),
             gloss_custom: default_custom_gloss(),
@@ -480,6 +535,25 @@ mod tests {
         assert!(!s.blend_mode);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
+    }
+
+    #[test]
+    fn every_animation_is_on_until_told_otherwise() {
+        let a = AnimationSettings::default();
+        assert!(a.enabled);
+        assert!(a.sidebar_slide && a.canvas_sidebar && a.canvas_resize);
+        assert!(a.zoom && a.scroll_jumps);
+
+        // A blob saved before this group existed is `Settings` with the key
+        // missing, so it deserialises exactly like `{}`: the reader must keep
+        // animating across an update rather than freeze.
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert!(s.animations.enabled && s.animations.zoom);
+        // A half-written group defaults the fields it does not carry, one by
+        // one — a stored master-off must not silently turn the details on.
+        let a: AnimationSettings = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
+        assert!(!a.enabled);
+        assert!(a.zoom && a.sidebar_slide && a.canvas_sidebar && a.canvas_resize);
     }
 
     #[test]

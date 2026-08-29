@@ -10,6 +10,7 @@ use pdf_core::gloss::{GlossMark, PageAnchor};
 use pdf_core::layout::{PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
 use pdf_core::search::SearchMatch;
+use pdf_core::settings::AnimationSettings;
 use pdf_engine::types::{DocStatus, OutlineNode, PageSize};
 
 /// Page-host texture, provided via Leptos context by the app shell (derived
@@ -272,6 +273,74 @@ impl Default for ZoomState {
     }
 }
 
+/// Which of the reader's motions animate. Projected from the persisted
+/// [`AnimationSettings`] by the app root (`effects::app::motion::publish_motion`)
+/// and read by everything that moves a page, so no consumer has to know that a
+/// master switch exists: the projection already applied it.
+///
+/// Read TRACKED by views (the rail's transition class has to change when the
+/// reader flips a switch) and UNTRACKED by effects and scroll calls: a flag
+/// that stops something animating must not be what triggers the animation.
+///
+/// Nothing here skips a change. Off renders the end frame in the frame the
+/// change arrives, which is why freezing the reader loses no fit, no follow
+/// and no scroll target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Motion {
+    /// The rail tweens its width (`SIDEBAR_SLIDE_MS`) instead of snapping.
+    pub sidebar_slide: bool,
+    /// The page rides the rail: the canvas flexes on every frame of a slide.
+    pub canvas_sidebar: bool,
+    /// The page rides a window drag: the canvas flexes on every frame of it.
+    pub canvas_resize: bool,
+    /// A zoom eases to its target over the profile's duration.
+    pub zoom: bool,
+    /// A jump to a page glides the column (or the thumbnail rail) over it.
+    pub scroll_glide: bool,
+}
+
+impl Motion {
+    /// Whether the page flexes with the container on a frame of the current
+    /// burst. The two bursts have separate switches because a reader often
+    /// wants the page to ride a rail slide and not a window drag (or the other
+    /// way round); `window` says which one is moving.
+    pub const fn canvas_follows(&self, window: bool) -> bool {
+        if window {
+            self.canvas_resize
+        } else {
+            self.canvas_sidebar
+        }
+    }
+
+    /// The one place the master switch is honoured. Off, no detail can bring
+    /// an animation back on; the Animations tab hides itself for the same
+    /// reason, so the detail switches are never shown lying.
+    pub const fn from_prefs(p: &AnimationSettings) -> Self {
+        Self {
+            sidebar_slide: p.enabled && p.sidebar_slide,
+            canvas_sidebar: p.enabled && p.canvas_sidebar,
+            canvas_resize: p.enabled && p.canvas_resize,
+            zoom: p.enabled && p.zoom,
+            scroll_glide: p.enabled && p.scroll_jumps,
+        }
+    }
+}
+
+impl Default for Motion {
+    /// Everything moves. The shell publishes the reader's prefs before
+    /// anything can act on them, and a reader that has not been published to
+    /// yet (a document opening, a test) must not look broken.
+    fn default() -> Self {
+        Self {
+            sidebar_slide: true,
+            canvas_sidebar: true,
+            canvas_resize: true,
+            zoom: true,
+            scroll_glide: true,
+        }
+    }
+}
+
 /// The zoom pipeline signals (see `crate::effects`).
 #[derive(Clone, Copy)]
 pub struct ViewerSignals {
@@ -301,6 +370,9 @@ pub struct ViewerSignals {
     pub page_gap: RwSignal<f64>,
     /// Horizontal inset around pages (CSS px). `0` removes the margin.
     pub page_margin: RwSignal<f64>,
+    /// Which motions animate. Written only by the shell, from the settings
+    /// (`Motion::from_prefs`); see the type's contract.
+    pub motion: RwSignal<Motion>,
 }
 
 impl ViewerSignals {
@@ -361,6 +433,7 @@ impl Default for ViewerSignals {
             auto_scroll: RwSignal::new(false),
             page_gap: RwSignal::new(PAGE_GAP),
             page_margin: RwSignal::new(0.0),
+            motion: RwSignal::new(Motion::default()),
         }
     }
 }
@@ -509,6 +582,43 @@ mod tests {
         assert!((page_aspect(Some(PageSize { width: 612.0, height: 792.0 })) - 792.0 / 612.0).abs() < 1e-12);
         // A landscape sheet inverts below 1.
         assert!(page_aspect(Some(PageSize { width: 1000.0, height: 500.0 })) < 1.0);
+    }
+
+    #[test]
+    fn the_master_switch_freezes_every_detail() {
+        let all_on = AnimationSettings::default();
+        assert!(all_on.enabled);
+        let m = Motion::from_prefs(&all_on);
+        assert!(
+            m.sidebar_slide
+                && m.canvas_sidebar
+                && m.canvas_resize
+                && m.zoom
+                && m.scroll_glide
+        );
+
+        // With the master off, no detail can bring an animation back.
+        let mut frozen = AnimationSettings::default();
+        frozen.enabled = false;
+        assert!(frozen.zoom && frozen.sidebar_slide);
+        let m = Motion::from_prefs(&frozen);
+        assert!(!m.sidebar_slide);
+        assert!(!m.canvas_sidebar);
+        assert!(!m.canvas_resize);
+        assert!(!m.zoom);
+        assert!(!m.scroll_glide);
+    }
+
+    #[test]
+    fn a_detail_switch_moves_exactly_one_motion() {
+        // The tab offers one switch per motion, so each has to own precisely
+        // the one it names — and the master has to stay out of their way.
+        let mut p = AnimationSettings::default();
+        p.zoom = false;
+        let m = Motion::from_prefs(&p);
+        assert!(!m.zoom);
+        assert!(m.sidebar_slide && m.canvas_sidebar && m.canvas_resize);
+        assert!(m.scroll_glide);
     }
 
     #[test]

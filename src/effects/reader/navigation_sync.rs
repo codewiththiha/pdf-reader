@@ -2,7 +2,9 @@
 //! position in sync around the virtualizers. Wired once from ReaderPage.
 //!
 //! - scroll -> page: the virtualizer's dominant-page signal
-//! - page -> scroll: `scroll_to_index(Start, Auto)`
+//! - page -> scroll: `scroll_to_index(Start, Auto)` — `Auto` resolves to a glide,
+//!   and the reader's scroll switch is what decides whether it may (see
+//!   `scroll_mode`)
 //! - mode flip -> scroll: `scroll_to_index(Start, Instant)` when re-entering
 //!   continuous mode
 //!
@@ -33,6 +35,17 @@ impl NavSyncState {
         Self {
             suppress: Rc::new(Cell::new(false)),
         }
+    }
+}
+
+/// How a page-to-scroll jump should travel: gliding while the reader's scroll
+/// switch allows it, in one step when it does not. Read UNTRACKED, because the
+/// flag that stops a jump gliding must not be what re-runs the jump.
+fn scroll_mode(state: ReaderState) -> ScrollMode {
+    if state.viewer.motion.get_untracked().scroll_glide {
+        ScrollMode::Auto
+    } else {
+        ScrollMode::Instant
     }
 }
 
@@ -110,7 +123,15 @@ pub fn navigation_sync(
             if page == 0 {
                 return;
             }
-            v.scroll_to_index((page - 1) as usize, Align::Start, ScrollMode::Auto);
+            // The glide is the animation; the jump is not. With the reader's
+            // scroll switch off the column lands on the page in one write
+            // (`Auto` is what resolves to a smooth scroll when the distance is
+            // short, so this is the only decision to make here).
+            v.scroll_to_index(
+                (page - 1) as usize,
+                Align::Start,
+                scroll_mode(state),
+            );
         });
     }
 
@@ -156,7 +177,7 @@ pub fn navigation_sync(
             if page == 0 {
                 return;
             }
-            v.scroll_to_index((page - 1) as usize, Align::Center, ScrollMode::Auto);
+            v.scroll_to_index((page - 1) as usize, Align::Center, scroll_mode(state));
         });
     }
 }

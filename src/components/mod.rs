@@ -8,6 +8,7 @@
 //!   * `app_shell` — reusable structural application shell (title bar,
 //!     adaptive toolbar, traffic lights, document titles)
 //!   * `menus`      — menu features (appearance_menu, app_menu)
+//!   * `settings`   — the reader settings modal: one module per tab
 //!   * `overlays`   — transient UI (toast, drag feedback)
 //!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
 //!   * `sidebar`     — the app sidebar (composition shell + panel hosts)
@@ -43,6 +44,7 @@ pub mod sidebar;
 pub mod primitives;
 pub mod viewer_controls;
 pub mod search;
+pub mod settings;
 
 
 
