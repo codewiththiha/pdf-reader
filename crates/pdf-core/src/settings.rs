@@ -132,15 +132,18 @@ pub struct AnimationSettings {
     /// auto-hide). Off, the Animations tab is not offered either.
     #[serde(default = "on_true")]
     pub enabled: bool,
-    /// The sidebar rail tweens its width instead of appearing at it. The page
-    /// ALWAYS rides that tween — there is no switch for it, because following a
+    /// The rail animates its open and close instead of appearing at the end
+    /// state — the DOCKED rail tweens its width, the FLOATING rail fades in
+    /// and out (a transform slide would travel under the native traffic
+    /// lights, which can only appear and disappear). The page ALWAYS rides
+    /// the docked tween — there is no switch for it, because following a
     /// measured container is not an animation: it is the resize. Deferring it
     /// would show a page cropped at the old scale for the whole settle window,
-    /// which is worse than the slide itself; and with the slide off, answering
-    /// in the frame the rail moved is what makes ONE step out of the whole
-    /// change. A WINDOW drag is the burst with a switch of its own, below:
-    /// there, skipping frames is the point, because the alternative is a relayout
-    /// plus a raster per drag frame.
+    /// which is worse than the slide itself; and with the animation off,
+    /// answering in the frame the rail moved is what makes ONE step out of
+    /// the whole change. A WINDOW drag is the burst with a switch of its own,
+    /// below: there, skipping frames is the point, because the alternative is
+    /// a relayout plus a raster per drag frame.
     #[serde(default = "on_true")]
     pub sidebar_slide: bool,
     /// The page re-fits on every frame of a window drag. Off, it re-fits once,

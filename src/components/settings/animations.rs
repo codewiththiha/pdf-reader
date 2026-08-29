@@ -28,14 +28,14 @@ pub(crate) fn AnimationsTab(state: AppState) -> impl IntoView {
     view! {
         <SectionLabel text="Reader motion" />
         <div class="divide-y divide-line rounded-xl border border-line">
-            <Row label="Sidebar Slide">
+            <Row label="Sidebar Animation">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.animations.sidebar_slide))
                     on_change=Callback::new(move |v| {
                         s.update(|st| st.animations.sidebar_slide = v);
                     })
-                    title="Tween the rail's width as it opens and closes. Off, it appears at its \
-                           new width."
+                    title="The docked rail slides its width open and closed; the floating rail \
+                           fades. Off, either appears in one step."
                         .to_string()
                 />
             </Row>

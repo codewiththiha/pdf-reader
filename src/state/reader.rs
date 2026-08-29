@@ -285,7 +285,8 @@ impl Default for ZoomState {
 /// and no scroll target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Motion {
-    /// The rail tweens its width (`SIDEBAR_SLIDE_MS`) instead of snapping.
+    /// The rail animates its open/close: the docked rail tweens its width
+    /// (`SIDEBAR_SLIDE_MS`), the floating rail fades (`SIDEBAR_FADE_MS`).
     pub sidebar_slide: bool,
     /// The page rides a window drag: the canvas flexes on every frame of it.
     /// Riding the RAIL is not in here on purpose — a container that was

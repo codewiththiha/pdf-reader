@@ -9,10 +9,16 @@
 //! own header gutter when it is up — docked or floating, the header
 //! reserves the same 88px either way. The shell controller's
 //! `rail_present` therefore lights them on its own (for the whole paint —
-//! open, or the close slide still running — and independent of the
+//! open, or the close motion still running — and independent of the
 //! pointer, because the rail's header is not hover-gated), while the bar's
 //! hover only does so where the controller's `bar_gutter` says the bar
 //! still has a gutter to offer.
+//!
+//! The grace at the hide is the BAR's, so it only applies where the bar can
+//! take the lights back: in overlay mode there is no gutter to hand off to
+//! and nothing hover-gated coming back, so the hide lands in the same frame
+//! the floating rail finishes fading — which is the whole point of the
+//! fade's timing.
 
 use std::time::Duration;
 
@@ -49,10 +55,22 @@ pub fn TrafficLights() -> impl IntoView {
                 pdf_engine::api::set_traffic_lights(true).await;
             });
         } else {
-            // Initial false also receives the grace so native defaults are
-            // eventually hidden; an already-hidden or pending hide does not
-            // schedule another command.
+            // An already-hidden or pending hide does not schedule another
+            // command.
             if last_sent.get_value() == Some(false) || hide_grace.get_value().is_some() {
+                return;
+            }
+            // The grace exists for the docked handoff (rail releases chrome,
+            // the re-widened band can re-light them under a stationary
+            // pointer). In overlay mode the bar never hosts the lights, so
+            // there is nothing to wait for — and waiting would leave three
+            // native buttons floating over the rail that has just finished
+            // fading out from under them.
+            if !shell.bar_gutter().get_untracked() {
+                last_sent.set_value(Some(false));
+                wasm_bindgen_futures::spawn_local(async move {
+                    pdf_engine::api::set_traffic_lights(false).await;
+                });
                 return;
             }
             let handle = set_timeout_with_handle(

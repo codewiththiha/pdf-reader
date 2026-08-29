@@ -1,4 +1,4 @@
-//! The floating rail's mount point: a fixed wrapper that slides over the
+//! The floating rail's mount point: a fixed wrapper that fades in over the
 //! page from the window's left edge, plus the edge-hover affordance that
 //! opens it. Self-gating — the page mounts it as a sibling of the reader
 //! surface and it renders nothing while the shell controller says the
@@ -14,18 +14,28 @@
 //! included) and takes the traffic lights with it, and the bar reads as one
 //! full-width surface either way. The settings modal uses the same escape.
 //!
-//! THE SLIDE IS A CSS TRANSFORM, and the class list is the contract the
-//! aside keeps too, so the two shapes live here as literals rather than an
-//! interpolation — a `format!` per frame invites a token to go missing.
-//! `fixed`, not `absolute`: this wrapper sits OUTSIDE `.reader-bg`, so there
-//! is no positioned ancestor left to resolve against and the viewport is
-//! the honest box.
+//! THE RAIL FADES — it does not slide. The native traffic lights sit pinned
+//! over this wrapper's top-left corner and can only appear and disappear,
+//! so a transform slide off the edge would travel under buttons that cannot
+//! follow it; a fade is the one motion the rail and the lights can make
+//! together, and the shell controller's close hold times the fade out so
+//! the lights release on the frame the rail finishes disappearing. The
+//! class list is the contract the aside keeps too, so the two shapes live
+//! here as literals rather than an interpolation — a `format!` per frame
+//! invites a token to go missing. `fixed`, not `absolute`: this wrapper
+//! sits OUTSIDE `.reader-bg`, so there is no positioned ancestor left to
+//! resolve against and the viewport is the honest box.
+//!
+//! A faded-out rail is still a box on screen, so the wrapper drops to
+//! `pointer-events-none` while it is closed — otherwise an invisible strip
+//! down the window's left edge would swallow the very hover the edge strip
+//! needs to reopen the rail.
 //!
 //! EDGE HOVER. Brushing the window's left edge (the 1.5px strip, shown only
 //! while the rail is fully closed) or the rail itself holds it open; leaving
 //! both lets it close after a short grace. The open restores the panel a
 //! close last left behind — `ShellController::open_last_panel` — which is
-//! the same tracker the close slide's paint hold uses, so there is exactly
+//! the same tracker the close hold's paint hold uses, so there is exactly
 //! one notion of "the last panel" in the app.
 
 use std::time::Duration;
@@ -100,8 +110,9 @@ pub fn OverlayRail(shell: ShellController, children: ChildrenFn) -> impl IntoVie
         </Show>
         <Show when=move || shell.is_overlay().get()>
             <div
-                class=move || if shell.no_slide().get() { OVERLAY_STATIC } else { OVERLAY_SLIDES }
-                class=("-translate-x-full", move || !shell.is_sidebar_open().get())
+                class=move || if shell.no_slide().get() { OVERLAY_STATIC } else { OVERLAY_FADES }
+                class=("opacity-0", move || !shell.is_sidebar_open().get())
+                class=("pointer-events-none", move || !shell.is_sidebar_open().get())
                 on:mouseenter=move |_| request_show.update(|n| *n += 1)
                 on:mouseleave=move |_| request_hide.update(|n| *n += 1)
             >
@@ -113,9 +124,11 @@ pub fn OverlayRail(shell: ShellController, children: ChildrenFn) -> impl IntoVie
 
 /// The floating rail's two shapes, as literals rather than an interpolation:
 /// the class list is the contract the aside keeps too, and a `format!` per
-/// frame invites a token to go missing.
+/// frame invites a token to go missing. The fade's `duration-200` matches the
+/// shell controller's `SIDEBAR_FADE_MS`, which is how the close hold lands
+/// the native lights on the same frame the rail finishes disappearing.
 const OVERLAY_STATIC: &str = "fixed inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl";
-const OVERLAY_SLIDES: &str = concat!(
+const OVERLAY_FADES: &str = concat!(
     "fixed inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl",
-    " transition-transform duration-300 ease-in-out"
+    " transition-opacity duration-200 ease-in-out"
 );

@@ -9,15 +9,18 @@
 //! Each wrapper self-gates on the shell controller's layout, which is what
 //! "routes" the rail between the two.
 //!
-//! The `<aside>` is ALWAYS mounted (in whichever slot is live) and slides
-//! its `width` between 18rem and 0 (single-phase, no two-phase unmount).
-//! The inner content stays fixed at `w-72` so it never collapses —
-//! `overflow-hidden` on the aside clips it while closed. When collapsed
-//! the content is made `inert` so the clipped rail can't be
-//! tab-focused / activated.
+//! The `<aside>` is ALWAYS mounted (in whichever slot is live). In the
+//! DOCKED layout it slides its `width` between 18rem and 0 (single-phase, no
+//! two-phase unmount); the inner content stays fixed at `w-72` so it never
+//! collapses — `overflow-hidden` on the aside clips it while closed. In the
+//! OVERLAY layout the aside keeps its full width for the rail's whole
+//! life: the wrapper's opacity fade is the open/close there, and a width
+//! collapse inside a fading box would read as a clip wipe, not a fade.
+//! When collapsed (docked only) the content is made `inert` so the clipped
+//! rail can't be tab-focused / activated.
 //!
-//! THE TOGGLE SLIDES, unless told not to. The aside tweens its width over
-//! `SIDEBAR_SLIDE_MS` (the shell controller's machine timing), and
+//! THE DOCKED TOGGLE SLIDES, unless told not to. The aside tweens its width
+//! over `SIDEBAR_SLIDE_MS` (the shell controller's machine timing), and
 //! `.sidebar-aside { contain: layout style }` keeps the reflow from
 //! escaping the aside. The page follows the rail on every frame of that
 //! slide — that is `follow_watcher`'s container follow, not a refit, and
@@ -62,6 +65,11 @@ pub(crate) fn request_reveal_active() {
 #[component]
 pub fn SidebarShell(
     mode: RwSignal<SidebarMode>,
+    /// The floating layout: the aside keeps its full width and the overlay
+    /// wrapper's fade is the open/close (see the module docs). Docked rails
+    /// keep the width tween below.
+    #[prop(into)]
+    overlay: Signal<bool>,
     // `no_slide` freezes the width tween (Settings → Animations). Read TRACKED
     // here, unlike the machine effect that consults the same flag: the class
     // has to move in the frame the switch does.
@@ -74,9 +82,11 @@ pub fn SidebarShell(
     view! {
         <aside
             class="sidebar-aside flex h-full shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-300 ease-in-out"
-            class=("w-72", move || matches!(mode.get(), SidebarMode::Thumbs | SidebarMode::Outline))
-            class=("w-0", move || mode.get() == SidebarMode::None)
-            class=("border-r-0", move || mode.get() == SidebarMode::None)
+            class=("w-72", move || {
+                overlay.get() || matches!(mode.get(), SidebarMode::Thumbs | SidebarMode::Outline)
+            })
+            class=("w-0", move || !overlay.get() && mode.get() == SidebarMode::None)
+            class=("border-r-0", move || !overlay.get() && mode.get() == SidebarMode::None)
             class=("no-slide", move || no_slide.get())
         >
             <div

@@ -29,8 +29,8 @@
      negotiating while the page is laid out, and laying the page out is what
      the follow does on every frame of a slide. This net has to say it out
      loud because no Rust switch is involved — `prefers-reduced-motion` does
-     not turn the reader's own "Sidebar Slide" off, so `no-slide` below is not
-     applied for it and the aside would otherwise still be tweening. */
+     not turn the reader's own "Sidebar Animation" off, so `no-slide` below
+     is not applied for it and the aside would otherwise still be tweening. */
   .sidebar-aside,
   .sidebar-panel {
     transition: none;
@@ -63,14 +63,17 @@ html.animations-off .sidebar-panel {
   transition: none;
 }
 
-/* Settings → Animations → "Sidebar Slide" off, which is the only rule here a
-   switch owns directly. Two classes deep, so it outranks the aside's own
-   `.transition-[width]` utility without `!important`, and it touches nothing
-   inside the aside — `contain: layout style` and the `overflow-hidden` clip
-   both keep working, which is what makes a frozen rail behave like a rail
-   that was never transitioned rather than a hidden one. The class also means
-   the close hold is released on the same frame instead of waiting a slide
-   out, which is the part CSS cannot do and why the class exists at all. */
+/* Settings → Animations → "Sidebar Animation" off, which is the only rule
+   here a switch owns directly. Two classes deep, so it outranks the aside's
+   own `.transition-[width]` utility without `!important`, and it touches
+   nothing inside the aside — `contain: layout style` and the
+   `overflow-hidden` clip both keep working, which is what makes a frozen
+   rail behave like a rail that was never transitioned rather than a hidden
+   one. (The floating wrapper's fade is frozen by the same switch in Rust,
+   which swaps its class list for the transition-less shape.) The class also
+   means the close hold is released on the same frame instead of waiting a
+   motion out, which is the part CSS cannot do and why the class exists at
+   all. */
 .sidebar-aside.no-slide {
   transition: none;
 }

@@ -36,6 +36,7 @@ pub(crate) fn ReaderRail(
     view! {
         <SidebarShell
             mode=sidebar
+            overlay=shell.is_overlay()
             no_slide=shell.no_slide()
             header=move || view! { <SidebarHeader reader=vs sidebar=sidebar /> }
             info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
@@ -51,8 +52,8 @@ pub(crate) fn ReaderRail(
                     state=vs
                     sidebar=sidebar
                     // Cells mount with the aside. Cached thumbs blit during the
-                    // slide; cold cells keep their skeleton until their capped
-                    // render completes.
+                    // open motion; cold cells keep their skeleton until their
+                    // capped render completes.
                     live=shell.thumbs_live()
                     shown=shell.panel_shown(SidebarMode::Thumbs)
                     outro=shell.panel_outro()

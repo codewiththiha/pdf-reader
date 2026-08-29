@@ -16,34 +16,45 @@
 //! ```text
 //! let shell = use_context::<ShellController>().expect(…);
 //! shell.is_overlay().get()      // rail floats over the page?
-//! shell.rail_present().get()    // rail on screen, close slide included?
+//! shell.rail_present().get()    // rail on screen, close motion included?
 //! shell.titlebar_left_gutter()  // px the bar's row must inset for the lights
 //! ```
 //!
-//! The controller also OWNS the open/close slide bookkeeping that used to
+//! The controller also OWNS the open/close bookkeeping that used to
 //! live in `SidebarPaint` (see below) and the remembered last panel, so
 //! "reopen what was open" is one call (`open_last_panel`) instead of a
 //! second `last_mode` tracker in the page.
 //!
-//! THE SLIDE MACHINE. The rail's open and close are slides, and chrome must
-//! stay aligned with the pixels for their whole length: the raw mode flips
-//! to `None` on the close click, three hundred milliseconds before the rail
-//! is out of the way. `rail_present` is therefore "open OR the close slide
-//! is still running" — whatever yields to the rail (the bar's band inset,
-//! the traffic lights' host, the floating label's corner) derives from it
-//! so it releases when the slide lands, not on frame one of the close.
+//! THE CLOSE MACHINE, TWO GEOMETRIES. The two layouts do not share a motion:
+//! the DOCKED rail slides (the aside tweens its width over
+//! [`SIDEBAR_SLIDE_MS`]), while the FLOATING rail fades in and out over
+//! [`SIDEBAR_FADE_MS`] — a transform slide off the window's edge would
+//! travel under the native traffic lights, which can only appear and
+//! disappear, so the overlay keeps to what the lights can do and the two
+//! read as one unit. Chrome must stay aligned with the pixels for the whole
+//! length of either direction: the raw mode flips to `None` on the close
+//! click, before the rail is out of the way. `rail_present` is therefore
+//! "open OR the close animation is still running" — whatever yields to the
+//! rail (the bar's band inset, the traffic lights' host, the floating
+//! label's corner) derives from it so it releases when the motion lands,
+//! not on frame one of the close.
 //!
 //! OPEN mounts thumbnail cells immediately so warm bitmaps can paint while
-//! the rail is moving; `panel_intro` is paint-only — a two-frame marker that
-//! starts the panel opacity transition without delaying the cell DOM. CLOSE
-//! is the only timer-gated direction: it keeps the last panel painted
-//! through the slide (`collapsing`) and releases the live thumbnail canvases
-//! at the same instant the slide lands. A reopen inside that window never
-//! unmounts, never re-renders, never reallocates.
+//! the rail is moving. `panel_intro` is the DOCKED open's paint-only marker —
+//! a two-frame flag that starts the panel opacity transition without
+//! delaying the cell DOM — and is deliberately skipped in overlay: the
+//! wrapper's own fade is the reveal there, and a second fade inside it
+//! would double-dim the panels. CLOSE is the only timer-gated direction:
+//! it keeps the last panel painted through the motion (`collapsing`) and
+//! releases the live thumbnail canvases at the same instant the motion
+//! lands — one timer that waits out whichever duration the layout's rail
+//! is actually running. A reopen inside that window never unmounts, never
+//! re-renders, never reallocates.
 //!
-//! Settings → Animations can freeze the slide (`no_slide`): the rail then
-//! jumps to its end width and the close hold is released on the spot,
-//! because nothing is left waiting on a slide that never runs.
+//! Settings → Animations can freeze the rail's motion (`no_slide`): the
+//! docked rail then jumps to its end width, the floating rail appears at
+//! full opacity, and the close hold is released on the spot, because
+//! nothing is left waiting on a motion that never runs.
 //!
 //! TWO PAGES, ONE RULEBOOK. The reader builds the controller with
 //! [`ShellController::reader`] (rail + titlebar); the library builds it with
@@ -56,7 +67,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::use_timeout::use_debounce;
+use crate::components::primitives::hooks::use_timeout::use_debounce_for;
 use crate::state::{AppState, SidebarMode};
 use crate::storage::save_settings;
 use pdf_core::settings::Settings;
@@ -68,15 +79,31 @@ enum SidebarLayout {
     /// width (the aside tweens `w-72` ↔ `w-0`).
     Push,
     /// Floating: the rail overlays the page from the window's left edge
-    /// (a fixed wrapper slides `-translate-x-full` ↔ `0`).
+    /// (a fixed wrapper that fades in and out).
     Overlay,
 }
 
-/// How long the rail takes to close. The panel paint and the deferred canvas
-/// release key off this so they land with the end of the slide rather than
-/// trailing it; the aside's own CSS transition (and the overlay wrapper's)
-/// are declared with the matching `duration-300` — keep them in step.
+/// How long the DOCKED rail takes to close. The panel paint and the deferred
+/// canvas release key off this so they land with the end of the width slide
+/// rather than trailing it; the aside's own CSS transition is declared with
+/// the matching `duration-300` — keep them in step.
 pub(crate) const SIDEBAR_SLIDE_MS: u64 = 300;
+
+/// How long the FLOATING rail's fade takes. The overlay wrapper carries the
+/// matching `duration-200`, and the close hold uses this so the rail, its
+/// shadow and the native traffic lights all land on the same frame — 200ms
+/// is the system-standard window for a fade, which is why it is not simply
+/// the slide's duration under a different name.
+pub(crate) const SIDEBAR_FADE_MS: u64 = 200;
+
+/// The close hold for a layout's rail: docked waits out the width slide,
+/// floating waits out the fade.
+fn outro_hold_ms(layout: SidebarLayout) -> u64 {
+    match layout {
+        SidebarLayout::Push => SIDEBAR_SLIDE_MS,
+        SidebarLayout::Overlay => SIDEBAR_FADE_MS,
+    }
+}
 
 /// The gutter the native traffic lights live in when the bar hosts them:
 /// 88px clears the lights (x:20 + ~54px) plus a real gap. Mirrored by the
@@ -151,8 +178,9 @@ impl ShellController {
         let no_slide =
             Signal::derive(move || !state.reader.viewer.motion.get().sidebar_slide);
 
-        // The slide machine, verbatim from the old `sidebar_paint`: see the
-        // module docs for what each direction holds and releases.
+        // The close machine, verbatim from the old `sidebar_paint` apart from
+        // the hold's duration: see the module docs for what each direction
+        // holds and releases.
         let last_panel = RwSignal::new(SidebarMode::Thumbs);
         let collapsing = RwSignal::new(false);
         let intro = RwSignal::new(false);
@@ -166,13 +194,20 @@ impl ShellController {
         // which a stored handle only did if the NEXT close arrived first,
         // leaving a reader that was gone writing to signals that were.
         // Re-arming postpones the release instead of queueing a second one,
-        // which is what a burst of toggles should do.
-        let outro = use_debounce(Duration::from_millis(SIDEBAR_SLIDE_MS), move || {
-            collapsing.set(false);
-            // The engine cache remains; only live DOM canvases are released,
-            // so a later open can synchronously blit.
-            cells_mounted.set(false);
-        });
+        // which is what a burst of toggles should do. The WAIT is read per
+        // trigger, untracked, so one timer serves both geometries: a close in
+        // the docked layout holds for the width slide, a close in the overlay
+        // layout holds for the fade — and the lights under the floating rail
+        // release on the frame it finishes disappearing.
+        let outro = use_debounce_for(
+            move || Duration::from_millis(outro_hold_ms(layout.get_untracked())),
+            move || {
+                collapsing.set(false);
+                // The engine cache remains; only live DOM canvases are released,
+                // so a later open can synchronously blit.
+                cells_mounted.set(false);
+            },
+        );
 
         Effect::new(move |_| {
             let now = sidebar_mode.get();
@@ -183,10 +218,16 @@ impl ShellController {
                 collapsing.set(false);
                 outro.cancel();
                 if was {
-                    // Let cached thumbnails ride the slide. Cold cells keep
+                    // Let cached thumbnails ride the motion. Cold cells keep
                     // their own skeleton until renderThumb completes.
                     cells_mounted.set(true);
-                    intro.set(true);
+                    // The docked open fades the panels in alongside the width
+                    // slide. The overlay open skips the marker: its wrapper
+                    // fades the whole rail in, and a panel fade inside that
+                    // fade would land at half the opacity of either.
+                    if !matches!(layout.get_untracked(), SidebarLayout::Overlay) {
+                        intro.set(true);
+                    }
                     // Keep the marker through one COMMITTED frame, then
                     // remove it so the CSS opacity transition runs alongside
                     // the rail. Two rAFs, not one: the first callback fires
@@ -205,8 +246,8 @@ impl ShellController {
                 was_closed.set_value(true);
                 intro.set(false);
                 // The initial closed state has no outro. Every panel → None
-                // transition holds cells and chrome for the actual slide —
-                // and with the tween frozen there IS no slide to wait out,
+                // transition holds cells and chrome for the actual motion —
+                // and with the tween frozen there IS no motion to wait out,
                 // so holding them would leave the title bar's inset
                 // released a timer late by a rail that is already gone.
                 if was || no_slide.get_untracked() {
@@ -251,7 +292,7 @@ impl ShellController {
         Signal::derive(move || this.has_rail && matches!(this.layout.get(), SidebarLayout::Overlay))
     }
 
-    /// The rail is on screen: open, or its close slide is still running —
+    /// The rail is on screen: open, or its close motion is still running —
     /// in Push OR Overlay mode. The floating label and the native traffic
     /// lights key off this directly: a rail of either kind covers the
     /// window's top-left corner, so the label gets out of the way and the
@@ -326,9 +367,10 @@ impl ShellController {
         })
     }
 
-    /// The rail's slide tween is frozen (Settings → Animations). Read
-    /// TRACKED by the rail wrappers (the class has to move in the frame the
-    /// switch does) and untracked by the machine.
+    /// The rail's motion is frozen (Settings → Animations): the docked
+    /// width slide and the floating fade both collapse to their end frames.
+    /// Read TRACKED by the rail wrappers (the class has to move in the frame
+    /// the switch does) and untracked by the machine.
     pub fn no_slide(&self) -> Signal<bool> {
         self.no_slide
     }
@@ -402,7 +444,7 @@ impl ShellController {
     }
 
     /// Close the rail (the mode flips now; chrome follows `rail_present`
-    /// through the slide).
+    /// through the close motion).
     pub fn close_sidebar(&self) {
         self.sidebar_mode.set(SidebarMode::None);
     }
@@ -458,23 +500,35 @@ fn thumbs_should_stay_mounted(mode: SidebarMode, collapsing: bool, last: Sidebar
 #[cfg(test)]
 mod tests {
     use super::{
-        panel_is_shown, sidebar_is_present, thumbnail_cells_are_live, thumbs_should_stay_mounted,
-        SIDEBAR_SLIDE_MS,
+        outro_hold_ms, panel_is_shown, sidebar_is_present, thumbnail_cells_are_live,
+        thumbs_should_stay_mounted, SidebarLayout, SIDEBAR_FADE_MS, SIDEBAR_SLIDE_MS,
     };
     use crate::state::SidebarMode;
 
     #[test]
-    fn the_slide_matches_the_css_duration() {
-        // The rail wrappers carry a `duration-300` transition (the docked
-        // aside's width, the overlay wrapper's transform), and the panel
-        // paint plus the deferred canvas release both key off this constant,
-        // so the outros land with the end of the slide rather than trailing
-        // it. Rename either side and this test is the tripwire.
+    fn each_motion_matches_its_css_duration() {
+        // The rail wrappers carry the matching transition utilities (the
+        // docked aside's `duration-300` width tween, the floating wrapper's
+        // `duration-200` opacity fade), and the panel paint plus the deferred
+        // canvas release both key off these constants, so the outros land
+        // with the end of the motion rather than trailing it. Rename either
+        // side and this test is the tripwire.
         assert_eq!(SIDEBAR_SLIDE_MS, 300);
+        assert_eq!(SIDEBAR_FADE_MS, 200);
     }
 
     #[test]
-    fn a_close_keeps_the_open_panel_painted_until_the_slide_ends() {
+    fn the_close_hold_waits_out_whichever_motion_the_layout_runs() {
+        // One timer, two geometries: the docked close holds for the width
+        // slide and the floating close holds for the fade, so the chrome the
+        // rail owns (the native lights included) releases on the frame the
+        // rail finishes disappearing — not a slide late, not a fade late.
+        assert_eq!(outro_hold_ms(SidebarLayout::Push), SIDEBAR_SLIDE_MS);
+        assert_eq!(outro_hold_ms(SidebarLayout::Overlay), SIDEBAR_FADE_MS);
+    }
+
+    #[test]
+    fn a_close_keeps_the_open_panel_painted_until_the_motion_ends() {
         // Frame one of a Thumbs close: still painted, so it can fade/clip.
         assert!(panel_is_shown(
             SidebarMode::Thumbs,
@@ -498,10 +552,10 @@ mod tests {
     }
 
     #[test]
-    fn chrome_space_is_held_until_the_close_slide_lands() {
+    fn chrome_space_is_held_until_the_close_motion_lands() {
         assert!(sidebar_is_present(SidebarMode::Thumbs, false));
         // Frame one of a close: raw mode is None, but the rail is still
-        // sliding and title-bar chrome must remain aligned with it.
+        // sliding or fading and title-bar chrome must remain aligned with it.
         assert!(sidebar_is_present(SidebarMode::None, true));
         assert!(!sidebar_is_present(SidebarMode::None, false));
     }
