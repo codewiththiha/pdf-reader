@@ -44,6 +44,9 @@ use leptos::prelude::*;
 pub struct Lanes(u8);
 
 impl Lanes {
+    /// No lanes at all: a surface that neither holds nor clears anything.
+    /// (`Default` can't be used for this — its impl isn't `const`.)
+    pub const NONE: Self = Self(0);
     /// Anchored menus and popovers ([`MenuPopover`](crate::components::shell::titlebar::toolbar_popover::MenuPopover)-hosted).
     pub const POPOVER: Self = Self(1 << 0);
     /// Modal dialogs, of which the reader has exactly one today: settings.
@@ -89,6 +92,15 @@ impl OverlayPolicy {
     pub const MODAL: Self = Self {
         occupies: Lanes::MODAL,
         displaces: Lanes::POPOVER.union(Lanes::MODAL),
+    };
+    /// A popover that lives INSIDE a dialog (a settings dropdown, a colour
+    /// picker): part of the conversation, not a rival for the window. It
+    /// holds no lane and clears none, so the dialog it belongs to stays open
+    /// while it is up — and it coexists with every other surface, because
+    /// its dismissal is already handled by outside-press hit-testing.
+    pub const IN_DIALOG: Self = Self {
+        occupies: Lanes::NONE,
+        displaces: Lanes::NONE,
     };
 }
 
@@ -227,16 +239,34 @@ mod tests {
     #[test]
     fn the_opt_out_policy_collides_with_nothing() {
         // This is what a caller passes to `MenuPopover`'s `policy` prop when a
-        // surface is genuinely a peer of the chrome rather than a competitor.
+        // surface is genuinely a peer of the chrome rather than a competitor
+        // — `OverlayPolicy::IN_DIALOG` in its named form. The literal spells
+        // the same thing out, so the two can never drift apart.
         let coexist = OverlayPolicy {
             occupies: Lanes::default(),
             displaces: Lanes::default(),
         };
+        assert_eq!(coexist, OverlayPolicy::IN_DIALOG);
         assert!(!coexist.occupies.intersects(OverlayPolicy::MENU.occupies));
         assert!(!coexist
             .displaces
             .intersects(OverlayPolicy::MODAL.occupies));
         assert!(!OverlayPolicy::MENU.displaces.intersects(coexist.occupies));
+    }
+
+    #[test]
+    fn a_popover_inside_a_dialog_never_evicts_its_own_dialog() {
+        // The settings modal's dropdowns and pickers: opening one must not
+        // close the modal it lives in, and must not close anything else
+        // either — dismissal there is outside-press hit-testing, not lanes.
+        assert!(!OverlayPolicy::IN_DIALOG
+            .displaces
+            .intersects(OverlayPolicy::MODAL.occupies));
+        assert!(!OverlayPolicy::IN_DIALOG
+            .displaces
+            .intersects(OverlayPolicy::MENU.occupies));
+        assert!(!OverlayPolicy::MENU.displaces.intersects(OverlayPolicy::IN_DIALOG.occupies));
+        assert!(!OverlayPolicy::MODAL.displaces.intersects(OverlayPolicy::IN_DIALOG.occupies));
     }
 
     #[test]

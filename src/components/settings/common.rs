@@ -13,6 +13,7 @@ use leptos::prelude::*;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::menu_item::MenuItem;
+use crate::components::primitives::overlay::lanes::OverlayPolicy;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tab {
@@ -89,7 +90,22 @@ disabled:cursor-not-allowed disabled:opacity-45"
                 <span>{move || label_of(&value.get())}</span>
                 <Icon name=IconName::ChevronDown size=12 class="text-muted" />
             </button>
-            <MenuPopover open=open anchor=root_ref width=190 class="p-1".to_string()>
+            <MenuPopover
+                open=open
+                anchor=root_ref
+                width=190
+                class="p-1".to_string()
+                // A dropdown INSIDE the settings modal is part of the dialog,
+                // not a competitor for the window: the default MENU policy
+                // would evict the modal the frame the list opens. The
+                // in-dialog policy owns no lane and clears none, so the modal
+                // stays put while the list is up (an outside press — clicking
+                // anywhere else in the dialog — still closes the list).
+                policy=OverlayPolicy::IN_DIALOG
+                // Nothing here sits under the reader title bar, so there is
+                // no bar to hold open while the list is up.
+                hold_titlebar=false
+            >
                 {opts.with_value(|opts| {
                     opts.iter()
                         .map(|(v, l)| {

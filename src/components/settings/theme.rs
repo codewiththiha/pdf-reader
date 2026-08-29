@@ -10,6 +10,7 @@ use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
+use crate::components::primitives::overlay::lanes::OverlayPolicy;
 use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::separator::Separator;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
@@ -215,7 +216,17 @@ fn CustomColorPicker(
         }
     });
     view! {
-        <MenuPopover open=open anchor=anchor width=224 class="space-y-3 p-3".to_string()>
+        <MenuPopover
+            open=open
+            anchor=anchor
+            width=224
+            class="space-y-3 p-3".to_string()
+            // The picker floats INSIDE the settings modal; the in-dialog
+            // policy keeps the modal from evicting itself when the picker
+            // opens (same reasoning as the tab's StyleSelects).
+            policy=OverlayPolicy::IN_DIALOG
+            hold_titlebar=false
+        >
             <Slider
                 value=h
                 min=0.0
