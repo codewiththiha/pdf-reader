@@ -32,12 +32,6 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
     let zoom = state.viewer.zoom;
     let profile = profile_for(state.viewer.mode.get_untracked());
     match cmd {
-        ZoomCommand::Set(scale) => {
-            let target = profile.clamp(scale);
-            zoom.desired.set(target);
-            state.viewer.fit.set(FitMode::None);
-            Some(target)
-        }
         ZoomCommand::Step(dir) => {
             // Step from the in-flight target while a tween runs, else from
             // the settled scale. Mid-animation values are deliberately

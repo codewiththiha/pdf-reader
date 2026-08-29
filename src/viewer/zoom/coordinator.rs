@@ -287,7 +287,6 @@ mod tests {
     fn only_a_follow_holds_its_render() {
         assert!(holds_commit(ZoomCommand::Follow));
         for cmd in [
-            ZoomCommand::Set(1.5),
             ZoomCommand::Step(1),
             ZoomCommand::Refit,
             ZoomCommand::Constrain,

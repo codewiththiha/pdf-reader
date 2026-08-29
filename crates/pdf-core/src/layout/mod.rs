@@ -59,14 +59,6 @@ impl ViewMode {
         matches!(self, ViewMode::Single | ViewMode::Spread)
     }
 
-    pub fn is_horizontal(self) -> bool {
-        self == ViewMode::ScrollHorizontal
-    }
-
-    pub fn is_vertical(self) -> bool {
-        self == ViewMode::ScrollVertical
-    }
-
     /// The scroll axis for the scrolling modes. The paginated modes have
     /// neither a strip nor a main axis, so they return `None`.
     pub fn axis(self) -> Option<Axis> {

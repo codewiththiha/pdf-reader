@@ -258,21 +258,6 @@ pub fn refresh_theme() {
     bridge::refresh_theme();
 }
 
-pub async fn paper_color() -> Option<String> {
-    if !guard_pdf_reader() {
-        return None;
-    }
-    let win = web_sys::window()?;
-    let reader = js_sys::Reflect::get(win.as_ref(), &"PDFReader".into()).ok()?;
-    let f = js_sys::Reflect::get(&reader, &"paperColor".into()).ok()?;
-    if !f.is_function() {
-        return None;
-    }
-    let v = js_sys::Reflect::apply(&js_sys::Function::from(f), &reader, &js_sys::Array::new()).ok()?;
-    let v = wasm_bindgen_futures::JsFuture::from(js_sys::Promise::resolve(&v)).await.ok()?;
-    v.as_string()
-}
-
 /// Enter/leave appearance-scrub mode. While a slider drag repaints the theme
 /// variables every frame, the engine shows the RAW rasters under the live
 /// CSS filter/blend (the pre-baking pipeline) so the page re-colours per

@@ -149,8 +149,6 @@ impl Default for DocumentState {
 /// the scale signals directly.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ZoomCommand {
-    /// A manual zoom to an absolute scale (a preset menu entry).
-    Set(f64),
     /// One step along the preset ladder: `+1` zooms in, `-1` zooms out.
     Step(i32),
     /// Re-resolve the active fit mode (width / page) against the current

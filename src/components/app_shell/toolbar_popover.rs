@@ -21,8 +21,6 @@ use crate::components::primitives::floating::types::PlacementSide;
 pub fn MenuPopover(
     open: RwSignal<bool>,
     anchor: NodeRef<html::Div>,
-    #[prop(optional)]
-    fallback_anchor: NodeRef<html::Div>,
     #[prop(default = 256)]
     width: u32,
     #[prop(default = 8)]
@@ -62,7 +60,6 @@ pub fn MenuPopover(
         <Popover
             open=open
             anchor=anchor
-            fallback_anchor=fallback_anchor
             width=width
             margin=margin
             class=class

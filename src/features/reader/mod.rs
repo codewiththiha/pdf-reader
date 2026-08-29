@@ -1,5 +1,4 @@
 pub mod page;
-pub mod toolbar_entries;
 pub(crate) mod virtualizers;
 
 pub use page::ReaderPage;
