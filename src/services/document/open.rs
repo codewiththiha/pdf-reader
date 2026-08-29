@@ -260,12 +260,18 @@ pub fn open_path(state: AppState, path: String) {
                 // settled first (the fit watcher, first paint, cover render);
                 // sequential awaits keep the engine queue from bursting.
                 // 0.25 mirrors THUMB_SCALE (panels/thumbnails/geometry.rs).
-                let warm_state = state;
+                // The page count is read HERE, not in the fire. This timer is
+                // deliberately unowned — the warm-up belongs to the document
+                // that was just opened, not to whichever component happens to
+                // be alive in 600ms — so the one thing the fire must not do is
+                // reach into the reader's signal graph: a document closed
+                // inside that window would leave it reading an arena that is
+                // gone. `prefetch_thumb` is an engine call and answers for
+                // whatever is open when it lands, which is all a warm-up is.
+                let pages = state.reader.document.num_pages.get_untracked().min(16);
                 _ = set_timeout_with_handle(
                     move || {
                         spawn_local(async move {
-                            let n = warm_state.reader.document.num_pages.get_untracked();
-                            let pages = n.min(16); // first two grid rows + buffer
                             for p in 1..=pages {
                                 engine::prefetch_thumb(p, 0.25).await;
                             }
