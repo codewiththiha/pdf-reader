@@ -1,6 +1,12 @@
 //! Centered reader settings modal shell: the tab strip, the Escape handler and
 //! the body that hosts one tab at a time. The tabs live in `layout`, `theme`
 //! and `animations`, and the SET of them is not fixed — see `shown`.
+//!
+//! The `open` signal belongs to the page (two things open this modal: the gear
+//! button and the reader menu's item), so the page's signal is registered as
+//! [`OverlayPolicy::MODAL`] here. That is what makes opening a menu close the
+//! modal and vice versa, without either component knowing about the other —
+//! see [`lanes`](crate::components::primitives::overlay::lanes).
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -11,6 +17,7 @@ use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
 use crate::components::primitives::icon::IconName;
 use crate::components::primitives::icon_button::IconButton;
+use crate::components::primitives::overlay::lanes::{use_overlay_lane, OverlayPolicy};
 use crate::state::AppState;
 
 #[component]
@@ -20,6 +27,8 @@ pub fn SettingsModal(
     #[prop(default = "min(92vw, 620px)")] width: &'static str,
     #[prop(default = "min(76vh, 640px)")] height: &'static str,
 ) -> impl IntoView {
+    // Mutual exclusion with the anchored menus, on the page's signal.
+    use_overlay_lane(open, OverlayPolicy::MODAL);
     let tab = RwSignal::new(Tab::Layout);
     // The Animations tab is offered only while the master switch in the Layout
     // tab is on — an animations panel that cannot animate anything is worse

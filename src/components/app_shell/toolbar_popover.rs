@@ -1,13 +1,18 @@
 //! App-shell wrapper around the floating [`Popover`] primitive. The
 //! primitive reports open-state transitions through `on_open_change` and
-//! knows nothing about the chrome layer; this wrapper owns the one piece of
-//! shell policy every anchored menu shares (except the sidebar's More menu,
-//! which opts out): **holding the reader titlebar open while the menu is
-//! up**, so the bar does not auto-hide under your hand mid-click.
+//! knows nothing about the chrome layer; this wrapper owns the two pieces of
+//! shell policy every anchored menu shares:
 //!
-//! Not a `SuperPopover`: it is a thin, single-purpose composition — hold
-//! bookkeeping + pass-through. New policy belongs in its own wrapper, not
-//! here.
+//! * **holding the reader titlebar open while the menu is up**, so the bar
+//!   does not auto-hide under your hand mid-click (the sidebar's More menu
+//!   opts out — it does not sit under the bar);
+//! * **lane arbitration** (`OverlayPolicy::MENU`): one menu at a time, and a
+//!   menu replaces an open modal instead of stacking under it. Registering it
+//!   HERE is what makes that automatic for every menu, so a new one cannot
+//!   forget it.
+//!
+//! Not a `SuperPopover`: it is a thin, single-purpose composition — holds,
+//! policy, pass-through. New policy belongs in its own wrapper, not here.
 
 use leptos::children::ChildrenFn;
 use leptos::html;
@@ -16,6 +21,7 @@ use leptos::prelude::*;
 use crate::components::app_shell::title_bar::TitleBarCtx;
 use crate::components::primitives::floating::popover::Popover;
 use crate::components::primitives::floating::types::PlacementSide;
+use crate::components::primitives::overlay::lanes::{use_overlay_lane, OverlayPolicy};
 
 #[component]
 pub fn MenuPopover(
@@ -38,8 +44,18 @@ pub fn MenuPopover(
     /// anchor sits inside the glass toolbar row.
     #[prop(optional)]
     coordinate_space: Option<&'static str>,
+    /// Which surfaces this menu may coexist with. The default
+    /// ([`OverlayPolicy::MENU`]) takes part in the app's menu/modal
+    /// arbitration; a surface that genuinely wants to float alongside
+    /// everything else passes a policy with both `occupies` and `displaces`
+    /// set to `Lanes::default()`.
+    #[prop(default = OverlayPolicy::MENU)]
+    policy: OverlayPolicy,
     children: ChildrenFn,
 ) -> impl IntoView {
+    // Registration only: arbitration reacts to the SIGNAL, and every path that
+    // can close this menu (the trigger, Escape, an outside press) writes it.
+    use_overlay_lane(open, policy);
     // Hold/release the titlebar as the popover opens/closes. The primitive
     // only reports transitions; the counts stay here, at the shell.
     let on_open_change = if hold_titlebar {
