@@ -119,11 +119,24 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
 }
 
 /// Centered document name for the reader title bar's center slot.
+///
+/// The label carries `data-tauri-drag-region` itself, not just the band behind
+/// it. The label is the most obvious thing to grab in a bar whose whole job is
+/// holding the window title, and it is exactly the thing `-webkit-user-select:
+/// none` makes unselectable — so it must move the window instead of doing
+/// nothing. Whether Tauri's handler reads the attribute off the event's target
+/// (the per-element style every other drag region in this app uses: the band,
+/// the row, the leading and trailing clusters all carry it) or resolves the
+/// nearest ancestor, naming it here is the version that cannot fail.
 #[component]
 pub fn CenteredDocTitle(state: AppState) -> impl IntoView {
     let name = move || state.reader.document.display_name();
     view! {
-        <span class="max-w-[46vw] truncate text-sm font-medium text-ink" title=name>
+        <span
+            data-tauri-drag-region="true"
+            class="max-w-[46vw] truncate text-sm font-medium text-ink"
+            title=name
+        >
             {name}
         </span>
     }
