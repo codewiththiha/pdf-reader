@@ -195,15 +195,6 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Refit to width when entering single / two-page modes".to_string()
                 />
             </Row>
-            <Row label="Constrain Zoom to Window">
-                <Switch
-                    checked=Signal::derive(move || s.with(|st| st.layout.constrain_zoom_to_window))
-                    on_change=Callback::new(move |v| {
-                        s.update(|st| st.layout.constrain_zoom_to_window = v);
-                    })
-                    title="When zoomed by hand, back off to fit a narrower window but never exceed the zoom you chose".to_string()
-                />
-            </Row>
             <Row label="Page Shadow">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.page_shadow))

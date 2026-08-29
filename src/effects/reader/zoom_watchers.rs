@@ -78,7 +78,12 @@ pub fn fit_watcher(state: ReaderState, sidebar: RwSignal<SidebarMode>) {
     });
 }
 
-/// Must be called once from the reader shell (ReaderPage), alongside
+/// Keep a hand-set zoom honest about the space it has. Whenever the container
+/// gets narrower or wider — a sidebar toggle, a window resize, a margin
+/// change — the canvas re-constrains: the page backs off to fit the width, but
+/// never grows past the zoom the reader chose. This is unconditional, because a
+/// canvas that ignores a container change stays cropped until the next zoom
+/// press. Must be called once from the reader shell (ReaderPage), alongside
 /// `fit_watcher`.
 pub fn resize_watcher(state: AppState) {
     let constrain = use_debounce(WATCH_DEBOUNCE, move || {
@@ -86,10 +91,6 @@ pub fn resize_watcher(state: AppState) {
     });
 
     Effect::new(move |_| {
-        // Only when the reader asked for the shrink-to-fit behaviour.
-        if !state.settings.with(|s| s.layout.constrain_zoom_to_window) {
-            return;
-        }
         // Only when the reader zoomed by hand: while a fit mode is active,
         // the fit watcher owns resizes.
         if state.reader.viewer.fit.get() != FitMode::None {
