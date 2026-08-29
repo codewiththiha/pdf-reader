@@ -87,6 +87,10 @@ through and text is never doubled.
 - Zoom in and out step through the presets; repeated presses chain from the in-flight target, so
   a fast double press advances two steps rather than being swallowed.
 - Fit width and fit page, recomputed on window resize and sidebar toggle.
+- Turning to a page of a different size never touches the zoom while Settings → Layout → Auto
+  Resize is off: the scale, the scroll position and the measured layout all stay exactly where
+  the reader left them, and a page too wide for the window overflows and scrolls instead. Turn
+  the switch on and each page re-fits itself to the window as it comes into view.
 - Shrink to fit: when the window is too narrow for the chosen zoom, the page shrinks to the space
   available and remembers the zoom to grow back to once space returns.
 - Every zoom — a button step, a preset, a fit, a window constraint — runs through one transition

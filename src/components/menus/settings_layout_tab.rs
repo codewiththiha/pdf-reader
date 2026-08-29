@@ -195,6 +195,16 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Refit to width when entering single / two-page modes".to_string()
                 />
             </Row>
+            <Row label="Auto Resize">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.layout.auto_resize))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.auto_resize = v);
+                    })
+                    title="Re-fit to width when a page of a different size comes into view"
+                        .to_string()
+                />
+            </Row>
             <Row label="Page Shadow">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.layout.page_shadow))

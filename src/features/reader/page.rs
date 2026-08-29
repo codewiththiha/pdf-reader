@@ -116,9 +116,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom sources come last, after the controller that consumes them:
     // a container follow on every frame of a sidebar slide or a window drag,
-    // and a debounced refit when a fit's other inputs move (mode, page, fit).
+    // and a debounced refit when a fit's other inputs move (mode, and the page
+    // too — but only while the Auto Resize setting is on).
     crate::effects::reader::zoom_watchers::follow_watcher(vs, state.ui.sidebar);
-    crate::effects::reader::zoom_watchers::fit_watcher(vs);
+    crate::effects::reader::zoom_watchers::fit_watcher(state);
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     reading_progress(state);
 

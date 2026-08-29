@@ -62,6 +62,15 @@ pub struct LayoutSettings {
     pub no_gap: bool,
     #[serde(default = "on_true")]
     pub auto_scale: bool,
+    /// Let a page turn change the scale. On, arriving at a page whose size
+    /// differs re-resolves the zoom: an active fit re-fits, and a hand-picked
+    /// zoom is held to the new page's fit-width ceiling. Off, a page turn
+    /// touches nothing — the zoom, the scroll position and the measured column
+    /// all stay where the reader put them, and a page wider than the window
+    /// overflows and scrolls. The WINDOW still re-fits either way; this
+    /// switch is only about the page under the eyes.
+    #[serde(default = "on_true")]
+    pub auto_resize: bool,
     #[serde(default = "on_true")]
     pub page_shadow: bool,
     #[serde(default)]
@@ -91,6 +100,7 @@ impl Default for LayoutSettings {
             progress_bar: true,
             no_gap: false,
             auto_scale: true,
+            auto_resize: true,
             page_shadow: true,
             sidebar_overlay: false,
             blend_mode: false,
@@ -450,16 +460,21 @@ mod tests {
         let s = LayoutSettings::default();
         assert_eq!(s.page_margin, 0.0);
         assert!(s.auto_scale);
+        assert!(s.auto_resize);
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
 
-        // Deserializing empty JSON layout object fills in the defaults
+        // Deserializing empty JSON layout object fills in the defaults. A
+        // blob saved BEFORE `auto_resize` existed is exactly this shape, so
+        // the assertion below is also the promise that an existing install
+        // keeps the behaviour it had rather than losing its refit.
         let s: LayoutSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(s.page_margin, 0.0);
         assert!(s.auto_scale);
+        assert!(s.auto_resize);
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);

@@ -23,15 +23,17 @@
 //!   commit until the container has been quiet, so a slide costs one raster
 //!   pass instead of one per frame.
 //! - `fit_watcher`: the world under the scale changed in a way that is not a
-//!   burst — a view-mode flip, a page turn in a mixed-size book, a new
-//!   document. Single events, so they debounce and land through the ordinary
-//!   transition, and a page-only change must NOT follow the layout per frame:
+//!   burst — a view-mode flip, a new document, and (only while the Auto Resize
+//!   setting is on) a page turn in a mixed-size book. Single events, so they
+//!   debounce and land through the ordinary transition, and a page-only change
+//!   must NOT follow the layout per frame:
 //!   scrolling through a book of alternating sizes would re-fit at every row
 //!   boundary. It posts the fit when a fit owns the scale and the
 //!   shrink-to-fit ceiling when the reader zoomed by hand, so neither case is
 //!   left stale against the page under the eyes. Choosing or dropping a fit is
 //!   the one event it does not postpone: that is a click, and a click answers
-//!   in the frame it lands.
+//!   in the frame it lands. With Auto Resize off the page dependency is not
+//!   even subscribed, so a page turn cannot reach this watcher at all.
 //!
 //! Both fires are deliberately UNTWEENED. A refit that tracks a live resize has
 //! to land in the frame it was asked for; queueing a 120ms animation against
@@ -46,7 +48,7 @@ use pdf_core::math::FitMode;
 
 use crate::components::primitives::hooks::use_timeout::use_debounce;
 use crate::state::reader::ZoomCommand;
-use crate::state::{ReaderState, SidebarMode};
+use crate::state::{AppState, ReaderState, SidebarMode};
 use crate::viewer::zoom::config::FOLLOW_SETTLE_MS;
 use crate::viewer::zoom::coordinator::{Gate, posting_gate};
 
@@ -56,61 +58,77 @@ use crate::viewer::zoom::coordinator::{Gate, posting_gate};
 const REFIT_DEBOUNCE: Duration = Duration::from_millis(FOLLOW_SETTLE_MS);
 
 /// Re-resolve the scale when the world under it changes in a way that is not
-/// the container moving: a fit mode chosen or dropped, a view-mode flip, or a
-/// page turn. Must be called once from the reader shell (ReaderPage), alongside
+/// the container moving: a fit mode chosen or dropped, or a view-mode flip.
+/// Must be called once from the reader shell (ReaderPage), alongside
 /// `follow_watcher`.
 ///
-/// The page matters even to a hand-picked zoom, because the ceiling a manual
-/// scale is held to is the fit width OF THE PAGE UNDER THE EYES: a landscape
-/// plate at 200 percent shrinks to stay readable instead of sitting cropped,
-/// and because the ceiling never writes `desired`, the next portrait page grows
-/// back to exactly the zoom the reader chose.
-pub fn fit_watcher(state: ReaderState) {
+/// A PAGE turn joins that list only while Settings → Layout → Auto Resize is
+/// on. The page matters to the scale because the ceiling a hand-picked zoom is
+/// held to is the fit width OF THE PAGE UNDER THE EYES: with Auto Resize on, a
+/// landscape plate at 200 percent shrinks to stay readable instead of sitting
+/// cropped, and — because the ceiling never writes `desired` — the next
+/// portrait page grows back to exactly the zoom the reader chose.
+///
+/// With it off, arriving at a new page changes NOTHING: not the scale, not the
+/// scroll position, not the measured column. That is the difference between "fit
+/// the sheet I am looking at" and "fit the window I am looking at", and a reader
+/// who picked a zoom by hand wants the second one — a page too wide for the
+/// window then overflows and scrolls, which is a choice with an affordance,
+/// rather than a size the app picked back over their head mid-sentence.
+pub fn fit_watcher(state: AppState) {
     // Built in the owner that calls us, not inside the effect: the debouncer
     // is one per watcher and disarms itself on cleanup, so a fire cannot
     // land on a reader that has already been disposed.
+    let vs = state.reader.viewer;
     let refit = use_debounce(REFIT_DEBOUNCE, move || {
         // Asked again AT THE FIRE, not only when the burst armed it: a gesture
         // that started while the fire was pending owns the transaction, and
         // resolving a fit into it mid-tween is the snap this gate exists for.
         // (A dropped fire is cheap: a manual zoom clears the fit mode, so the
-        // reader has taken the scale over anyway, and the next page or
+        // reader has taken the scale over anyway, and the next page, mode or
         // container change re-arms this.)
-        let cmd = match posting_gate(state.viewer.zoom.transition.get_untracked()) {
+        let cmd = match posting_gate(vs.zoom.transition.get_untracked()) {
             Gate::StandDown => return,
             // A slide is mid-flight: hand the change to its held commit rather
             // than land a second transaction that renders in the middle of the
             // burst. A follow resolves the same question — the fit when a fit
             // owns the scale, the ceiling otherwise — so nothing is lost.
             Gate::Follow => ZoomCommand::Follow,
-            Gate::Now if state.viewer.fit.get_untracked() == FitMode::None => {
+            Gate::Now if vs.fit.get_untracked() == FitMode::None => {
                 ZoomCommand::Constrain
             }
             Gate::Now => ZoomCommand::Refit,
         };
         // Untweened: a fit tracks the window, so it must land in the frame it
         // was resolved in rather than chase it for the length of a tween.
-        state.viewer.zoom.post(cmd, false);
+        vs.zoom.post(cmd, false);
     });
 
     // The fit the last run answered, so "a fit mode was CHOSEN" can be told
     // apart from "the page under a fit changed". Opening a document lands in
     // the chosen branch too, which is right: the first fit is a decision, not a
     // scroll artefact.
-    let last_fit = StoredValue::new_local(state.viewer.fit.get_untracked());
+    let last_fit = StoredValue::new_local(vs.fit.get_untracked());
 
     Effect::new(move |_| {
         // Every dependency is a tracked read; none of the values are needed
         // locally — the controller re-reads the world when it resolves. The
         // container is deliberately NOT one of them: a slide or a drag is a
         // stream, and streams are `follow_watcher`'s business.
-        let fit = state.viewer.fit.get();
+        let fit = vs.fit.get();
         let chosen = last_fit.get_value() != fit;
         last_fit.set_value(fit);
-        let _ = state.viewer.mode.get();
-        let _ = state.viewer.page.get();
+        let _ = vs.mode.get();
+        // Read CONDITIONALLY, so that turning the setting off also drops the
+        // subscription: while Auto Resize is off, a page turn does not re-run
+        // this effect at all. The setting itself is read as a dependency just
+        // above the branch, so flipping it re-runs this and re-arms or
+        // disarms the page dependency in the same frame.
+        if state.settings.with(|st| st.layout.auto_resize) {
+            let _ = vs.page.get();
+        }
         if matches!(
-            posting_gate(state.viewer.zoom.transition.get_untracked()),
+            posting_gate(vs.zoom.transition.get_untracked()),
             Gate::StandDown
         ) {
             return; // a zoom is mid-flight; let it settle first
@@ -120,7 +138,7 @@ pub fn fit_watcher(state: ReaderState) {
         // like riding a resize. Debouncing it would hold the page still for the
         // whole window for no reason.
         if chosen {
-            state.viewer.zoom.post(ZoomCommand::Follow, false);
+            vs.zoom.post(ZoomCommand::Follow, false);
             return;
         }
         // Postpones any pending fire and schedules one at the end of the
