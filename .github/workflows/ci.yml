@@ -113,3 +113,39 @@ jobs:
 
       - name: Verify versions are in sync
         run: node scripts/check-versions.js
+
+  # The Linux job above cannot see `set_traffic_lights`: it is
+  # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
+  # feature set that feeds it) would otherwise first surface when a release
+  # tag builds the macOS legs. Check the shell crate natively on an Apple
+  # runner to keep that gap closed.
+  macos-check:
+    name: Check (macOS-only shell code)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Keys on the workspace root, same as the Linux job.
+      - uses: Swatinem/rust-cache@v2
+
+      # `tauri::generate_context!` resolves `frontendDist` (../dist) at compile
+      # time and panics when it is missing; the frontend itself is built by the
+      # release pipeline, so a stub is enough to get past it here.
+      - name: Stub the frontend dist
+        run: |
+          mkdir -p dist
+          printf '<!doctype html><title>PDF Reader</title>' > dist/index.html
+
+      - name: Clippy (deny warnings)
+        run: |
+          cargo clippy -p pdf --all-targets -- -D warnings \
+            -A clippy::clone_on_copy \
+            -A clippy::field_reassign_with_default \
+            -A clippy::collapsible_if \
+            -A clippy::redundant_closure \
+            -A clippy::type_complexity \
+            -A clippy::assertions_on_constants
