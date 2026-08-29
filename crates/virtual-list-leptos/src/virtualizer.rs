@@ -16,7 +16,6 @@ use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 use virtual_list::{Align, Viewport, Window};
 
 use crate::core::{CoreConfig, Step, VirtualizerCore, build_layout};
-use crate::measure::observe_item;
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{Positioning, VirtualItem, VirtualItemState, VirtualRow};
@@ -27,7 +26,6 @@ type ObserverCallback = Closure<dyn FnMut(js_sys::Array, ResizeObserver)>;
 type ObserverBinding = (ResizeObserver, ObserverCallback);
 type ListenerCallback = Closure<dyn FnMut(Event)>;
 type ListenerBinding = (web_sys::Element, &'static str, ListenerCallback);
-type RangeCallback = Rc<dyn Fn(Option<Window>)>;
 type IdleCallback = Rc<dyn Fn()>;
 
 /// Create a virtualizer. Must be called inside a reactive owner.
@@ -78,14 +76,12 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         flush_armed: Rc::new(Cell::new(false)),
         scroll_feedback: Cell::new(true),
         container_ro: RefCell::new(None),
-        item_ro: RefCell::new(None),
         listeners: RefCell::new(Vec::new()),
         scroll_end_timer: RefCell::new(None),
         retained: RefCell::new(Vec::new()),
         retained_version: RwSignal::new(0),
         retention_grace: Cell::new(initial_retention_grace),
         retention_timer: RefCell::new(None),
-        range_cbs: RefCell::new(Vec::new()),
         idle_cbs: RefCell::new(Vec::new()),
         items_signal: OnceCell::new(),
         rows_signal: OnceCell::new(),
@@ -126,17 +122,6 @@ pub fn use_virtualizer(options: VirtualizerOptions) -> Virtualizer {
         Effect::new(move |_| {
             let step = inner.core.borrow_mut().set_pinned(signal.get());
             inner.apply(step);
-        });
-    }
-
-    {
-        let inner = inner.clone();
-        Effect::new(move |_| {
-            let range = inner.range.get();
-            let callbacks: Vec<_> = inner.range_cbs.borrow().iter().cloned().collect();
-            for callback in callbacks {
-                callback(range);
-            }
         });
     }
 
@@ -201,7 +186,6 @@ pub(crate) struct VirtualizerInner {
     pub scroll_feedback: Cell<bool>,
 
     pub container_ro: RefCell<Option<ObserverBinding>>,
-    pub item_ro: RefCell<Option<ObserverBinding>>,
     pub listeners: RefCell<Vec<ListenerBinding>>,
     pub scroll_end_timer: RefCell<Option<TimeoutHandle>>,
 
@@ -214,7 +198,6 @@ pub(crate) struct VirtualizerInner {
     pub retention_grace: Cell<u32>,
     pub retention_timer: RefCell<Option<TimeoutHandle>>,
 
-    pub range_cbs: RefCell<Vec<RangeCallback>>,
     pub idle_cbs: RefCell<Vec<IdleCallback>>,
 
     pub items_signal: OnceCell<Signal<Vec<VirtualItem>, LocalStorage>>,
@@ -414,9 +397,6 @@ impl VirtualizerInner {
         }
         self.listeners.borrow_mut().clear();
         if let Some((ro, _)) = self.container_ro.borrow_mut().take() {
-            ro.disconnect();
-        }
-        if let Some((ro, _)) = self.item_ro.borrow_mut().take() {
             ro.disconnect();
         }
     }
@@ -723,11 +703,6 @@ impl Virtualizer {
         self.inner.core.borrow_mut().cancel_scroll();
     }
 
-    /// Register an item element for DOM measurement.
-    pub fn measure_element(&self, index: usize, el: &web_sys::Element) {
-        observe_item(&self.inner, index, el);
-    }
-
     /// Report a size directly.
     pub fn report_size(&self, index: usize, size: f64) {
         self.inner.core.borrow_mut().queue_size(index, size);
@@ -782,11 +757,6 @@ impl Virtualizer {
     pub fn rescale(&self, factor: f64, new_sizes: impl Fn(usize) -> f64) {
         let step = self.inner.core.borrow_mut().rescale(factor, &new_sizes);
         self.inner.apply(step);
-    }
-
-    /// Called whenever the mounted window changes.
-    pub fn on_range_change(&self, cb: impl Fn(Option<Window>) + 'static) {
-        self.inner.range_cbs.borrow_mut().push(Rc::new(cb));
     }
 
     /// Called when scrolling settles.

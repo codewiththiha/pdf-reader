@@ -186,12 +186,6 @@ impl VirtualizerOptions {
         self
     }
 
-    /// Scroll-idle debounce, milliseconds.
-    pub fn scroll_end_delay(mut self, ms: u32) -> Self {
-        self.scroll_end_delay_ms = ms;
-        self
-    }
-
     /// Zombie retention: how long an evicted item stays rendered after the
     /// window moves past it (`grace_ms`), and how many such items may be
     /// retained at once. `grace_ms == 0` disables retention. The grace can

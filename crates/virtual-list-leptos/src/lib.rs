@@ -50,7 +50,6 @@
 #![warn(missing_docs)]
 
 pub mod core;
-mod measure;
 mod observe;
 mod options;
 mod render;
