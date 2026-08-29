@@ -40,12 +40,6 @@
 .gloss-surface[data-phase="compact"] { z-index: var(--z-controls); }
 .gloss-surface[data-phase="expanded"] { z-index: var(--z-popover); }
 
-/* Usage-example lines inside the card (kept from the reference). */
-.gloss-quote {
-  border-left: 1px solid var(--color-line);
-  padding-left: 12px;
-}
-
 /* The card scrolls but must never show a scrollbar — it is a floating
    surface, not a pane, and a gutter would break the morph's silhouette. */
 .gloss-surface [data-gloss-scroll] {

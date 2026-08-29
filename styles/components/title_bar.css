@@ -68,12 +68,6 @@
   }
 }
 
-.toolbar-glass .glass-invert,
-.toolbar-glass .glass-invert svg {
-  color: #fff;
-  mix-blend-mode: difference;
-}
-
 /* Sidebar panel outro — same 300ms ease-in-out as the aside width slide.
    The rail labels (Thumbs / Outline) outro by being clipped as the aside
    shrinks. The grid/list used to go `visibility:hidden` on the first frame

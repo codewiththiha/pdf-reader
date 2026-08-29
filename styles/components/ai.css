@@ -64,15 +64,6 @@
    7. Card content sections.
    --------------------------------------------------------------------- */
 
-/* The selected word displayed prominently at the top. */
-.ai-word-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--color-ink);
-  line-height: 1.3;
-  word-break: break-word;
-}
-
 /* Part-of-speech badge. */
 .ai-pos-badge {
   display: inline-flex;

@@ -33,8 +33,7 @@ import {
   setHighlightMode,
 } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline, readPipeline } from "./engine/theme/pipeline";
-import { paperInfo } from "./engine/theme/paper";
+import { invalidatePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import { installSelectionTracker } from "./engine/selection";
 import {
@@ -238,10 +237,6 @@ globalThis.PDFReader = {
   setHighlightMode,
   clearHighlights,
   refreshTheme,
-  paperColor: async () => {
-    await rebakeTheme(false);
-    return paperInfo(readPipeline()).color;
-  },
   setScrubMode,
   sweep: () => {
     sweepPdf();

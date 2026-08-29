@@ -171,16 +171,8 @@ export type PDFReaderApi = {
   setHighlightMode: (mode: "live" | "stale") => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
-  paperColor: () => Promise<string>;
   setScrubMode: (on: boolean) => Promise<void>;
   sweep: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;
-};
-
-export type TauriCore = {
-  core: {
-    invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    convertFileSrc: (p: string) => string;
-  };
 };

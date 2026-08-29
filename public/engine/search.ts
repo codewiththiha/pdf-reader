@@ -8,7 +8,6 @@ import {
   highlightsByPage,
   numPages,
   pdf,
-  searchQuery,
   setActiveMatchValue,
   setHighlightModeValue,
   setSearchQuery,
