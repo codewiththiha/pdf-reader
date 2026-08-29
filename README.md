@@ -202,14 +202,15 @@ instead of sliding across it.
 
 ### Presets
 
-Eight presets ship with the application, in two groups:
+Five presets ship with the application, in one group:
 
-- **Basic:** Light, Dark, Dim, each with no tint.
 - **Classic:** Sepia, Green, Night, Parchment, Cinema, each a specific point in the appearance
   space.
 
 Sepia, Green and Night were previously hard-coded themes and are now reproduced exactly as tints,
-which is what allows the appearance model to be the only mechanism.
+which is what allows the appearance model to be the only mechanism. The plain bases (Light, Dark,
+Dim) are deliberately not presets: the Mode & colour section's buttons are the one home for that
+choice, so the gallery holds only looks the buttons cannot express.
 
 Users can save the current appearance as a named preset and organise presets into named groups.
 As soon as any slider is nudged, the active preset selection clears and the menu reports "Custom"

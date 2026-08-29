@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::appearance::{Appearance, NoiseMode, TextureMode};
+use crate::appearance::{Appearance, BaseMode, NoiseMode, TextureMode};
 use crate::presets::{builtin_presets, Preset};
 
 pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
@@ -258,7 +258,10 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             appearance: Appearance::default(),
-            active_preset: Some("light".to_string()),
+            // No preset matches a fresh install's plain Light look: the bases
+            // are the Mode section's buttons, not presets, so "custom" is the
+            // honest reading of the default state.
+            active_preset: None,
             user_presets: Vec::new(),
             default_zoom: 1.0,
             last_path: None,
@@ -316,15 +319,26 @@ impl Settings {
     }
 }
 
-/// Map a retired theme id onto the preset that reproduces it.
-fn legacy_theme_to_preset(id: &str) -> &'static str {
+/// The preset that reproduces a retired theme id, for the themes that
+/// became presets. The plain bases (light / dark / dim) answer `None` —
+/// they are the Mode section's buttons now, and their migration is
+/// [`legacy_theme_base`]'s job instead.
+fn legacy_theme_to_preset(id: &str) -> Option<&'static str> {
     match id {
-        "dark" => "dark",
-        "dim" => "dim",
-        "sepia" => "sepia",
-        "green" => "green",
-        "night" => "night",
-        _ => "light",
+        "sepia" => Some("sepia"),
+        "green" => Some("green"),
+        "night" => Some("night"),
+        _ => None,
+    }
+}
+
+/// The base a retired plain theme id stood for. `None` for "light" (the
+/// default base already IS light) and for anything the model never knew.
+fn legacy_theme_base(id: &str) -> Option<BaseMode> {
+    match id {
+        "dark" => Some(BaseMode::Dark),
+        "dim" => Some(BaseMode::Dim),
+        _ => None,
     }
 }
 
@@ -336,10 +350,17 @@ pub fn sanitize(settings: &mut Settings) {
     // model. Rebuild the look from it so the user's chosen theme survives the
     // upgrade instead of snapping back to Light.
     if let Some(old) = settings.theme_id.take() {
-        let id = legacy_theme_to_preset(&old);
-        if let Some(p) = builtin_presets().into_iter().find(|p| p.id == id) {
+        if let Some(id) = legacy_theme_to_preset(&old)
+            && let Some(p) = builtin_presets().into_iter().find(|p| p.id == id)
+        {
             settings.appearance = p.appearance;
             settings.active_preset = Some(p.id);
+        } else if let Some(base) = legacy_theme_base(&old) {
+            // A plain base is not a preset: restore the look and leave the
+            // selection empty, which the Mode section's buttons express
+            // better than a swatch ever did.
+            settings.appearance = Appearance { base, ..Default::default() };
+            settings.active_preset = None;
         }
         // Texture and grain were independent of the theme before, so carry them
         // across on top of the reconstructed look rather than letting the
@@ -413,19 +434,32 @@ mod tests {
     fn legacy_themes_migrate_to_the_matching_preset() {
         // The upgrade path that matters: someone reading in Sepia must still be
         // in Sepia after the update, not thrown back to Light.
-        for (old, want) in [
-            ("sepia", "sepia"),
-            ("green", "green"),
-            ("night", "night"),
-            ("dark", "dark"),
-            ("dim", "dim"),
-            ("light", "light"),
-        ] {
+        for old in ["sepia", "green", "night"] {
             let json = format!(r#"{{"theme_id":"{old}"}}"#);
             let mut s: Settings = serde_json::from_str(&json).unwrap();
             sanitize(&mut s);
-            assert_eq!(s.active_preset.as_deref(), Some(want), "migrating {old}");
+            assert_eq!(s.active_preset.as_deref(), Some(old), "migrating {old}");
         }
+    }
+
+    #[test]
+    fn legacy_plain_themes_migrate_to_their_base_not_a_preset() {
+        // Light/Dark/Dim were the plain bases; they are the Mode section's
+        // buttons now, so the look survives as a bare base with no preset
+        // claiming it. "light" is the default base already and needs no
+        // branch at all.
+        for old in ["dark", "dim"] {
+            let json = format!(r#"{{"theme_id":"{old}"}}"#);
+            let mut s: Settings = serde_json::from_str(&json).unwrap();
+            sanitize(&mut s);
+            assert_eq!(s.active_preset, None, "migrating {old}");
+            let want = if old == "dark" { BaseMode::Dark } else { BaseMode::Dim };
+            assert_eq!(s.appearance.base, want, "migrating {old}");
+        }
+        let mut s: Settings = serde_json::from_str(r#"{"theme_id":"light"}"#).unwrap();
+        sanitize(&mut s);
+        assert_eq!(s.appearance.base, BaseMode::Light);
+        assert_eq!(s.active_preset, None);
     }
 
     #[test]
@@ -483,7 +517,7 @@ mod tests {
         // Nice-to-have that avoids a lying UI: if you dial the sliders to
         // exactly Green, the menu should say Green.
         let mut s = Settings::default();
-        s.apply_preset("light");
+        s.apply_preset("sepia");
         s.appearance = builtin_presets().into_iter().find(|p| p.id == "green").unwrap().appearance;
         s.touch_appearance();
         assert_eq!(s.active_preset.as_deref(), Some("green"));
@@ -500,6 +534,19 @@ mod tests {
         sanitize(&mut s);
         let ids: Vec<String> = s.user_presets.iter().map(|p| p.id.clone()).collect();
         assert_eq!(ids, vec!["good".to_string()]);
+    }
+
+    #[test]
+    fn a_stale_plain_base_selection_is_dropped_not_dangled() {
+        // Settings persisted while Light/Dark/Dim were presets carry their
+        // ids as `active_preset`; the sanitizer must clear the selection
+        // (the look itself lives in `appearance` and survives untouched)
+        // rather than leave the menu highlighting a swatch that no longer
+        // exists.
+        let mut s = Settings::default();
+        s.active_preset = Some("light".to_string());
+        sanitize(&mut s);
+        assert_eq!(s.active_preset, None);
     }
 
     #[test]
