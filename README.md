@@ -357,69 +357,55 @@ library under the viewer.
 
 ```
 src/
-  app/                   application root: bootstrap, routed shell, route glue
-  components/            the component system, by what each piece is used for
-    shared/              generic UI: button, icon, slider, segmented, tooltip,
-                         kbd, hue picker, popover, adaptive toolbar, option/menu rows
-    chrome/              title bar + floating document title
-    menus/               appearance menu (presets/base/texture/noise) and more menu
-    settings/            the reader settings modal: the shell, the shared tab
-                         chrome, and one module per tab (layout, theme, animations)
-    overlays/            toast host and drag-drop feedback
-    reader/              reader-only controls: page indicator, bottom controls, zoom
-    sidebar/             sidebar coordinator + header, book info, panel switcher
-    pdf/                 PDF-document UI: page canvas, page list, single/continuous
-                         views, page navigation, floating search, outline, thumbnails
-  features/              routes: library (page + shelf) and reader
-  state/                 reactive app state: app, viewer, library, open flow
-  effects/               cross-cutting reactive systems (appearance, fit/zoom,
-                         page tracking, search, shortcuts, theme, ...)
-  storage/               persistence: PdfStorage trait + localStorage backend
-crates/
-  pdf-core/              pure PDF/domain math (no wasm, no DOM, host-testable)
-  pdf-engine/            the wasm-bindgen bridge to pdf.js and Tauri
-  virtual-list/          generic virtualization algorithms (fenwick, chunked)
-public/
-  pdfEngine.js           the imperative engine wrapper
-  vendor/pdfjs/          vendored pdf.js build, worker, viewer CSS and cmaps
-  samples/               sample documents
-src-tauri/               native shell, capabilities, icons, bundle configuration
-styles/input.css         Tailwind v4 entry point and the full design system
-```
-
-### Project layout
-
-```
-src/
-  api/engine.rs         typed async wrappers over the engine bridge
-  core/                 pure logic, no wasm dependencies
-    appearance.rs       base mode, tint, texture, noise, and the CSS maths
-    bridge.rs           wasm-bindgen extern declarations
-    document.rs         document and outline types
-    filename.rs         display-name derivation rules
-    layout.rs           page offsets, column height, view mode
-    math.rs             zoom presets, clamping, fit calculations
-    oklch.rs            sRGB to OKLCH conversion
-    open_flow.rs        the open-document sequence
-    presets.rs          built-in and user presets
-    search.rs           search result types and index arithmetic
-    settings.rs         persisted schema and migration
-    state.rs            the reactive application state tree
+  main.rs                 mount entry point
+  app/                    bootstrap, routes, the shell that hosts the sidebar
   components/
-    atoms/              button, icon, slider, segmented, tooltip, kbd, hue picker
-    molecules/          toolbar, page nav, zoom controls, appearance and more menus
-    organisms/          sidebar, outline, thumbnails, search, toast, status bar
-    views/              single page, continuous, reader shell
-  effects/              cross-cutting reactive systems
-    continuous_scroll.rs, fit.rs, link_nav.rs, page_tracking.rs,
-    search_effects.rs, shortcuts.rs, theme_applier.rs
-  util/                 DOM helpers and storage access
+    primitives/           button, icon, switch, tooltip, popover, floating
+                          positioning, motion and interaction hooks
+    app_shell/            custom title bar, traffic lights, floating document
+                          title, the toolbar popover host
+    menus/                app menu, appearance menu, reader menu
+    settings/             the settings modal and its tabs (layout, theme,
+                          animations)
+    sidebar/              sidebar shell, header, switcher, document info,
+                          outline and thumbnails
+    document/             page canvas, page strip, the viewer and its scroll
+                          shells (continuous, single, two-page)
+    viewer_controls/      bottom bar, overlay scrollbar, page indicator,
+                          page navigation
+    search/               floating search bar and result list
+    ai/                   selection menu, word card, gloss popover
+    overlays/             drag-and-drop feedback, toast host
+  effects/
+    app/                  window title, shortcuts, persistence wiring
+    reader/               fit and zoom follow, page tracking
+    appearance.rs         the appearance-to-CSS bridge
+  features/
+    library/              the shelf: book cards, empty state, sorting
+    reader/               the reader page and its two virtualizers
+  state/                  the reactive state tree: app, reader, library, ui
+  services/               the document open pipeline, the AI chunk bridge
+  storage/                loads and saves over localStorage (settings,
+                          library, covers, gloss marks)
+  viewer/                 engine selection and the zoom coordinator
+crates/
+  pdf-core/               pure PDF domain math: the settings schema, the zoom
+                          ladder, fit, layout, filename rules, search index
+  pdf-engine/             wasm-bindgen bridge to the imperative engine
+  virtual-list/           generic windowing math: the prefix-sum strip,
+                          windows, budgets, anchor correction
+  virtual-list-leptos/    the Leptos adapter: virtualizer, rows, retention
 public/
-  pdfEngine.js          the imperative engine wrapper
-  vendor/pdfjs/         vendored pdf.js build, worker, viewer CSS and cmaps
-  samples/              sample documents
-src-tauri/              native shell, capabilities, icons, bundle configuration
-styles/input.css        Tailwind v4 entry point and the full design system
+  pdfEngine.ts            the imperative engine wrapper (bundled to .js)
+  engine/                 the engine modules the wrapper imports
+  vendor/pdfjs/           vendored pdf.js build, worker, viewer CSS, cmaps
+  samples/                sample documents used by the README and the smoke test
+src-tauri/                native shell, AI providers, capabilities, icons
+styles/
+  input.css               Tailwind v4 entry point assembling the design system
+  components/             shell, title bar, animations, ai, gloss, appearance
+scripts/                  engine bundling, version sync, engine smoke test
+tests/                    source-level tests (e.g. the conditional-class lint)
 ```
 
 ### Engine API

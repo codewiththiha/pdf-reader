@@ -67,11 +67,14 @@ jobs:
       # would fail on pre-existing code. A one-time formatting pass can be a
       # dedicated commit if desired.
       #
-      # Clippy is gated with `-D warnings`, but a small, documented allow-list
-      # carries the codebase's ESTABLISHED style (e.g. `clone_on_copy` for the
-      # idiomatic Leptos `state.clone()` on a `Copy` AppState). New code is
-      # still held to `-D warnings` — the allows only whitelist what already
-      # exists.
+      # Clippy is gated with `-D warnings`. The allow-list below is the complete
+      # set of lints this workspace trips today — re-derived by running the step
+      # with every `-A` removed, on the host and on the wasm frontend — and it
+      # carries ESTABLISHED style rather than new sloppiness (e.g.
+      # `clone_on_copy` for the idiomatic Leptos `state.clone()` on a `Copy`
+      # AppState). It is deliberately short: a lint that stops firing should be
+      # dropped from here, not left as a permanent exemption.
+      # New code is still held to `-D warnings`.
 
       - name: Clippy (deny warnings)
         run: |
@@ -79,19 +82,9 @@ jobs:
             -A clippy::clone_on_copy \
             -A clippy::field_reassign_with_default \
             -A clippy::collapsible_if \
-            -A clippy::unnecessary_map_or \
             -A clippy::redundant_closure \
-            -A clippy::let_unit_value \
-            -A clippy::match_result_ok \
             -A clippy::type_complexity \
-            -A clippy::needless_update \
-            -A clippy::map_flatten \
-            -A clippy::manual_pattern_char_comparison \
-            -A clippy::int_plus_one \
-            -A clippy::unit_arg \
-            -A clippy::assertions_on_constants \
-            -A clippy::doc_lazy_continuation \
-            -A clippy::derivable_impls
+            -A clippy::assertions_on_constants
 
       # --workspace, not a bare `cargo test`: the manifest root is also the
       # `pdf-reader` package, so a bare run tests only the app and silently
