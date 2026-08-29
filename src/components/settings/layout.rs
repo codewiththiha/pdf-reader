@@ -146,9 +146,19 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Remove the spacing between pages in scroll view".to_string()
                 />
             </Row>
+            // No Gap suspends the margin rather than zeroing it: the readout
+            // greys out and the stepper stops while the gap owns the spacing,
+            // and the margin the reader dialled in comes back the moment No
+            // Gap turns off again.
             <Row label="Page Margin">
                 <span class="flex items-center gap-3">
-                    <span class="w-10 text-right text-sm tabular-nums text-ink">
+                    <span class=move || {
+                        if s.with(|st| st.layout.no_gap) {
+                            "w-10 text-right text-sm tabular-nums text-muted/60"
+                        } else {
+                            "w-10 text-right text-sm tabular-nums text-ink"
+                        }
+                    }>
                         {move || {
                             let m = s.with(|st| st.layout.page_margin) as u32;
                             if m == 0 {
@@ -164,7 +174,10 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             size=14
                             title="Less margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || s.with(|st| st.layout.page_margin) <= 0.0)
+                            disabled=Signal::derive(move || {
+                                s.with(|st| st.layout.no_gap)
+                                    || s.with(|st| st.layout.page_margin) <= 0.0
+                            })
                             on_click=move || {
                                 s.update(|st| {
                                     st.layout.page_margin =
@@ -177,7 +190,10 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             size=14
                             title="More margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
-                            disabled=Signal::derive(move || s.with(|st| st.layout.page_margin) >= 64.0)
+                            disabled=Signal::derive(move || {
+                                s.with(|st| st.layout.no_gap)
+                                    || s.with(|st| st.layout.page_margin) >= 64.0
+                            })
                             on_click=move || {
                                 s.update(|st| {
                                     st.layout.page_margin =
