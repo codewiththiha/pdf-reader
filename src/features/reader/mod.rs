@@ -1,4 +1,5 @@
 pub mod page;
+pub(crate) mod rail;
 pub(crate) mod virtualizers;
 
 pub use page::ReaderPage;

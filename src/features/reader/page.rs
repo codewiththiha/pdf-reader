@@ -21,13 +21,8 @@ use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
 use crate::components::primitives::icon::{Icon, IconName};
 use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::tooltip::Tooltip;
-use crate::components::sidebar::Sidebar;
-use crate::components::sidebar::document_info::BookInfo;
-use crate::components::sidebar::header::SidebarHeader;
-use crate::components::sidebar::outline_view::SidebarOutline;
-use crate::components::sidebar::shell::{SidebarChromeCtx, request_reveal_active, sidebar_paint};
-use crate::components::sidebar::switcher::PanelSwitcher;
-use crate::components::sidebar::thumbnails_view::SidebarThumbs;
+use crate::components::sidebar::shell::{SidebarChromeCtx, sidebar_paint};
+use crate::features::reader::rail::ReaderRail;
 use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
 use crate::components::viewer_controls::page_indicator::PageIndicator;
 use crate::effects::reader::navigation_sync::navigation_sync;
@@ -161,16 +156,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     });
     // The bar's left inset, the native traffic lights and the floating label
     // all follow the RAIL, not the layout mode: a floating rail covers the same
-    // top-left pixels as a docked one, so the bar yields the same way (its band
-    // starts after the rail, the lights stay lit, and the label gets out).
+    // top-left pixels as a docked one, so the label gets out of the way for
+    // either. The bar itself only yields to a DOCKED rail — see
+    // `app_title_bar.rs`.
     let rail_painted = paint.present;
     provide_context(SidebarChromeCtx {
         present: rail_painted,
     });
-    // Floating, and on screen: the rail covers the bar's left cluster, which
-    // is why that cluster steps out (see `left` below). `SidebarChromeCtx`
-    // carries only the paint; who yields to the rail is the page's decision.
-    let floating_rail = Signal::derive(move || rail_painted.get() && overlay_sb.get());
 
     let sb_request_show = RwSignal::new(0u32);
     let sb_request_hide = RwSignal::new(0u32);
@@ -194,21 +186,23 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
 
     // Left: sidebar toggle + Library. Title is centered; right is appearance +
-    // settings + the 3-dash view menu. While a FLOATING rail is up this whole
-    // cluster is put out of sight — the rail owns that side of the window and its
-    // header carries the traffic-light inset, so the bar stays clean instead of
-    // stacking controls under a rail that covers them. `invisible`, not
-    // unmounted: the row keeps its left edge (and `#toolbar-leading`, the
-    // measurement anchor the library title uses) exactly where it is.
+    // settings + the 3-dash view menu.
+    //
+    // Overlay mode drops the toggle: the rail opens by brushing the window's
+    // left edge and closes from its own header, so a second switch in the bar
+    // only competes with both. The Library button stays exactly where it is —
+    // the rail floats above the bar and covers it while it is up, which is the
+    // rail's job, not this cluster's. The cluster is always mounted so the row
+    // keeps its left edge (and `#toolbar-leading`, the measurement anchor the
+    // library title uses) wherever the mode puts it.
     let left = move || {
         view! {
             <div
                 id=TOOLBAR_LEADING_ID
                 data-tauri-drag-region="true"
                 class="flex shrink-0 items-center gap-1"
-                class=("invisible", move || floating_rail.get())
             >
-                <Show when=move || state.ui.sidebar.get() == SidebarMode::None>
+                <Show when=move || !overlay_sb.get() && state.ui.sidebar.get() == SidebarMode::None>
                     <Tooltip text="Toggle sidebar">
                         <Button
                             on_click=move |_| state.ui.sidebar.set(SidebarMode::Thumbs)
@@ -251,13 +245,16 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
     };
 
-    // The overlay rail's three shapes, as literals rather than an
-    // interpolation: the class list is the contract the aside keeps too, and a
-    // `format!` per frame invites a token to go missing.
-    const OVERLAY_INERT: &str = "contents";
-    const OVERLAY_STATIC: &str = "absolute inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl";
+    // The floating rail's two shapes, as literals rather than an interpolation:
+    // the class list is the contract the aside keeps too, and a `format!` per
+    // frame invites a token to go missing.
+    //
+    // `fixed`, not `absolute`: this wrapper sits OUTSIDE `.reader-bg` (see the
+    // note in `features/reader/rail.rs`), so there is no positioned ancestor
+    // left to resolve against and the viewport is the honest box.
+    const OVERLAY_STATIC: &str = "fixed inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl";
     const OVERLAY_SLIDES: &str = concat!(
-        "absolute inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl",
+        "fixed inset-y-0 left-0 z-[var(--z-popover)] shadow-2xl",
         " transition-transform duration-300 ease-in-out"
     );
 
@@ -276,58 +273,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                             on:mouseenter=move |_| sb_request_show.update(|n| *n += 1)
                         />
                     </Show>
-                    <div
-                        class=move || {
-                            if !overlay_sb.get() {
-                                OVERLAY_INERT
-                            } else if no_slide.get() {
-                                OVERLAY_STATIC
-                            } else {
-                                OVERLAY_SLIDES
-                            }
-                        }
-                        class=(
-                            "-translate-x-full",
-                            move || overlay_sb.get() && state.ui.sidebar.get() == SidebarMode::None,
-                        )
-                        on:mouseenter=move |_| sb_request_show.update(|n| *n += 1)
-                        on:mouseleave=move |_| sb_request_hide.update(|n| *n += 1)
-                    >
-                        <Sidebar
-                            mode=state.ui.sidebar
-                            no_slide=no_slide
-                            header=move || view! { <SidebarHeader reader=vs sidebar=state.ui.sidebar /> }
-                            info_row=move || view! { <BookInfo reader=vs covers=state.library.covers /> }
-                            panels=move || view! {
-                                <SidebarOutline
-                                    state=vs
-                                    sidebar=state.ui.sidebar
-                                    shown=paint.show_outline
-                                    outro=paint.is_closed
-                                    intro=paint.intro
-                                />
-                                <SidebarThumbs
-                                    state=vs
-                                    sidebar=state.ui.sidebar
-                                    // Cells mount with the aside. Cached thumbs
-                                    // blit during the slide; cold cells retain their
-                                    // skeleton until their capped render completes.
-                                    live=Signal::derive(move || paint.thumbs_live.get())
-                                    shown=paint.show_thumbs
-                                    outro=paint.is_closed
-                                    intro=paint.intro
-                                />
-                            }
-                            footer=move || view! {
-                                <PanelSwitcher
-                                    mode=state.ui.sidebar
-                                    thumbs_active=paint.thumbs_active
-                                    outline_active=paint.outline_active
-                                    on_reveal=request_reveal_active
-                                />
-                            }
-                        />
-                    </div>
+                    // DOCKED: the rail is a flex sibling of `<main>`, so the
+                    // page gives up the width. `contents` drops the wrapper out
+                    // of the box tree so the `<aside>` is the flex item itself.
+                    <Show when=move || !overlay_sb.get()>
+                        <div class="contents">
+                            <ReaderRail state=state paint=paint no_slide=no_slide />
+                        </div>
+                    </Show>
                     <main
                         id=VIEWER_SLOT_ID
                         class="relative min-w-0 flex-1 overflow-hidden"
@@ -367,12 +320,36 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                     </main>
                 </div>
             </div>
+            // OVERLAY: the rail mounts OUTSIDE `.reader-bg`, for the reason the
+            // modal below spells out. `.reader-bg` is a stacking context at
+            // z-index 0, so a rail inside it paints under the title bar's band
+            // and hands the band its whole 48px header — the close, search and
+            // More buttons live there, and so do the native traffic lights,
+            // which the header's 88px gutter reserves for them. Out here its
+            // own z-popover outranks the bar, so the rail covers the bar's left
+            // corner (the Library button included) and takes the lights with
+            // it, and the bar reads as one full-width surface either way.
+            <Show when=move || overlay_sb.get()>
+                <div
+                    class=move || if no_slide.get() { OVERLAY_STATIC } else { OVERLAY_SLIDES }
+                    class=(
+                        "-translate-x-full",
+                        move || state.ui.sidebar.get() == SidebarMode::None,
+                    )
+                    on:mouseenter=move |_| sb_request_show.update(|n| *n += 1)
+                    on:mouseleave=move |_| sb_request_hide.update(|n| *n += 1)
+                >
+                    <ReaderRail state=state paint=paint no_slide=no_slide />
+                </div>
+            </Show>
             // The settings modal belongs to the window, not to the viewer: as a
             // child of `main` it sat inside `.reader-bg`, which is a stacking
             // context (position:relative + z-index:0), so the title bar's band
             // — a SIBLING of `.reader-bg` at z-bar — painted over the top of an
             // open modal. As a sibling of the page, its own z-popover token
-            // outranks the bar, which is what a modal is supposed to do.
+            // outranks the bar, which is what a modal is supposed to do. It
+            // also renders after the floating rail, so it wins their shared
+            // z-popover token and still covers it.
             <SettingsModal state=state open=settings_open />
         </AppTitleBar>
     }

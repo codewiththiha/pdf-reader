@@ -43,10 +43,16 @@ pub fn TitleBar(
     on_pin_change: Callback<bool>,
     /// Extra hold from outside the bar (e.g. the open floating search).
     extra_hold: Signal<bool>,
-    /// True while something on the left (the sidebar) owns the left inset:
-    /// the hover band starts at `left-72` and the row drops its traffic-light
-    /// padding.
+    /// True while something on the left (a DOCKED sidebar) owns the left
+    /// inset, so the hover band starts at `left-72`. A rail that floats over
+    /// the bar takes the corner from it instead, and the band keeps the full
+    /// window width.
     band_inset: Signal<bool>,
+    /// True while the row reserves the 88px gutter the native traffic lights
+    /// live in. Off when a docked rail has taken that corner over, and off
+    /// where there are no lights to clear — the leading control then moves
+    /// left into the space they would have occupied.
+    lights_gutter: Signal<bool>,
     #[prop(into)] left: ViewFn,
     /// Centered overlay (e.g. the document title). Absolute-positioned over the
     /// row so left/right clusters keep their natural layout. Defaults to empty.
@@ -98,12 +104,14 @@ pub fn TitleBar(
     let enter_bar = enter;
     let leave_bar = leave;
     let sidebar_open = move || band_inset.get();
+    let gutter = move || lights_gutter.get();
 
     view! {
         <>
             {children()}
             // Hover band = the whole titlebar area (grab zone), but NEVER over
-            // the sidebar: `left-72` while the sidebar is open.
+            // a DOCKED sidebar: `left-72` while it is open. A floating rail
+            // paints above the band, so the band stays full width under it.
             <div
                 class=format!("absolute top-0 right-0 {BAR} h-12")
                 class=("left-72", sidebar_open)
@@ -120,9 +128,11 @@ pub fn TitleBar(
                     on:mouseenter=move |_| enter_bar()
                     on:mouseleave=move |_| leave_bar()
                     class="toolbar-glass relative flex h-full items-center gap-2 pr-2 transition-opacity duration-200"
-                    // 88px clears the lights (x:20 + ~54px) + a real gap.
-                    class=("pl-[88px]", move || !sidebar_open())
-                    class=("pl-3", sidebar_open)
+                    // 88px clears the lights (x:20 + ~54px) + a real gap. Where
+                    // there are no lights to clear the leading control takes
+                    // that space instead of leaving it empty.
+                    class=("pl-[88px]", gutter)
+                    class=("pl-3", move || !gutter())
                     class=("opacity-0", move || !visible.get())
                     class=("pointer-events-none", move || !visible.get())
                 >

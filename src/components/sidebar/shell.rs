@@ -114,15 +114,22 @@ pub(crate) fn sidebar_is_present(mode: SidebarMode, collapsing: bool) -> bool {
 #[derive(Clone, Copy)]
 pub struct SidebarChromeCtx {
     /// The rail is on screen: open, or its close slide still running — in
-    /// DOCKED or in overlay mode. The title bar's left inset, the native
-    /// traffic lights and the floating label key off this, which is why it is
-    /// not "the docked column": a floating rail covers the same pixels and
-    /// steals the same chrome.
+    /// DOCKED or in overlay mode. The floating label and the native traffic
+    /// lights key off this directly: a rail of either kind covers the window's
+    /// top-left corner, so the label gets out of the way and the lights are
+    /// hosted by the rail's own header gutter. Only the title bar's left inset
+    /// is docked-only — an overlay rail floats above the bar and takes the
+    /// corner from it instead of the bar yielding (see
+    /// `app_shell/app_title_bar.rs`).
     pub present: Signal<bool>,
 }
 
 /// Paint flags derived from the open/close slide. The page composes
 /// the panel hosts with these; the shell itself only owns the aside.
+///
+/// `Copy` because the flags are read from both rail mount points (see
+/// `features/reader/rail.rs`) and from the page's own effects.
+#[derive(Clone, Copy)]
 pub struct SidebarPaint {
     pub show_outline: Signal<bool>,
     pub show_thumbs: Signal<bool>,
@@ -134,8 +141,8 @@ pub struct SidebarPaint {
     /// never delays thumbnail-cell mounting.
     pub intro: Signal<bool>,
     /// The sidebar still occupies chrome space: open OR mid-close-slide.
-    /// Title-bar inset and native traffic lights derive from this so they
-    /// release when the slide lands, not on the first frame of the close.
+    /// Whatever yields to the rail derives from this so it releases when the
+    /// slide lands, not on the first frame of the close.
     pub present: Signal<bool>,
 }
 

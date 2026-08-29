@@ -1,6 +1,7 @@
 //! Row 1 of the sidebar: close toggle, floating-search toggle, More menu.
 //! Always visible while the sidebar is open (not hover-gated) — the sidebar
-//! is the native traffic lights' home.
+//! is the native traffic lights' home whenever it is painted, docked or
+//! floating, so the gutter is not conditional on the layout mode.
 
 use leptos::prelude::*;
 
