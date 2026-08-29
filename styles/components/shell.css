@@ -118,6 +118,29 @@ body {
     align-items: center;
     gap: 0.5rem;                /* gap-2 */
   }
+  /* --- toast anchor ------------------------------------------------------
+     The ONE centering mechanism for every toast host: the app-root error host
+     and the gloss undo toast both use it, so they cannot drift apart in
+     placement. Fixed, full-width, flex-centered, and lifted 4rem because the
+     reader's auto-hide bottom bar is h-10 (2.5rem) at `bottom-0`.
+
+     Centering is deliberately flexbox, NOT `left: 50%` plus a half-width
+     transform. Tailwind v4 writes `translate-x-*` to the `translate` property
+     while an entrance keyframe animates `transform` — both apply, so a toast
+     that centered itself with `-translate-x-1/2` *and* a `translateX(-50%)`
+     keyframe sat a full half-width left of centre. With no transform in the
+     geometry there is nothing to double-count, and the reduced-motion nets
+     that strip the entrance cannot move the panel either. */
+  .toast-anchor {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 4rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding-inline: 1rem;         /* px-4, so a long message never touches an edge */
+  }
   .surface-toast {
     border-radius: 0.75rem;     /* rounded-xl */
     border: 1px solid var(--color-line);
