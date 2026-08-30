@@ -194,12 +194,22 @@ body {
 .reader-bg.blend::before {
   content: "";
   position: absolute;
-  inset: 0;
+  /* Oversized on purpose: the layer is translated by the scroll position so
+     its pattern phase tracks the column; the 64px overhang (max page margin)
+     hides the moving edge on every side. */
+  inset: -64px;
   pointer-events: none;
   opacity: var(--texture-opacity, 0.9);
-  --tex-scale: var(--texture-scale-user, 1); /* backdrop is not zoomed */
+  /* SAME pitch as .pdf-page::before (zoom x user scale) and SAME phase as the
+     column: the layer's origin sits at the top of page 1 in document space,
+     so translating it by the live scroll keeps backdrop and page texture
+     pixel-locked in every view mode and at every zoom — fit width, fit page,
+     stepped zooms and mid-zoom alike. The vars are written per-frame from
+     effects/reader/blend_backdrop.rs (blend_texture_sync). */
+  --tex-scale: calc(var(--backdrop-scale, 1) * var(--texture-scale-user, 1));
   --tex-unit: calc(26px * var(--tex-scale));
   --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  transform: translate3d(calc(-1 * var(--backdrop-x, 0px)), calc(-1 * var(--backdrop-y, 0px)), 0);
   background-origin: border-box;
   background-position: 0 0;
 }

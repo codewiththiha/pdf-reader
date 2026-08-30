@@ -32,10 +32,13 @@
 //! (geometry) stays with ReaderPage, where the virtualizer's scroll lives.
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 use pdf_core::layout::ViewMode;
 use pdf_paper::{PaperConfig, DEFAULT_EDGE_WIDTH};
 
+use crate::components::primitives::hooks::dom::h_page_list;
+use crate::components::primitives::hooks::use_window_event::add_window_capture_listener;
 use crate::state::AppState;
 
 /// Settings → the session: the blend switch plus the mode / area / scan
@@ -102,6 +105,61 @@ pub fn blend_backdrop(state: AppState) {
         // blend is on, and the column can be a thousand heights deep.
         let pos = heights.with(|column| paper_position(column, gap, scroll, viewport_h));
         pdf_engine::paper::position(if pos > 0.0 { pos } else { f64::from(page) });
+    });
+}
+
+/// The blend backdrop's texture must be the SAME texture the pages wear —
+/// same pitch (zoom × user scale) and same phase (scroll position) — or the
+/// "one surface" illusion breaks at every page edge. The backdrop's `::before`
+/// hangs off the viewer box, whose top edge is the top of page 1 in document
+/// space, so `(zoom, scroll-x, scroll-y)` is all the state it needs.
+///
+/// The vars are read by `styles/components/shell.css` (`.reader-bg.blend::before`)
+/// and are harmless when blend mode is off (that rule only applies under
+/// `.blend`). Written per frame from here so the backdrop pitch follows a zoom
+/// and its phase follows a scroll, matching `.pdf-page::before`'s
+/// `--tex-scale: var(--scale-factor) * var(--texture-scale-user)`.
+pub fn blend_texture_sync(state: AppState) {
+    let viewer = state.reader.viewer;
+    let hscroll = RwSignal::new(0.0_f64);
+
+    // Horizontal strip scroll is not mirrored into state; sample it on the
+    // capture phase exactly like the gloss anchor watch does.
+    add_window_capture_listener("scroll", move |_| {
+        if viewer.mode.get_untracked() != ViewMode::ScrollHorizontal {
+            return;
+        }
+        let x = h_page_list()
+            .map(|el| el.scroll_left() as f64)
+            .unwrap_or(0.0);
+        if (x - hscroll.get_untracked()).abs() > 0.5 {
+            hscroll.set(x);
+        }
+    });
+
+    Effect::new(move |_| {
+        let scale = viewer.zoom.display.get();
+        // Mode-gate BOTH scroll axes: `scroll_top` is only written in the
+        // vertical strip and `hscroll` only in the horizontal strip, so a
+        // switch would leave the other axis holding a stale value and push
+        // the backdrop off the page it just aligned to. Reading `mode` here
+        // also re-runs this on a mode swap, which is when a stale axis most
+        // needs zeroing.
+        let (x, y) = match viewer.mode.get() {
+            ViewMode::ScrollVertical => (0.0, viewer.scroll_top.get()),
+            ViewMode::ScrollHorizontal => (hscroll.get(), 0.0),
+            _ => (0.0, 0.0), // single/spread: no programmatic scroll
+        };
+        let Some(el) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.document_element())
+        else {
+            return;
+        };
+        let style = el.unchecked_into::<web_sys::HtmlElement>().style();
+        let _ = style.set_property("--backdrop-scale", &format!("{scale:.6}"));
+        let _ = style.set_property("--backdrop-x", &format!("{x:.1}px"));
+        let _ = style.set_property("--backdrop-y", &format!("{y:.1}px"));
     });
 }
 
