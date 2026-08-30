@@ -22,6 +22,9 @@ fn default_gloss_opacity() -> f64 { 0.4 }
 fn default_page_margin() -> f64 { 0.0 }
 fn default_label_max_pct() -> f64 { 100.0 }
 fn default_custom_gloss() -> String { "#a58af0".into() }
+fn default_startup_fit() -> crate::math::FitMode {
+    crate::math::FitMode::Page
+}
 
 fn is_hex6(s: &str) -> bool {
     let b = s.as_bytes();
@@ -69,6 +72,11 @@ pub struct LayoutSettings {
     pub floating_label_style: FloatingLabelStyle,
     #[serde(default = "on_true")]
     pub progress_bar: bool,
+    /// The fit mode applied when a document opens (or a book resumes): how the
+    /// reader sizes the first page. `FitMode::Page` fits the whole page; `Width`
+    /// fits the width. `None` is not a valid startup mode.
+    #[serde(default = "default_startup_fit")]
+    pub default_fit: crate::math::FitMode,
     /// Remove the vertical gap between pages in scroll view.
     #[serde(default)]
     pub no_gap: bool,
@@ -128,6 +136,7 @@ impl Default for LayoutSettings {
             floating_label: true,
             floating_label_style: FloatingLabelStyle::FileName,
             progress_bar: true,
+            default_fit: default_startup_fit(),
             no_gap: false,
             auto_scale: true,
             auto_resize: true,
@@ -446,6 +455,11 @@ pub fn sanitize(settings: &mut Settings) {
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
     settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
     settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
+    // A startup fit of `None` is meaningless (the reader would not know how to
+    // size the first page); retry to the default `FitMode::Page`.
+    if settings.layout.default_fit == crate::math::FitMode::None {
+        settings.layout.default_fit = default_startup_fit();
+    }
     settings.layout.floating_label_max_pct =
         settings.layout.floating_label_max_pct.clamp(10.0, 100.0);
     // The paper knobs clamp through the crate's own bounds so the scan
@@ -641,6 +655,8 @@ mod tests {
         assert_eq!(s.blend_scope, PaperMode::Fixed);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
+        // Startup fit defaults to Fit Page.
+        assert_eq!(s.default_fit, crate::math::FitMode::Page);
 
         // Deserializing empty JSON layout object fills in the defaults. A
         // blob saved BEFORE `auto_resize` existed is exactly this shape, so
@@ -656,8 +672,17 @@ mod tests {
         assert_eq!(s.blend_scope, PaperMode::Fixed);
         assert_eq!(s.blend_area, PaperArea::WholePage);
         assert_eq!(s.blend_scan_pages, pdf_paper::DEFAULT_SCAN_PAGES);
+        assert_eq!(s.default_fit, crate::math::FitMode::Page);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
+    }
+
+    #[test]
+    fn a_startup_fit_of_none_is_reset_to_page() {
+        let mut s = Settings::default();
+        s.layout.default_fit = crate::math::FitMode::None;
+        sanitize(&mut s);
+        assert_eq!(s.layout.default_fit, crate::math::FitMode::Page);
     }
 
     #[test]

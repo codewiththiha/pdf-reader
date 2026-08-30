@@ -9,8 +9,12 @@ use crate::components::document::shells::scroll_shell::ScrollShell;
 use crate::state::ReaderState;
 
 #[component]
-pub fn ScrollHorizontalLayout(state: ReaderState, virtualizer: Virtualizer) -> impl IntoView {
-    let progress_visible = Signal::derive(|| false);
+pub fn ScrollHorizontalLayout(
+    state: ReaderState,
+    virtualizer: Virtualizer,
+    #[prop(into)]
+    progress_visible: Signal<bool>,
+) -> impl IntoView {
     view! {
         <ScrollShell
             state=state

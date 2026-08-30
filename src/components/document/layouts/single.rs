@@ -13,7 +13,11 @@ use crate::components::primitives::hooks::dom::SINGLE_PAGE_CONTAINER_ID;
 use crate::state::{ReaderState, TextureSignal};
 
 #[component]
-pub fn SingleLayout(state: ReaderState) -> impl IntoView {
+pub fn SingleLayout(
+    state: ReaderState,
+    #[prop(into)]
+    progress_visible: Signal<bool>,
+) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
     // Hosts live at the live display scale; the crisp raster follows
@@ -22,7 +26,7 @@ pub fn SingleLayout(state: ReaderState) -> impl IntoView {
     let gesture_owns = state.viewer.gesture_owns();
 
     view! {
-        <PageShell state=state scroller_id=SINGLE_PAGE_CONTAINER_ID>
+        <PageShell state=state scroller_id=SINGLE_PAGE_CONTAINER_ID progress_visible=progress_visible>
             <For
                 each=move || std::iter::once(state.viewer.page.get())
                 key=|p: &u32| *p

@@ -47,6 +47,20 @@ impl NavSyncState {
     }
 }
 
+/// The page a strip's dominant item (0-based index) corresponds to, SAFELY.
+///
+/// The naive `dominant as u32 + 1` is a real footgun: a strip that has not
+/// yet resolved a window (a freshly-mounted mode flip, a mid-fit measure)
+/// can report a sentinel or out-of-range index, and if that index is
+/// `usize::MAX` the `as u32 + 1` WRAPS to 0 — so a view-mode change would
+/// reset the reader to page 0, which reading-progress then persisted over
+/// the real position. Clamping to `[1, page_count]` makes a momentary
+/// no-window read harmless instead of destructive.
+fn page_from_dominant(dominant: usize, num_pages: u32) -> u32 {
+    let raw = dominant.saturating_add(1) as u64;
+    raw.clamp(1, u64::from(num_pages.max(1))) as u32
+}
+
 /// How a page-to-scroll jump should travel: gliding while the reader's scroll
 /// switch allows it, in one step when it does not. Read UNTRACKED, because the
 /// flag that stops a jump gliding must not be what re-runs the jump.
@@ -149,7 +163,7 @@ pub fn navigation_sync(
             if mode.get() != ViewMode::ScrollVertical {
                 return;
             }
-            let dominant = v.dominant().get() as u32 + 1;
+            let dominant = page_from_dominant(v.dominant().get(), state.document.num_pages.get());
             // During a zoom transaction the virtualizer's window is frozen,
             // but a mid-zoom wheel can still rewindow and move the dominant
             // item through no fault of the reader. The zoom anchor already
@@ -242,7 +256,7 @@ pub fn navigation_sync(
             if mode.get() != ViewMode::ScrollHorizontal {
                 return;
             }
-            let dominant = v.dominant().get() as u32 + 1;
+            let dominant = page_from_dominant(v.dominant().get(), state.document.num_pages.get());
             // Tracked for the same reason as the vertical arm: a follow keeps
             // the window frozen for a whole burst, and this is what catches the
             // page up when it lands.
@@ -369,5 +383,21 @@ mod tests {
         assert_eq!(gate.admit(10, true), None);
         assert_eq!(gate.admit(20, true), None);
         assert_eq!(gate.admit(20, false), Some((20, false)));
+    }
+
+    /// The view-mode-change regression: a strip that reports a sentinel index
+    /// (no window resolved yet) maps to a real page, never to 0.
+    #[test]
+    fn a_sentinel_dominant_index_never_becomes_page_zero() {
+        // usize::MAX used to wrap to 0 through `as u32 + 1`.
+        assert_eq!(page_from_dominant(usize::MAX, 300), 300);
+        // A truly empty strip reads as page 1 (the first page), not 0.
+        assert_eq!(page_from_dominant(0, 300), 1);
+        // An index beyond the book clamps to the last page.
+        assert_eq!(page_from_dominant(999, 50), 50);
+        // With no pages known yet, everything clamps to page 1.
+        assert_eq!(page_from_dominant(999, 0), 1);
+        // Ordinary indices round-trip.
+        assert_eq!(page_from_dominant(41, 300), 42);
     }
 }

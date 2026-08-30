@@ -9,7 +9,11 @@ use crate::components::primitives::hooks::dom::DUAL_PAGE_CONTAINER_ID;
 use crate::state::{ReaderState, TextureSignal};
 
 #[component]
-pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
+pub fn SpreadLayout(
+    state: ReaderState,
+    #[prop(into)]
+    progress_visible: Signal<bool>,
+) -> impl IntoView {
     let texture =
         use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
     // Hosts live at the live display scale; the crisp raster follows
@@ -18,7 +22,7 @@ pub fn SpreadLayout(state: ReaderState) -> impl IntoView {
     let gesture_owns = state.viewer.gesture_owns();
 
     view! {
-        <PageShell state=state scroller_id=DUAL_PAGE_CONTAINER_ID>
+        <PageShell state=state scroller_id=DUAL_PAGE_CONTAINER_ID progress_visible=progress_visible>
             <For
                 each=move || std::iter::once({
                     let p = state.viewer.page.get().max(1);

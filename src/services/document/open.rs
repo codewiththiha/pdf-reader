@@ -20,7 +20,7 @@ use pdf_engine::types::{DocStatus, PageSize};
 use pdf_core::filename::display_name;
 use pdf_core::layout::TOOLBAR_H;
 use crate::state::library::{self, CoverImage, RecentBook};
-use pdf_core::math::{fit_scale, FitMode};
+use pdf_core::math::fit_scale;
 use crate::state::{AppState, Toast};
 use crate::storage::{save_covers, save_library};
 
@@ -156,9 +156,10 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.gloss.selection_active.set(false);
                 state.reader.gloss.selected_marks.set(std::collections::HashSet::new());
 
-                // Resume point (clamped to the real count — a re-edited
-                // document may have fewer pages than remembered).
-                let resume = saved_page.min(num_pages.max(1));
+                // Resume point (clamped to the real count AND at least page 1 —
+                // a re-edited document may have fewer pages than remembered, and
+                // a stale/transient saved 0 must never resume before the book).
+                let resume = saved_page.clamp(1, num_pages.max(1));
 
                 // Fresh-open baseline: page 1, top of the column. The resume
                 // jump happens AFTER the view mounts (see below), because
@@ -175,7 +176,12 @@ pub fn open_path(state: AppState, path: String) {
                 // this correction. Baseline first, mount second.
                 state.reader.viewer.page.set(1);
                 state.reader.viewer.scroll_top.set(0.0);
-                state.reader.viewer.fit.set(FitMode::Width);
+                // The startup fit mode is a user setting (Fit Page / Fit Width),
+                // not a hard-coded fit-width. `sanitize` has already replaced a
+                // persisted `None` with the default, so this is always a real
+                // fit mode here.
+                let startup_fit = state.settings.with(|s| s.layout.default_fit);
+                state.reader.viewer.fit.set(startup_fit);
                 // Heights belong to the document that was just closed; leaving
                 // them would have the zoom coordinator anchor against a stale
                 // column on the first gesture. ReaderPage re-seeds them from
@@ -183,7 +189,7 @@ pub fn open_path(state: AppState, path: String) {
                 state.reader.document.metrics.css_heights.set(Vec::new());
                 let (cw, ch) = state.reader.viewer.container_size.get();
                 let s =
-                    fit_scale(FitMode::Width, cw, ch, page1.width, page1.height, TOOLBAR_H, 1.0);
+                    fit_scale(startup_fit, cw, ch, page1.width, page1.height, TOOLBAR_H, 1.0);
                 // Seeding the zoom state is correct HERE and nowhere else:
                 // this is the initial scale for a brand-new document, so
                 // there is no layout to animate from and nothing to anchor

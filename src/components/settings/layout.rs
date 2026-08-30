@@ -5,6 +5,7 @@
 
 use leptos::prelude::*;
 
+use pdf_core::math::FitMode;
 use pdf_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
 
 use crate::components::settings::common::{Row, StyleSelect};
@@ -135,6 +136,24 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                         s.update(|st| st.layout.progress_bar = v);
                     })
                     title="Reading progress bar".to_string()
+                />
+            </Row>
+            <Row label="Default Fit">
+                <StyleSelect
+                    value=Signal::derive(move || s.with(|st| st.layout.default_fit))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.default_fit = v);
+                    })
+                    options=vec![
+                        (FitMode::Page, "Fit Page"),
+                        (FitMode::Width, "Fit Width"),
+                    ]
+                    label_of=|v: &FitMode| match v {
+                        FitMode::Page => "Fit Page",
+                        FitMode::Width => "Fit Width",
+                        FitMode::None => "Fit Page",
+                    }
+                    disabled=Signal::derive(move || false)
                 />
             </Row>
             <Row label="No Gap">

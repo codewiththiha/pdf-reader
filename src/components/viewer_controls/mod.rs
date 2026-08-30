@@ -4,3 +4,4 @@ pub mod bottom_bar;
 pub mod overlay_scrollbar;
 pub mod page_indicator;
 pub mod page_navigation;
+pub mod reading_progress;

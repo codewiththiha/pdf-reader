@@ -30,14 +30,18 @@ pub fn Viewer(
     let mode = state.viewer.mode;
     view! {
         {move || match mode.get() {
-            ViewMode::Single => view! { <SingleLayout state=state /> }.into_any(),
-            ViewMode::Spread => view! { <SpreadLayout state=state /> }.into_any(),
+            ViewMode::Single => view! {
+                <SingleLayout state=state progress_visible=progress_visible />
+            }.into_any(),
+            ViewMode::Spread => view! {
+                <SpreadLayout state=state progress_visible=progress_visible />
+            }.into_any(),
             ViewMode::ScrollVertical => view! {
                 <ScrollVerticalLayout state=state virtualizer=virtualizer_view.get_value() progress_visible=progress_visible />
             }
             .into_any(),
             ViewMode::ScrollHorizontal => view! {
-                <ScrollHorizontalLayout state=state virtualizer=h_virtualizer_view.get_value() />
+                <ScrollHorizontalLayout state=state virtualizer=h_virtualizer_view.get_value() progress_visible=progress_visible />
             }
             .into_any(),
         }}

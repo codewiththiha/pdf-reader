@@ -37,6 +37,12 @@ pub fn reading_progress(state: AppState) {
         let Some(path) = path else {
             return;
         };
+        // Never record an invalid position: a page of 0 (or one past the
+        // document) is a transient that escaped the syncs, and persisting it
+        // would make the next open resume there.
+        if page == 0 || page > state.reader.document.num_pages.get_untracked() {
+            return;
+        }
 
         // No-op write guard: only touch the library when the page actually
         // moved, so the page-tracking syncs (which can re-write an equal page)

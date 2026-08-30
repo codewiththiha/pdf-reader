@@ -12,10 +12,10 @@ use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 
 use crate::components::document::PageStrip;
-use crate::components::primitives::floating::types::z::CONTROLS;
 use crate::components::primitives::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
 use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
+use crate::components::viewer_controls::reading_progress::ReadingProgress;
 use crate::state::ReaderState;
 
 #[component]
@@ -84,12 +84,21 @@ pub fn ScrollShell(
 
     let total_size = virtualizer.total_size();
     let scroll_offset = virtualizer.scroll_offset();
+    // One reading-progress definition for both axes: the strip offset divided by
+    // the AVAILABLE travel along the strip's own axis (total extent minus the
+    // viewport's extent on that axis). Horizontal uses the width, vertical the
+    // height — the axis-generic `container_size` holds both so the same math
+    // serves either.
     let progress = move || {
         let st = scroll_offset.get();
-        let (_, vh) = state.viewer.container_size.get();
+        let (cw, ch) = state.viewer.container_size.get();
+        let extent = match axis {
+            Axis::Vertical => ch,
+            Axis::Horizontal => cw,
+        };
         let total = total_size.get();
-        if total > vh && total > 0.0 {
-            (st / (total - vh)).clamp(0.0, 1.0)
+        if total > extent && total > 0.0 {
+            (st / (total - extent)).clamp(0.0, 1.0)
         } else {
             0.0
         }
@@ -108,17 +117,8 @@ pub fn ScrollShell(
                 scroller_id=scroller_id
                 horizontal=axis == Axis::Horizontal
             />
-            <Show when=move || axis == Axis::Vertical && progress_visible.get()>
-                <div
-                    class=format!(
-                        "pointer-events-none absolute inset-x-0 bottom-0 {CONTROLS} h-0.5"
-                    )
-                >
-                    <div
-                        class="h-full bg-accent/80 transition-[width] duration-100"
-                        style:width=move || format!("{}%", progress() * 100.0)
-                    ></div>
-                </div>
+            <Show when=move || progress_visible.get()>
+                <ReadingProgress fraction=Signal::derive(move || progress()) />
             </Show>
         </div>
     }
