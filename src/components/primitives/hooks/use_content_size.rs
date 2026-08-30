@@ -8,15 +8,13 @@
 //! itself (which is what shows up as a scroll cursor the user has to reopen
 //! to clear):
 //! * a reactive one — when a tracked signal changes (a streamed snapshot
-//!   patches content in, the word wraps differently), the effect defers one
-//!   frame and re-reads the twin's `scroll_height`;
+//!   patches content in, the word wraps differently), the effect re-reads the
+//!   twin's `scroll_height`;
 //! * a layout one — a `ResizeObserver` on the twin fires whenever the twin's
 //!   own box actually changes height (a font swap, a section appearing, the
 //!   answer streaming in), independent of whether a tracked signal changed.
 //!   This is what covers the very first appearance, where the twin is read
-//!   before content is present and the deferred reactive read is missed:
-//!   without it the card opens at the *pre-content* height and only grows on
-//!   a re-open.
+//!   before content is present and the deferred reactive read is missed.
 
 use leptos::{html, prelude::*};
 
@@ -27,21 +25,39 @@ use super::use_resize_observer::use_resize_observer;
 /// the card's spring for less than 2px would just throb.
 const JITTER_PX: f64 = 2.0;
 
-/// A deferred, jitter-guarded write of the twin's current height to the
-/// signal. Deferred one frame so the twin has already reflected the new
-/// content by the time it is read.
+/// The height the card should adopt, or `None` when the move is beneath the
+/// jitter gate. Kept pure (no DOM, no signal) so the guard that swallowed the
+/// stale re-read in the shimmer race is unit-testable on the host.
+fn accepted_height(current: f64, next: f64) -> Option<f64> {
+    ((current - next).abs() > JITTER_PX).then_some(next)
+}
+
+/// A jitter-guarded write of the twin's current height to the signal.
 fn write_height(el: &web_sys::HtmlDivElement, content_height: RwSignal<f64>) {
-    // Clone into the deferred closure: it must be `'static`, and the borrow
-    // it wraps is scoped to this call.
-    let el = el.clone();
-    request_animation_frame(move || {
-        let next = el.scroll_height() as f64;
-        content_height.update(|h| {
-            if (*h - next).abs() > JITTER_PX {
-                *h = next;
-            }
-        });
+    let next = el.scroll_height() as f64;
+    content_height.update(|h| {
+        if let Some(next) = accepted_height(*h, next) {
+            *h = next;
+        }
     });
+}
+
+/// Measure now AND on the next frame.
+///
+/// The synchronous read is the correctness half: when a content signal flips
+/// (a streamed snapshot lands), the twin is patched in place, and the
+/// `ResizeObserver` reaction for that same change can run in the frame before
+/// this effect's rAF. If the observer writes the new height first, a rAF-only
+/// read then sees an unchanged number and the jitter gate swallows the write —
+/// leaving `content_height` at the stale (shimmer) height so the card never
+/// grows to fit the streamed text. Reading `scroll_height` synchronously here
+/// cannot lose that ordering, because it happens in the same flush as the
+/// content write. The extra rAF is the settling half: it catches font/scrollbar
+/// layout that lands one frame later.
+fn measure(el: &web_sys::HtmlDivElement, content_height: RwSignal<f64>) {
+    let el = el.clone();
+    write_height(&el, content_height);
+    request_animation_frame(move || write_height(&el, content_height));
 }
 
 /// Returns the live height signal fed by the measure twin.
@@ -56,7 +72,7 @@ pub fn use_content_size(measure_ref: NodeRef<html::Div>, read: impl Fn() + 'stat
     Effect::new(move |_| {
         read();
         if let Some(el) = measure_ref.get() {
-            write_height(&el, content_height);
+            measure(&el, content_height);
         }
     });
 
@@ -67,9 +83,31 @@ pub fn use_content_size(measure_ref: NodeRef<html::Div>, read: impl Fn() + 'stat
     let observer_ref = measure_ref;
     use_resize_observer(observer_ref, move |_| {
         if let Some(el) = measure_ref.get() {
-            write_height(&el, content_height);
+            measure(&el, content_height);
         }
     });
 
     content_height
+}
+
+#[cfg(test)]
+mod tests {
+    use super::accepted_height;
+
+    #[test]
+    fn the_jitter_gate_drops_sub_2px_noise() {
+        // A 1px settle is the browser's sub-pixel rounding, not a real change:
+        // it must not re-flow the card's spring.
+        assert_eq!(accepted_height(400.0, 401.0), None);
+        assert_eq!(accepted_height(400.0, 399.0), None);
+    }
+
+    #[test]
+    fn a_real_height_change_is_accepted() {
+        assert_eq!(accepted_height(150.0, 400.0), Some(400.0));
+        assert_eq!(accepted_height(400.0, 150.0), Some(150.0));
+        // The gate is strict: a move of exactly the gate width is still noise.
+        assert_eq!(accepted_height(400.0, 402.0), None);
+        assert_eq!(accepted_height(400.0, 402.1), Some(402.1));
+    }
 }
