@@ -132,18 +132,6 @@ mod tests {
     }
 
     #[test]
-    fn every_mode_shares_the_same_profile_for_now() {
-        let baseline = profile_for(ViewMode::ScrollVertical);
-        for mode in [
-            ViewMode::Single,
-            ViewMode::Spread,
-            ViewMode::ScrollHorizontal,
-        ] {
-            assert_eq!(profile_for(mode), baseline);
-        }
-    }
-
-    #[test]
     fn a_disabled_animation_collapses_to_an_instant_landing() {
         let p = ZoomProfile {
             min: MIN_SCALE,

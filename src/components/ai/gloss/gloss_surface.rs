@@ -25,11 +25,11 @@ use pdf_core::math::smoothstep;
 use pdf_core::settings::GlossDensity;
 
 use crate::components::ai::types::{AiError, AiPhase, GlossPhase, WordInfo};
-use crate::components::ai::word_info::WordInfoSections;
 use crate::components::primitives::floating::floating_card::FloatingCard;
 use crate::components::primitives::floating::types::FloatBox;
 
 use super::placement::CARD_WIDTH;
+use super::word_info::WordInfoSections;
 
 #[component]
 pub fn GlossSurface(

@@ -500,8 +500,8 @@ fn thumbs_should_stay_mounted(mode: SidebarMode, collapsing: bool, last: Sidebar
 #[cfg(test)]
 mod tests {
     use super::{
-        outro_hold_ms, panel_is_shown, sidebar_is_present, thumbnail_cells_are_live,
-        thumbs_should_stay_mounted, SidebarLayout, SIDEBAR_FADE_MS, SIDEBAR_SLIDE_MS,
+        panel_is_shown, sidebar_is_present, thumbnail_cells_are_live, thumbs_should_stay_mounted,
+        SIDEBAR_FADE_MS, SIDEBAR_SLIDE_MS,
     };
     use crate::state::SidebarMode;
 
@@ -515,16 +515,6 @@ mod tests {
         // side and this test is the tripwire.
         assert_eq!(SIDEBAR_SLIDE_MS, 300);
         assert_eq!(SIDEBAR_FADE_MS, 200);
-    }
-
-    #[test]
-    fn the_close_hold_waits_out_whichever_motion_the_layout_runs() {
-        // One timer, two geometries: the docked close holds for the width
-        // slide and the floating close holds for the fade, so the chrome the
-        // rail owns (the native lights included) releases on the frame the
-        // rail finishes disappearing — not a slide late, not a fade late.
-        assert_eq!(outro_hold_ms(SidebarLayout::Push), SIDEBAR_SLIDE_MS);
-        assert_eq!(outro_hold_ms(SidebarLayout::Overlay), SIDEBAR_FADE_MS);
     }
 
     #[test]

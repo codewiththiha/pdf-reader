@@ -1,9 +1,13 @@
+//! The word card's BODY: the AI answer sections (meaning, synonyms, usages)
+//! rendered at the chosen density. Sits inside `gloss/` because the gloss
+//! surface is its only consumer — the measure twin renders it headless to
+//! predict the card's height.
+
 use leptos::prelude::*;
 use pdf_core::settings::GlossDensity;
 
+use crate::components::ai::types::WordInfo;
 use crate::components::primitives::feedback::shimmer::LoadingShimmer;
-
-use super::types::WordInfo;
 
 /// The body's density-dependent class sets: the gap between sections, the
 /// meaning's line height and the gap between usage examples. One tuple per
