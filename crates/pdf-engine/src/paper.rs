@@ -140,11 +140,20 @@ pub fn configure(blend_on: bool, mut config: PaperConfig) {
     config.sanitize();
     let (area_changed, mode_now_continuous, reseed_page) = with(|s| {
         let area_changed = s.config.area != config.area;
-        // Blend switched on with a book already open: nothing knows this
-        // book's colours yet (the stash was gated off, so no interim; a
-        // mid-session flip must not wait for the next page turn to learn
-        // the current page's paper).
-        let reseed_page = if !s.blend_on && blend_on && s.doc_path.is_some() {
+        let mode_changed = s.config.mode != config.mode;
+        // A colour-affecting setting flipped while a book is already open:
+        // turning blend on, changing the detection AREA, or switching the
+        // paper MODE. In each case the session's current answer is stale or
+        // gone — an area change clears everything (so the backdrop would fall
+        // back to the theme paper), a mode flip switches the resolver, and a
+        // blend-on flip comes in cold. Sample the page under the reader's
+        // cursor NOW, so the backdrop re-detect and repaint on the spot
+        // instead of waiting for the next scroll tick or page render to show
+        // a frame and publish.
+        let reseed_page = if s.doc_path.is_some()
+            && blend_on
+            && (area_changed || mode_changed || !s.blend_on)
+        {
             Some(s.position.floor().max(1.0) as u32)
         } else {
             None

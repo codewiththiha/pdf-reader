@@ -44,14 +44,18 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
     });
 
     // A press inside the surface is the card's own interaction; anywhere else
-    // collapses an expanded card (compact chips stay put).
+    // collapses an expanded card (compact chips stay put). A press on the
+    // mark stroke is the SAME request as the card (it is what reopens it), so
+    // it is excluded too: without this it fired the outside-collapse on
+    // pointerdown and then REOPENED on the follow-up click — the card would
+    // fold and immediately pop back rather than toggle closed.
     use_dismiss(
         ctrl.geometry.surface_visible.into(),
         ctrl.commands.collapse_to_mark,
         DismissPolicy {
             escape: false,
             outside: Some(DismissTrigger::PointerDown),
-            exclude_selectors: vec![".gloss-surface"],
+            exclude_selectors: vec![".gloss-surface", ".gloss-mark"],
             enabled: None,
             topmost_only: false,
         },
