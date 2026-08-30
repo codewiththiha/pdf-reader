@@ -753,6 +753,29 @@ impl Virtualizer {
             .set(self.inner.options.retention_grace_ms);
     }
 
+    /// Drop every retained zombie whose grace has already expired, publishing
+    /// the change so its DOM (and the engine surface it holds) unmounts.
+    ///
+    /// The ordinary path handles this with the expiry timer armed by each
+    /// eviction. That timer is per-eviction bookkeeping on the item's owner,
+    /// however, so a zombie retained around a zoom can outlive the transaction
+    /// that raised its grace and sit on a large (recently zoomed) bitmap until
+    /// the window moves. The zoom-settle hook calls this once the grace window
+    /// closes, so a zoom's retained surfaces are released right after the
+    /// commit instead of after the next scroll.
+    pub fn prune_retained_now(&self) {
+        let now = now_ms();
+        let active = self.inner.core.borrow().range();
+        let mut retained = self.inner.retained.borrow_mut();
+        let before = retained.len();
+        *retained = prune_retained(std::mem::take(&mut *retained), active, now);
+        let changed = before != retained.len();
+        drop(retained);
+        if changed {
+            self.inner.retained_version.update(|v| *v += 1);
+        }
+    }
+
     /// Zoom: multiply every size by `factor` while keeping the viewport center pinned.
     pub fn rescale(&self, factor: f64, new_sizes: impl Fn(usize) -> f64) {
         let step = self.inner.core.borrow_mut().rescale(factor, &new_sizes);

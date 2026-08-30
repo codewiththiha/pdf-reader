@@ -38,8 +38,8 @@
 //!   debounce and land through the ordinary transition, and a page-only change
 //!   must NOT follow the layout per frame:
 //!   scrolling through a book of alternating sizes would re-fit at every row
-//!   boundary. It posts the fit when a fit owns the scale and the
-//!   shrink-to-fit ceiling when the reader zoomed by hand, so neither case is
+//!   boundary. It posts the fit when a fit owns the scale and the reader's
+//!   own `desired` when they zoomed by hand, so neither case is
 //!   left stale against the page under the eyes. Choosing or dropping a fit is
 //!   the one event it does not postpone: that is a click, and a click answers
 //!   in the frame it lands. With Auto Resize off the page dependency is not
@@ -166,11 +166,11 @@ pub fn fit_watcher(state: AppState) {
 /// Follow the space the page has, frame by frame. This is what makes the
 /// sidebar slide and the window drag MOVE the canvas instead of snapping it
 /// when the drag ends, and it covers both readers: while a fit mode is active
-/// the follow re-fits, and while the reader has zoomed by hand it carries the
-/// chosen zoom across the change (`min(desired, fit-width)`), so the page
-/// shrinks out of the rail's way and grows back to exactly where it was — loss
-/// both ways, because the ceiling is computed from the remembered `desired` and
-/// never from the live scale times a container ratio.
+/// the follow re-fits, and while the reader has zoomed by hand it keeps the
+/// chosen zoom (`desired`, clamped) — a page the reader zoomed in on stays at
+/// that scale across the change and overflows with a scroll affordance rather
+/// than being snapped back to the fit width. The ceiling is computed from the
+/// remembered `desired` and never from the live scale times a container ratio.
 ///
 /// What following costs is memory, not frames: a held transaction raises the
 /// strip's eviction grace for as long as it is open, so a long burst keeps the

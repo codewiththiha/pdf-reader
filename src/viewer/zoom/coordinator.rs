@@ -124,8 +124,16 @@ impl ZoomController {
         let grace = use_debounce(
             Duration::from_millis(u64::from(config::ZOOM_GRACE_MS)),
             move || {
+                // Lower the grace back to its scroll default AND drop the
+                // zombies the zoom raised it for, in the same breath. The
+                // zoom's retained pages sit on large bitmaps; the per-item
+                // expiry timer can outlive the transaction, so this closes
+                // the window and releases their surfaces right after the
+                // commit instead of waiting for the next scroll.
                 grace_v.reset_retention_grace();
                 grace_hv.reset_retention_grace();
+                grace_v.prune_retained_now();
+                grace_hv.prune_retained_now();
             },
         );
         Effect::new(move |_| {

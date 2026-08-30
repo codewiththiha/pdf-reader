@@ -39,14 +39,22 @@ pub(super) struct NavSyncState {
     pub suppress: Rc<Cell<bool>>,
     /// A mode restore is in flight: the scroll→page sync must stand down so it
     /// does not read the not-yet-restored strip and clobber the preserved page.
-    pub defer: Rc<Cell<bool>>,
+    ///
+    /// A REACTIVE signal on purpose, not a `Cell`. The dominant arm reads it
+    /// as a dependency and returns early while it is up; when the restore
+    /// lands and it falls, that write re-runs the arm against the now-true
+    /// dominant. A `Cell` hand-off left the arm with no reason to re-run after
+    /// a mode flip, so the page counter sat on the pre-restore value until the
+    /// reader scrolled. Making it reactive closes that without re-introducing
+    /// the read-a-strip-mid-restore race the flag exists to prevent.
+    pub defer: RwSignal<bool>,
 }
 
 impl NavSyncState {
     fn new() -> Self {
         Self {
             suppress: Rc::new(Cell::new(false)),
-            defer: Rc::new(Cell::new(false)),
+            defer: RwSignal::new(false),
         }
     }
 }

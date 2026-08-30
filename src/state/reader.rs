@@ -160,14 +160,16 @@ pub enum ZoomCommand {
     /// Re-resolve the active fit mode (width / page) against the current
     /// window, view mode and page. Stands down when no fit mode is active.
     Refit,
-    /// Re-resolve a manual zoom against the current window: the effective
-    /// scale is `min(desired, fit-width)`, so a narrowed window shrinks the
-    /// page without ever forgetting the zoom the reader chose.
+    /// Re-resolve a manual zoom against the current window. The reader's
+    /// chosen `desired` is authoritative up to the clamp: a manual zoom is
+    /// never shrunk back to the fit width, so a page the reader zoomed in on
+    /// stays at that scale (and overflows with a scroll affordance, rather
+    /// than being cropped by a size the app chose).
     Constrain,
     /// The space around the page moved — a sidebar slide or a window drag.
     /// Resolves to whichever of the two above owns the scale (a fit mode when
-    /// one is active, the shrink-to-fit ceiling when the reader zoomed by
-    /// hand) and is posted on EVERY frame of the burst, because a scale that
+    /// one is active, the reader's own `desired` when they zoomed by hand) and
+    /// is posted on EVERY frame of the burst, because a scale that
     /// waits for the burst to end leaves the host wider than the box it now
     /// has to fit in and the flex engine squishes the paper. Its geometry
     /// lands in the frame it was asked for; its crisp render is held until the
@@ -205,8 +207,8 @@ pub struct ZoomTransition {
 /// modules. Three absolute scales, no ratios:
 ///
 /// - `desired` is what the reader asked for, independent of whether it
-///   currently fits (the shrink-to-fit ceiling reads it, the readout tooltip
-///   explains it).
+///   currently fits (it is the ceiling a manual zoom resolves to, and the
+///   readout tooltip explains it).
 /// - `display` is the live visual scale — the scale the reader is looking at
 ///   right now. It moves on every frame of a zoom, and it is what the readout,
 ///   the fit maths, the page hosts and the overlays read.

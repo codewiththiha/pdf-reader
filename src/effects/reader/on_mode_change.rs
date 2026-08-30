@@ -9,9 +9,6 @@
 //! changed. `defer` is the flag that tells that sync to stand down until the
 //! restore's scroll has landed.
 
-use std::cell::Cell;
-use std::rc::Rc;
-
 use leptos::prelude::*;
 
 use pdf_core::layout::ViewMode;
@@ -21,7 +18,10 @@ use crate::state::ReaderState;
 
 /// The shared "a mode restore is in flight" flag. Borrowed by the scroll→page
 /// sync (`navigation_sync`), which refuses to correct the page while it is set.
-pub(super) type DeferFlag = Rc<Cell<bool>>;
+///
+/// Reactive so that dropping it re-runs the scroll→page arm on the restored
+/// dominant, rather than leaving it standing down until the reader scrolls.
+pub(super) type DeferFlag = RwSignal<bool>;
 
 pub(super) fn on_mode_change(
     state: ReaderState,
