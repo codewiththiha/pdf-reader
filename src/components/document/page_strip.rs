@@ -18,6 +18,15 @@
 //! creates the scroller element this strip draws into. The page-host ids keep
 //! their per-axis prefixes (`cont-` / `hp-`) because the engine's selection
 //! and the AI gloss layer parse them back into page numbers.
+//!
+//! Cross-axis centering is the same rule in every layout: the page host is
+//! centred with an AUTO margin (`mx-auto` here, `my-auto` in the horizontal
+//! strip, `m-auto` in [`PageShell`]) rather than flex `justify-content` /
+//! `align-items`. An auto margin centres the page when it fits and degrades to
+//! start-alignment when it overflows, so a zoomed page that is wider (or
+//! taller) than the viewport scrolls to BOTH its edges — the near edge is
+//! never clipped. Flex centering instead overflows symmetrically, which makes
+//! the near edge unreachable: the whole point of the margin-auto degrade.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -135,7 +144,7 @@ pub fn PageStrip(
                                     let top = handle.with_value(|v| v.item_top(index));
                                     let dormant = dormant_signal(items.clone(), index);
                                     let style = move || format!(
-                                        "position:absolute;top:{}px;left:0;right:0;display:flex;justify-content:center;padding-inline:{}px",
+                                        "position:absolute;top:{}px;left:0;right:0;display:flex;padding-inline:{}px",
                                         top.get(), state.viewer.page_margin.get()
                                     );
                                     view! {
@@ -153,6 +162,7 @@ pub fn PageStrip(
                                                 render_text=true
                                                 on_geometry=on_geometry
                                                 gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
+                                                class="mx-auto"
                                             />
                                         </div>
                                     }
@@ -186,7 +196,7 @@ pub fn PageStrip(
                                     // top:0 — the strip owns the full window height and
                                     // the auto-hiding title bar overlays it, like Spread.
                                     let style = move || format!(
-                                        "position:absolute;top:0;left:{}px;height:100%;display:flex;align-items:center;padding-inline:{}px",
+                                        "position:absolute;top:0;left:{}px;height:100%;display:flex;padding-inline:{}px",
                                         left.get(), state.viewer.page_margin.get()
                                     );
                                     view! {
@@ -204,6 +214,7 @@ pub fn PageStrip(
                                                 render_text=true
                                                 on_geometry=on_geometry
                                                 gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
+                                                class="my-auto"
                                             />
                                         </div>
                                     }

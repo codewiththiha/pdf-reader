@@ -76,8 +76,10 @@ pub fn PageCanvas(
     host_id: String,
     /// Whether to build a text layer for selection + search highlights.
     render_text: bool,
-    /// Extra classes (e.g. absolute positioning in the continuous layout).
-    #[prop(default = String::new())]
+    /// Extra classes (e.g. absolute positioning in the continuous layout, or
+    /// the cross-axis `mx-auto`/`my-auto` that centres a page and degrades to
+    /// start-alignment on overflow).
+    #[prop(default = String::new(), into)]
     class: String,
     /// Called with (page, width, height) CSS px after each successful render.
     #[prop(optional)]
