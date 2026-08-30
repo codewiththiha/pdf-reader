@@ -74,7 +74,11 @@ glyphs reading straight through it.
     transparent
   );
   mix-blend-mode: multiply;
-  transition: box-shadow 150ms ease;
+  /* NO transition here. The stroke is a `mix-blend-mode` element: animating
+     its geometry or box-shadow re-composites the page backdrop under it on
+     every frame, which reads as the whole page shaking. The selection
+     feedback below deliberately fades OPACITY (a compositor-only, geometry-
+     stable property) and never touches transform or box-shadow. */
 }
 .pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
 :root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
@@ -97,36 +101,34 @@ glyphs reading straight through it.
 
 /* ---------------------------------------------------------------------
    Multi-select mode (long-press initiated). No checkboxes: selection is
-   pure colour. Unselected marks dim; selected marks read as inked-in —
-   solid accent pass, accent ring, soft glow — easing to rest the moment
-   they toggle. `pressing` is the instant feedback while the long-press is
-   still counting, and it is a smooth EASE, never a snap: a brightness jump
-   read as an AI-generated flicker, so the stroke instead blooms a soft ring
-   while it decides, turning the press into an invitation rather than a pop.
+   pure colour. Unselected marks dim; selected marks read as inked-in — a
+   solid accent pass, one hairline ring and a soft glow — with the emphasis
+   coming from how the tint sets in, not from moving the box.
+
+   EVERYTHING here animates opacity (or a background paint) ONLY. These are
+   `mix-blend-mode` strokes; animating their transform or box-shadow
+   re-composites the backdrop below them each frame and the page visibly
+   shivers. The selected ring/glow are STATIC (set on the state, never
+   tweened), and the turn-in is a pure opacity fade.
+
+   `pressing` is the instant feedback while the long-press is still
+   counting: a simple, quiet fade-in of the same tint — no brightness flicker,
+   no inflate-then-deflate.
 --------------------------------------------------------------------- */
 .pdf-page .glossLayer .gloss-mark-pressing {
-    transition-property: box-shadow, opacity;
-    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-    transition-duration: 220ms;
-    box-shadow:
-        0 0 0 2px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 58%, transparent),
-        0 0 14px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 20%, transparent);
+    transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity: 0.8;
 }
 
 .pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected) {
     opacity: 0.6;
-    transition: opacity 160ms ease, box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
-    animation: gloss-select-hint 340ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 160ms ease;
 }
 .pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected):hover {
     opacity: 0.92;
 }
 
-/* Defined AFTER the processing rules so it wins the animation tie. The
-   toggle is an INK, not an inflation: the stroke never inflates past its
-   resting size (the old scale pop read as stiff and gimmicky), it only
-   settles up to it — starting a hair small and easing to full — while the
-   ring and soft glow carry the emphasis instead. */
+/* Defined AFTER the processing rules so it wins the animation tie. */
 .pdf-page .glossLayer .gloss-mark-selected,
 :root.dark .pdf-page .glossLayer .gloss-mark-selected {
     background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 62%, transparent);
@@ -135,17 +137,7 @@ glyphs reading straight through it.
         0 0 3px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 45%, transparent),
         0 0 14px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 28%, transparent);
     opacity: 1;
-    animation: gloss-select-pop 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes gloss-select-hint {
-    0%   { box-shadow: 0 0 0 3px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 24%, transparent); }
-    100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--gloss-color, var(--color-accent)) 0%, transparent); }
-}
-
-@keyframes gloss-select-pop {
-    0%   { transform: scale(0.98); opacity: 0.88; }
-    100% { transform: scale(1); opacity: 1; }
+    transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Right-click menu, selection bar and undo toast entrances. */
@@ -178,12 +170,17 @@ glyphs reading straight through it.
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .pdf-page .glossLayer-selecting .gloss-mark,
-    .pdf-page .glossLayer .gloss-mark-selected,
     .pdf-page .glossLayer .gloss-mark-processing,
     .gloss-context-menu,
     .gloss-select-bar,
     .gloss-undo-toast {
         animation: none;
+    }
+    /* The gloss selection feedback is now opacity-only, which is already
+       compositor-quiet; under reduced motion it just snaps to rest. */
+    .pdf-page .glossLayer .gloss-mark-pressing,
+    .pdf-page .glossLayer-selecting .gloss-mark,
+    .pdf-page .glossLayer .gloss-mark-selected {
+        transition: none;
     }
 }

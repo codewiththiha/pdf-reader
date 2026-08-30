@@ -87,9 +87,15 @@ pub const MAX_GLOSS_CHARS: usize = 60;
 pub const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
 
 /// Whether `text` can be looked up as a word.
+///
+/// A dictionary look-up is a single token, not a phrase: the edges are
+/// trimmed, then the token must be non-empty, within the length cap, and free
+/// of ANY whitespace — an interior space means the reader selected several
+/// words (e.g. "quick brown"), which is not a word to explain. (Surrounding
+/// spaces the user grabbed by accident trim away and still count.)
 pub fn is_glossable(text: &str) -> bool {
     let t = text.trim();
-    !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS
+    !t.is_empty() && t.chars().count() <= MAX_GLOSS_CHARS && !t.chars().any(char::is_whitespace)
 }
 
 /// Whether `text` stays inside the menu's visible range. Callers use
@@ -199,6 +205,11 @@ mod tests {
         assert!(!is_glossable(&"a".repeat(MAX_GLOSS_CHARS + 1)));
         // Character count, not byte count: 60 emoji pass the gate.
         assert!(is_glossable(&"🙂".repeat(MAX_GLOSS_CHARS)));
+        // Interior whitespace is a phrase, not a word — rejected.
+        assert!(!is_glossable("quick brown"));
+        assert!(!is_glossable("  quick brown  "));
+        assert!(!is_glossable("note\ttab"));
+        assert!(!is_glossable("line\nbreak"));
     }
 
     #[test]

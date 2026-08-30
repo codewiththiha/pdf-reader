@@ -20,8 +20,10 @@ pub const CARD_GAP: f64 = 16.0;
 pub const CARD_MARGIN: f64 = 12.0;
 /// How far the card's midline sits BELOW the word's midline. Dead-centre on
 /// the line reads as pasted over it; a touch lower reads as attached to the
-/// word and hanging off it, the way a footnote hangs off its referent.
-pub const CARD_Y_BIAS: f64 = 12.0;
+/// word and hanging off it, the way a footnote hangs off its referent. The
+/// earlier 12 px felt closer to centred on the highlighted text; a larger
+/// drop makes the card visibly hang BELOW the word rather than straddle it.
+pub const CARD_Y_BIAS: f64 = 30.0;
 
 /// Side-aware placement: the card goes on whichever side of the highlight has
 /// more free space, never covering the stroke, hanging a touch below the
