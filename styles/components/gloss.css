@@ -9,10 +9,12 @@
 
    The look is deliberately quiet. The mark is ONE flat translucent pass of
    the reader's chosen gloss colour (a real highlighter does not gradient),
-   and thinking is a slow opacity pulse — the drift/sweep/halo stack it used
-   to wear was three animations doing one job. Every colour is mixed from
-   the user's gloss colour (or the live accent), so the stroke suits any
-   tint, on any text.
+   and every state — resting, thinking, pressed, selected — is a static
+   on/off paint change, NEVER an animation or transition. The stroke is a
+   `mix-blend-mode` element over the page canvas; animating it re-composites
+   the canvas each frame, which is the page shake. Every colour is mixed
+   from the user's gloss colour (or the live accent), so the stroke suits
+   any tint, on any text.
    ===================================================================== */
 
 :root {
@@ -74,11 +76,13 @@ glyphs reading straight through it.
     transparent
   );
   mix-blend-mode: multiply;
-  /* NO transition here. The stroke is a `mix-blend-mode` element: animating
-     its geometry or box-shadow re-composites the page backdrop under it on
-     every frame, which reads as the whole page shaking. The selection
-     feedback below deliberately fades OPACITY (a compositor-only, geometry-
-     stable property) and never touches transform or box-shadow. */
+  /* The stroke is a `mix-blend-mode` element sitting over the page canvas
+     (an opaque composited texture). ANIMATING it in any form — a pulse, a
+     fade, a box-shadow tween — forces the compositor to re-composite the
+     canvas under it on every frame, which reads as the page shivering. So
+     the stroke NEVER transitions or animates, in any state: every state
+     (hover, processing, pressing, selected, dimmed) is a plain on/off paint
+     change, applied once and then static. */
 }
 .pdf-page .glossLayer .gloss-mark::selection { background: transparent; }
 :root.dark .pdf-page .glossLayer .gloss-mark { mix-blend-mode: screen; }
@@ -87,48 +91,43 @@ glyphs reading straight through it.
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 40%, transparent);
   outline: none;
 }
-/* Processing: the stroke thinks — one slow opacity pulse, nothing else.
-   This is the ONLY processing UI; the surface stays unmounted until the
-   first chunk lands. */
+/* Processing: the stroke is being consulted — one static, quiet emphasis
+   (a thin ring), never a pulse. A pulse re-blends the stroke against the
+   canvas each frame = the shake. The card itself opens on the first chunk,
+   so this state is fleeting anyway. */
 .pdf-page .glossLayer .gloss-mark-processing,
 :root.dark .pdf-page .glossLayer .gloss-mark-processing {
-  animation: gloss-think 1.4s ease-in-out infinite;
-}
-@keyframes gloss-think {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.45; }
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 68%, transparent);
 }
 
 /* ---------------------------------------------------------------------
    Multi-select mode (long-press initiated). No checkboxes: selection is
    pure colour. Unselected marks dim; selected marks read as inked-in — a
-   solid accent pass, one hairline ring and a soft glow — with the emphasis
-   coming from how the tint sets in, not from moving the box.
+   solid accent pass, one hairline ring and a soft glow.
 
-   EVERYTHING here animates opacity (or a background paint) ONLY. These are
-   `mix-blend-mode` strokes; animating their transform or box-shadow
-   re-composites the backdrop below them each frame and the page visibly
-   shivers. The selected ring/glow are STATIC (set on the state, never
-   tweened), and the turn-in is a pure opacity fade.
+   EVERY state change below is a STATIC on/off paint change with NO
+   transition. These are `mix-blend-mode` strokes over the page canvas; any
+   transition (or animation) re-composites the canvas each frame while it
+   runs, which is the page shake. A single instant change recomposites once
+   and settles — that is stable.
 
    `pressing` is the instant feedback while the long-press is still
-   counting: a simple, quiet fade-in of the same tint — no brightness flicker,
-   no inflate-then-deflate.
+   counting: a quiet dim of the same tint — no brightness flicker, no
+   inflate-then-deflate.
 --------------------------------------------------------------------- */
 .pdf-page .glossLayer .gloss-mark-pressing {
-    transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
     opacity: 0.8;
 }
 
 .pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected) {
     opacity: 0.6;
-    transition: opacity 160ms ease;
 }
 .pdf-page .glossLayer-selecting .gloss-mark:not(.gloss-mark-selected):hover {
     opacity: 0.92;
 }
 
-/* Defined AFTER the processing rules so it wins the animation tie. */
+/* Defined AFTER the processing rules so it wins the tie (processing keeps
+   its ring). */
 .pdf-page .glossLayer .gloss-mark-selected,
 :root.dark .pdf-page .glossLayer .gloss-mark-selected {
     background: color-mix(in oklab, var(--gloss-color, var(--color-accent)) 62%, transparent);
@@ -137,7 +136,6 @@ glyphs reading straight through it.
         0 0 3px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 45%, transparent),
         0 0 14px color-mix(in oklab, var(--gloss-color, var(--color-accent)) 28%, transparent);
     opacity: 1;
-    transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Right-click menu, selection bar and undo toast entrances. */
@@ -170,17 +168,9 @@ glyphs reading straight through it.
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .pdf-page .glossLayer .gloss-mark-processing,
     .gloss-context-menu,
     .gloss-select-bar,
     .gloss-undo-toast {
         animation: none;
-    }
-    /* The gloss selection feedback is now opacity-only, which is already
-       compositor-quiet; under reduced motion it just snaps to rest. */
-    .pdf-page .glossLayer .gloss-mark-pressing,
-    .pdf-page .glossLayer-selecting .gloss-mark,
-    .pdf-page .glossLayer .gloss-mark-selected {
-        transition: none;
     }
 }
