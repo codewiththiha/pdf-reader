@@ -183,17 +183,16 @@ impl VirtualizerCore {
 
         let mut step = self.rewindow();
         step.layout_changed = rebuilt;
-        if rebuilt {
-            if scroll_write.is_none() {
-                step.scroll_write = self.settle_pending();
-            } else {
+        // The viewport's own scroll correction always wins over a pending
+        // scroll-to's landing write: the frame that moves the viewport IS the
+        // ground truth the pending target is being re-aimed against.
+        if scroll_write.is_some() {
+            if rebuilt {
                 self.refresh_pending_target();
             }
-        } else {
             step.scroll_write = scroll_write;
-        }
-        if scroll_write.is_some() {
-            step.scroll_write = scroll_write;
+        } else if rebuilt {
+            step.scroll_write = self.settle_pending();
         }
         step
     }

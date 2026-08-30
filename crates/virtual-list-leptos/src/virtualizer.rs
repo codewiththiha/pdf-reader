@@ -1,6 +1,6 @@
 //! The reactive adapter: [`use_virtualizer`] wires the pure
-//! [`crate::core::VirtualizerCore`] to Leptos signals, the scroll container,
-//! and two `ResizeObserver`s — applying the engine's [`crate::core::Step`]s
+//! [`crate::engine::VirtualizerCore`] to Leptos signals, the scroll container,
+//! and two `ResizeObserver`s — applying the engine's [`crate::engine::Step`]s
 //! with write-if-changed guards so nothing downstream re-renders unless the
 //! mounted window actually changed.
 
@@ -15,7 +15,7 @@ use web_sys::{Event, ResizeObserver, ResizeObserverEntry};
 
 use virtual_list::{Align, Viewport, Window};
 
-use crate::core::{CoreConfig, Step, VirtualizerCore, build_layout};
+use crate::engine::{CoreConfig, Step, VirtualizerCore, build_layout};
 use crate::observe::{raf, viewport_of};
 use crate::options::{ScrollMode, VirtualizerOptions};
 use crate::render::{VirtualItem, VirtualItemState, VirtualRow};

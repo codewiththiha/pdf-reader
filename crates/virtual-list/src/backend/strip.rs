@@ -5,6 +5,11 @@ use alloc::vec::Vec;
 use crate::units::{from_sub, to_sub};
 use crate::window::{Budget, Window};
 
+// The windowing/geometry math lives ONCE, in the `StripBackend` impl below
+// and the generic free functions in `super`. The inherent methods on `Strip`
+// are the documented f64 API; each delegates, none re-implements.
+use super::StripBackend;
+
 /// A column of variably-sized items separated by a fixed gap.
 ///
 /// Construct one with [`Strip::new`] (explicit sizes) or [`Strip::uniform`]
@@ -120,12 +125,7 @@ impl Strip {
 
     /// Average item extent — resolves [`crate::Overscan::Items`] budgets.
     pub fn mean_size(&self) -> f64 {
-        let len = self.len();
-        if len == 0 {
-            0.0
-        } else {
-            self.total() / len as f64
-        }
+        StripBackend::mean_size(self)
     }
 
     /// Index of the item whose span contains `pos`.
@@ -146,23 +146,7 @@ impl Strip {
     /// amortized `O(1)` when the position is the same as or adjacent to the
     /// previous frame.
     pub fn index_at(&self, pos: f64) -> usize {
-        let len = self.len();
-        if len == 0 || pos <= 0.0 {
-            return 0;
-        }
-        let p = to_sub(pos);
-        // Last item whose start is <= pos.
-        let idx = self.starts[..len]
-            .partition_point(|&s| s <= p)
-            .saturating_sub(1);
-        // If pos is at or past that item's end (i.e. in the gap below it, or
-        // exactly on its bottom edge), the next item now leads — except at the
-        // very end of the strip, which has no next item to report.
-        if self.starts[idx].saturating_add(self.size_sub(idx)) <= p && idx + 1 < len {
-            idx + 1
-        } else {
-            idx
-        }
+        StripBackend::index_at(self, pos)
     }
 
     /// [`Strip::index_at`] with a **hint** — the previous frame's result, which
@@ -297,29 +281,7 @@ impl Strip {
     /// lower bound is half-open. Returns `None` for an empty strip, a span with
     /// no extent, or when the span lies entirely within a gap.
     pub fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
-        let len = self.len();
-        if len == 0 {
-            return None;
-        }
-        let extent = extent.max(0.0);
-        if extent == 0.0 {
-            return None;
-        }
-        let bottom_sub = to_sub(top + extent);
-
-        // First candidate: the item containing `top`, which may end before it.
-        let mut first = self.index_at(top);
-        if self.starts[first].saturating_add(self.size_sub(first)) <= to_sub(top) {
-            first += 1;
-        }
-        if first >= len || self.starts[first] >= bottom_sub {
-            return None;
-        }
-        // Last item whose start is strictly below the bottom edge.
-        let last = self.starts[..len]
-            .partition_point(|&s| s < bottom_sub)
-            .saturating_sub(1);
-        (last >= first).then_some(Window { first, last })
+        super::overlapping(self, top, extent)
     }
 
     /// [`Strip::overlapping`] with a **hint** — see [`Strip::index_at_hinted`].
@@ -352,7 +314,7 @@ impl Strip {
     /// Shorthand for [`overlapping`](Self::overlapping) with the raw viewport.
     #[inline]
     pub fn visible(&self, scroll_top: f64, viewport: f64) -> Option<Window> {
-        self.overlapping(scroll_top, viewport)
+        super::visible(self, scroll_top, viewport)
     }
 
     /// Inclusive range of items to keep mounted.
@@ -434,27 +396,7 @@ impl Strip {
     /// Ties go to the lower index. Falls back to [`index_at`](Self::index_at)
     /// when the viewport has no extent.
     pub fn dominant(&self, scroll_top: f64, viewport: f64) -> usize {
-        if self.is_empty() {
-            return 0;
-        }
-        if viewport <= 0.0 {
-            return self.index_at(scroll_top);
-        }
-        let Some(win) = self.visible(scroll_top, viewport) else {
-            return self.index_at(scroll_top);
-        };
-        let bottom = scroll_top + viewport;
-        let mut best = win.first;
-        let mut best_cover = -1.0;
-        for i in win.iter() {
-            let top = from_sub(self.starts[i]);
-            let cover = (top + self.size(i)).min(bottom) - top.max(scroll_top);
-            if cover > best_cover {
-                best_cover = cover;
-                best = i;
-            }
-        }
-        best
+        super::dominant(self, scroll_top, viewport)
     }
 
     /// Change the size of a single item in `O(n)` time. Useful when an item
@@ -471,21 +413,7 @@ impl Strip {
     ///
     /// Does nothing if `index` is out of range or the new size equals the old.
     pub fn set_size(&mut self, index: usize, new_size: f64) -> f64 {
-        let len = self.len();
-        if index >= len {
-            return 0.0;
-        }
-        let old_size_sub = self.size_sub(index);
-        let new_size_sub = to_sub(new_size);
-        if new_size_sub == old_size_sub {
-            return 0.0;
-        }
-        let delta = new_size_sub.saturating_sub(old_size_sub);
-        // Shift every subsequent item's start by `delta`.
-        for i in (index + 1)..=len {
-            self.starts[i] = self.starts[i].saturating_add(delta);
-        }
-        from_sub(delta)
+        StripBackend::set_size(self, index, new_size)
     }
 
     /// Compute the new `scroll_top` to keep item `anchor_index` visually pinned
@@ -522,23 +450,6 @@ impl Strip {
         }
     }
 
-    // ---- internal helpers ------------------------------------------------
-
-    /// Size of item `index` in sub-pixels. No bounds check beyond a length
-    /// comparison; the caller is `&self` so the indices it derives are trusted.
-    #[inline]
-    fn size_sub(&self, index: usize) -> i64 {
-        let len = self.len();
-        if index >= len {
-            return 0;
-        }
-        let end = if index + 1 == len {
-            self.starts[len]
-        } else {
-            self.starts[index + 1].saturating_sub(self.gap)
-        };
-        end.saturating_sub(self.starts[index]).max(0)
-    }
 }
 
 impl super::StripBackend for Strip {

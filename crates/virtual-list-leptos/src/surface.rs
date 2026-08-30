@@ -13,7 +13,7 @@ use std::rc::Rc;
 use crate::options::Axis;
 use wasm_bindgen::JsCast;
 
-/// Executes scroll commands issued by [`crate::core::VirtualizerCore`].
+/// Executes scroll commands issued by [`crate::engine::VirtualizerCore`].
 pub trait ScrollSurface {
     /// Scroll so that content position `content_top` sits at the viewport's
     /// leading edge.
