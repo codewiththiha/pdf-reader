@@ -37,9 +37,10 @@ import { invalidatePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   cancelPaperWork,
-  setBlendPages,
-  setBlendProgress,
-  setBlendScope,
+  getCachedPaper,
+  samplePaperPage,
+  setPaper,
+  takePaperFrame,
 } from "./engine/paper";
 import { installSelectionTracker } from "./engine/selection";
 import {
@@ -245,9 +246,10 @@ globalThis.PDFReader = {
   clearHighlights,
   refreshTheme,
   setScrubMode,
-  setBlendScope,
-  setBlendPages,
-  setBlendProgress,
+  setPaper,
+  takePaperFrame,
+  samplePaperPage,
+  getCachedPaper,
   sweep: () => {
     sweepPdf();
   },

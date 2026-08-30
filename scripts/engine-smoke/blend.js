@@ -4,22 +4,23 @@ function paper() {
     const root = getEl("documentElement");
     return root.style.getPropertyValue("--pdf-paper");
 }
-/** Poll until `want` is the published paper (or fail after ~1s). */
-async function untilPaperIs(want, what) {
-    for (let i = 0; i < 100; i += 1) {
-        if (paper() === want)
-            return;
-        await new Promise((r) => setTimeout(r, 10));
-    }
-    throw new Error(`${what}: expected --pdf-paper ${want}, got ${paper() || "(none)"}`);
+/** The first pixel of a frame's data, as an rgb triple. */
+function firstPixel(data) {
+    return [data?.[0] ?? -1, data?.[1] ?? -1, data?.[2] ?? -1];
+}
+/** `a` within ±1 of `b` per channel (a downscaled uniform raster is exact,
+ * but the assertion stays tolerant to rounding by a single step). */
+function isColour(actual, want) {
+    return actual.every((v, i) => Math.abs(v - want[i]) <= 1);
 }
 export async function run() {
-    // A book whose first page is dark grey and whose other four are white:
-    // the single scope must find the dark page, the document scan must decide
-    // the book as a whole is white, and the continuous scope has two colours
-    // to blend between.
-    setFakePageColors({ 1: "#404040", 2: "#ffffff", 3: "#ffffff", 4: "#ffffff", 5: "#ffffff" });
-    // --- single scope: the first rendered page stands in for the book ------
+    // The colour DECISIONS (detection, the scan, the palette, the scroll
+    // interpolation) live in the pdf-paper crate behind the Rust paper session
+    // and are covered by cargo tests. This scenario walks the ENGINE side of
+    // the contract: the frames it hands over, the cache it keeps, and the
+    // --pdf-paper it paints when told to.
+    setFakePageColors({ 1: "#404040", 2: "#ffffff", 3: "#a0a0a0", 4: "#ffffff", 5: "#ffffff" });
+    // --- a live render parks its raw frame for the session to drain ----------
     const opened = await PDFReader.open("/fake/blend-book.pdf");
     if (!opened.ok)
         throw new Error("open failed: " + JSON.stringify(opened));
@@ -27,61 +28,95 @@ export async function run() {
     const rendered = await PDFReader.renderPage("blend-1-cv", 1.0, true);
     if (!rendered.ok)
         throw new Error("render failed: " + JSON.stringify(rendered));
+    const frame = PDFReader.takePaperFrame("blend-1-cv");
+    if (!frame || !frame.data)
+        throw new Error("a live render must stash a paper frame");
+    if (frame.page !== 1)
+        throw new Error("stashed frame should be page 1, got " + frame.page);
+    if (frame.width < 16 || frame.height < 16) {
+        throw new Error("stashed frame should be a real downscale, got " + frame.width + "x" + frame.height);
+    }
+    if (!isColour(firstPixel(frame.data), [0x40, 0x40, 0x40])) {
+        throw new Error("stashed frame carries the RAW page colour, got " + firstPixel(frame.data));
+    }
+    // The stash drains: a second take has nothing to give.
+    if (PDFReader.takePaperFrame("blend-1-cv") !== null) {
+        throw new Error("takePaperFrame must drain the stash");
+    }
+    console.log("paper frame stash ok: page 1's raw pixels handed over + drained");
+    // --- setPaper publishes; persist writes the per-document cache -----------
+    PDFReader.setPaper("#404040", false, "whole");
     if (paper() !== "#404040") {
-        throw new Error("single scope should publish page 1's colour, got " + paper());
+        throw new Error("setPaper should publish --pdf-paper, got " + paper());
     }
-    const cached = fakeLocalStorage.get("pdfreader.blend-paper.v1");
-    if (!cached || !cached.includes("\"single\":\"#404040\"")) {
-        throw new Error("single colour was not cached per document: " + String(cached));
+    if (fakeLocalStorage.has("pdfreader.blend-paper.v2")) {
+        throw new Error("persist=false must not write the cache");
     }
-    console.log("blend single ok: #404040 detected + cached");
-    // --- document scope: pooled buckets across every page -------------------
-    PDFReader.setBlendScope("document");
-    // The interim colour stays until the scan lands…
-    if (paper() !== "#404040") {
-        throw new Error("document scope must keep the interim colour, got " + paper());
+    PDFReader.setPaper("#faf4e8", true, "edges");
+    if (paper() !== "#faf4e8") {
+        throw new Error("persisting setPaper should still publish, got " + paper());
     }
-    // …then four white pages outvote the one dark page.
-    await untilPaperIs("#ffffff", "document scan");
-    const cachedDoc = fakeLocalStorage.get("pdfreader.blend-paper.v1");
-    if (!cachedDoc || !cachedDoc.includes("\"document\":\"#ffffff\"")) {
-        throw new Error("document colour was not cached per document: " + String(cachedDoc));
+    const cached = fakeLocalStorage.get("pdfreader.blend-paper.v2");
+    if (!cached || !cached.includes('"fixed":"#faf4e8"') || !cached.includes('"area":"edges"')) {
+        throw new Error("fixed colour was not cached per document: " + String(cached));
     }
-    console.log("blend document ok: pooled scan found #ffffff + cached");
-    // --- persistence: a reopen publishes from the cache, before any render --
+    console.log("paper publish ok: --pdf-paper set + colour cached under its area");
+    // --- the cache reads back; an unknown path misses -------------------------
+    const hit = PDFReader.getCachedPaper("/fake/blend-book.pdf");
+    if (!hit.ok || hit.hex !== "#faf4e8" || hit.area !== "edges") {
+        throw new Error("cache hit should restore colour + area, got " + JSON.stringify(hit));
+    }
+    const miss = PDFReader.getCachedPaper("/fake/other-book.pdf");
+    if (!miss.ok || miss.hex !== null || miss.area !== null) {
+        throw new Error("an unknown path must miss, got " + JSON.stringify(miss));
+    }
+    console.log("paper cache ok: hit restores colour + area, unknown path misses");
+    // --- offscreen samples carry the page's own paint -------------------------
+    const sample2 = await PDFReader.samplePaperPage(2);
+    if (!sample2.ok || !sample2.data || sample2.page !== 2) {
+        throw new Error("samplePaperPage(2) should resolve a frame, got " + JSON.stringify(sample2));
+    }
+    if (!isColour(firstPixel(sample2.data), [0xff, 0xff, 0xff])) {
+        throw new Error("page 2's sample should be white, got " + firstPixel(sample2.data));
+    }
+    const sample3 = await PDFReader.samplePaperPage(3);
+    if (!sample3.ok || !sample3.data || !isColour(firstPixel(sample3.data), [0xa0, 0xa0, 0xa0])) {
+        throw new Error("page 3's sample should be #a0a0a0, got " + firstPixel(sample3.data));
+    }
+    // A page that cannot answer (past the end) resolves {ok:true} with no
+    // frame — a skip for the scan, not an error.
+    const none = await PDFReader.samplePaperPage(99);
+    if (!none.ok || none.data) {
+        throw new Error("an out-of-range page must resolve a frameless ok, got " + JSON.stringify(none));
+    }
+    console.log("paper samples ok: offscreen pages 2 + 3 + a frameless skip past the end");
+    // --- a new document drops the previous book's undrained frames -----------
+    PDFReader.registerPage({ canvasId: "blend-2-cv", hostId: "blend-2-pg", page: 2 });
+    const r2 = await PDFReader.renderPage("blend-2-cv", 1.0, true);
+    if (!r2.ok)
+        throw new Error("render page 2 failed: " + JSON.stringify(r2));
+    const f2 = PDFReader.takePaperFrame("blend-2-cv");
+    if (!f2 || f2.page !== 2 || !isColour(firstPixel(f2.data), [0xff, 0xff, 0xff])) {
+        throw new Error("page 2's live frame should be white, got " + JSON.stringify(f2));
+    }
+    // Re-stash (a re-render at a new scale), then reopen: the stash must go.
+    const r2b = await PDFReader.renderPage("blend-2-cv", 1.5, true);
+    if (!r2b.ok)
+        throw new Error("re-render page 2 failed: " + JSON.stringify(r2b));
+    if (PDFReader.takePaperFrame("blend-2-cv") === null) {
+        throw new Error("the re-render should have re-stashed a frame");
+    }
     const reopened = await PDFReader.open("/fake/blend-book.pdf");
     if (!reopened.ok)
         throw new Error("reopen failed: " + JSON.stringify(reopened));
-    if (paper() !== "#ffffff") {
-        throw new Error("cached document colour should publish on open, got " + paper());
+    if (PDFReader.takePaperFrame("blend-2-cv") !== null) {
+        throw new Error("opening a document must drop the previous book's stash");
     }
-    console.log("blend cache ok: #ffffff restored with zero renders");
-    // --- continuous scope: per-page colours interpolated by progress -------
-    PDFReader.setBlendScope("continuous");
-    PDFReader.setBlendPages(1, 2); // look-ahead samples page 1 (#404040) and 2 (#ffffff)
-    await untilPaperIs("#404040", "continuous pair at rest");
-    PDFReader.setBlendProgress(0.5);
-    if (paper() !== "#a0a0a0") { // (64 + 255) / 2 = 159.5 → 160
-        throw new Error("continuous mid-blend should be #a0a0a0, got " + paper());
+    console.log("paper stash lifecycle ok: re-render re-stashes, reopen clears");
+    // --- clearing --------------------------------------------------------------
+    PDFReader.setPaper("", false, "whole");
+    if (paper() !== "") {
+        throw new Error("setPaper('') should remove --pdf-paper, got " + paper());
     }
-    PDFReader.setBlendProgress(1.0);
-    if (paper() !== "#ffffff") {
-        throw new Error("continuous at progress 1 should be page 2's colour, got " + paper());
-    }
-    // A page rendered in continuous mode feeds the palette too: page 3 renders
-    // (white), becomes the current page, and pairs with page 4 (white).
-    PDFReader.registerPage({ canvasId: "blend-3-cv", hostId: "blend-3-pg", page: 3 });
-    const r3 = await PDFReader.renderPage("blend-3-cv", 1.0, true);
-    if (!r3.ok)
-        throw new Error("render page 3 failed: " + JSON.stringify(r3));
-    PDFReader.setBlendPages(3, 4);
-    PDFReader.setBlendProgress(0.25);
-    await untilPaperIs("#ffffff", "white pair blend");
-    console.log("blend continuous ok: #404040 → #a0a0a0 → #ffffff by progress");
-    // Back to single: the scope the engine held all along is still cached.
-    PDFReader.setBlendScope("single");
-    if (paper() !== "#404040") {
-        throw new Error("returning to single should republish its colour, got " + paper());
-    }
-    console.log("blend scope switch back ok");
+    console.log("paper clear ok: empty hex removes --pdf-paper");
 }

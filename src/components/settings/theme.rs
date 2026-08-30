@@ -1,10 +1,13 @@
 //! The Theme tab of the reader settings modal: AI highlight palette (with a
-//! custom colour picker), gloss opacity and the word card's density.
+//! custom colour picker), gloss opacity, the word card's density — and the
+//! blend backdrop's paper settings, which are an appearance decision before
+//! they are a layout one: they decide what colour the reader looks at.
 
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_core::settings::{GlossColor, GlossDensity};
+use pdf_core::settings::{GlossColor, GlossDensity, PaperArea, PaperMode};
+use pdf_paper::{MAX_SCAN_PAGES, MIN_SCAN_PAGES};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
@@ -13,6 +16,7 @@ use crate::components::primitives::icon_button::IconButton;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
 use crate::components::primitives::section_label::SectionLabel;
 use crate::components::primitives::separator::Separator;
+use crate::components::primitives::switch::Switch;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::state::AppState;
 
@@ -21,6 +25,7 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
     let s = state.settings;
     let custom_open = RwSignal::new(false);
     let custom_anchor: NodeRef<html::Div> = NodeRef::new();
+    let blend_off = Signal::derive(move || !s.with(|st| st.layout.blend_mode));
 
     view! {
         <SectionLabel text="AI Appearance" />
@@ -148,6 +153,103 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                     />
                 </Row>
             </div>
+        </div>
+        <div class="mt-5"><Separator vertical=false /></div>
+        <SectionLabel text="Paper" />
+        <div class="divide-y divide-line rounded-xl border border-line">
+            <Row label="Blend Mode">
+                <Switch
+                    checked=Signal::derive(move || s.with(|st| st.layout.blend_mode))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.blend_mode = v);
+                    })
+                    title="Paint the reader background with the page's own paper \
+                           colour, through the same filter the pages use"
+                        .to_string()
+                />
+            </Row>
+            <Row label="Paper Mode">
+                <StyleSelect
+                    value=Signal::derive(move || s.with(|st| st.layout.blend_scope))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.blend_scope = v);
+                    })
+                    options=vec![
+                        (PaperMode::Fixed, "Fixed"),
+                        (PaperMode::Continuous, "Continuous"),
+                    ]
+                    label_of=|v: &PaperMode| v.label()
+                    disabled=blend_off
+                />
+            </Row>
+            <Row label="Detection">
+                <StyleSelect
+                    value=Signal::derive(move || s.with(|st| st.layout.blend_area))
+                    on_change=Callback::new(move |v| {
+                        s.update(|st| st.layout.blend_area = v);
+                    })
+                    options=vec![
+                        (PaperArea::WholePage, "Whole Page"),
+                        (PaperArea::Edges, "Edges"),
+                    ]
+                    label_of=|v: &PaperArea| v.label()
+                    disabled=blend_off
+                />
+            </Row>
+            // The fixed scan's page budget: at most this many pages are
+            // sampled for the book's one colour. It applies to the NEXT scan
+            // — a colour already found (or cached) is not re-derived.
+            <Row label="Scan Pages">
+                <span class="flex items-center gap-3">
+                    <span class=move || {
+                        if s.with(|st| st.layout.blend_mode) {
+                            "w-14 text-right text-sm tabular-nums text-ink"
+                        } else {
+                            "w-14 text-right text-sm tabular-nums text-muted/60"
+                        }
+                    }>
+                        {move || s.with(|st| st.layout.blend_scan_pages)}
+                    </span>
+                    <span class="flex gap-1.5">
+                        <IconButton
+                            icon=IconName::Minus
+                            size=14
+                            title="Scan fewer pages"
+                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                            disabled=Signal::derive(move || {
+                                blend_off.get()
+                                    || s.with(|st| st.layout.blend_scan_pages)
+                                        <= MIN_SCAN_PAGES
+                            })
+                            on_click=move || {
+                                s.update(|st| {
+                                    st.layout.blend_scan_pages =
+                                        (st.layout.blend_scan_pages - 10)
+                                            .clamp(MIN_SCAN_PAGES, MAX_SCAN_PAGES);
+                                });
+                            }
+                        />
+                        <IconButton
+                            icon=IconName::Plus
+                            size=14
+                            title="Scan more pages"
+                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                            disabled=Signal::derive(move || {
+                                blend_off.get()
+                                    || s.with(|st| st.layout.blend_scan_pages)
+                                        >= MAX_SCAN_PAGES
+                            })
+                            on_click=move || {
+                                s.update(|st| {
+                                    st.layout.blend_scan_pages =
+                                        (st.layout.blend_scan_pages + 10)
+                                            .clamp(MIN_SCAN_PAGES, MAX_SCAN_PAGES);
+                                });
+                            }
+                        />
+                    </span>
+                </span>
+            </Row>
         </div>
         <div class="mt-5"><Separator vertical=false /></div>
         <p class="mt-2 text-xs text-muted">

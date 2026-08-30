@@ -9,11 +9,10 @@ import type {
   TextIndexEntry,
   ThumbEntry,
   ActiveMatch,
-  BlendScope,
 } from "./types";
 import { disposeScratch, releaseCanvas } from "./canvas";
 
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "0.3.0";
 
 export let loadingTask: LoadingTask | null = null;
 export let pdf: PDFDocumentProxy | null = null;
@@ -21,44 +20,11 @@ export let numPages = 0;
 export let currentPath: string | null = null;
 
 /** The dominant raster colour of the open document — the PDF's own paper —
- *  or null until the active blend scope resolves one. The blend backdrop
- *  paints this through the same filter + blend the raw canvases use, so
- *  backdrop and page background are the same composite by construction. */
+ *  or null until the paper session (the Rust side of the pipeline)
+ *  resolves one. The blend backdrop paints this through the same filter +
+ *  blend the raw canvases use, so backdrop and page background are the
+ *  same composite by construction. */
 export let detectedPaper: string | null = null;
-
-/** Where the blend backdrop takes its colour from. Mirrors the reader's
- * `layout.blend_scope` setting; `paper.ts` owns what each scope does. */
-export let blendScope: BlendScope = "single";
-
-/** Per-page dominant colours (1-based), filled as rasters render — the
- * continuous scope's raw material. */
-export const pagePapers = new Map<number, string>();
-
-/** The two adjacent pages the continuous scope blends between, and how far
- * the blend has travelled (`mix` 0 = the first page's colour, 1 = the
- * second's). Written by `setBlendPages` / `setBlendProgress`. */
-export let blendPair: { cur: number; next: number; mix: number } = {
-  cur: 1,
-  next: 1,
-  mix: 0,
-};
-
-export function setBlendScopeValue(scope: BlendScope): void {
-  blendScope = scope;
-}
-
-export function setBlendPairValue(cur: number, next: number): void {
-  blendPair = { cur, next, mix: blendPair.mix };
-}
-
-export function setBlendMixValue(mix: number): void {
-  blendPair = { ...blendPair, mix };
-}
-
-export function resetBlendPair(): void {
-  blendPair = { cur: 1, next: 1, mix: 0 };
-  pagePapers.clear();
-}
 
 export function setLoadingTask(t: LoadingTask | null): void {
   loadingTask = t;

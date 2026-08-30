@@ -295,7 +295,7 @@ export const fakeWindow: FakeWindow = {
   innerWidth: 1280,
   innerHeight: 800,
   // Real-enough storage: the engine's per-document paper cache
-  // (pdfreader.blend-paper.v1) reads and writes through globalThis.localStorage.
+  // (pdfreader.blend-paper.v2) reads and writes through globalThis.localStorage.
   localStorage: {
     getItem: (k: string) => fakeLocalStorage.get(k) ?? null,
     setItem: (k: string, v: string) => { fakeLocalStorage.set(k, v); },
@@ -358,7 +358,14 @@ function fakePage(n: number) {
 
 const fakePdf = {
   numPages: 5,
-  getPage: async (n: number) => fakePage(n),
+  // Range-strict like the real pdf.js: an out-of-range page rejects, which
+  // the paper sampler must swallow into a frameless {ok:true} skip.
+  getPage: async (n: number) => {
+    if (n < 1 || n > fakePdf.numPages) {
+      throw new Error("page out of range: " + n);
+    }
+    return fakePage(n);
+  },
   getMetadata: async () => ({ info: { Title: "Test", Author: null } }),
   getOutline: async () => [],
   getPageIndex: async () => 0,
@@ -443,9 +450,26 @@ interface PDFReaderHandle {
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
-  setBlendScope(scope: "single" | "document" | "continuous"): void;
-  setBlendPages(cur: number, next: number): void;
-  setBlendProgress(mix: number): void;
+  setPaper(hex: string, persist: boolean, area: "whole" | "edges"): void;
+  takePaperFrame(canvasId: string): {
+    ok: true;
+    page: number;
+    width: number;
+    height: number;
+    data: Uint8ClampedArray;
+  } | null;
+  samplePaperPage(page: number): Promise<{
+    ok: true;
+    page?: number;
+    width?: number;
+    height?: number;
+    data?: Uint8ClampedArray;
+  }>;
+  getCachedPaper(path: string): {
+    ok: true;
+    hex: string | null;
+    area: "whole" | "edges" | null;
+  };
   unregisterPage(canvasId: string): void;
   destroy(): Promise<void>;
   stats(): StatsPayload;

@@ -114,6 +114,11 @@ pub fn open_path(state: AppState, path: String) {
                 let name = display_name(open.title.as_deref(), Some(&path));
                 // Document state.
                 state.reader.document.num_pages.set(num_pages);
+                // The paper session resets for the new book and asks the
+                // engine's per-document cache for its colour in the
+                // background (a cache hit repaints the blend backdrop with
+                // zero sampling work).
+                pdf_engine::paper::document_open(&path, num_pages);
                 // Intrinsic per-page sizes, packed as one `PageSize` each.
                 let n = num_pages as usize;
                 let intrinsic: Vec<PageSize> = if open.page_widths.len() == n

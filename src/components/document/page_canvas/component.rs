@@ -344,6 +344,11 @@ pub fn PageCanvas(
                     }
                     // Successful render: the canvas now has a bitmap.
                     painted_async.set(true);
+                    // The engine stashed this render's raw frame (the one
+                    // pipeline moment the page's own paper is unbaked); hand
+                    // it to the paper session — every colour decision it
+                    // feeds lives in the pdf-paper crate.
+                    pdf_engine::paper::live_frame(&cid);
                     if let Some(host) = web_sys::window()
                         .and_then(|w| w.document())
                         .and_then(|d| d.get_element_by_id(&hid))

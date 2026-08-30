@@ -105,9 +105,19 @@ export type PipelineCache = {
 export type PaperInfo = { color: string; rgb: [number, number, number] };
 export type FilterMatrix = { m: number[]; o: number[] };
 
-/** Where the blend backdrop takes its paper colour from — the engine side of
- * the reader's `layout.blend_scope` setting. */
-export type BlendScope = "single" | "document" | "continuous";
+/** A raw page frame for the paper pipeline: the raster downscaled to a
+ * ≤96px long edge, with its RGBA pixels. */
+export type PaperFrame = {
+  page: number;
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+};
+
+/** Which pixels of a page the paper detector trusts — the engine side of
+ * the reader's `layout.blend_area` setting, persisted alongside each cached
+ * colour so a cache found under one area is not reused under the other. */
+export type PaperArea = "whole" | "edges";
 
 export type SearchRect = { x: number; y: number; w: number; h: number };
 export type TextIndexEntry = { str: string; x: number; y: number; w: number; h: number };
@@ -176,9 +186,17 @@ export type PDFReaderApi = {
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
-  setBlendScope: (scope: BlendScope) => void;
-  setBlendPages: (cur: number, next: number) => void;
-  setBlendProgress: (mix: number) => void;
+  setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
+  takePaperFrame: (canvasId: string) => (PaperFrame & { ok: true }) | null;
+  samplePaperPage: (page: number) => Promise<
+    | (PaperFrame & { ok: true })
+    | { ok: true }
+  >;
+  getCachedPaper: (path: string) => {
+    ok: true;
+    hex: string | null;
+    area: PaperArea | null;
+  };
   sweep: () => void;
   takePendingFile: () => Promise<string | null>;
   prefetchThumb: (page: number, scale: number) => Promise<void>;

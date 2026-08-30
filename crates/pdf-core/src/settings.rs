@@ -45,47 +45,17 @@ pub enum FloatingLabelStyle {
     Chapter,
 }
 
-/// Where blend mode takes the paper colour from.
-///
-/// `Single` is the original behaviour: the dominant colour of one page (the
-/// first page whose raster renders) stands in for the whole document.
-/// `Document` scans every page — capped at [`BLEND_SCAN_MAX_PAGES`] — for one
-/// colour the book as a whole is dominated by. `Continuous` resolves a colour
-/// per page and blends between adjacent pages while the reader scrolls. The
-/// first two cache their result per document so reopening a book reuses the
-/// colour it already found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BlendScope {
-    #[default]
-    Single,
-    Document,
-    Continuous,
+/// The blend backdrop's paper pipeline is configured by the `pdf-paper`
+/// crate's types: [`PaperMode`] (one fixed colour for the book, or a
+/// per-page palette that follows the scroll), [`PaperArea`] (which pixels
+/// of a page carry the colour — the whole raster or just its edge
+/// margins) and the scan-page budget. They are re-exported here so the
+/// settings model stays the one place the reader's persisted knobs live.
+pub use pdf_paper::{PaperArea, PaperMode};
+
+fn default_blend_scan_pages() -> u32 {
+    pdf_paper::DEFAULT_SCAN_PAGES
 }
-
-impl BlendScope {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Single => "Single Page",
-            Self::Document => "Whole Document",
-            Self::Continuous => "Continuous",
-        }
-    }
-
-    /// The scope id the TS engine's `setBlendScope` expects.
-    pub fn engine_id(&self) -> &'static str {
-        match self {
-            Self::Single => "single",
-            Self::Document => "document",
-            Self::Continuous => "continuous",
-        }
-    }
-}
-
-/// How many pages the `Document` scan may render while hunting for the book's
-/// dominant colour. A cap, not a target: the scan stops early on shorter
-/// books, and pages past the cap are simply not sampled.
-pub const BLEND_SCAN_MAX_PAGES: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {
@@ -119,11 +89,24 @@ pub struct LayoutSettings {
     pub sidebar_overlay: bool,
     #[serde(default)]
     pub blend_mode: bool,
-    /// Which pages blend mode samples the paper colour from. Only meaningful
-    /// while `blend_mode` is on; the setting outlives the switch so turning
-    /// blend back on returns to the scope the reader chose.
+    /// Which pages blend mode takes the paper colour from (one fixed colour
+    /// for the book, or a per-page palette that follows the scroll). Only
+    /// meaningful while `blend_mode` is on; the setting outlives the switch
+    /// so turning blend back on returns to the mode the reader chose. The
+    /// field keeps its historical name so pre-crate blobs — whose values
+    /// were `single`/`document`/`continuous` — load through `PaperMode`'s
+    /// serde aliases: the first two fold into `Fixed`.
     #[serde(default)]
-    pub blend_scope: BlendScope,
+    pub blend_scope: PaperMode,
+    /// Which pixels of a page raster the detector trusts: the whole page,
+    /// or just the thin left/right edge margins where artwork-heavy pages
+    /// still show honest paper.
+    #[serde(default)]
+    pub blend_area: PaperArea,
+    /// The fixed-mode scan's page budget — at most this many pages are
+    /// sampled for the book's one colour. 100 by default.
+    #[serde(default = "default_blend_scan_pages")]
+    pub blend_scan_pages: u32,
     /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
     #[serde(default = "default_page_margin")]
     pub page_margin: f64,
@@ -151,7 +134,9 @@ impl Default for LayoutSettings {
             page_shadow: true,
             sidebar_overlay: false,
             blend_mode: false,
-            blend_scope: BlendScope::default(),
+            blend_scope: PaperMode::default(),
+            blend_area: PaperArea::default(),
+            blend_scan_pages: default_blend_scan_pages(),
             page_margin: default_page_margin(),
             floating_label_persist: false,
             floating_label_max_pct: default_label_max_pct(),
@@ -463,6 +448,12 @@ pub fn sanitize(settings: &mut Settings) {
     settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
     settings.layout.floating_label_max_pct =
         settings.layout.floating_label_max_pct.clamp(10.0, 100.0);
+    // The paper knobs clamp through the crate's own bounds so the scan
+    // budget and the edge-strip width share one definition of legal.
+    settings.layout.blend_scan_pages = settings
+        .layout
+        .blend_scan_pages
+        .clamp(pdf_paper::MIN_SCAN_PAGES, pdf_paper::MAX_SCAN_PAGES);
     if !is_hex6(&settings.gloss_custom) {
         settings.gloss_custom = default_custom_gloss();
     }
@@ -647,7 +638,7 @@ mod tests {
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
-        assert_eq!(s.blend_scope, BlendScope::Single);
+        assert_eq!(s.blend_scope, PaperMode::Fixed);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
 
@@ -662,29 +653,60 @@ mod tests {
         assert!(s.page_shadow);
         assert!(!s.sidebar_overlay);
         assert!(!s.blend_mode);
-        assert_eq!(s.blend_scope, BlendScope::Single);
+        assert_eq!(s.blend_scope, PaperMode::Fixed);
+        assert_eq!(s.blend_area, PaperArea::WholePage);
+        assert_eq!(s.blend_scan_pages, pdf_paper::DEFAULT_SCAN_PAGES);
         assert!(!s.floating_label_persist);
         assert_eq!(s.floating_label_max_pct, 100.0);
     }
 
     #[test]
-    fn blend_scope_survives_a_round_trip_and_loads_by_snake_case() {
+    fn paper_mode_survives_a_round_trip_and_the_legacy_scopes_fold_in() {
         // A blob saved before the setting existed carries no key and must
-        // load as the original single-page behaviour; once the reader picks a
-        // scope, the id round-trips untouched.
+        // load as the fixed mode; once the reader picks a mode, the id
+        // round-trips untouched. The pre-crate scopes (`single`,
+        // `document`) both load as Fixed — their union — so no install
+        // loses its backdrop on the upgrade.
         let s: LayoutSettings = serde_json::from_str("{}").unwrap();
-        assert_eq!(s.blend_scope, BlendScope::Single);
+        assert_eq!(s.blend_scope, PaperMode::Fixed);
 
         let mut s = LayoutSettings::default();
-        s.blend_scope = BlendScope::Continuous;
+        s.blend_scope = PaperMode::Continuous;
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"blend_scope\":\"continuous\""), "{json}");
         let back: LayoutSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.blend_scope, BlendScope::Continuous);
+        assert_eq!(back.blend_scope, PaperMode::Continuous);
 
-        let s: LayoutSettings =
-            serde_json::from_str(r#"{"blend_scope":"document"}"#).unwrap();
-        assert_eq!(s.blend_scope, BlendScope::Document);
+        for old in ["single", "document"] {
+            let s: LayoutSettings =
+                serde_json::from_str(&format!(r#"{{"blend_scope":"{old}"}}"#))
+                    .unwrap();
+            assert_eq!(s.blend_scope, PaperMode::Fixed, "scope {old}");
+        }
+    }
+
+    #[test]
+    fn the_area_and_scan_budget_round_trip_and_clamp() {
+        let mut s = LayoutSettings::default();
+        s.blend_area = PaperArea::Edges;
+        s.blend_scan_pages = 250;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"blend_area\":\"edges\""), "{json}");
+        assert!(json.contains("\"blend_scan_pages\":250"), "{json}");
+        let back: LayoutSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.blend_area, PaperArea::Edges);
+        assert_eq!(back.blend_scan_pages, 250);
+
+        s.blend_scan_pages = 0;
+        let mut whole = Settings {
+            layout: s,
+            ..Settings::default()
+        };
+        sanitize(&mut whole);
+        assert_eq!(whole.layout.blend_scan_pages, pdf_paper::MIN_SCAN_PAGES);
+        whole.layout.blend_scan_pages = 10_000;
+        sanitize(&mut whole);
+        assert_eq!(whole.layout.blend_scan_pages, pdf_paper::MAX_SCAN_PAGES);
     }
 
     #[test]

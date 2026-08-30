@@ -128,22 +128,32 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 
-    // --- Engine: blend backdrop scopes ---
-    // Where the blend backdrop takes its paper colour from ("single" |
-    // "document" | "continuous") and, in the continuous scope, the page pair
-    // the backdrop blends between plus how far the viewport has travelled
-    // between them. Rust resolves the pair from the dominant page and the
-    // progress from the strip geometry; the engine owns the colours
-    // (detection, the per-document cache, the per-page palette) and the
-    // interpolated --pdf-paper it publishes.
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setBlendScope")]
-    pub fn set_blend_scope(scope: &str);
+    // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
+    // The engine owns the CANVASES; the crate (via this crate's `paper`
+    // session) owns every colour decision. Four calls carry the whole
+    // contract, all in the established Rust→engine direction:
+    //
+    // * `setPaper` publishes (or, with "", clears) `--pdf-paper`; `persist`
+    //   also writes the per-document cache under `area` — the engine owns
+    //   localStorage.
+    // * `takePaperFrame` drains the raw frame a live render stashed at the
+    //   one pipeline moment the page's own paper is still unbaked.
+    // * `samplePaperPage` renders `page` offscreen at a tiny scale and
+    //   resolves its frame — the fixed-mode scan and the continuous
+    //   look-ahead both sample through it.
+    // * `getCachedPaper` reads the per-document cache so a reopened book
+    //   repaints with zero sampling work.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaper")]
+    pub fn set_paper(hex: &str, persist: bool, area: &str);
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setBlendPages")]
-    pub fn set_blend_pages(cur: u32, next: u32);
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "takePaperFrame")]
+    pub fn take_paper_frame(canvas_id: &str) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setBlendProgress")]
-    pub fn set_blend_progress(mix: f64);
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "samplePaperPage")]
+    pub async fn sample_paper_page(page: u32) -> JsValue;
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "getCachedPaper")]
+    pub async fn get_cached_paper(path: &str) -> JsValue;
 
     /// Release rasters/caches the engine no longer needs (advisory
     /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,
@@ -162,16 +172,18 @@ pub async fn listen(event: &str, handler: js_sys::Function) -> JsValue {
     tauri_listen(event, handler).await
 }
 
-/// True when the app runs inside Tauri (`window.__TAURI__` is present).
-///
-/// Must be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen shim
-/// evaluates the global chain directly and throws a TypeError when the global
-/// is absent (e.g. `trunk serve` in a plain browser). See more_menu.rs for the
-/// same probe.
 /// True when `window.PDFReader` exists. Must be checked before any engine
 /// call: a missing global makes the wasm-bindgen shim throw, which panics
 /// the reactive owner and freezes menus / theme / open.
+///
+/// The non-wasm short-circuit keeps the check callable from host `cargo
+/// test` (the paper session's tests drive code paths that reach this
+/// guard); on the host there is no engine, so `false` is also the truthful
+/// answer.
 pub fn has_pdf_reader() -> bool {
+    if !cfg!(target_arch = "wasm32") {
+        return false;
+    }
     web_sys::window()
         .map(|w| {
             let g: js_sys::Object = w.unchecked_into();
@@ -187,8 +199,12 @@ pub fn has_pdf_reader() -> bool {
 /// Must be checked BEFORE any `window.__TAURI__.*` call: the wasm-bindgen shim
 /// evaluates the global chain directly and throws a TypeError when the global
 /// is absent (e.g. `trunk serve` in a plain browser). See more_menu.rs for the
-/// same probe.
+/// same probe. Non-wasm short-circuits to `false` for the same host-test
+/// reason as [`has_pdf_reader`].
 pub fn has_tauri() -> bool {
+    if !cfg!(target_arch = "wasm32") {
+        return false;
+    }
     web_sys::window()
         .map(|w| {
             let g: js_sys::Object = w.unchecked_into();

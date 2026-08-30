@@ -246,7 +246,7 @@ export const fakeWindow = {
     innerWidth: 1280,
     innerHeight: 800,
     // Real-enough storage: the engine's per-document paper cache
-    // (pdfreader.blend-paper.v1) reads and writes through globalThis.localStorage.
+    // (pdfreader.blend-paper.v2) reads and writes through globalThis.localStorage.
     localStorage: {
         getItem: (k) => fakeLocalStorage.get(k) ?? null,
         setItem: (k, v) => { fakeLocalStorage.set(k, v); },
@@ -310,7 +310,14 @@ function fakePage(n) {
 }
 const fakePdf = {
     numPages: 5,
-    getPage: async (n) => fakePage(n),
+    // Range-strict like the real pdf.js: an out-of-range page rejects, which
+    // the paper sampler must swallow into a frameless {ok:true} skip.
+    getPage: async (n) => {
+        if (n < 1 || n > fakePdf.numPages) {
+            throw new Error("page out of range: " + n);
+        }
+        return fakePage(n);
+    },
     getMetadata: async () => ({ info: { Title: "Test", Author: null } }),
     getOutline: async () => [],
     getPageIndex: async () => 0,

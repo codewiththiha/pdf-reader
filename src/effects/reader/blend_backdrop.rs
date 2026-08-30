@@ -1,120 +1,119 @@
-//! Blend backdrop driver: publishes the blend scope, the page pair, and the
-//! scroll progress between them to the engine.
+//! Paper backdrop driver: wires the reader's settings and scroll geometry to
+//! the paper session (`pdf_engine::paper`, the state machine over the
+//! `pdf-paper` crate).
 //!
-//! The engine owns the COLOURS — detection off the raw rasters, the
-//! per-document cache, the all-pages scan, the per-page palette, the
-//! interpolation. The shell owns the GEOMETRY: which page the reader is on,
-//! and how far the viewport has travelled toward the next one. This module
-//! is the bridge — three effects, one per fact the engine cannot learn on
-//! its own.
+//! The session owns every COLOUR decision — detection off raw frames, the
+//! fixed scan, the per-page palette, the cache. The shell owns the GEOMETRY,
+//! and reports it as ONE number: the viewport's position along the page
+//! ladder, the visible-paint-weighted mean page index. Resting on page N it
+//! is exactly `N.0`; straddling pages N and N+1 at 40/60 it is `N + 0.6`,
+//! carrying BOTH pages' shares.
 //!
-//! The progress math deliberately uses the virtualizer's own coordinate
-//! convention (viewport = `[scroll, scroll + height]` against item offsets
-//! whose sizes fold in the trailing gap) — the same convention the dominant
-//! tracker uses, so the blend and the page counter always agree on which
-//! page is current, down to the same toolbar-band offset the tracker
-//! already accepts.
+//! That one number is what the old page-pair blend lacked. A pair
+//! `(dominant, dominant + 1)` is blind to the page BEFORE the dominant one,
+//! so right after a handover — when the previous page still fills half the
+//! window — the backdrop snapped to the new page's colour while the eye
+//! still saw the old one: the "slightly mismatched" seam. The weighted
+//! position has no seam: it moves continuously through the handover and is
+//! exactly the dominant page's index at rest, so the palette's ladder
+//! interpolation meets the pages where they actually are.
+//!
+//! The position math uses the virtualizer's own coordinate convention
+//! (viewport = `[scroll, scroll + height]` against item offsets whose sizes
+//! fold in the trailing gap) — the same convention the dominant tracker
+//! uses, so the backdrop and the page counter always agree on which page is
+//! current.
 
 use leptos::prelude::*;
 
 use pdf_core::layout::ViewMode;
-use pdf_core::settings::BlendScope;
+use pdf_paper::{PaperConfig, DEFAULT_EDGE_WIDTH};
 
 use crate::state::AppState;
 
-/// Wire the blend backdrop driver. Called once from ReaderPage, alongside
+/// Wire the paper backdrop driver. Called once from ReaderPage, alongside
 /// the other reader effects.
 pub fn blend_backdrop(state: AppState) {
     let settings = state.settings;
     let viewer = state.reader.viewer;
-    let num_pages = state.reader.document.num_pages;
     let heights = state.reader.document.metrics.css_heights;
 
-    // The scope: which pages the engine samples the paper colour from. Sent
-    // whether blend mode is on or not — the scope setting outlives the
-    // switch, and the engine's sampling is idle either way until a raster
-    // renders.
+    // Settings → the session: the blend switch plus the mode / area / scan
+    // budget. Sent whether a document is open or not — the session keeps the
+    // configuration for the next book and idles otherwise.
     Effect::new(move |_| {
-        let scope = settings.with(|st| st.layout.blend_scope);
-        pdf_engine::api::set_blend_scope(scope);
+        let (blend_on, mode, area, scan_pages) = settings.with(|st| {
+            (
+                st.layout.blend_mode,
+                st.layout.blend_scope,
+                st.layout.blend_area,
+                st.layout.blend_scan_pages,
+            )
+        });
+        pdf_engine::paper::configure(
+            blend_on,
+            PaperConfig {
+                mode,
+                area,
+                scan_pages,
+                edge_width: DEFAULT_EDGE_WIDTH,
+            },
+        );
     });
 
-    // The pair: the dominant page and the one after it. Only the vertical
-    // strip has a "next" page to blend into — everywhere else (the paged
-    // modes, the horizontal strip) the pair is the page itself and the
-    // backdrop simply switches with the page turn. The engine stores the
-    // pair in every scope so flipping to continuous mid-book has the right
-    // pair already in place.
-    Effect::new(move |_| {
-        let page = viewer.page.get();
-        let total = num_pages.get();
-        if page == 0 {
-            return;
-        }
-        let next = if viewer.mode.get() == ViewMode::ScrollVertical && page < total {
-            page + 1
-        } else {
-            page
-        };
-        pdf_engine::api::set_blend_pages(page, next);
-    });
-
-    // The progress: the next page's share of the viewport's visible page
-    // paint, 0..1. Per scroll tick, and only while the continuous scope is
-    // actually driving the backdrop — the other scopes ignore progress, and
-    // blend mode off means no backdrop to drive.
+    // Geometry → the session: the viewport's weighted position along the
+    // page ladder. Per scroll tick, and only while blend mode is actually
+    // driving a backdrop — the session ignores the number otherwise, so
+    // there is nothing to compute.
     Effect::new(move |_| {
         if !settings.with(|st| st.layout.blend_mode) {
             return;
         }
-        if settings.with(|st| st.layout.blend_scope) != BlendScope::Continuous {
-            return;
-        }
-        if viewer.mode.get() != ViewMode::ScrollVertical {
-            return;
-        }
         let page = viewer.page.get();
+        if page == 0 {
+            return;
+        }
+        // The paged modes and the horizontal strip have no "between" to
+        // report: the position is the page itself, and the backdrop switches
+        // with the page turn.
+        if viewer.mode.get() != ViewMode::ScrollVertical {
+            pdf_engine::paper::position(f64::from(page));
+            return;
+        }
         let scroll = viewer.scroll_top.get();
         let (_, viewport_h) = viewer.container_size.get();
         let gap = viewer.page_gap.get();
         let column = heights.get();
-        pdf_engine::api::set_blend_progress(blend_mix(&column, gap, scroll, viewport_h, page));
+        // An unmeasured column (or a viewport parked in the gap) has no
+        // visible paint to weigh: fall back to the page counter's truth.
+        let pos = paper_position(&column, gap, scroll, viewport_h);
+        pdf_engine::paper::position(if pos > 0.0 { pos } else { f64::from(page) });
     });
 }
 
-/// Scroll progress from page `cur` (1-based) toward the page after it: the
-/// next page's share of the viewport's visible page paint. `0` while the
-/// next page is out of sight, `1` once it owns everything the current page
-/// did — which is exactly when the dominant tracker hands over to it, so
-/// the colour is already the next page's the moment it becomes current.
-pub(crate) fn blend_mix(heights: &[f64], gap: f64, scroll: f64, viewport: f64, cur: u32) -> f64 {
-    // `cur` is the 1-based page the reader is on; the column is 0-based.
-    let idx = (cur as usize).saturating_sub(1);
-    let Some(&cur_h) = heights.get(idx) else {
-        return 0.0; // column not measured yet
-    };
-    let Some(&next_h) = heights.get(idx + 1) else {
-        return 0.0; // the last page has nothing to blend into
-    };
-    let cur_top = paint_top(heights, gap, idx);
-    let next_top = cur_top + cur_h + gap; // the trailing gap is chrome, not paint
-    pair_mix(cur_top, cur_h, next_top, next_h, scroll, scroll + viewport)
-}
-
-/// The main-axis offset of page `idx`'s paint: every page above contributes
-/// its height plus its trailing gap, matching the strip's `height + gap`
-/// item sizes.
-fn paint_top(heights: &[f64], gap: f64, idx: usize) -> f64 {
-    heights.iter().take(idx).map(|h| h + gap).sum()
-}
-
-fn pair_mix(top_a: f64, h_a: f64, top_b: f64, h_b: f64, view_top: f64, view_bottom: f64) -> f64 {
-    let vis_a = visible_paint(top_a, h_a, view_top, view_bottom);
-    let vis_b = visible_paint(top_b, h_b, view_top, view_bottom);
-    if vis_a + vis_b <= f64::EPSILON {
+/// The viewport's position along the page ladder: the visible-paint-weighted
+/// mean 1-based page index. `0` when no page paint is visible (the caller
+/// holds its last position instead of guessing).
+pub(crate) fn paper_position(heights: &[f64], gap: f64, scroll: f64, viewport: f64) -> f64 {
+    let view_bottom = scroll + viewport;
+    let mut top = 0.0; // the main-axis offset of page `i`'s paint
+    let mut weight = 0.0; // total visible page paint
+    let mut moment = 0.0; // Σ visible_i × page_i (1-based)
+    for (i, &h) in heights.iter().enumerate() {
+        let vis = visible_paint(top, h, scroll, view_bottom);
+        if vis > 0.0 {
+            weight += vis;
+            moment += vis * (i as f64 + 1.0);
+        }
+        top += h + gap; // the trailing gap is chrome, not paint
+        if top >= view_bottom {
+            break; // no page below this offset can intersect the viewport
+        }
+    }
+    if weight <= f64::EPSILON {
         return 0.0;
     }
-    (vis_b / (vis_a + vis_b)).clamp(0.0, 1.0)
+    moment / weight
 }
 
 fn visible_paint(top: f64, height: f64, view_top: f64, view_bottom: f64) -> f64 {
@@ -125,75 +124,91 @@ fn visible_paint(top: f64, height: f64, view_top: f64, view_bottom: f64) -> f64 
 mod tests {
     use super::*;
 
-    /// A page alone on screen: nothing to blend toward.
+    /// A page alone on screen reports its own index.
     #[test]
-    fn a_window_on_one_page_makes_no_progress() {
+    fn a_window_on_one_page_is_exactly_that_page() {
         let heights = [800.0, 800.0];
         // The window exactly covers page 1's paint.
-        assert_eq!(blend_mix(&heights, 24.0, 0.0, 800.0, 1), 0.0);
-        // Deep inside page 2 (dominant handed over): the window only sees
-        // page 2, and page 3 is out of sight.
-        assert_eq!(blend_mix(&heights, 24.0, 900.0, 800.0, 2), 0.0);
+        assert_eq!(paper_position(&heights, 24.0, 0.0, 800.0), 1.0);
+        // Deep inside page 2, page 3 out of sight.
+        assert_eq!(paper_position(&heights, 24.0, 900.0, 800.0), 2.0);
     }
 
-    /// The load-bearing case: mid-transition, the progress is the next
-    /// page's share of what is visible.
+    /// The load-bearing case: mid-transition, the position carries both
+    /// pages' visible shares. 100px of page 1 + 676px of page 2 → page
+    /// 1 + 676/776, continuously through the handover.
     #[test]
-    fn the_next_pages_share_of_the_window_is_the_progress() {
+    fn a_straddled_window_weighs_both_pages_shares() {
         // Page 1 paints [0, 800], page 2 [824, 1624]. Window [700, 1500]:
-        // page 1 shows 100px, page 2 shows 676px → 676/776.
+        // page 1 shows 100px, page 2 shows 676px.
         let heights = [800.0, 800.0];
-        let mix = blend_mix(&heights, 24.0, 700.0, 800.0, 1);
-        assert!((mix - 676.0 / 776.0).abs() < 1e-9, "{mix}");
+        let pos = paper_position(&heights, 24.0, 700.0, 800.0);
+        assert!((pos - (100.0 + 676.0 * 2.0) / 776.0).abs() < 1e-9, "{pos}");
     }
 
-    /// Arriving at the next page is progress 1: the colour lands on the new
-    /// page's own paper before the dominant tracker hands over.
+    /// The regression the old pair blend could not pass: JUST after the
+    /// dominant handover, the previous page still owns 45% of the window,
+    /// and the position — unlike the old pair flip — still carries it.
     #[test]
-    fn the_next_page_fully_in_view_is_progress_one() {
-        // Window [900, 1700]: page 1 fully gone, page 2 spans it all.
+    fn just_after_the_handover_the_old_page_still_counts() {
+        // Window [720, 1520]: page 1 shows 80px, page 2 shows 696px — page 2
+        // is dominant, but the position is 1.9, not 2.0.
         let heights = [800.0, 800.0];
-        assert_eq!(blend_mix(&heights, 24.0, 900.0, 800.0, 1), 1.0);
+        let pos = paper_position(&heights, 24.0, 720.0, 800.0);
+        assert!((pos - (80.0 + 696.0 * 2.0) / 776.0).abs() < 1e-9, "{pos}");
+        assert!(pos < 2.0 && pos > 1.5);
     }
 
-    /// The gap between pages is backdrop, not page paint: a window standing
-    /// entirely in the gap holds the current colour instead of twitching.
+    /// A window standing entirely in the gap (or on an unmeasured column)
+    /// has no paint to weigh: 0, so the caller holds its last position
+    /// instead of twitching.
     #[test]
-    fn a_window_in_the_gap_holds_still() {
-        // Gap spans [800, 824]; window [700, 800] leaves page 1 visible
-        // alone → 0. A window entirely inside the gap sees neither page.
+    fn a_window_without_paint_holds_still() {
         let heights = [800.0, 800.0];
-        assert_eq!(blend_mix(&heights, 24.0, 700.0, 100.0, 1), 0.0);
-        assert_eq!(blend_mix(&heights, 24.0, 805.0, 10.0, 1), 0.0);
+        assert_eq!(paper_position(&heights, 24.0, 805.0, 10.0), 0.0);
+        assert_eq!(paper_position(&[], 24.0, 0.0, 800.0), 0.0);
+        assert_eq!(paper_position(&heights, 24.0, 0.0, 0.0), 0.0);
     }
 
     /// No Gap mode is the same math with the pages contiguous.
     #[test]
-    fn zero_gap_blends_across_the_seam() {
+    fn zero_gap_weighs_across_the_seam() {
         let heights = [800.0, 800.0];
         // Window [750, 1550]: page 1 shows 50px, page 2 shows 750px.
-        let mix = blend_mix(&heights, 0.0, 750.0, 800.0, 1);
-        assert!((mix - 750.0 / 800.0).abs() < 1e-9, "{mix}");
-    }
-
-    /// The last page, an unmeasured column, and a page past the end all
-    /// hold still rather than guessing.
-    #[test]
-    fn the_ends_and_the_unmeasured_hold_still() {
-        assert_eq!(blend_mix(&[800.0], 24.0, 0.0, 800.0, 1), 0.0);
-        assert_eq!(blend_mix(&[], 24.0, 0.0, 800.0, 1), 0.0);
-        assert_eq!(blend_mix(&[800.0, 800.0], 24.0, 0.0, 800.0, 3), 0.0);
+        let pos = paper_position(&heights, 0.0, 750.0, 800.0);
+        assert!((pos - (50.0 + 750.0 * 2.0) / 800.0).abs() < 1e-9, "{pos}");
     }
 
     /// Offsets count every preceding page's trailing gap: deep in a book the
-    /// pair sits exactly where the strip laid it.
+    /// window sits exactly where the strip laid it — and every visible sliver
+    /// carries its share, even a 20px corner of the page above.
     #[test]
     fn offsets_count_the_gaps_above() {
-        // Pages of 100 with gap 20: page 3 (idx 2) paints at 2×120 = 240,
-        // page 4 at 360. Window [200, 400]: page 3 shows 100, page 4 shows
-        // 40 → 40/140.
+        // Pages of 100 with gap 20: page 2 paints [120, 220], page 3 [240,
+        // 340], page 4 [360, 460]. Window [200, 400]: page 2 shows 20px,
+        // page 3 shows 100px, page 4 shows 40px → (20×2 + 100×3 + 40×4)/160.
         let heights = [100.0; 5];
-        let mix = blend_mix(&heights, 20.0, 200.0, 200.0, 3);
-        assert!((mix - 40.0 / 140.0).abs() < 1e-9, "{mix}");
+        let pos = paper_position(&heights, 20.0, 200.0, 200.0);
+        assert!((pos - (20.0 * 2.0 + 100.0 * 3.0 + 40.0 * 4.0) / 160.0).abs() < 1e-9, "{pos}");
+    }
+
+    /// A window past the last page (over-scroll into the strip's padding)
+    /// clamps to the last page, not past it.
+    #[test]
+    fn overscroll_clamps_to_the_last_page() {
+        let heights = [800.0];
+        assert_eq!(paper_position(&heights, 24.0, 0.0, 800.0), 1.0);
+        // Window [700, 1500]: page 1 still shows 100px of paint.
+        let pos = paper_position(&heights, 24.0, 700.0, 800.0);
+        assert_eq!(pos, 1.0);
+    }
+
+    /// A tall window over three small pages weighs them all.
+    #[test]
+    fn a_tall_window_weighs_every_visible_page() {
+        // Pages of 100, gap 0: window [0, 300] sees pages 1..3 equally.
+        let heights = [100.0; 4];
+        let pos = paper_position(&heights, 0.0, 0.0, 300.0);
+        assert!((pos - 2.0).abs() < 1e-9, "{pos}");
     }
 }

@@ -6,13 +6,13 @@
 //! surface a `Result<T, String>`.
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsValue;
 
 use crate::bridge;
 use crate::types::{CoverResult, OpenResult, RenderResult, ThumbResult};
 use pdf_core::search::SearchResponse;
-use pdf_core::settings::BlendScope;
+use pdf_paper::PaperArea;
 
 #[derive(Debug, Clone)]
 pub struct EngineError {
@@ -272,41 +272,130 @@ pub fn set_scrub_mode(on: bool) {
     bridge::set_scrub_mode(on);
 }
 
-// --- Blend backdrop scopes -------------------------------------------------
+// --- Paper pipeline --------------------------------------------------------
 
-/// Tell the engine where the blend backdrop takes its paper colour from.
-///
-/// The engine owns the colour side of every scope: detection off the raw
-/// rasters, the per-document cache that survives reopens, the all-pages
-/// scan, and the per-page palette the continuous scope blends through. This
-/// call (fire-and-forget, like the theme calls) is how a settings change
-/// reaches it — the CSS class that shows the backdrop at all stays on the
-/// Rust side.
-pub fn set_blend_scope(scope: BlendScope) {
+/// A raw page frame handed over by the engine: the raster downscaled to a
+/// ≤96px long edge, with its pixels — the input every colour decision in the
+/// `pdf-paper` crate runs on.
+pub use crate::types::PaperFrame;
+
+/// Drain the raw frame a live render of `canvas_id` stashed at the one
+/// pipeline moment the page's own paper is still unbaked. `None` when the
+/// canvas has nothing stashed (no render yet, or already drained).
+pub fn take_paper_frame(canvas_id: &str) -> Option<PaperFrame> {
     if !guard_pdf_reader() {
-        return;
+        return None;
     }
-    bridge::set_blend_scope(scope.engine_id());
+    parse_frame(&bridge::take_paper_frame(canvas_id))
 }
 
-/// Name the two adjacent pages the continuous scope blends between. The
-/// engine resolves (and caches) each page's colour, sampling the next page
-/// ahead of the reader so the colour is known before they arrive.
-pub fn set_blend_pages(cur: u32, next: u32) {
+/// Render `page` offscreen at a tiny scale and return its frame — the fixed
+/// scan's samples and the continuous look-ahead both come through here.
+/// `Ok(None)` when the engine has no answer for the page (render failed).
+pub async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineError> {
     if !guard_pdf_reader() {
-        return;
+        return Ok(None);
     }
-    bridge::set_blend_pages(cur, next);
+    let value = bridge::sample_paper_page(page).await;
+    resolve_frame(value, &format!("samplePaperPage({page})")).await
 }
 
-/// How far the viewport has travelled from the pair's first page to its
-/// second, 0..1. Called per scroll tick; the engine lerps the pair's colours
-/// at exactly this progress and republishes `--pdf-paper`.
-pub fn set_blend_progress(mix: f64) {
+/// A cached fixed-mode colour, and the detection area it was computed
+/// under — a cache written for whole-page detection is not valid under
+/// edge detection, so the session treats an area mismatch as a miss.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CachedPaper {
+    pub hex: String,
+    pub area: PaperArea,
+}
+
+/// The cached fixed-mode colour for `path`, if the engine remembers one
+/// **and** it was found under `area`.
+pub async fn cached_paper(path: &str, area: PaperArea) -> Result<Option<CachedPaper>, EngineError> {
+    if !guard_pdf_reader() {
+        return Ok(None);
+    }
+    let value = bridge::get_cached_paper(path).await;
+    let payload: PaperCacheResult = resolve(value, "getCachedPaper").await?;
+    let Some(hex) = payload.hex.filter(|h| !h.is_empty()) else {
+        return Ok(None);
+    };
+    if payload.area != Some(area.engine_id().to_string()) {
+        return Ok(None); // cached under the other detection area: a miss
+    }
+    Ok(Some(CachedPaper { hex, area }))
+}
+
+/// Publish (or, with `None`, clear) `--pdf-paper`. `persist` also writes the
+/// per-document cache under `area` — call it exactly once per resolved book
+/// colour.
+pub fn set_paper(hex: Option<&str>, persist: bool, area: PaperArea) {
     if !guard_pdf_reader() {
         return;
     }
-    bridge::set_blend_progress(mix);
+    match hex {
+        Some(hex) => bridge::set_paper(hex, persist, area.engine_id()),
+        None => bridge::set_paper("", false, area.engine_id()),
+    }
+}
+
+/// `{ok:true, hex, area}` — engine.getCachedPaper. `hex` is null on a miss;
+/// `area` is the detection area the colour was cached under.
+#[derive(Debug, Serialize, Deserialize)]
+struct PaperCacheResult {
+    #[serde(default)]
+    hex: Option<String>,
+    #[serde(default)]
+    area: Option<String>,
+}
+
+/// Parse a `{ok, page, width, height, data}` frame payload. The pixels come
+/// back as a typed array, not JSON, so the fields are read by hand.
+fn parse_frame(value: &JsValue) -> Option<PaperFrame> {
+    let ok = js_sys::Reflect::get(value, &JsValue::from_str("ok"))
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !ok {
+        return None;
+    }
+    let number = |name: &str| -> Option<f64> {
+        js_sys::Reflect::get(value, &JsValue::from_str(name))
+            .ok()
+            .and_then(|v| v.as_f64())
+    };
+    let page = number("page")? as u32;
+    let width = number("width")? as u32;
+    let height = number("height")? as u32;
+    let data = js_sys::Reflect::get(value, &JsValue::from_str("data")).ok()?;
+    let data = js_sys::Uint8ClampedArray::from(data).to_vec();
+    Some(PaperFrame {
+        page,
+        width,
+        height,
+        data,
+    })
+}
+
+async fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>, EngineError> {
+    if let Some(frame) = parse_frame(&value) {
+        return Ok(Some(frame));
+    }
+    // `{ok:true}` with no frame is the engine's "no answer for this page" —
+    // a skipped page, not a failure to communicate.
+    let ok = js_sys::Reflect::get(&value, &JsValue::from_str("ok"))
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if ok {
+        return Ok(None);
+    }
+    // `{ok:false, error}` — surface it through the shared error path (which
+    // always errs here; the Ok arm is unreachable and defensive).
+    match resolve::<PaperCacheResult>(value, what).await {
+        Err(e) => Err(e),
+        Ok(_) => Ok(None),
+    }
 }
 
 /// Release rasters/caches the engine no longer needs. Call after zoom
