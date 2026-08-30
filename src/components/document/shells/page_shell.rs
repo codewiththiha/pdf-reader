@@ -3,7 +3,7 @@ use leptos::prelude::*;
 
 use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
-use crate::components::viewer_controls::reading_progress::ReadingProgress;
+use crate::components::viewer_controls::progress_strip::ProgressStrip;
 use crate::state::ReaderState;
 
 /// Shared shell for Single & Spread. The child is centered with `margin:auto`
@@ -48,7 +48,7 @@ pub fn PageShell(
             </div>
             <OverlayScrollbar scroller_id=scroller_id />
             <Show when=move || progress_visible.get()>
-                <ReadingProgress fraction=fraction />
+                <ProgressStrip fraction=fraction />
             </Show>
         </div>
     }

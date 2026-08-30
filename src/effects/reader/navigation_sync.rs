@@ -37,12 +37,16 @@ use super::on_mode_change::on_mode_change;
 /// Shared suppression flag for the two one-way syncs.
 pub(super) struct NavSyncState {
     pub suppress: Rc<Cell<bool>>,
+    /// A mode restore is in flight: the scroll→page sync must stand down so it
+    /// does not read the not-yet-restored strip and clobber the preserved page.
+    pub defer: Rc<Cell<bool>>,
 }
 
 impl NavSyncState {
     fn new() -> Self {
         Self {
             suppress: Rc::new(Cell::new(false)),
+            defer: Rc::new(Cell::new(false)),
         }
     }
 }
@@ -152,15 +156,26 @@ pub fn navigation_sync(
     let gate = Rc::new(JumpGate::new());
     let h_gate = Rc::new(JumpGate::new());
 
-    on_mode_change(state, virtualizer.clone(), h_virtualizer.clone());
+    // The mode-restore flag is shared with on_mode_change, which raises it
+    // during a mode flip and lowers it once the restored scroll has landed.
+    on_mode_change(state, virtualizer.clone(), h_virtualizer.clone(), nav.defer.clone());
 
     {
         let suppress = nav.suppress.clone();
+        let defer = nav.defer.clone();
         let page = state.viewer.page;
         let v = virtualizer.clone();
         let gate = gate.clone();
         Effect::new(move |_| {
             if mode.get() != ViewMode::ScrollVertical {
+                return;
+            }
+            // While on_mode_change is re-anchoring the strip after a mode flip,
+            // the strip is still sitting at its initial (unrestored) offset and
+            // its dominant would misreport the page — reading it now resets the
+            // reader back to (a transient) page 0/1. Stand down; the restored
+            // scroll re-runs this effect with the true dominant.
+            if defer.get() {
                 return;
             }
             let dominant = page_from_dominant(v.dominant().get(), state.document.num_pages.get());
@@ -251,9 +266,14 @@ pub fn navigation_sync(
     {
         // dominant page follows the horizontal strip
         let (suppress, page, v) = (nav.suppress.clone(), state.viewer.page, h_virtualizer.clone());
+        let defer = nav.defer.clone();
         let h_gate = h_gate.clone();
         Effect::new(move |_| {
             if mode.get() != ViewMode::ScrollHorizontal {
+                return;
+            }
+            // Same restore guard as the vertical arm (see above).
+            if defer.get() {
                 return;
             }
             let dominant = page_from_dominant(v.dominant().get(), state.document.num_pages.get());

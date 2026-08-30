@@ -1,5 +1,16 @@
 //! Entering a scrolling mode: align the virtualized scroll position to the
 //! current page.
+//!
+//! The restore is a multi-frame dance: remeasure the freshly-mounted
+//! container, then scroll to the preserved page. During those frames the
+//! scroll→page sync would read the not-yet-restored strip (still at its
+//! initial/zero offset) and "correct" the page back off the preserved one —
+//! the reader would slip to page 1 (or a transient 0) the moment a mode
+//! changed. `defer` is the flag that tells that sync to stand down until the
+//! restore's scroll has landed.
+
+use std::cell::Cell;
+use std::rc::Rc;
 
 use leptos::prelude::*;
 
@@ -8,10 +19,15 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use crate::state::ReaderState;
 
+/// The shared "a mode restore is in flight" flag. Borrowed by the scroll→page
+/// sync (`navigation_sync`), which refuses to correct the page while it is set.
+pub(super) type DeferFlag = Rc<Cell<bool>>;
+
 pub(super) fn on_mode_change(
     state: ReaderState,
     virtualizer: Virtualizer,
     h_virtualizer: Virtualizer,
+    defer: DeferFlag,
 ) {
     let mut was_continuous = state.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
     let mut was_horizontal = state.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
@@ -19,11 +35,13 @@ pub(super) fn on_mode_change(
         let continuous = state.viewer.mode.get() == ViewMode::ScrollVertical;
         let horizontal = state.viewer.mode.get() == ViewMode::ScrollHorizontal;
         if continuous && !was_continuous {
-            // A zoom transition still in flight self-terminates (its commit
-            // branches by the NEW mode), so nothing here needs to release a
-            // suspended-render flag anymore — there is no flag to strand.
+            // Raise the flag FIRST (same flush as the mode flip, so the
+            // scroll→page sync that re-runs for the mode change sees it and
+            // stands down) and keep it up until the restore has scrolled.
+            defer.set(true);
             let page = state.viewer.page.get_untracked();
             let v = virtualizer.clone();
+            let defer = defer.clone();
             request_animation_frame(move || {
                 // Fresh container: recalibrate the viewport before anchoring,
                 // otherwise the window is computed against stale geometry.
@@ -32,11 +50,17 @@ pub(super) fn on_mode_change(
                     let index = (page - 1) as usize;
                     v.scroll_to_index(index, Align::Start, ScrollMode::Instant);
                 }
+                // The restore's scroll has been commanded; hand the page back
+                // to the sync. It now reads a strip anchored at the restored
+                // page, so it agrees instead of clobbering.
+                defer.set(false);
             });
         }
         if horizontal && !was_horizontal {
+            defer.set(true);
             let page = state.viewer.page.get_untracked();
             let v = h_virtualizer.clone();
+            let defer = defer.clone();
             request_animation_frame(move || {
                 v.remeasure_container();
                 if page > 0 {
@@ -58,6 +82,8 @@ pub(super) fn on_mode_change(
                 request_animation_frame(move || {
                     v2.remeasure_container();
                 });
+                // Release the flag on the same frame the restore landed.
+                defer.set(false);
             });
         }
         was_continuous = continuous;

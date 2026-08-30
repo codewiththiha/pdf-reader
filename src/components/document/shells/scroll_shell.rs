@@ -15,7 +15,7 @@ use crate::components::document::PageStrip;
 use crate::components::primitives::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
 use crate::components::primitives::hooks::use_resize_observer::observe_content_size;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
-use crate::components::viewer_controls::reading_progress::ReadingProgress;
+use crate::components::viewer_controls::progress_strip::ProgressStrip;
 use crate::state::ReaderState;
 
 #[component]
@@ -118,7 +118,7 @@ pub fn ScrollShell(
                 horizontal=axis == Axis::Horizontal
             />
             <Show when=move || progress_visible.get()>
-                <ReadingProgress fraction=Signal::derive(move || progress()) />
+                <ProgressStrip fraction=Signal::derive(move || progress()) />
             </Show>
         </div>
     }
