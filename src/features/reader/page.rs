@@ -128,8 +128,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     crate::effects::reader::zoom_watchers::fit_watcher(state);
     crate::effects::reader::auto_scroll::auto_scroll(vs);
     reading_progress(state);
-    // The blend backdrop's geometry half: scope, page pair, scroll progress
-    // (the engine owns the colours those drive).
+    // The blend backdrop's geometry half: the viewport's ladder position per
+    // scroll tick (the engine owns the colours it drives). The SETTINGS half
+    // lives at the app root, ahead of the first document open.
     crate::effects::reader::blend_backdrop::blend_backdrop(state);
 
     let status = state.reader.document.status;

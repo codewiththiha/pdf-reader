@@ -132,10 +132,16 @@ export type OpenResult = Result<{
   numPages: number;
   title: string | null;
   author: string | null;
+  /** Deliberately empty: the chapter tree resolves via `resolveOutline`
+   * after the reader is up (flattening it blocks on one worker round trip
+   * per destination, and must not hold `open` hostage). */
   outline: { title: string; page: number; depth: number }[];
   page1Size: { width: number; height: number };
   pageHeights: number[];
   pageWidths: number[];
+}>;
+export type OutlineResult = Result<{
+  outline: { title: string; page: number; depth: number }[];
 }>;
 export type RenderResult = Result<{ width: number; height: number; scale: number }>;
 export type ThumbResult = Result<{ width: number; height: number; scale: number; cached: boolean }>;
@@ -155,6 +161,7 @@ export type SearchResult = Result<{
 export type PDFReaderApi = {
   version: () => string;
   open: (path: string) => Promise<OpenResult>;
+  resolveOutline: () => Promise<OutlineResult>;
   destroy: () => Promise<void>;
   registerPage: (payload: {
     canvasId: string;
@@ -185,6 +192,9 @@ export type PDFReaderApi = {
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
   setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
+  /** The Rust paper session's blend switch — gates stashPaperFrame so idle
+   * renders cost nothing on the paper pipeline. */
+  setPaperActive: (on: boolean) => void;
   /** Bank a fixed colour for the current document WITHOUT publishing it —
    * the Rust paper session's close path (an interrupted scan's answer). */
   persistPaper: (hex: string, area: PaperArea) => void;

@@ -420,7 +420,8 @@ so the Rust side reads `ok` first and then deserializes.
 | Function | Purpose |
 |----------|---------|
 | `version` | Engine version string |
-| `open` | Load a document, return page count and intrinsic page sizes |
+| `open` | Load a document, return page count and intrinsic page sizes (the outline is NOT resolved here — that is `resolveOutline`'s job, so opens stay fast on chapter-heavy books) |
+| `resolveOutline` | Flatten the open document's chapter tree after the reader is up |
 | `destroy` | Tear down the current document |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |

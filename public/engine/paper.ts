@@ -17,7 +17,9 @@
 // * `getCachedPaper` — read that memory back, so a reopened book repaints
 //   with zero sampling work.
 //
-// Cost per frame: one ≤96×96 downscale and one pixel readback.
+// Cost per frame: one ≤96×96 downscale and one pixel readback — and none
+// at all while blend mode is off, which is the common case: the session
+// gates the stash from the Rust side (setPaperActive).
 
 import { currentPath, pdf, setDetectedPaper } from "./state";
 import type { PaperArea, PaperFrame } from "./types";
@@ -40,6 +42,17 @@ const CACHE_KEY = "pdfreader.blend-paper.v2";
 const CACHE_MAX = 16;
 
 const stash = new Map<string, PaperFrame>();
+
+/** Whether the Rust paper session wants frames. Defaults to true so a pure
+ * JS consumer sees the old behaviour; `paper::configure` flips it with the
+ * blend switch, because stashing a ≤96px downscale + readback per render for
+ * a session that will ignore every frame is pure waste. */
+let active = true;
+
+/** The Rust session's word for "blend mode is on" — gates stashPaperFrame. */
+export function setPaperActive(on: boolean): void {
+  active = !!on;
+}
 
 /** One scratch canvas for every downscale, reused across renders: a live
  * render stashes on EVERY completion, and a ≤96px bitmap is not worth an
@@ -108,12 +121,14 @@ function downscale(src: HTMLCanvasElement): PaperFrame | null {
 }
 
 /** Park a live raster's raw frame for the Rust session to drain. Called at
- * the renderer's raw-pixel moment, before the theme bake touches it. */
+ * the renderer's raw-pixel moment, before the theme bake touches it. A no-op
+ * while the session has blend mode off (see setPaperActive). */
 export function stashPaperFrame(
   canvasId: string,
   page: number,
   src: HTMLCanvasElement | null,
 ): void {
+  if (!active) return;
   if (!src || src.width < 8 || src.height < 8) return;
   const frame = downscale(src);
   if (!frame) return;

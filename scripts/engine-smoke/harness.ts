@@ -443,6 +443,7 @@ interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thum
 
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
+  resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
   registerPage(p: { canvasId: string; hostId: string; page: number }): void;
   renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
   renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
@@ -451,6 +452,7 @@ interface PDFReaderHandle {
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
   setPaper(hex: string, persist: boolean, area: "whole" | "edges"): void;
+  setPaperActive(on: boolean): void;
   persistPaper(hex: string, area: "whole" | "edges"): void;
   takePaperFrame(canvasId: string): {
     ok: true;

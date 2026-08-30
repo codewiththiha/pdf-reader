@@ -46,7 +46,9 @@ fn guard_pdf_reader() -> bool {
 }
 
 /// Parses a `{ok:bool, error?:{name,message}, ...fields}` value into `T`.
-async fn resolve<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, EngineError> {
+/// Pure parsing — no JS awaits — so the whole engine-answer path that needs
+/// no Promise (e.g. the synchronous paper-cache lookup) can use it too.
+fn resolve<T: DeserializeOwned>(value: JsValue, what: &str) -> Result<T, EngineError> {
     let is_ok = js_sys::Reflect::get(&value, &JsValue::from_str("ok"))
         .ok()
         .and_then(|v| v.as_bool())
@@ -101,7 +103,28 @@ pub async fn pick_pdf() -> Result<String, String> {
 pub async fn open(path: &str) -> Result<OpenResult, EngineError> {
     require_pdf_reader()?;
     let value = bridge::open(path).await;
-    resolve::<OpenResult>(value, "open").await
+    resolve::<OpenResult>(value, "open")
+}
+
+/// `{ok:true, outline}` — engine.resolveOutline.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OutlinePayload {
+    outline: Vec<crate::types::OutlineNode>,
+}
+
+/// The open document's chapter tree, flattened. The open flow asks for this
+/// AFTER the reader is up: resolving every outline destination is a per-entry
+/// worker round trip, and holding `open` hostage to it was most of the
+/// document-opening lag on textbook-sized outlines. `Ok(empty)` when the
+/// book has no outline or the engine has no answer.
+pub async fn outline() -> Result<Vec<crate::types::OutlineNode>, EngineError> {
+    if !guard_pdf_reader() {
+        return Ok(Vec::new());
+    }
+    let value = bridge::resolve_outline().await;
+    let payload: OutlinePayload = resolve(value, "resolveOutline")?;
+    Ok(payload.outline)
 }
 
 /// Tear the engine document down (used when returning to the library shelf).
@@ -143,7 +166,7 @@ pub fn unregister_page(canvas_id: &str) {
 pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Result<RenderResult, EngineError> {
     require_pdf_reader()?;
     let value = bridge::render_page(canvas_id, scale, render_text).await;
-    resolve::<RenderResult>(value, "render").await
+    resolve::<RenderResult>(value, "render")
 }
 
 /// Render one thumbnail through the engine's cached thumbnail lane.
@@ -156,7 +179,7 @@ pub async fn render_page(canvas_id: &str, scale: f64, render_text: bool) -> Resu
 pub async fn render_thumb(canvas_id: &str, page: u32, scale: f64) -> Result<ThumbResult, EngineError> {
     require_pdf_reader()?;
     let value = bridge::render_thumb(canvas_id, page, scale).await;
-    resolve::<ThumbResult>(value, "thumb").await
+    resolve::<ThumbResult>(value, "thumb")
 }
 
 /// Cancel an in-flight thumbnail render (cell unmounted). Does NOT evict the
@@ -173,7 +196,7 @@ pub fn cancel_thumb(canvas_id: &str) {
 pub async fn cover_data_url(path: &str, max_width: f64) -> Result<CoverResult, EngineError> {
     require_pdf_reader()?;
     let value = bridge::cover_data_url(path, max_width).await;
-    resolve::<CoverResult>(value, "cover").await
+    resolve::<CoverResult>(value, "cover")
 }
 
 /// Synchronous probe: is this page's thumbnail already cached at `scale`?
@@ -208,13 +231,12 @@ pub async fn build_search_index() -> Result<u32, EngineError> {
     require_pdf_reader()?;
     let value = bridge::build_search_index().await;
     resolve::<SearchIndexResult>(value, "build_search_index")
-        .await
         .map(|r| r.count)
 }
 
 pub async fn search(query: &str) -> Result<SearchResponse, EngineError> {
     let value = bridge::search(query).await;
-    resolve::<SearchResponse>(value, "search").await
+    resolve::<SearchResponse>(value, "search")
 }
 
 /// Mark occurrence `index` of `page` as the current match (`index < 0` clears).
@@ -292,7 +314,7 @@ pub async fn sample_paper_page(page: u32) -> Result<Option<PaperFrame>, EngineEr
         return Ok(None);
     }
     let value = bridge::sample_paper_page(page).await;
-    resolve_frame(value, &format!("samplePaperPage({page})")).await
+    resolve_frame(value, &format!("samplePaperPage({page})"))
 }
 
 /// A cached fixed-mode colour, and the detection area it was computed
@@ -306,12 +328,16 @@ pub struct CachedPaper {
 
 /// The cached fixed-mode colour for `path`, if the engine remembers one
 /// **and** it was found under `area`.
-pub async fn cached_paper(path: &str, area: PaperArea) -> Result<Option<CachedPaper>, EngineError> {
+///
+/// Synchronous end to end — the TS side is a plain localStorage read — so
+/// the open flow can consult it BEFORE the reader view mounts without an
+/// await, and a hit repaints the backdrop in the reader's very first frame.
+pub fn cached_paper(path: &str, area: PaperArea) -> Result<Option<CachedPaper>, EngineError> {
     if !guard_pdf_reader() {
         return Ok(None);
     }
-    let value = bridge::get_cached_paper(path).await;
-    let payload: PaperCacheResult = resolve(value, "getCachedPaper").await?;
+    let value = bridge::get_cached_paper(path);
+    let payload: PaperCacheResult = resolve(value, "getCachedPaper")?;
     let Some(hex) = payload.hex.filter(|h| !h.is_empty()) else {
         return Ok(None);
     };
@@ -331,6 +357,16 @@ pub fn set_paper(hex: Option<&str>, persist: bool, area: PaperArea) {
     match hex {
         Some(hex) => bridge::set_paper(hex, persist, area.engine_id()),
         None => bridge::set_paper("", false, area.engine_id()),
+    }
+}
+
+/// Tell the engine whether the paper session wants frames at all: while
+/// blend mode is off, the renderer skips the per-render ≤96px downscale +
+/// readback that `stashPaperFrame` exists to pay. Called by `paper::configure`
+/// on every settings change — the engine-side flag is idempotent.
+pub fn set_paper_active(on: bool) {
+    if guard_pdf_reader() {
+        bridge::set_paper_active(on);
     }
 }
 
@@ -383,7 +419,7 @@ fn parse_frame(value: &JsValue) -> Option<PaperFrame> {
     })
 }
 
-async fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>, EngineError> {
+fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>, EngineError> {
     if let Some(frame) = parse_frame(&value) {
         return Ok(Some(frame));
     }
@@ -398,7 +434,7 @@ async fn resolve_frame(value: JsValue, what: &str) -> Result<Option<PaperFrame>,
     }
     // `{ok:false, error}` — surface it through the shared error path (which
     // always errs here; the Ok arm is unreachable and defensive).
-    match resolve::<PaperCacheResult>(value, what).await {
+    match resolve::<PaperCacheResult>(value, what) {
         Err(e) => Err(e),
         Ok(_) => Ok(None),
     }

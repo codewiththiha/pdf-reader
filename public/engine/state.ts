@@ -12,7 +12,7 @@ import type {
 } from "./types";
 import { disposeScratch, releaseCanvas } from "./canvas";
 
-export const ENGINE_VERSION = "0.3.1";
+export const ENGINE_VERSION = "0.4.0"; // 0.4.0: open stops resolving the outline (resolveOutline) + the paper stash learns setPaperActive
 
 export let loadingTask: LoadingTask | null = null;
 export let pdf: PDFDocumentProxy | null = null;

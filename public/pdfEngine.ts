@@ -10,7 +10,7 @@ export {};
 
 import type { PDFReaderApi, Stats } from "./engine/types";
 import { disposeScratch, releaseCanvas } from "./engine/canvas";
-import { coverDataUrl, open, takePendingFile } from "./engine/loader";
+import { coverDataUrl, open, resolveOutline, takePendingFile } from "./engine/loader";
 import {
   cancelPage,
   registerPage,
@@ -35,6 +35,7 @@ import {
   resetPaperForDocument,
   samplePaperPage,
   setPaper,
+  setPaperActive,
   takePaperFrame,
 } from "./engine/paper";
 import { installSelectionTracker } from "./engine/selection";
@@ -222,6 +223,7 @@ installSelectionTracker();
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
   open,
+  resolveOutline,
   destroy,
   registerPage,
   unregisterPage,
@@ -240,6 +242,7 @@ globalThis.PDFReader = {
   refreshTheme,
   setScrubMode,
   setPaper,
+  setPaperActive,
   persistPaper,
   takePaperFrame,
   samplePaperPage,

@@ -27,6 +27,12 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn open(path: &str) -> JsValue;
 
+    // The chapter tree, resolved AFTER open: flattening it means one worker
+    // round trip per outline destination, so open() returns without it and
+    // the shell asks for it separately once the reader is already up.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "resolveOutline")]
+    pub async fn resolve_outline() -> JsValue;
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"])]
     pub async fn destroy() -> JsValue;
 
@@ -142,6 +148,12 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaper")]
     pub fn set_paper(hex: &str, persist: bool, area: &str);
 
+    /// The session's blend switch: while off, the engine skips stashing a
+    /// ≤96px downscale + readback per live render entirely (the session
+    /// would ignore every frame).
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaperActive")]
+    pub fn set_paper_active(on: bool);
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "persistPaper")]
     pub fn persist_paper(hex: &str, area: &str);
 
@@ -151,8 +163,18 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "samplePaperPage")]
     pub async fn sample_paper_page(page: u32) -> JsValue;
 
+    /// The cached fixed-mode colour for `path`, if the engine remembers one.
+    ///
+    /// SYNC on purpose, and the pairing is load-bearing: the TS side is a
+    /// synchronous localStorage read that returns a plain object, never a
+    /// Promise. An `async` extern raw-casts whatever comes back to a
+    /// `Promise` and polls it with `.then` — on a plain object that is a
+    /// TypeError, which unwinds as a panic inside whatever Rust future
+    /// awaited it (it once silently killed the whole open flow, pinning the
+    /// app on "Opening…"). Async externs pair ONLY with TS functions that
+    /// actually return Promises; everything else stays sync on both sides.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "getCachedPaper")]
-    pub async fn get_cached_paper(path: &str) -> JsValue;
+    pub fn get_cached_paper(path: &str) -> JsValue;
 
     /// Release rasters/caches the engine no longer needs (advisory
     /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,

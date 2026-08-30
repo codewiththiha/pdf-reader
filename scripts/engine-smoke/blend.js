@@ -113,6 +113,27 @@ export async function run() {
         throw new Error("opening a document must drop the previous book's stash");
     }
     console.log("paper stash lifecycle ok: re-render re-stashes, reopen clears");
+    // --- the stash is gated on the blend switch -------------------------------
+    // While the session says blend is off, a live render pays nothing on the
+    // paper pipeline: no downscale, no readback, no stash.
+    PDFReader.setPaperActive(false);
+    PDFReader.registerPage({ canvasId: "blend-3-cv", hostId: "blend-3-pg", page: 3 });
+    const r3 = await PDFReader.renderPage("blend-3-cv", 1.0, true);
+    if (!r3.ok)
+        throw new Error("render page 3 failed: " + JSON.stringify(r3));
+    if (PDFReader.takePaperFrame("blend-3-cv") !== null) {
+        throw new Error("blend off must skip the paper stash entirely");
+    }
+    // Back on: the very next render stashes again.
+    PDFReader.setPaperActive(true);
+    const r3b = await PDFReader.renderPage("blend-3-cv", 1.0, true);
+    if (!r3b.ok)
+        throw new Error("re-render page 3 failed: " + JSON.stringify(r3b));
+    const f3 = PDFReader.takePaperFrame("blend-3-cv");
+    if (!f3 || f3.page !== 3) {
+        throw new Error("blend on must restore the stash, got " + JSON.stringify(f3));
+    }
+    console.log("paper gate ok: blend off skips the stash, blend on restores it");
     // --- clearing --------------------------------------------------------------
     PDFReader.setPaper("", false, "whole");
     if (paper() !== "") {

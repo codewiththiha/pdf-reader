@@ -18,9 +18,11 @@
 //!   invalidates everything, because a histogram fed through one area says
 //!   nothing about the other.
 //! * [`document_open`] — a fresh book: reset, publish nothing until a colour
-//!   is known, and ask the engine's cache in the background. A cache hit
-//!   (under the SAME detection area) repaints instantly with zero sampling;
-//!   a miss arms nothing — the scan waits for the reader's first paint.
+//!   is known, and ask the engine's cache before the reader view mounts (the
+//!   open flow calls this synchronously, ahead of the Ready flip). A cache
+//!   hit (under the SAME detection area) repaints the very first frame with
+//!   zero sampling; a miss arms nothing — the scan waits for the reader's
+//!   first paint.
 //! * [`live_frame`] — after every successful render, the one stashed raw
 //!   frame feeds the per-page palette (continuous mode's raw material) and
 //!   the interim colour (the fixed mode's stand-in until the scan lands).
@@ -128,16 +130,46 @@ fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: impl FnOnce() 
 /// The reader's paper settings changed (or are being restated on mount).
 ///
 /// `blend_on` gates the background scan — an idle reader with blend off
-/// should not be rendering a hundred pages behind the shelf — while the
-/// mode and area steer every decision the session makes.
+/// should not be rendering a hundred pages behind the shelf — and the
+/// engine-side frame stash: while it is off, live renders skip the ≤96px
+/// downscale + readback entirely, so a mid-book switch back on re-seeds the
+/// session with one tiny offscreen sample of the page under the reader (no
+/// frames were stashed while it was off, and pages do not re-render on a
+/// settings flip).
 pub fn configure(blend_on: bool, mut config: PaperConfig) {
     config.sanitize();
-    let (area_changed, mode_now_continuous) = with(|s| {
+    let (area_changed, mode_now_continuous, reseed_page) = with(|s| {
         let area_changed = s.config.area != config.area;
+        // Blend switched on with a book already open: nothing knows this
+        // book's colours yet (the stash was gated off, so no interim; a
+        // mid-session flip must not wait for the next page turn to learn
+        // the current page's paper).
+        let reseed_page = if !s.blend_on && blend_on && s.doc_path.is_some() {
+            Some(s.position.floor().max(1.0) as u32)
+        } else {
+            None
+        };
         s.blend_on = blend_on;
         s.config = config;
-        (area_changed, s.config.mode == PaperMode::Continuous)
+        (area_changed, s.config.mode == PaperMode::Continuous, reseed_page)
     });
+    api::set_paper_active(blend_on);
+    if let Some(page) = reseed_page {
+        spawn_engine(move || async move {
+            let epoch = with(|s| s.epoch);
+            if let Some(frame) = api::sample_paper_page(page).await.ok().flatten() {
+                let changed = with(|s| {
+                    if s.epoch != epoch {
+                        return false; // the book changed under the sample
+                    }
+                    feed_state(s, &frame)
+                });
+                if changed {
+                    publish();
+                }
+            }
+        });
+    }
     if area_changed {
         // Everything colour-shaped was computed through the old area: drop
         // it all and let the frames re-detect. The published colour goes
@@ -166,8 +198,19 @@ pub fn configure(blend_on: bool, mut config: PaperConfig) {
 
 /// A document opened: reset for the new book, clear the shelf's colour, and
 /// ask the engine's cache whether this book's paper is already known.
+///
+/// Synchronous on purpose. The lookup is one guarded call over the engine's
+/// localStorage — there is no Promise to await on the other side, and the
+/// caller (the open flow) runs this BEFORE flipping the reader to Ready, so
+/// a cache hit publishes its colour before the first paint: the backdrop is
+/// the intended colour in the very first frame instead of flashing the theme
+/// paper and correcting a few frames later. A miss arms nothing — the scan
+/// waits for the reader's first paint.
+///
+/// Host tests reach this too: every engine call inside is guarded, so on a
+/// host with no JS runtime the lookup is simply a miss.
 pub fn document_open(path: &str, num_pages: u32) {
-    let epoch = with(|s| {
+    let area = with(|s| {
         s.epoch += 1; // abandon the previous book's in-flight samples/scans
         s.doc_path = Some(path.to_string());
         s.num_pages = num_pages;
@@ -180,34 +223,24 @@ pub fn document_open(path: &str, num_pages: u32) {
         s.scan_cursor = 0;
         s.scanning = false;
         s.sampling.clear();
-        s.epoch
+        s.config.area
     });
-    let open_area = with(|s| s.config.area);
-    api::set_paper(None, false, open_area); // the previous book's colour must not linger
-
-    let path = path.to_string();
-    spawn_engine(move || async move {
-        let area = with(|s| s.config.area);
-        let cached = api::cached_paper(&path, area).await.ok().flatten();
+    api::set_paper(None, false, area); // the previous book's colour must not linger
+    // A valid cache hit IS the fixed colour: no scan, no work. A scan that
+    // armed before this point stops at its next page (`scanning` goes
+    // false), never overwriting the full-book answer with a partial one.
+    if let Some(colour) = api::cached_paper(path, area)
+        .ok()
+        .flatten()
+        .and_then(|hit| Rgb::parse_hex(&hit.hex))
+    {
         with(|s| {
-            if s.epoch != epoch || s.doc_path.as_deref() != Some(path.as_str()) {
-                return; // the book changed under the lookup
-            }
-            if let Some(colour) = cached.and_then(|hit| Rgb::parse_hex(&hit.hex)) {
-                // A valid cache hit IS the fixed colour: no scan, no work. A
-                // scan that armed before the lookup answered stops at its
-                // next page (`scanning` goes false), never overwriting the
-                // full-book answer with a partial one.
-                s.fixed_final = Some(colour);
-                s.scan_cursor = u32::MAX; // the book counts as scanned
-                s.scanning = false;
-            }
-            // A miss arms nothing here: the scan waits for the reader's
-            // first paint (`scan_should_start`), so it can never compete
-            // with the very render that paint comes from.
+            s.fixed_final = Some(colour);
+            s.scan_cursor = u32::MAX; // the book counts as scanned
+            s.scanning = false;
         });
-        publish();
-    });
+    }
+    publish();
 }
 
 /// The document closed (or the app is tearing down): forget everything and
@@ -249,7 +282,12 @@ fn bankable_partial(s: &Session) -> Option<Rgb> {
 
 /// A live render of `canvas_id` just completed: drain its stashed raw frame
 /// into the palette (and the interim, while no fixed colour is known).
+/// A no-op while blend is off — the engine's stash is gated on the same
+/// switch, so there is nothing to drain and no bridge call worth making.
 pub fn live_frame(canvas_id: &str) {
+    if !with(|s| s.blend_on) {
+        return;
+    }
     if let Some(frame) = api::take_paper_frame(canvas_id) {
         feed_frame(&frame);
     }

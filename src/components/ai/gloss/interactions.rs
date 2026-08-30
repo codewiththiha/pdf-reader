@@ -162,7 +162,11 @@ pub fn use_page_flip_collapse(state: AppState, ctrl: GlossController) {
 /// highlight behind.
 pub fn use_zoom_reset(state: AppState, ctrl: GlossController) {
     Effect::new(move |_| {
-        if !state.reader.viewer.zooming_now() {
+        // TRACKED: this must re-run when a transaction opens. The untracked
+        // form left the effect with no reactive dependency at all — it ran
+        // once at mount, found no zoom, and never fired again, so the card
+        // never actually closed on a zoom.
+        if !state.reader.viewer.zooming().get() {
             return;
         }
         if state.reader.ai_selection.popover_open.get_untracked() {

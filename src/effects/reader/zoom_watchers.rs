@@ -128,7 +128,6 @@ pub fn fit_watcher(state: AppState) {
         // stream, and streams are `follow_watcher`'s business.
         let fit = vs.fit.get();
         let chosen = last_fit.get_value() != fit;
-        last_fit.set_value(fit);
         let _ = vs.mode.get();
         // Read CONDITIONALLY, so that turning the setting off also drops the
         // subscription: while Auto Resize is off, a page turn does not re-run
@@ -138,12 +137,18 @@ pub fn fit_watcher(state: AppState) {
         if state.settings.with(|st| st.layout.auto_resize) {
             let _ = vs.page.get();
         }
-        if matches!(
-            posting_gate(vs.zoom.transition.get_untracked()),
-            Gate::StandDown
-        ) {
-            return; // a zoom is mid-flight; let it settle first
+        // The transaction is read TRACKED, on purpose. A fit or mode change
+        // that arrives while a gesture owns the transaction must not be
+        // LOST — the edge is left unconsumed (last_fit still names the
+        // pre-gesture fit), and this very subscription re-runs the effect
+        // when the gesture commits, so the choice lands late instead of
+        // never. An untracked read here is how a fit click during a zoom
+        // used to vanish: the edge was consumed below, the gate returned
+        // StandDown, and nothing ever came back for it.
+        if matches!(posting_gate(vs.zoom.transition.get()), Gate::StandDown) {
+            return; // a gesture owns the transaction; nothing is consumed
         }
+        last_fit.set_value(fit);
         // A fit the reader just picked is an answer to a click, not a burst: it
         // moves the page NOW and sharpens on the follow's held commit, exactly
         // like riding a resize. Debouncing it would hold the page still for the

@@ -27,6 +27,10 @@ pub struct DocumentState {
     pub title: RwSignal<Option<String>>,
     pub author: RwSignal<Option<String>>,
     pub outline: RwSignal<Vec<OutlineNode>>,
+    /// True while the (lazy) outline resolution is in flight — the panel
+    /// shows "resolving" instead of a definitive "No outline" for a book
+    /// whose chapters are merely not back yet.
+    pub outline_pending: RwSignal<bool>,
     /// CSS-px size of page 1 at scale 1 (used for fit modes before any render).
     pub page1_size: RwSignal<Option<PageSize>>,
     /// Intrinsic + laid-out page geometry (one source of truth).
@@ -45,6 +49,7 @@ impl DocumentState {
         self.title.set(None);
         self.author.set(None);
         self.outline.set(Vec::new());
+        self.outline_pending.set(false);
         self.page1_size.set(None);
         self.metrics.reset();
     }
@@ -134,6 +139,7 @@ impl Default for DocumentState {
             title: RwSignal::new(None),
             author: RwSignal::new(None),
             outline: RwSignal::new(Vec::new()),
+            outline_pending: RwSignal::new(false),
             page1_size: RwSignal::new(None),
             metrics: PageMetrics::default(),
         }

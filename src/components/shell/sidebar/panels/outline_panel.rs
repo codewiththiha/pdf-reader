@@ -233,8 +233,14 @@ pub fn OutlinePanel(
         <div node_ref=scroller class="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {move || {
                 if state.document.outline.get().is_empty() {
+                    // The tree resolves lazily (one worker round trip per
+                    // chapter destination, after the reader is up): while it
+                    // is in flight this is a "not yet", not a "not ever".
+                    let pending = state.document.outline_pending.get();
                     view! {
-                        <div class="flex flex-1 items-center justify-center p-4 text-sm text-muted">No outline</div>
+                        <div class="flex flex-1 items-center justify-center p-4 text-sm text-muted">
+                            {if pending { "Resolving chapters…" } else { "No outline" }}
+                        </div>
                     }
                     .into_any()
                 } else {
