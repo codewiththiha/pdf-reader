@@ -51,6 +51,23 @@
   --scale-round-y: 1px;
 }
 
+/* BLEND UNCLIP — only in blend mode does the page's own texture layer bleed
+   past the page box and paint the gutter (see the BLEND BLEED block in
+   textures.css). The base rule above clips descendants with overflow:hidden
+   and paint containment; blend mode lifts both so the ::before can overhang.
+   Scoped to `.reader-bg.blend` on purpose: in every other mode the page
+   stays fully clipped exactly as before, so nothing about normal rendering
+   changes. Safe because nothing else escapes the page rect when the clip
+   lifts: the canvas is exact-size, the vendored .textLayer self-clips
+   (inset:0; overflow:clip), and the link/gloss layers are inset:0.
+   `z-index:0` makes each page its own stacking context, so a later page's
+   opaque canvas always paints above an earlier page's stray bleed. */
+.reader-bg.blend .pdf-page {
+  overflow: visible;
+  contain: layout style;
+  z-index: 0;
+}
+
 .no-page-shadow .pdf-page {
   box-shadow: none;
 }
