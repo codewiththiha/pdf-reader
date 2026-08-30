@@ -20,10 +20,10 @@
 //! shell.titlebar_left_gutter()  // px the bar's row must inset for the lights
 //! ```
 //!
-//! The controller also OWNS the open/close bookkeeping that used to
-//! live in `SidebarPaint` (see below) and the remembered last panel, so
-//! "reopen what was open" is one call (`open_last_panel`) instead of a
-//! second `last_mode` tracker in the page.
+//! The controller also OWNS the open/close bookkeeping (the machine the
+//! deleted `SidebarPaint` state machine used to carry) and the remembered
+//! last panel, so "reopen what was open" is one call (`open_last_panel`)
+//! instead of a second `last_mode` tracker in the page.
 //!
 //! THE CLOSE MACHINE, TWO GEOMETRIES. The two layouts do not share a motion:
 //! the DOCKED rail slides (the aside tweens its width over

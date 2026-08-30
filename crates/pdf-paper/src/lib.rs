@@ -24,7 +24,6 @@ mod color;
 mod config;
 mod detect;
 mod palette;
-mod scan;
 
 pub use color::{lerp, Rgb};
 pub use config::{
@@ -33,4 +32,3 @@ pub use config::{
 };
 pub use detect::{PaperDetector, PAPER_SHARE};
 pub use palette::PagePalette;
-pub use scan::ScanPlan;

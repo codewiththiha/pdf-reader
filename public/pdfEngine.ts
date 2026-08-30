@@ -25,20 +25,14 @@ import {
   prefetchThumb,
   renderThumb,
 } from "./engine/thumbnails";
-import {
-  buildSearchIndex,
-  clearHighlights,
-  search,
-  setActiveMatch,
-  setHighlightMode,
-} from "./engine/search";
+import { buildSearchIndex, clearHighlights, search, setActiveMatch } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
-  cancelPaperWork,
   getCachedPaper,
   persistPaper,
+  resetPaperForDocument,
   samplePaperPage,
   setPaper,
   takePaperFrame,
@@ -118,7 +112,7 @@ async function destroy(): Promise<void> {
   setPdf(null);
   setNumPages(0);
   setCurrentPath(null);
-  cancelPaperWork();
+  resetPaperForDocument();
   disposeScratch();
 }
 
@@ -227,7 +221,6 @@ installSelectionTracker();
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
-  releaseAllSurfaces,
   open,
   destroy,
   registerPage,
@@ -243,7 +236,6 @@ globalThis.PDFReader = {
   buildSearchIndex,
   search,
   setActiveMatch,
-  setHighlightMode,
   clearHighlights,
   refreshTheme,
   setScrubMode,

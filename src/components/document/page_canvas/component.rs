@@ -3,8 +3,8 @@
 //!
 //! Contract:
 //!  - ids are Rust-chosen unique strings; the engine resolves elements by id.
-//!  - renders (page, scale) via engine.renderPage / updatePage; reports the
-//!    rendered CSS-px size through `on_geometry`.
+//!  - renders (page, scale) via engine.renderPage; reports the rendered
+//!    CSS-px size through `on_geometry`.
 //!  - registers on first render, unregisters (cancels) when disposed.
 //!
 //! TWO EFFECTS, deliberately separated (see the zoom controller):

@@ -422,20 +422,17 @@ so the Rust side reads `ok` first and then deserializes.
 | `version` | Engine version string |
 | `open` | Load a document, return page count and intrinsic page sizes |
 | `destroy` | Tear down the current document |
-| `pageCount` | Page count as the engine sees it |
 | `registerPage` / `unregisterPage` | Bind and release a canvas for a page |
 | `cancelPage` | Cancel an in-flight page render |
-| `renderPage` / `renderPages` | Render one page or a batch |
+| `renderPage` | Render one page |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
-| `updatePage` | Re-render an existing page at a new scale |
 | `buildSearchIndex` / `search` / `clearHighlights` | Full-text search lifecycle |
 | `stats` | Internal counters, used to assert memory is actually released |
-| `storageGet` / `storageSet` | Local storage access |
 
 Load order in `index.html` is deliberate. pdf.js is ESM-only in version 6 and must execute before
 the engine so `globalThis.pdfjsLib` exists, and the engine must execute before the WebAssembly
-module because the application reads persisted settings synchronously during mount.
+module because the app reaches for `window.PDFReader` as soon as its first components mount.
 
 ### State model
 

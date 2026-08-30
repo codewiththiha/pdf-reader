@@ -80,10 +80,6 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setActiveMatch")]
     pub fn set_active_match(page: u32, index: i32);
 
-    /// Switch the painted highlights between "live" and "stale".
-    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setHighlightMode")]
-    pub fn set_highlight_mode(mode: &str);
-
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "clearHighlights")]
     pub fn clear_highlights();
 
@@ -91,9 +87,6 @@ extern "C" {
     // Tauri v2 window handle (used by MoreMenu fullscreen, phase 3) and event
     // listener (used by ReaderView drag-drop, phase 5). js_name mapping is load-bearing.
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "window"], js_name = "getCurrentWindow")]
-    // Called from the app crate (MoreMenu fullscreen) via the crate-root
-    // re-export; nothing inside this crate calls it, hence the allow.
-    #[allow(dead_code)]
     pub fn tauri_get_current_window() -> JsValue;
 
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen")]

@@ -148,15 +148,12 @@ pub fn place_card(
     GlossBox { x, y, w, h, r: radius }
 }
 
-/// Spring stiffness and damping for the morph. Stiffness 210 / damping 26 is
-/// mildly underdamped (critical ≈ 29 at mass 1): a confident pop with one small
-/// settle, matching the reference's feel.
-///
-/// The generic 1-D spring and the field-wise steer live in
-/// [`crate::floating`] (the primitive motion layer); `GlossBox` converts into
-/// `FloatBox` at this boundary so the domain type stays the single source of
-/// truth for persisted marks while the mechanics stay reusable.
-pub use crate::floating::{FloatBox, SPRING_DAMPING, SPRING_STIFFNESS};
+/// The gloss box's escape hatch into the primitive motion layer: `GlossBox`
+/// converts into [`FloatBox`] at this boundary so the domain type stays the
+/// single source of truth for persisted marks while the spring mechanics
+/// (including the stiffness/damping constants) stay reusable in
+/// [`crate::floating`].
+pub use crate::floating::FloatBox;
 
 impl From<GlossBox> for FloatBox {
     fn from(b: GlossBox) -> Self {

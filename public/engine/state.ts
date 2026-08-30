@@ -12,7 +12,7 @@ import type {
 } from "./types";
 import { disposeScratch, releaseCanvas } from "./canvas";
 
-export const ENGINE_VERSION = "0.3.0";
+export const ENGINE_VERSION = "0.3.1";
 
 export let loadingTask: LoadingTask | null = null;
 export let pdf: PDFDocumentProxy | null = null;
@@ -58,14 +58,10 @@ export const thumbLive = new Map<string, { page: number }>();
 export const textIndex = new Map<number, TextIndexEntry[]>();
 export const highlightsByPage = new Map<number, SearchRect[]>();
 export let searchQuery = "";
-export let highlightMode: "live" | "stale" = "live";
 export let activeMatch: ActiveMatch = null;
 
 export function setSearchQuery(q: string): void {
   searchQuery = q;
-}
-export function setHighlightModeValue(m: "live" | "stale"): void {
-  highlightMode = m;
 }
 export function setActiveMatchValue(m: ActiveMatch): void {
   activeMatch = m;

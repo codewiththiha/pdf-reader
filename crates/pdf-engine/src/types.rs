@@ -47,7 +47,7 @@ pub struct OpenResult {
     pub page_widths: Vec<f64>,
 }
 
-/// `{ok:true, width, height, scale}` — engine.renderPage / renderPages / updatePage.
+/// `{ok:true, width, height, scale}` — engine.renderPage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderResult {

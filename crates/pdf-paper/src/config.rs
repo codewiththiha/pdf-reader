@@ -63,14 +63,6 @@ impl PaperMode {
             Self::Continuous => "Continuous",
         }
     }
-
-    /// The mode id the TS engine's `setPaperConfig` expects.
-    pub fn engine_id(&self) -> &'static str {
-        match self {
-            Self::Fixed => "fixed",
-            Self::Continuous => "continuous",
-        }
-    }
 }
 
 /// Which pixels of a page raster carry the paper colour.
@@ -90,7 +82,7 @@ impl PaperArea {
         }
     }
 
-    /// The area id the TS engine's `setPaperConfig` expects.
+    /// The area id the engine's `setPaper`/`persistPaper` calls expect.
     pub fn engine_id(&self) -> &'static str {
         match self {
             Self::WholePage => "whole",
@@ -140,11 +132,6 @@ impl PaperConfig {
     pub fn sanitize(&mut self) {
         self.scan_pages = self.scan_pages.clamp(MIN_SCAN_PAGES, MAX_SCAN_PAGES);
         self.edge_width = self.edge_width.clamp(MIN_EDGE_WIDTH, MAX_EDGE_WIDTH);
-    }
-
-    pub fn sanitized(mut self) -> Self {
-        self.sanitize();
-        self
     }
 }
 
@@ -213,17 +200,5 @@ mod tests {
         c.scan_pages = 10_000;
         c.sanitize();
         assert_eq!(c.scan_pages, MAX_SCAN_PAGES);
-    }
-
-    #[test]
-    fn labels_and_engine_ids_are_stable() {
-        assert_eq!(PaperMode::Fixed.label(), "Fixed");
-        assert_eq!(PaperMode::Continuous.label(), "Continuous");
-        assert_eq!(PaperMode::Fixed.engine_id(), "fixed");
-        assert_eq!(PaperMode::Continuous.engine_id(), "continuous");
-        assert_eq!(PaperArea::WholePage.label(), "Whole Page");
-        assert_eq!(PaperArea::Edges.label(), "Edges");
-        assert_eq!(PaperArea::WholePage.engine_id(), "whole");
-        assert_eq!(PaperArea::Edges.engine_id(), "edges");
     }
 }

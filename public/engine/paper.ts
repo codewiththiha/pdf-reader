@@ -225,13 +225,9 @@ export async function samplePaperPage(page: number): Promise<
   }
 }
 
-/** A new document: drop the previous book's undrained frames. */
+/** A new document: drop the previous book's undrained frames. Also the
+ * teardown path — nothing here outlives the book (the Rust session holds
+ * the decisions). */
 export function resetPaperForDocument(): void {
-  stash.clear();
-}
-
-/** Document teardown: abandon everything in flight (nothing here outlives
- * the book — the Rust session holds the decisions). */
-export function cancelPaperWork(): void {
   stash.clear();
 }

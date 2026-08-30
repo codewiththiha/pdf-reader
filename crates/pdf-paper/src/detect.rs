@@ -60,7 +60,7 @@ impl PaperDetector {
     }
 
     /// Count every pixel of the buffer.
-    pub fn feed_rgba(&mut self, rgba: &[u8]) -> usize {
+    fn feed_rgba(&mut self, rgba: &[u8]) -> usize {
         for px in rgba.as_chunks::<4>().0 {
             self.count(px[0], px[1], px[2]);
         }
@@ -70,7 +70,7 @@ impl PaperDetector {
     /// Count only the `edge_width` columns at each side of the frame — the
     /// page's left and right margins. A strip wider than half the page is
     /// the whole page in disguise, so it clamps to `width / 2`.
-    pub fn feed_edges(
+    fn feed_edges(
         &mut self,
         width: usize,
         height: usize,
@@ -117,11 +117,15 @@ impl PaperDetector {
     }
 
     /// Total pixels counted across every feed (the pooled-scan denominator).
-    pub fn pixels(&self) -> u64 {
+    /// A test-only inspector: production reads the dominant colour, never the
+    /// raw count.
+    #[cfg(test)]
+    fn pixels(&self) -> u64 {
         self.pixels
     }
 
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
         self.pixels == 0
     }
 

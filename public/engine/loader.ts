@@ -12,7 +12,6 @@ import { errorInfo, fail, releaseCanvas } from "./canvas";
 import { resetPaperForDocument } from "./paper";
 import {
   currentPath,
-  loadingTask,
   numPages,
   pdf,
   setCurrentPath,
@@ -433,4 +432,3 @@ export async function takePendingFile(): Promise<string | null> {
   }
 }
 
-export { loadingTask };

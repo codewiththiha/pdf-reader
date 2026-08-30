@@ -154,7 +154,6 @@ export type SearchResult = Result<{
 
 export type PDFReaderApi = {
   version: () => string;
-  releaseAllSurfaces: () => void;
   open: (path: string) => Promise<OpenResult>;
   destroy: () => Promise<void>;
   registerPage: (payload: {
@@ -182,7 +181,6 @@ export type PDFReaderApi = {
   buildSearchIndex: () => Promise<Result<{ count: number }>>;
   search: (query: string) => Promise<SearchResult>;
   setActiveMatch: (page: number, index: number) => void;
-  setHighlightMode: (mode: "live" | "stale") => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
