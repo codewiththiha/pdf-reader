@@ -79,20 +79,24 @@ impl ScrollSurface for DomSurface {
 }
 
 /// Test double: records every write as `(content_top, smooth)`.
+/// Host-test only — compiled just for the crate's unit tests.
 #[derive(Default)]
-pub struct TestSurface {
+#[cfg(test)]
+pub(crate) struct TestSurface {
     writes: RefCell<Vec<(f64, bool)>>,
 }
 
+#[cfg(test)]
 impl ScrollSurface for TestSurface {
     fn set_scroll(&self, content_top: f64, smooth: bool) {
         self.writes.borrow_mut().push((content_top, smooth));
     }
 }
 
+#[cfg(test)]
 impl TestSurface {
     /// All writes so far.
-    pub fn writes(&self) -> Vec<(f64, bool)> {
+    pub(crate) fn writes(&self) -> Vec<(f64, bool)> {
         self.writes.borrow().clone()
     }
 }

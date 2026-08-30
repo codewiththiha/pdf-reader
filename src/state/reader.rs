@@ -96,7 +96,7 @@ pub const NO_DOCUMENT: &str = "No document";
 /// [`DEFAULT_PAGE_ASPECT`] when the size is missing or its width is not
 /// positive (a zero-width sheet has no meaningful aspect, and dividing by
 /// it would poison every height derived from it).
-pub fn page_aspect(size: Option<PageSize>) -> f64 {
+pub(crate) fn page_aspect(size: Option<PageSize>) -> f64 {
     match size {
         Some(s) if s.width > 0.0 => s.height / s.width,
         _ => DEFAULT_PAGE_ASPECT,

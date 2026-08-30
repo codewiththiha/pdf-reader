@@ -41,15 +41,6 @@ pub enum ViewMode {
 }
 
 impl ViewMode {
-    pub fn all() -> [ViewMode; 4] {
-        [
-            ViewMode::Single,
-            ViewMode::Spread,
-            ViewMode::ScrollVertical,
-            ViewMode::ScrollHorizontal,
-        ]
-    }
-
     /// Auto-scroll only makes sense on the two scrolling modes.
     pub fn can_scroll(self) -> bool {
         matches!(self, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal)
@@ -57,15 +48,5 @@ impl ViewMode {
 
     pub fn is_paginated(self) -> bool {
         matches!(self, ViewMode::Single | ViewMode::Spread)
-    }
-
-    /// The scroll axis for the scrolling modes. The paginated modes have
-    /// neither a strip nor a main axis, so they return `None`.
-    pub fn axis(self) -> Option<Axis> {
-        match self {
-            ViewMode::ScrollVertical => Some(Axis::Vertical),
-            ViewMode::ScrollHorizontal => Some(Axis::Horizontal),
-            _ => None,
-        }
     }
 }

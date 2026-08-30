@@ -4,7 +4,7 @@
 //! [`Step`] that describes what the framework adapter must apply (range write,
 //! corrected scroll, layout-version bump). No signals, no DOM, and no timers
 //! live here — which is why the entire refresh engine is unit-tested on the
-//! host against a [`crate::surface::TestSurface`].
+//! host against a `TestSurface` test double.
 //!
 //! Coordinates are **content coordinates**: `0` is the top of the first item;
 //! negative offsets address the scrollable `padding_start` band that sits
@@ -28,8 +28,6 @@ pub struct CoreConfig {
     pub shape: LayoutShape,
     /// List gap (grids fold the gap into the row pitch).
     pub gap: f64,
-    /// Sticky item indices (list layouts only).
-    pub sticky: Vec<usize>,
     /// Content padding before the first item.
     pub padding_start: f64,
     /// Content padding after the last item.
@@ -50,7 +48,6 @@ impl Default for CoreConfig {
             budget: Budget::default(),
             shape: LayoutShape::List,
             gap: 0.0,
-            sticky: Vec::new(),
             padding_start: 0.0,
             padding_end: 0.0,
             viewport: Viewport::main_only(0.0),
@@ -96,7 +93,6 @@ pub struct VirtualizerCore {
     budget: Budget,
     shape: LayoutShape,
     gap: f64,
-    sticky: Vec<usize>,
     padding_start: f64,
     padding_end: f64,
     eps: f64,
@@ -120,7 +116,6 @@ impl VirtualizerCore {
             budget: config.budget,
             shape: config.shape,
             gap: config.gap,
-            sticky: config.sticky,
             padding_start: config.padding_start,
             padding_end: config.padding_end,
             eps: config.eps,
@@ -225,8 +220,7 @@ impl VirtualizerCore {
         let shape = self.shape;
         let gap = self.gap;
         let cross = self.viewport.cross;
-        let sticky = self.sticky.clone();
-        self.layout = build_layout(&shape, count, sizes, cross, gap, &sticky);
+        self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.pending = None;
         self.queue.clear();
@@ -257,8 +251,7 @@ impl VirtualizerCore {
             Some((item, self.scroll_top - self.layout.offset(item)))
         };
         let (shape, gap, cross) = (self.shape, self.gap, self.viewport.cross);
-        let sticky = self.sticky.clone();
-        self.layout = build_layout(&shape, count, sizes, cross, gap, &sticky);
+        self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.queue.clear();
         self.scroll_top = match anchor {
@@ -374,8 +367,7 @@ impl VirtualizerCore {
         let shape = self.shape;
         let gap = self.gap;
         let cross = self.viewport.cross;
-        let sticky = self.sticky.clone();
-        self.layout = build_layout(&shape, count, sizes, cross, gap, &sticky);
+        self.layout = build_layout(&shape, count, sizes, cross, gap);
         self.hint = 0;
         self.pending = None;
         if let Some(top) = new_top {
@@ -451,11 +443,6 @@ impl VirtualizerCore {
             self.scroll_top = target;
             Some(self.rewindow())
         }
-    }
-
-    /// Abandon an in-flight scroll-to.
-    pub fn cancel_scroll(&mut self) {
-        self.pending = None;
     }
 
     /// Current mount window.
@@ -585,17 +572,6 @@ impl VirtualizerCore {
         }
     }
 
-    /// Spacer pair for [`crate::render::Positioning::Padding`].
-    pub fn padding(&self) -> (f64, f64) {
-        let Some(window) = self.range else {
-            return (self.padding_start, self.layout.total() + self.padding_end);
-        };
-        let before = self.padding_start + self.layout.offset(window.first);
-        let next = (window.last + 1).min(self.layout.item_count());
-        let after = self.padding_end + (self.layout.total() - self.layout.offset(next));
-        (before, after.max(0.0))
-    }
-
     /// Recompute the window from the current state using the hinted search.
     fn rewindow(&mut self) -> Step {
         let range = if self.layout.is_empty() {
@@ -711,14 +687,10 @@ pub(crate) fn build_layout(
     sizes: &dyn Fn(usize) -> f64,
     cross_extent: f64,
     gap: f64,
-    sticky: &[usize],
 ) -> LayoutKind {
     match shape {
         LayoutShape::List => {
-            let mut layout = ListLayout::estimated(count, sizes, gap);
-            if !sticky.is_empty() {
-                layout = layout.with_sticky(sticky.iter().copied());
-            }
+            let layout = ListLayout::estimated(count, sizes, gap);
             LayoutKind::List(layout)
         }
         LayoutShape::Grid(spec) => {

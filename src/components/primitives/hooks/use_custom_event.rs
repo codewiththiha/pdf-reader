@@ -24,8 +24,6 @@ pub fn dispatch_typed_event<T: Serialize>(name: &str, payload: &T) {
     }
 }
 
-/// Dispatch a payload-less CustomEvent on `window` (one-shot gestures like
-/// "reveal the active row").
 /// Listen for a typed window CustomEvent, parsing `detail` into `T` and
 /// forwarding to `on_event`. The listener is owned by the current reactive
 /// owner; malformed payloads are dropped rather than panicking.

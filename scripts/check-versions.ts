@@ -4,8 +4,8 @@
 // the Tauri shell crate):
 //   - package.json            (.version)
 //   - src-tauri/tauri.conf.json (.version)   <- what Tauri bundles
-//   - Cargo.toml              (pdf-ui, [package].version)
-//   - src-tauri/Cargo.toml    (pdf,     [package].version)
+//   - Cargo.toml              (pdf-reader, [package].version)
+//   - src-tauri/Cargo.toml    (pdf,        [package].version)
 //
 // Release tags and artifact filenames are derived from it, so if any of the
 // four drift, releases break invisibly. This script fails CI when they
@@ -13,7 +13,7 @@
 // the git tag matches the version.
 //
 // This is the TypeScript source; Trunk's pre-build hook compiles it to
-// `scripts/check-versions.mjs` (ESM) so CI can run it with plain `node`.
+// `scripts/check-versions.js` so CI can run it with plain `node`.
 
 import fs from "node:fs";
 import path from "node:path";
