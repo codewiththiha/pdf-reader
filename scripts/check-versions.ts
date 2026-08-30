@@ -9,8 +9,8 @@
 //
 // Release tags and artifact filenames are derived from it, so if any of the
 // four drift, releases break invisibly. This script fails CI when they
-// disagree, and (when CHECK_TAG is set, i.e. a `v*` tag push) also verifies
-// the git tag matches the version.
+// disagree. (Tag-vs-version agreement is validated by the release workflow's
+// metadata job, which is the only place a tag is in hand.)
 //
 // This is the TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-versions.js` so CI can run it with plain `node`.
@@ -53,13 +53,3 @@ if (versions.size !== 1) {
 
 const version = sources[0]![1];
 console.log(`versions agree: ${version}`);
-
-const tag = process.env.CHECK_TAG;
-if (tag) {
-  const expected = tag.replace(/^v/, "");
-  if (expected !== version) {
-    console.error(`::error::tag ${tag} does not match version ${version}`);
-    process.exit(1);
-  }
-  console.log(`tag ${tag} matches version ${version}`);
-}
