@@ -11,13 +11,16 @@
 //   page-by-page scan never starves live renders.
 // * `setPaper` — publish (or clear) `--pdf-paper`; when the session says
 //   so, remember the colour per document path.
+// * `persistPaper` — remember a colour WITHOUT publishing: the session's
+//   close path, banking an interrupted scan's answer while the backdrop
+//   itself is being cleared.
 // * `getCachedPaper` — read that memory back, so a reopened book repaints
 //   with zero sampling work.
 //
 // Cost per frame: one ≤96×96 downscale and one pixel readback.
 
 import { currentPath, pdf, setDetectedPaper } from "./state";
-import type { PaperArea } from "./types";
+import type { PaperArea, PaperFrame } from "./types";
 import { releaseCanvas } from "./canvas";
 
 /** Longest edge of a frame handed to Rust. Small enough that a page render
@@ -35,13 +38,6 @@ const STASH_MAX = 8;
  * scopes themselves. */
 const CACHE_KEY = "pdfreader.blend-paper.v2";
 const CACHE_MAX = 16;
-
-export type PaperFrame = {
-  page: number;
-  width: number;
-  height: number;
-  data: Uint8ClampedArray;
-};
 
 const stash = new Map<string, PaperFrame>();
 
@@ -158,6 +154,14 @@ export function setPaper(hex: string, persist: boolean, area: PaperArea): void {
   if (persist && currentPath) writeCache(currentPath, hex, area);
 }
 
+/** Remember `hex` as this book's fixed colour under `area` WITHOUT
+ * publishing it — the Rust session's close path, when the backdrop is being
+ * cleared but an interrupted scan's answer is still worth banking for the
+ * next open. */
+export function persistPaper(hex: string, area: PaperArea): void {
+  if (hex && currentPath) writeCache(currentPath, hex, area);
+}
+
 /** The cached fixed colour for `path`, and the detection area it was found
  * under (null on a miss — the Rust side treats an area mismatch as a miss
  * too, and rescans). */
@@ -195,7 +199,15 @@ export async function samplePaperPage(page: number): Promise<
     let frame: PaperFrame | null = null;
     try {
       await task.promise;
-      frame = downscale(c);
+      // The render canvas is already ≤ SAMPLE_EDGE on its long side — read
+      // it directly instead of paying a second drawImage through the
+      // scratch downscaler.
+      frame = {
+        page,
+        width: c.width,
+        height: c.height,
+        data: ctx.getImageData(0, 0, c.width, c.height).data,
+      };
     } catch {
       /* cancelled: nothing to sample */
     } finally {

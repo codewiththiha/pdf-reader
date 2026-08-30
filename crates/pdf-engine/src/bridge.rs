@@ -130,12 +130,15 @@ extern "C" {
 
     // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
     // The engine owns the CANVASES; the crate (via this crate's `paper`
-    // session) owns every colour decision. Four calls carry the whole
+    // session) owns every colour decision. Five calls carry the whole
     // contract, all in the established Rust→engine direction:
     //
     // * `setPaper` publishes (or, with "", clears) `--pdf-paper`; `persist`
     //   also writes the per-document cache under `area` — the engine owns
     //   localStorage.
+    // * `persistPaper` writes the per-document cache WITHOUT publishing —
+    //   the session's close path, banking an interrupted scan's answer
+    //   while the backdrop itself is being cleared.
     // * `takePaperFrame` drains the raw frame a live render stashed at the
     //   one pipeline moment the page's own paper is still unbaked.
     // * `samplePaperPage` renders `page` offscreen at a tiny scale and
@@ -145,6 +148,9 @@ extern "C" {
     //   repaints with zero sampling work.
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPaper")]
     pub fn set_paper(hex: &str, persist: bool, area: &str);
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "persistPaper")]
+    pub fn persist_paper(hex: &str, area: &str);
 
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "takePaperFrame")]
     pub fn take_paper_frame(canvas_id: &str) -> JsValue;

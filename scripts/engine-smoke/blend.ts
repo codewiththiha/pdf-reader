@@ -130,4 +130,17 @@ export async function run(): Promise<void> {
     throw new Error("setPaper('') should remove --pdf-paper, got " + paper());
   }
   console.log("paper clear ok: empty hex removes --pdf-paper");
+
+  // --- persistPaper banks a colour without publishing ------------------------
+  // The session's close path: the backdrop is being cleared, but an
+  // interrupted scan's answer is still worth remembering for the next open.
+  PDFReader.persistPaper("#101010", "whole");
+  if (paper() !== "") {
+    throw new Error("persistPaper must not publish --pdf-paper, got " + paper());
+  }
+  const banked = PDFReader.getCachedPaper("/fake/blend-book.pdf");
+  if (!banked.ok || banked.hex !== "#101010" || banked.area !== "whole") {
+    throw new Error("persistPaper should bank under the current path, got " + JSON.stringify(banked));
+  }
+  console.log("paper bank ok: persistPaper writes the cache without publishing");
 }

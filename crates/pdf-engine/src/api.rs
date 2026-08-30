@@ -339,6 +339,17 @@ pub fn set_paper(hex: Option<&str>, persist: bool, area: PaperArea) {
     }
 }
 
+/// Bank `hex` as the current book's fixed colour under `area` WITHOUT
+/// publishing it — the paper session's close path, when the backdrop is
+/// being cleared but an interrupted scan's answer is still worth
+/// remembering for the next open.
+pub fn persist_paper(hex: &str, area: PaperArea) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::persist_paper(hex, area.engine_id());
+}
+
 /// `{ok:true, hex, area}` — engine.getCachedPaper. `hex` is null on a miss;
 /// `area` is the detection area the colour was cached under.
 #[derive(Debug, Serialize, Deserialize)]

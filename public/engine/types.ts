@@ -187,6 +187,9 @@ export type PDFReaderApi = {
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
   setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
+  /** Bank a fixed colour for the current document WITHOUT publishing it —
+   * the Rust paper session's close path (an interrupted scan's answer). */
+  persistPaper: (hex: string, area: PaperArea) => void;
   takePaperFrame: (canvasId: string) => (PaperFrame & { ok: true }) | null;
   samplePaperPage: (page: number) => Promise<
     | (PaperFrame & { ok: true })

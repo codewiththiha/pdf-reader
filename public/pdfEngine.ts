@@ -38,6 +38,7 @@ import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   cancelPaperWork,
   getCachedPaper,
+  persistPaper,
   samplePaperPage,
   setPaper,
   takePaperFrame,
@@ -247,6 +248,7 @@ globalThis.PDFReader = {
   refreshTheme,
   setScrubMode,
   setPaper,
+  persistPaper,
   takePaperFrame,
   samplePaperPage,
   getCachedPaper,

@@ -451,6 +451,7 @@ interface PDFReaderHandle {
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
   setPaper(hex: string, persist: boolean, area: "whole" | "edges"): void;
+  persistPaper(hex: string, area: "whole" | "edges"): void;
   takePaperFrame(canvasId: string): {
     ok: true;
     page: number;

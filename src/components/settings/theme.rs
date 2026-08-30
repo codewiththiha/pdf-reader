@@ -197,12 +197,16 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                 />
             </Row>
             // The fixed scan's page budget: at most this many pages are
-            // sampled for the book's one colour. It applies to the NEXT scan
-            // — a colour already found (or cached) is not re-derived.
+            // sampled for the book's one colour. Continuous mode needs no
+            // budget — it detects each page as the reader reaches it, one
+            // by one — so the stepper sleeps while it is on, and wakes with
+            // the persisted value when the mode returns to Fixed.
             <Row label="Scan Pages">
                 <span class="flex items-center gap-3">
                     <span class=move || {
-                        if s.with(|st| st.layout.blend_mode) {
+                        if s.with(|st| {
+                            st.layout.blend_mode && st.layout.blend_scope == PaperMode::Fixed
+                        }) {
                             "w-14 text-right text-sm tabular-nums text-ink"
                         } else {
                             "w-14 text-right text-sm tabular-nums text-muted/60"
@@ -214,12 +218,16 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                         <IconButton
                             icon=IconName::Minus
                             size=14
-                            title="Scan fewer pages"
+                            title="Scan fewer pages (Fixed mode)"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                blend_off.get()
-                                    || s.with(|st| st.layout.blend_scan_pages)
-                                        <= MIN_SCAN_PAGES
+                                if blend_off.get() {
+                                    return true;
+                                }
+                                s.with(|st| {
+                                    st.layout.blend_scope == PaperMode::Continuous
+                                        || st.layout.blend_scan_pages <= MIN_SCAN_PAGES
+                                })
                             })
                             on_click=move || {
                                 s.update(|st| {
@@ -232,12 +240,16 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                         <IconButton
                             icon=IconName::Plus
                             size=14
-                            title="Scan more pages"
+                            title="Scan more pages (Fixed mode)"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                blend_off.get()
-                                    || s.with(|st| st.layout.blend_scan_pages)
-                                        >= MAX_SCAN_PAGES
+                                if blend_off.get() {
+                                    return true;
+                                }
+                                s.with(|st| {
+                                    st.layout.blend_scope == PaperMode::Continuous
+                                        || st.layout.blend_scan_pages >= MAX_SCAN_PAGES
+                                })
                             })
                             on_click=move || {
                                 s.update(|st| {

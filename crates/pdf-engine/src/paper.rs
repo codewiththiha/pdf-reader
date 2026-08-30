@@ -12,15 +12,23 @@
 //!
 //! * [`configure`] — the reader's settings (blend on/off, mode, area, scan
 //!   budget). A scan starts whenever the FIXED mode is live for a book with
-//!   no colour yet; a detection-area change invalidates everything, because
-//!   a histogram fed through one area says nothing about the other.
+//!   no colour yet — but only once the reader has PAINTED a page, because the
+//!   scan's offscreen renders share the pdf.js worker with the first visible
+//!   render and that render wins by right. A detection-area change
+//!   invalidates everything, because a histogram fed through one area says
+//!   nothing about the other.
 //! * [`document_open`] — a fresh book: reset, publish nothing until a colour
 //!   is known, and ask the engine's cache in the background. A cache hit
 //!   (under the SAME detection area) repaints instantly with zero sampling;
-//!   a miss lets the scan run.
+//!   a miss arms nothing — the scan waits for the reader's first paint.
 //! * [`live_frame`] — after every successful render, the one stashed raw
 //!   frame feeds the per-page palette (continuous mode's raw material) and
 //!   the interim colour (the fixed mode's stand-in until the scan lands).
+//!   The first frame is also the scan's starting gun.
+//! * [`document_close`] — an interrupted fixed scan BANKS its partial answer
+//!   (the pooled dominant of the pages it reached) before forgetting the
+//!   book, so the next open reuses it instead of re-sampling every page up
+//!   to the interruption point.
 //! * [`position`] — per scroll tick in continuous mode: the viewport's
 //!   visible-paint-weighted mean page index. The palette interpolates along
 //!   its ladder at exactly that point, so the backdrop meets the pages where
@@ -181,45 +189,62 @@ pub fn document_open(path: &str, num_pages: u32) {
     spawn_engine(move || async move {
         let area = with(|s| s.config.area);
         let cached = api::cached_paper(&path, area).await.ok().flatten();
-        let should_scan = with(|s| {
+        with(|s| {
             if s.epoch != epoch || s.doc_path.as_deref() != Some(path.as_str()) {
-                return false; // the book changed under the lookup
+                return; // the book changed under the lookup
             }
-            match cached {
-                // A valid cache hit IS the fixed colour: no scan, no work.
-                // A scan that started before the lookup answered stops at
-                // its next page (`scanning` goes false), never overwriting
-                // the full-book answer with a partial one.
-                Some(hit) => {
-                    if let Some(colour) = Rgb::parse_hex(&hit.hex) {
-                        s.fixed_final = Some(colour);
-                        s.scan_cursor = u32::MAX; // the book counts as scanned
-                        s.scanning = false;
-                    }
-                    false
-                }
-                None => scan_should_start(s),
+            if let Some(colour) = cached.and_then(|hit| Rgb::parse_hex(&hit.hex)) {
+                // A valid cache hit IS the fixed colour: no scan, no work. A
+                // scan that armed before the lookup answered stops at its
+                // next page (`scanning` goes false), never overwriting the
+                // full-book answer with a partial one.
+                s.fixed_final = Some(colour);
+                s.scan_cursor = u32::MAX; // the book counts as scanned
+                s.scanning = false;
             }
+            // A miss arms nothing here: the scan waits for the reader's
+            // first paint (`scan_should_start`), so it can never compete
+            // with the very render that paint comes from.
         });
         publish();
-        if should_scan {
-            start_scan();
-        }
     });
 }
 
 /// The document closed (or the app is tearing down): forget everything and
-/// drop the backdrop back to the theme paper.
+/// drop the backdrop back to the theme paper — banking an interrupted fixed
+/// scan's partial answer first, so the next open of the same book reuses it
+/// instead of re-deriving it page by page.
 pub fn document_close() {
-    with(|s| {
+    let (bank, area) = with(|s| {
+        let bank = bankable_partial(s);
         *s = Session {
             config: s.config,
             blend_on: s.blend_on,
             ..Session::default()
         };
+        (bank, s.config.area)
     });
-    let area = with(|s| s.config.area);
+    if let Some(colour) = bank {
+        api::persist_paper(&colour.to_hex(), area);
+    }
     api::set_paper(None, false, area); // the shelf shows the theme paper
+}
+
+/// The colour worth banking when a book closes: the pooled dominant of the
+/// pages an interrupted scan reached, or the interim when it reached none
+/// (a one-page answer — still this book's paper, not the theme's). `None`
+/// when there is nothing to bank: no book, blend off, continuous mode, or a
+/// colour that was already settled — and therefore already persisted — by
+/// a completed scan or a cache hit.
+fn bankable_partial(s: &Session) -> Option<Rgb> {
+    if !s.blend_on
+        || s.config.mode != PaperMode::Fixed
+        || s.doc_path.is_none()
+        || s.fixed_final.is_some()
+    {
+        return None;
+    }
+    s.document.dominant(PAPER_SHARE).or(s.interim)
 }
 
 /// A live render of `canvas_id` just completed: drain its stashed raw frame
@@ -260,6 +285,10 @@ fn feed_frame(frame: &api::PaperFrame) {
         publish();
         ensure_lookahead();
     }
+    // The first frame is also the scan's starting gun: until the reader has
+    // actually shown (or sampled) a page, a fixed scan would only compete
+    // with that render for the pdf.js worker.
+    start_scan_if_needed();
 }
 
 /// The state half of a feed, for in-borrow use. Returns whether anything
@@ -312,28 +341,30 @@ fn publish() {
 fn publish_with(persist_final: bool) {
     let outcome = with(|s| {
         if s.doc_path.is_none() || !s.blend_on {
-            return (None, s.published.take(), false, s.config.area);
+            return (None, s.published.take(), false, false, s.config.area);
         }
         match resolve(s).map(|c| c.to_hex()) {
             Some(hex) => {
-                let persist = persist_final
-                    && s.config.mode == PaperMode::Fixed
-                    && s.fixed_final.is_some();
+                // Only a FIXED book colour is cacheable: a continuous
+                // position's interpolation is ephemeral by design, so a
+                // mode flip mid-scan must not bank one as the book's answer.
+                let persist =
+                    persist_final && s.config.mode == PaperMode::Fixed && s.fixed_final.is_some();
                 let changed = s.published.as_deref() != Some(hex.as_str());
                 if changed {
                     s.published = Some(hex.clone());
                 }
-                (Some(hex), None, changed || persist, s.config.area)
+                (Some(hex), None, changed || persist, persist, s.config.area)
             }
-            None => (None, None, false, s.config.area), // hold
+            None => (None, None, false, false, s.config.area), // hold
         }
     });
     match outcome {
-        (Some(hex), _, send, area) if send => {
-            api::set_paper(Some(hex.as_str()), persist_final, area)
+        (Some(hex), _, true, persist, area) => {
+            api::set_paper(Some(hex.as_str()), persist, area)
         }
         // Deliberate blank: no book / blend off — clear the backdrop.
-        (None, Some(_), _, area) => api::set_paper(None, false, area),
+        (None, Some(_), _, _, area) => api::set_paper(None, false, area),
         _ => {}
     }
 }
@@ -343,12 +374,15 @@ fn publish_with(persist_final: bool) {
 // ---------------------------------------------------------------------------
 
 /// Would a scan be useful right now? (Fixed mode live, a book open, no
-/// final colour, no scan running.)
+/// final colour, no scan running — and the reader has painted at least one
+/// page: the scan's offscreen renders share the pdf.js worker with the
+/// first visible render, and that render wins the worker by right.)
 fn scan_should_start(s: &Session) -> bool {
     s.blend_on
         && s.config.mode == PaperMode::Fixed
         && s.doc_path.is_some()
         && s.fixed_final.is_none()
+        && s.interim.is_some()
         && !s.scanning
 }
 
@@ -643,10 +677,86 @@ mod tests {
         );
         assert_eq!(published(), None); // cleared: re-detect through the new area
         assert!(with(|s| s.palette.is_empty()));
-        // A fresh scan is armed from page 1 under the new area (the task
-        // itself only spawns against a real engine).
-        assert_eq!(with(|s| s.scan_cursor), 1);
+        // The re-scan waits for a frame under the NEW area (nothing has been
+        // fed through Edges yet); the first frame is its starting gun.
+        assert!(!with(|s| s.scanning));
+        feed_frame(&uniform(1, 32, 32, CREAM));
         assert!(with(|s| s.scanning));
+        assert_eq!(with(|s| s.scan_cursor), 1);
+    }
+
+    #[test]
+    fn the_scan_waits_for_the_readers_first_paint() {
+        // A cache-missing book must not start its background scan at open:
+        // the scan's offscreen renders share the pdf.js worker with the
+        // first live render, and the reader's first page wins that race by
+        // right. The first frame — not the open — is the starting gun.
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/book.pdf", 10);
+        assert!(!with(|s| scan_should_start(s)));
+        assert!(!with(|s| s.scanning));
+        feed_frame(&uniform(1, 32, 32, CREAM));
+        // Armed by the paint: the scan is running (scan_should_start itself
+        // goes quiet while one is in flight) with its cursor at page 1.
+        assert!(with(|s| s.scanning));
+        assert_eq!(with(|s| s.scan_cursor), 1);
+    }
+
+    #[test]
+    fn closing_mid_scan_banks_the_partial_answer() {
+        // Half a scan is still the book's best answer so far: closing the
+        // book banks it, so the next open reuses the colour instead of
+        // re-sampling every page up to the interruption point.
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/book.pdf", 10);
+        feed_frame(&uniform(1, 32, 32, CREAM)); // interim + scan armed
+        with(|s| {
+            // The scan reached pages 2 and 3 before the close: ink owns the
+            // pool, cream the interim — the pool wins.
+            for page in 2..=3 {
+                let f = uniform(page, 32, 32, INK);
+                s.document.feed(PaperArea::WholePage, 32, 32, &f.data, 10);
+            }
+        });
+        assert_eq!(
+            with(|s| bankable_partial(s)),
+            Some(Rgb::new(0x40, 0x40, 0x40))
+        );
+        // An unstarted scan still has the interim — a one-page answer.
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/book.pdf", 10);
+        feed_frame(&uniform(1, 32, 32, CREAM));
+        assert_eq!(
+            with(|s| bankable_partial(s)),
+            Some(Rgb::new(0xfa, 0xf4, 0xe8))
+        );
+    }
+
+    #[test]
+    fn nothing_is_banked_when_there_is_no_partial_answer() {
+        // Continuous mode's colours are ephemeral by design; a settled fixed
+        // colour was already persisted when it landed; no book, nothing to
+        // bank. (The engine-side persist call itself is guarded — on the
+        // host, only the decision is exercised.)
+        reset_session(
+            PaperConfig {
+                mode: PaperMode::Continuous,
+                ..PaperConfig::default()
+            },
+            true,
+        );
+        document_open("/fake/book.pdf", 10);
+        feed_frame(&uniform(1, 32, 32, CREAM));
+        assert_eq!(with(|s| bankable_partial(s)), None);
+
+        reset_session(PaperConfig::default(), true);
+        document_open("/fake/book.pdf", 10);
+        feed_frame(&uniform(1, 32, 32, CREAM));
+        with(|s| s.fixed_final = Some(Rgb::new(0xff, 0xff, 0xff)));
+        assert_eq!(with(|s| bankable_partial(s)), None);
+
+        reset_session(PaperConfig::default(), true);
+        assert_eq!(with(|s| bankable_partial(s)), None);
     }
 
     #[test]
