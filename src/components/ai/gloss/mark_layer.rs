@@ -42,11 +42,10 @@ use pdf_core::gloss::GlossMark;
 use crate::components::ai::gloss::selection_mode::{
     dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
 };
-use crate::components::primitives::hooks::use_custom_event::dispatch_typed_event;
 use crate::components::primitives::interactions::long_press::{use_long_press, LongPressOptions};
 
-/// Name of the "a persisted mark was clicked" event.
-pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
+pub use crate::events::GLOSS_OPEN_EVENT;
+use crate::events::dispatch_typed_event;
 
 /// Exact-fit stroke radius. Shared with `ai::anchor::screen_box` so the
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one

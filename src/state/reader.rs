@@ -554,6 +554,19 @@ pub struct GlossState {
     pub processing_id: RwSignal<Option<String>>,
 }
 
+impl GlossState {
+    /// Clear every field to its resting state. Runs on document close and as
+    /// the first step of an open, so a field added to the struct cannot be
+    /// silently forgotten by either path — the same invariant the other
+    /// slices enforce with their own `reset` methods.
+    pub fn reset(&self) {
+        self.marks.set(Vec::new());
+        self.selection_active.set(false);
+        self.selected_marks.set(std::collections::HashSet::new());
+        self.processing_id.set(None);
+    }
+}
+
 /// The reader's slice of app state: everything the PDF components and the
 /// reader effects read/write. Sidebar/UI chrome is deliberately NOT here —
 /// it is app chrome state, passed in explicitly where the reader needs it.
