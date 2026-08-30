@@ -194,24 +194,24 @@ body {
 .reader-bg.blend::before {
   content: "";
   position: absolute;
-  /* Oversized on purpose: the layer is translated by the scroll position so
-     its pattern phase tracks the column; the 64px overhang (max page margin)
-     hides the moving edge on every side. */
-  inset: -64px;
+  inset: 0; /* layer stays put; only the pattern phase moves below */
   pointer-events: none;
   opacity: var(--texture-opacity, 0.9);
-  /* SAME pitch as .pdf-page::before (zoom x user scale) and SAME phase as the
-     column: the layer's origin sits at the top of page 1 in document space,
-     so translating it by the live scroll keeps backdrop and page texture
-     pixel-locked in every view mode and at every zoom — fit width, fit page,
-     stepped zooms and mid-zoom alike. The vars are written per-frame from
-     effects/reader/blend_backdrop.rs (blend_texture_sync). */
+  /* SAME pitch as .pdf-page::before (zoom x user scale); live values written
+     per-frame by blend_texture_sync in effects/reader/blend_backdrop.rs. */
   --tex-scale: calc(var(--backdrop-scale, 1) * var(--texture-scale-user, 1));
   --tex-unit: calc(26px * var(--tex-scale));
   --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
-  transform: translate3d(calc(-1 * var(--backdrop-x, 0px)), calc(-1 * var(--backdrop-y, 0px)), 0);
   background-origin: border-box;
-  background-position: 0 0;
+  /* Scroll tracking = shifting the TILE PHASE, not translating the clipped box.
+     `.reader-bg` is overflow:hidden, so a `transform` that slides the whole
+     painted box by -scroll_top throws it out of the clip rect once scroll
+     passes the (tiny) overhang — blank backdrop. background-position moves the
+     tiles within the still-covered layer, so the texture survives at any
+     scroll depth. */
+  background-position:
+    calc(0px - var(--backdrop-x, 0px))
+    calc(0px - var(--backdrop-y, 0px));
 }
 html[data-texture="paper"] .reader-bg.blend::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
@@ -221,11 +221,13 @@ html[data-texture="paper"] .reader-bg.blend::before {
 }
 html[data-texture="lined"] .reader-bg.blend::before {
   background-image: repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  background-size: 100% var(--tex-unit); /* one exact period -> seamless at any offset */
 }
 html[data-texture="grid"] .reader-bg.blend::before {
   background-image:
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  background-size: var(--tex-unit) var(--tex-unit);
 }
 html[data-texture="dotted"] .reader-bg.blend::before {
   background-image: radial-gradient(var(--texture-line) calc(1px * var(--tex-scale)), transparent calc(1.5px * var(--tex-scale)));
