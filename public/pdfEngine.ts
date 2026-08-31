@@ -25,7 +25,13 @@ import {
   prefetchThumb,
   renderThumb,
 } from "./engine/thumbnails";
-import { buildSearchIndex, clearHighlights, search, setActiveMatch } from "./engine/search";
+import {
+  buildSearchIndex,
+  clearHighlights,
+  search,
+  setActiveMatch,
+  setPageMatcher as engineSetPageMatcher,
+} from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline, setFilterMatrix as engineSetFilterMatrix } from "./engine/theme/pipeline";
 import { setWasmBaker as engineSetWasmBaker } from "./engine/theme/bake";
@@ -238,6 +244,7 @@ globalThis.PDFReader = {
   stats,
   buildSearchIndex,
   search,
+  setPageMatcher: engineSetPageMatcher,
   setActiveMatch,
   clearHighlights,
   refreshTheme,

@@ -33,6 +33,105 @@ pub struct SearchResponse {
     pub matches: Vec<SearchMatch>,
 }
 
+/// One positioned text item of a page, as extracted by the engine: the
+/// string plus its scale-1 CSS rect relative to the page's top-left. The
+/// rect derivation from the pdf.js item transform stays engine-side (it is
+/// shaped by pdf.js); everything downstream — the matching itself — is here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextItemGeo {
+    pub s: String,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// One page's text, ready to match: what the engine extracts per page and
+/// hands to the wasm matcher (pdf_engine::wasm_ops registers it), and what
+/// [`search_page`] returns matches for. The query is the already-lowercased,
+/// trimmed string the engine searched for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageTextPayload {
+    pub page: u32,
+    pub query: String,
+    pub items: Vec<TextItemGeo>,
+}
+
+/// Match one page's text against the query. Mirrors the engine's JS matcher
+/// occurrence-for-occurrence: a case-insensitive scan per item, a match rect
+/// interpolated inside the item's rect by character fraction, per-page
+/// ordinals in reading order, and an ellipsised snippet of the surrounding
+/// text.
+///
+/// Index semantics: the JS matcher walks UTF-16 code units; this walks bytes
+/// of the lowercased string. For ASCII — which queries and PDF text are
+/// overwhelmingly made of — the two agree exactly; beyond ASCII the
+/// interpolated fraction and the snippet edges can differ by a character,
+/// which shifts a highlight box by at most one glyph, never a page or a
+/// count.
+pub fn search_page(p: &PageTextPayload) -> Vec<SearchMatch> {
+    let q = p.query.to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
+    }
+    let qlen = q.len();
+    let mut out = Vec::new();
+    let mut ord: u32 = 0;
+    for item in &p.items {
+        if item.s.is_empty() || item.w <= 0.0 {
+            continue;
+        }
+        let lower = item.s.to_lowercase();
+        let len = lower.len();
+        if len == 0 {
+            continue;
+        }
+        let mut at = 0usize;
+        while let Some(found) = lower[at..].find(&q) {
+            let hit = at + found;
+            out.push(SearchMatch {
+                page: p.page,
+                index: ord,
+                text: snippet(&item.s, hit, qlen),
+                x: item.x + item.w * hit as f64 / len as f64,
+                y: item.y,
+                w: (item.w * qlen as f64 / len as f64).max(1.0),
+                h: item.h,
+            });
+            ord += 1;
+            at = hit + qlen;
+        }
+    }
+    out
+}
+
+/// Ellipsised context around the occurrence at byte offset `hit` (of the
+/// lowercased text) with a query of `qlen` bytes — 25 bytes before, 30 after,
+/// exactly the JS `snippetText` window. Slice edges are walked onto char
+/// boundaries: JS can slice mid-code-unit, Rust must not.
+fn snippet(s: &str, hit: usize, qlen: usize) -> String {
+    let len = s.len();
+    let start = floor_char_boundary(s, hit.saturating_sub(25));
+    let end = ceil_char_boundary(s, (hit + qlen + 30).min(len));
+    let pre = if start > 0 { "…" } else { "" };
+    let post = if end < len { "…" } else { "" };
+    format!("{pre}{}{post}", &s[start..end])
+}
+
+fn floor_char_boundary(s: &str, mut i: usize) -> usize {
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn ceil_char_boundary(s: &str, mut i: usize) -> usize {
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
 /// Next active-result index with wrap-around. `dir > 0` forward, `dir < 0` back.
 /// `active = None` → first (dir > 0) or last (dir < 0).
 pub fn next_search_index(len: usize, active: Option<usize>, dir: i32) -> Option<usize> {
@@ -193,5 +292,155 @@ mod tests {
             scroll_to_reveal(2000.0, 2020.0, 0.0, 60.0, 48.0, 56.0, 24.0),
             Some(2000.0 - 48.0 - 24.0)
         );
+    }
+
+    // --- search_page (the ported matching core) ---------------------------
+
+    fn geo(s: &str, x: f64, y: f64, w: f64, h: f64) -> TextItemGeo {
+        TextItemGeo {
+            s: s.to_string(),
+            x,
+            y,
+            w,
+            h,
+        }
+    }
+
+    fn payload(page: u32, query: &str, items: Vec<TextItemGeo>) -> PageTextPayload {
+        PageTextPayload {
+            page,
+            query: query.to_string(),
+            items,
+        }
+    }
+
+    /// Every occurrence is found in reading order, with the rect interpolated
+    /// inside the item's rect and per-page ordinals — the values the UI's
+    /// next/previous stepping and the highlight boxes are built from.
+    #[test]
+    fn finds_every_occurrence_with_interpolated_rects() {
+        // "the theory of the mind": len 22, occurrences at 0, 4, 14.
+        let p = payload(2, "the", vec![geo("the theory of the mind", 72.0, 140.4, 220.0, 12.0)]);
+        let ms = search_page(&p);
+        assert_eq!(ms.len(), 3, "{ms:?}");
+        let want_x = [72.0, 112.0, 212.0];
+        for (i, m) in ms.iter().enumerate() {
+            assert_eq!(m.page, 2);
+            assert_eq!(m.index, i as u32);
+            assert_eq!(m.y, 140.4);
+            assert_eq!(m.h, 12.0);
+            assert!((m.x - want_x[i]).abs() < 1e-9, "x[{}]: {}", i, m.x);
+            assert!((m.w - 30.0).abs() < 1e-9, "w[{}]: {}", i, m.w);
+        }
+    }
+
+    /// Ordinals continue across items on the same page, and matching is
+    /// case-insensitive while the snippet keeps the ORIGINAL casing.
+    #[test]
+    fn ordinals_span_items_and_matching_ignores_case() {
+        let p = payload(
+            5,
+            "the",
+            vec![
+                geo("the theory of the mind", 0.0, 0.0, 220.0, 12.0),
+                geo("THE quick brown fox", 0.0, 20.0, 180.0, 12.0),
+            ],
+        );
+        let ms = search_page(&p);
+        assert_eq!(ms.len(), 4, "{ms:?}");
+        for (i, m) in ms.iter().enumerate() {
+            assert_eq!(m.index, i as u32);
+        }
+        assert_eq!(ms[3].text, "THE quick brown fox");
+        assert_eq!(ms[3].y, 20.0);
+    }
+
+    /// A hit in the middle of a long line carries both ellipses; a hit at the
+    /// very start carries neither — the exact window the JS snippetText cut.
+    #[test]
+    fn snippets_window_twenty_five_before_and_thirty_after() {
+        let line = format!("{}{}{}", "x".repeat(40), "find", "y".repeat(60));
+        let p = payload(1, "find", vec![geo(&line, 0.0, 0.0, 1000.0, 10.0)]);
+        let ms = search_page(&p);
+        assert_eq!(ms.len(), 1);
+        let want = format!("…{}find{}…", "x".repeat(25), "y".repeat(30));
+        assert_eq!(ms[0].text, want);
+
+        let head = format!("{}{}", "find", "y".repeat(60));
+        let p = payload(1, "find", vec![geo(&head, 0.0, 0.0, 1000.0, 10.0)]);
+        let ms = search_page(&p);
+        assert_eq!(ms[0].text, format!("find{}", "y".repeat(30)));
+    }
+
+    /// Overlapping-step semantics: the scan resumes at hit + query length, so
+    /// a self-overlapping haystack finds the same occurrences JS indexOf does.
+    #[test]
+    fn the_scan_steps_past_each_hit_like_indexof() {
+        // "aaaa" searching "aa": JS finds 0 then 2 (indexOf(q, at + 2)) —
+        // and NOT 1, because the scan steps past the whole hit.
+        let p = payload(3, "aa", vec![geo("aaaa", 0.0, 0.0, 400.0, 10.0)]);
+        let ms = search_page(&p);
+        assert_eq!(ms.len(), 2, "{ms:?}");
+        assert!((ms[0].x - 0.0).abs() < 1e-9);
+        assert!((ms[1].x - 200.0).abs() < 1e-9, "second hit x: {}", ms[1].x);
+        assert!((ms[1].w - 200.0).abs() < 1e-9, "w: {}", ms[1].w);
+
+        // "aaa" searching "aa" therefore finds only the first.
+        let p = payload(3, "aa", vec![geo("aaa", 0.0, 0.0, 300.0, 10.0)]);
+        assert_eq!(search_page(&p).len(), 1);
+    }
+
+    /// Items without ink (zero width) and empty queries produce nothing; a
+    /// match's width still never drops below one CSS px.
+    #[test]
+    fn skips_inkless_items_and_empty_queries() {
+        let p = payload(1, "the", vec![geo("the", 0.0, 0.0, 0.0, 12.0)]);
+        assert!(search_page(&p).is_empty());
+
+        let p = payload(1, "", vec![geo("the", 0.0, 0.0, 220.0, 12.0)]);
+        assert!(search_page(&p).is_empty());
+
+        // A query wider than the item still yields a 1px-wide box.
+        let p = payload(1, "the", vec![geo("the", 0.0, 0.0, 2.0, 12.0)]);
+        let ms = search_page(&p);
+        assert_eq!(ms.len(), 1);
+        assert!(ms[0].w >= 1.0);
+    }
+
+    /// Multi-byte text must not panic on any slicing path: byte offsets from
+    /// the lowercased scan are walked onto char boundaries for the snippet.
+    #[test]
+    fn multibyte_text_never_panics_and_still_matches() {
+        let p = payload(
+            7,
+            "héllo",
+            vec![geo("héllo wörld… héllo again", 0.0, 0.0, 500.0, 10.0)],
+        );
+        let ms = search_page(&p);
+        assert_eq!(ms.len(), 2, "{ms:?}");
+        for m in &ms {
+            assert_eq!(m.page, 7);
+            assert!(m.text.contains("héllo"));
+            assert!(m.w >= 1.0);
+        }
+        assert_eq!(ms[0].index, 0);
+        assert_eq!(ms[1].index, 1);
+    }
+
+    /// The payload is the wire contract with the engine's wasm matcher — pin
+    /// the field names the JS side builds.
+    #[test]
+    fn page_text_payload_round_trips_through_serde() {
+        let p = payload(
+            9,
+            "query",
+            vec![geo("some text", 1.5, 2.5, 3.5, 4.5)],
+        );
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("\"page\":9"), "{json}");
+        assert!(json.contains("\"query\":\"query\""), "{json}");
+        assert!(json.contains("\"s\":\"some text\""), "{json}");
+        let back: PageTextPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, p);
     }
 }

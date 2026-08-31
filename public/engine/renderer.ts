@@ -23,6 +23,7 @@ import {
 import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
 import { buildLinkLayer } from "./links";
+import { runLimited } from "./concurrency";
 
 function pageFromCanvasId(canvasId: string): number {
   const sp = /^sp-(\d+)-cv$/.exec(canvasId);
@@ -289,24 +290,6 @@ export async function renderPageInternal(
   noteActivity();
 
   return { ok: true, width: cssW, height: cssH, scale };
-}
-
-async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
-  const out: T[] = [];
-  let i = 0;
-  const workers = Array.from(
-    { length: Math.min(Math.max(limit, 1), Math.max(jobs.length, 1)) },
-    async () => {
-      while (i < jobs.length) {
-        const idx = i;
-        i += 1;
-        const job = jobs[idx];
-        if (job) out[idx] = await job();
-      }
-    },
-  );
-  await Promise.all(workers);
-  return out;
 }
 
 export async function renderPage(

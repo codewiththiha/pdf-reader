@@ -139,6 +139,12 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setWasmBaker")]
     pub fn set_wasm_baker(baker: js_sys::Function);
 
+    /// The compiled page matcher (pdf_core::search::search_page behind a
+    /// closure): one page's positioned text + the query in, the page's
+    /// matches out. Registered the same engine→wasm way as the baker.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setPageMatcher")]
+    pub fn set_page_matcher(matcher: js_sys::Function);
+
     // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
     // The engine owns the CANVASES; the crate (via this crate's `paper`
     // session) owns every colour decision. Five calls carry the whole

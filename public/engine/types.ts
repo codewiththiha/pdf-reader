@@ -131,6 +131,17 @@ export type PaperFrame = {
  * colour so a cache found under one area is not reused under the other. */
 export type PaperArea = "whole" | "edges";
 
+/** The compiled page matcher the wasm app registers
+ *  (pdf_engine::wasm_ops): one page's positioned text plus the query in,
+ *  the page's matches out. */
+export type WasmPageMatcher = (
+  payload: {
+    page: number;
+    query: string;
+    items: Array<{ s: string; x: number; y: number; w: number; h: number }>;
+  },
+) => SearchMatch[];
+
 export type SearchRect = { x: number; y: number; w: number; h: number };
 export type TextIndexEntry = { str: string; x: number; y: number; w: number; h: number };
 export type SearchMatch = SearchRect & { page: number; index: number; text: string };
@@ -199,6 +210,8 @@ export type PDFReaderApi = {
   stats: () => Stats;
   buildSearchIndex: () => Promise<Result<{ count: number }>>;
   search: (query: string) => Promise<SearchResult>;
+  /** Register (or, with null, remove) the wasm-compiled page matcher. */
+  setPageMatcher: (matcher: WasmPageMatcher | null) => void;
   setActiveMatch: (page: number, index: number) => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;

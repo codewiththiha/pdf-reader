@@ -337,6 +337,23 @@ export function setFakePageColors(colors: Record<number, string>): void {
   }
 }
 
+// Per-page text items (pdf.js TextItem shape), defaulting to none. The
+// search scenario writes them; every other scenario sees the empty book it
+// always did.
+export type FakeTextItem = {
+  str: string;
+  transform?: number[];
+  width?: number;
+  height?: number;
+};
+const fakePageTexts = new Map<number, FakeTextItem[]>();
+export function setFakePageTexts(texts: Record<number, FakeTextItem[]>): void {
+  fakePageTexts.clear();
+  for (const [page, items] of Object.entries(texts)) {
+    fakePageTexts.set(Number(page), items);
+  }
+}
+
 function fakePage(n: number) {
   return {
     n,
@@ -350,7 +367,7 @@ function fakePage(n: number) {
       canvasContext.fillRect(0, 0, canvasContext.canvas.width, canvasContext.canvas.height);
       return { promise: Promise.resolve(), cancel() {} };
     },
-    getTextContent: async () => ({ items: [] }),
+    getTextContent: async () => ({ items: fakePageTexts.get(n) ?? [] }),
     getAnnotations: async () => [],
     cleanup: async () => {},
   };
@@ -445,6 +462,26 @@ interface RenderPayload { width: number; height: number; scale: number }
 interface ThumbPayload { width: number; height: number; scale: number; cached: boolean }
 interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number }
 
+interface SearchMatchPayload {
+  page: number;
+  index: number;
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+interface SearchPayload {
+  query: string;
+  total: number;
+  matches: SearchMatchPayload[];
+}
+interface PageMatcherPayload {
+  page: number;
+  query: string;
+  items: Array<{ s: string; x: number; y: number; w: number; h: number }>;
+}
+
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
   resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
@@ -491,6 +528,15 @@ interface PDFReaderHandle {
   destroy(): Promise<void>;
   stats(): StatsPayload;
   takePendingFile(): Promise<string | null>;
+  buildSearchIndex(): Promise<EngineResult<{ count: number }>>;
+  search(query: string): Promise<EngineResult<SearchPayload>>;
+  setPageMatcher(
+    matcher:
+      | ((payload: PageMatcherPayload) => SearchMatchPayload[] | null)
+      | null,
+  ): void;
+  setActiveMatch(page: number, index: number): void;
+  clearHighlights(): void;
 }
 
 export const PDFReader = sandbox.PDFReader as PDFReaderHandle;
