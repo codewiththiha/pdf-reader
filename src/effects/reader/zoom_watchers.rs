@@ -250,6 +250,13 @@ pub fn follow_watcher(state: AppState, sidebar: RwSignal<SidebarMode>) {
         ) {
             return; // a gesture owns the transaction; let it land first
         }
+        // Posting once per frame is not per-frame WORK. `commands` is a
+        // single-slot signal: a post that arrives before the controller has
+        // drained the previous one simply replaces it, and the controller
+        // resolves at most one command per frame anyway. Coalescing these
+        // through a `request_animation_frame` of our own would buy back one
+        // signal write and pay a whole frame of latency for it — which is the
+        // frame that leaves the page cropped inside its new box.
         vs.zoom.post(ZoomCommand::Follow, false);
     });
 }

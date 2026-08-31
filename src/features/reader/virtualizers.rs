@@ -110,7 +110,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
             .get_untracked()
             .map(|size| size.height)
             .unwrap_or(0.0);
-        intrinsic.unwrap_or(fallback) * state.viewer.zoom.display.get_untracked()
+        intrinsic.unwrap_or(fallback) * state.viewer.zoom.visual_scale()
             + state.viewer.page_gap.get_untracked()
     };
     let epoch = Signal::derive(move || {
@@ -155,7 +155,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     let h_estimate = move |index: usize| {
         state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
-        }) * state.viewer.zoom.display.get_untracked()
+        }) * state.viewer.zoom.visual_scale()
             + 2.0 * state.viewer.page_margin.get_untracked()
     };
     let h_virtualizer = use_virtualizer(

@@ -109,6 +109,20 @@ impl ZoomState {
         self.commands.set(Some((cmd, animate, token)));
     }
 
+    /// The live visual scale, read once and non-reactively.
+    ///
+    /// Named rather than reached for as `zoom.display.get_untracked()`
+    /// because the three scales are all plain `f64` and reading the wrong one
+    /// is a silent bug: `display` is what the reader is LOOKING at this frame,
+    /// `committed` is what the mounted rasters are crisp at, and during a zoom
+    /// they disagree. (Newtypes were the other option, but these scales cross
+    /// into layout maths, the DOM and the engine on every frame, so wrapping
+    /// them would have bought type safety at the cost of unwrapping at every
+    /// use — the naming is where the distinction earns its keep.)
+    pub fn visual_scale(&self) -> f64 {
+        self.display.get_untracked()
+    }
+
     /// The scale the in-flight transition is heading to, if any. Manual
     /// steps chain from this so a fast `+ +` advances two presets.
     pub fn in_flight_target(&self) -> Option<f64> {

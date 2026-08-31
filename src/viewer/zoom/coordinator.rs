@@ -155,7 +155,7 @@ impl ZoomController {
             if following {
                 settle.trigger();
             }
-            let display = zoom.display.get_untracked();
+            let display = zoom.visual_scale();
             let in_flight = zoom.transition.get_untracked();
             let settled = in_flight.map(|t| t.to).unwrap_or(display);
             if (target - settled).abs() < config::SETTLED_EPSILON {

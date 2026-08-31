@@ -37,7 +37,7 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
             // the settled scale. Mid-animation values are deliberately
             // avoided: nearest_zoom would usually round to the preset the
             // tween is already heading towards and swallow the press.
-            let base = in_flight.unwrap_or_else(|| zoom.display.get_untracked());
+            let base = in_flight.unwrap_or_else(|| zoom.visual_scale());
             let target = profile.clamp(nearest_zoom(base, dir));
             // At the end of the ladder `nearest_zoom` answers with the same
             // preset it was given, so there is nowhere to go. Bail BEFORE
@@ -80,7 +80,7 @@ fn fit_owned_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
         return None;
     }
     let dims = FitDims::of(state)?;
-    let target = profile.clamp(dims.fit(fit, state.viewer.zoom.display.get_untracked()));
+    let target = profile.clamp(dims.fit(fit, state.viewer.zoom.visual_scale()));
     // A fit mode IS a deliberate choice, so it owns the ceiling too. Without
     // this, leaving the fit mode would resurrect a `desired` from some earlier
     // gesture and the page would jump to it.

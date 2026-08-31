@@ -82,7 +82,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 return;
             }
             vs.viewer.page_margin.set(m);
-            let scale = vs.viewer.zoom.display.get_untracked();
+            let scale = vs.viewer.zoom.visual_scale();
             let gap = vs.viewer.page_gap.get_untracked();
             let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
             let widths = vs

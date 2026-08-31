@@ -86,7 +86,7 @@ impl ViewerEngine {
         let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
         });
-        let new_scale = state.viewer.zoom.display.get_untracked() * factor;
+        let new_scale = state.viewer.zoom.visual_scale() * factor;
         if !widths.is_empty() {
             self.horizontal.rescale(factor, move |index| {
                 widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
