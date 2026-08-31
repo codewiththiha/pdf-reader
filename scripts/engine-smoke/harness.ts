@@ -444,7 +444,7 @@ interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thum
 interface PDFReaderHandle {
   open(path: string): Promise<EngineResult<OpenPayload>>;
   resolveOutline(): Promise<EngineResult<{ outline: unknown[] }>>;
-  registerPage(p: { canvasId: string; hostId: string; page: number }): void;
+  registerPage(page: number, canvasId: string, hostId?: string): void;
   renderPage(canvasId: string, scale: number, renderText: boolean): Promise<EngineResult<RenderPayload>>;
   renderThumb(canvasId: string, page: number, scale: number): Promise<EngineResult<ThumbPayload>>;
   cancelThumb(canvasId: string): void;
@@ -477,6 +477,12 @@ interface PDFReaderHandle {
   destroy(): Promise<void>;
   stats(): StatsPayload;
   takePendingFile(): Promise<string | null>;
+  extractPageText(page: number): Promise<
+    EngineResult<{ page: number; items: { str: string; x: number; y: number; w: number; h: number }[] }>
+  >;
+  setSearchContext(query: string): void;
+  setActiveMatch(page: number, index: number): void;
+  clearHighlights(): void;
 }
 
 export const PDFReader = sandbox.PDFReader as PDFReaderHandle;

@@ -27,7 +27,7 @@ export async function run(): Promise<void> {
   console.log("refreshTheme (dark) ok: page pixel", Array.from(darkPx).slice(0, 3), "expected", darkExpect);
 
   // 4. render another page while dark.
-  PDFReader.registerPage({ canvasId: "cont-1-cv", hostId: "cont-1-pg", page: 2 });
+  PDFReader.registerPage(2, "cont-1-cv", "cont-1-pg");
   const r2 = await PDFReader.renderPage("cont-1-cv", 1.5, true);
   if (!r2.ok) throw new Error("render2 failed: " + JSON.stringify(r2));
   const darkAllocs = created.length - beforeDark;
@@ -61,7 +61,7 @@ export async function run(): Promise<void> {
     paper: "#1a1c1f",
   });
   await PDFReader.refreshTheme();
-  PDFReader.registerPage({ canvasId: "cont-2-cv", hostId: "cont-2-pg", page: 3 });
+  PDFReader.registerPage(3, "cont-2-cv", "cont-2-pg");
   const r3 = await PDFReader.renderPage("cont-2-cv", 1.5, true);
   if (!r3.ok) throw new Error("render3 failed: " + JSON.stringify(r3));
   const dimExpect = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "soft-light", [26, 28, 31]);
@@ -77,7 +77,7 @@ export async function run(): Promise<void> {
     paper: "#131316",
   });
   await PDFReader.refreshTheme();
-  PDFReader.registerPage({ canvasId: "cont-3-cv", hostId: "cont-3-pg", page: 4 });
+  PDFReader.registerPage(4, "cont-3-cv", "cont-3-pg");
   const r4 = await PDFReader.renderPage("cont-3-cv", 1.5, true);
   if (!r4.ok) throw new Error("render4 failed: " + JSON.stringify(r4));
   const nightExpect = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "screen", [19, 19, 22]);

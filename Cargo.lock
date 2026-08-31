@@ -2922,6 +2922,7 @@ dependencies = [
 name = "pdf-engine"
 version = "0.5.0"
 dependencies = [
+ "futures",
  "js-sys",
  "pdf-core",
  "pdf-paper",

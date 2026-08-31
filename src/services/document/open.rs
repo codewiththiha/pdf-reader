@@ -240,9 +240,12 @@ pub fn open_path(state: AppState, path: String) {
                 }
 
                 // Fire index build in the background; result is ignored
-                // (search effects call it too when needed).
+                // (search effects call it too when needed). The page count is
+                // read up front: search's own index uses it to know how many
+                // pages to ask the engine for.
+                let search_pages = state.reader.document.num_pages.get_untracked();
                 spawn_local(async move {
-                    _ = engine::build_search_index().await;
+                    _ = engine::build_search_index(search_pages).await;
                 });
 
                 // Persist last path (the settings-watch effect writes

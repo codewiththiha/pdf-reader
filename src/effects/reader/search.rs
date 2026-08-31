@@ -24,7 +24,10 @@ const REVEAL_MARGIN: f64 = 24.0;
 /// Run the query and store the flat match list.
 pub async fn run_search(state: ReaderState) {
     if !state.search.index_built.get_untracked() {
-        match engine::build_search_index().await {
+        // The index build extracts ~3 pages per turn (see
+        // pdf_engine::api::search::SEARCH_PAGE_CONCURRENCY); the page count
+        // comes from the open flow, which alone knows the document size.
+        match engine::build_search_index(state.document.num_pages.get_untracked()).await {
             Ok(_) => state.search.index_built.set(true),
             Err(e) => {
                 web_sys::console::warn_1(&format!("[search] build index: {e}").into());
