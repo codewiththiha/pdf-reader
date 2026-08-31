@@ -135,7 +135,20 @@ impl VirtualizerCore {
     }
 
     /// The container scrolled. `content_top` is in content coordinates.
+    ///
+    /// Sub-epsilon deltas (a scroll event that moved less than `eps` — the
+    /// browser fires scroll events for fractional-pixel wheel deltas) are
+    /// ignored wholesale: they cannot change the window, and adopting them
+    /// would wake every `scroll_top` consumer (dominant-page tracking,
+    /// navigation sync) for a movement the display cannot even show.
     pub fn on_scroll(&mut self, content_top: f64) -> Step {
+        if (content_top - self.scroll_top).abs() <= self.eps {
+            return Step {
+                range: self.range,
+                scroll_write: None,
+                layout_changed: false,
+            };
+        }
         self.scroll_top = content_top;
         self.rewindow()
     }
@@ -931,6 +944,21 @@ mod tests {
         let step = core.on_viewport(Viewport::new(200.3, 0.0));
         assert!(!step.layout_changed);
         assert_eq!(step.range, core.range());
+    }
+
+    #[test]
+    fn scroll_jitter_within_epsilon_is_ignored() {
+        let mut core = list_core(100, 100.0, 200.0);
+        let _ = core.on_scroll(1_000.0);
+        let before = core.scroll_top();
+        // Half an epsilon: no window recompute, no position adoption.
+        let step = core.on_scroll(1_000.2);
+        assert!(!step.layout_changed);
+        assert_eq!(step.range, core.range());
+        assert_eq!(core.scroll_top(), before);
+        // Past epsilon: adopted normally.
+        let _ = core.on_scroll(1_001.0);
+        assert!((core.scroll_top() - 1_001.0).abs() < 1e-9);
     }
 
     #[test]
