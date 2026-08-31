@@ -79,6 +79,54 @@ pub struct GlossOpen {
     /// Monotonic request counter — tracking it is what makes a second open
     /// of an already-open popover re-run the open effect.
     pub request: RwSignal<u64>,
+    /// The backend run whose chunks this card is still willing to accept, or
+    /// `None` when nothing is in flight. See [`GlossOpen::begin_run`].
+    active_run: RwSignal<Option<String>>,
+    /// Monotonic run counter. The mark id alone cannot identify a run: a
+    /// retry after a failure is a second run on the SAME mark, and the first
+    /// one's late error would otherwise tear down the retry.
+    run_seq: StoredValue<u64, LocalStorage>,
+}
+
+impl GlossOpen {
+    fn new() -> Self {
+        Self {
+            mark: RwSignal::new(None::<GlossMark>),
+            pending: RwSignal::new(None::<GlossMark>),
+            request: RwSignal::new(0u64),
+            active_run: RwSignal::new(None::<String>),
+            run_seq: StoredValue::new_local(0u64),
+        }
+    }
+
+    /// Adopt a fresh backend run for `mark_id` and return its wire id.
+    ///
+    /// The backend echoes this id on every chunk. Runs are never cancelled —
+    /// the model is already working — so the id is how a superseded run's
+    /// answer is told apart from the live one's, which is what stops a slow
+    /// answer for one word from landing on (and being cached under) the word
+    /// the reader glossed next.
+    pub fn begin_run(&self, mark_id: &str) -> String {
+        let seq = self.run_seq.get_value().wrapping_add(1);
+        self.run_seq.set_value(seq);
+        let run = format!("{mark_id}#{seq}");
+        self.active_run.set(Some(run.clone()));
+        run
+    }
+
+    /// Whether `run` is the run this card is still waiting on.
+    pub fn accepts(&self, run: &str) -> bool {
+        self.active_run
+            .with_untracked(|active| active.as_deref() == Some(run))
+    }
+
+    /// Stop accepting chunks: the run finished, failed, or was abandoned
+    /// (a different mark opened, the card was dismissed).
+    pub fn end_run(&self) {
+        if self.active_run.get_untracked().is_some() {
+            self.active_run.set(None);
+        }
+    }
 }
 
 /// Drag state for the expanded card (the pointer physics live in
@@ -190,11 +238,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         surface_visible: RwSignal::new(false),
         exit_armed: RwSignal::new(false),
     };
-    let open = GlossOpen {
-        mark: RwSignal::new(None::<GlossMark>),
-        pending: RwSignal::new(None::<GlossMark>),
-        request: RwSignal::new(0u64),
-    };
+    let open = GlossOpen::new();
     let drag = GlossDrag {
         offset: RwSignal::new(None::<(f64, f64)>),
         active: RwSignal::new(false),
@@ -215,6 +259,9 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         geometry.exit_armed.set(false);
         processing_id.set(None);
         open.mark.set(None);
+        // A dismissed card has no run to wait on: a late chunk from the run
+        // it abandoned must not reopen it.
+        open.end_run();
         drag.offset.set(None);
         drag.active.set(false);
         drag.grab.set_value(None);
@@ -326,7 +373,10 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         geometry.gphase.set(GlossPhase::Processing);
         geometry.surface_visible.set(false);
         processing_id.set(Some(mark.id.clone()));
-        invoke_explain_word(mark.word, mark.context);
+        // A retry is a NEW run: the failed one's late chunks are no longer
+        // this card's business.
+        let run = open.begin_run(&mark.id);
+        invoke_explain_word(mark.word, mark.context, run);
     });
 
     GlossController {
@@ -428,6 +478,9 @@ fn begin_open(
     let mark = ctrl.commands.add_mark.run(mark);
 
     ctrl.open.pending.set(None);
+    // Whatever the previous card was waiting on, this card is not: a run in
+    // flight for the last word must not answer into this one.
+    ctrl.open.end_run();
     state.reader.ai_selection.detail.set(None);
     state.reader.ai_selection.anchor.set(None);
     ctrl.open.mark.set(Some(mark.clone()));
@@ -482,7 +535,8 @@ fn begin_fetch(
     processing_id.set(Some(mark.id.clone()));
 
     if pdf_engine::has_tauri() {
-        invoke_explain_word(mark.word, mark.context);
+        let run = ctrl.open.begin_run(&mark.id);
+        invoke_explain_word(mark.word, mark.context, run);
     } else {
         // The environment cannot change mid-session: this is a terminal,
         // non-retryable state, shown as an expanded error card.

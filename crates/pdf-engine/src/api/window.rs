@@ -2,7 +2,7 @@
 
 use wasm_bindgen::JsValue;
 
-use super::{reflect_set, KEY_CONTEXT, KEY_VISIBLE, KEY_WORD};
+use super::{reflect_set, KEY_CONTEXT, KEY_RUN, KEY_VISIBLE, KEY_WORD};
 use crate::bridge;
 
 /// Show/hide the native macOS traffic lights via the backend command. The
@@ -24,13 +24,17 @@ pub async fn set_traffic_lights(visible: bool) {
 /// Outside Tauri (`trunk serve`) there is nothing to invoke, so this is a
 /// silent no-op; a genuine invoke failure surfaces as `Err` for the caller
 /// to log.
-pub async fn explain_word(word: &str, context: &str) -> Result<(), String> {
+///
+/// `run` is the caller's id for this request; the backend echoes it on every
+/// chunk so the listener can drop the chunks of a run it has moved on from.
+pub async fn explain_word(word: &str, context: &str, run: &str) -> Result<(), String> {
     if !bridge::has_tauri() {
         return Ok(());
     }
     let args: JsValue = js_sys::Object::new().into();
     _ = reflect_set(&args, &KEY_WORD, &JsValue::from_str(word));
     _ = reflect_set(&args, &KEY_CONTEXT, &JsValue::from_str(context));
+    _ = reflect_set(&args, &KEY_RUN, &JsValue::from_str(run));
     bridge::tauri_invoke("explain_word", args)
         .await
         .map(|_| ())

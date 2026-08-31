@@ -98,6 +98,7 @@ js_keys! {
     KEY_VISIBLE => "visible",
     KEY_WORD => "word",
     KEY_CONTEXT => "context",
+    KEY_RUN => "run",
     // Native dialog options (built once per dialog open — still hoisted so
     // the pattern is uniform and the picker never allocates a key twice).
     KEY_MULTIPLE => "multiple",
