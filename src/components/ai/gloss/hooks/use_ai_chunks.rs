@@ -8,6 +8,8 @@
 //! the card is currently waiting on is allowed to write to it — see
 //! [`GlossOpen::begin_run`](crate::components::ai::gloss::controller::GlossOpen::begin_run).
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
@@ -36,8 +38,11 @@ pub fn use_ai_chunks(state: AppState, ctrl: GlossController) {
             }
             match event.chunk {
                 AiChunk::Snapshot(info) => {
+                    // Bound the answer here, at the door: everything
+                    // downstream holds this exact value for the session.
+                    let info = Arc::new(info.clamped());
                     if let Some(m) = ctrl.open.mark.get_untracked() {
-                        ctrl.cache.insert(m.id.clone(), info.clone());
+                        ctrl.cache.insert(m.id, Arc::clone(&info));
                     }
                     // Land the content — and with it the measure twin's
                     // height — BEFORE the surface is told to expand, the

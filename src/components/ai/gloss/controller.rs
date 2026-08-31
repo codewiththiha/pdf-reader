@@ -21,6 +21,7 @@
 //! `popover_open = true` no-op.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use leptos::prelude::*;
 use pdf_core::gloss::{GlossBox, GlossMark};
@@ -43,7 +44,9 @@ pub const MARK_CAP: usize = 200;
 pub struct GlossContent {
     pub phase: RwSignal<AiPhase>,
     pub word: RwSignal<String>,
-    pub word_info: RwSignal<Option<WordInfo>>,
+    /// The answer, shared rather than cloned: the same allocation is handed
+    /// to the card, the measure twin and the session cache.
+    pub word_info: RwSignal<Option<Arc<WordInfo>>>,
     /// The typed failure behind `AiPhase::Error`, if any. Drives both the
     /// friendly message and the retry affordance in the surface.
     pub error: RwSignal<Option<AiError>>,
@@ -145,7 +148,14 @@ pub struct GlossDrag {
 /// stroke is recall, not a rescan.
 #[derive(Clone, Copy)]
 pub struct GlossCache {
-    answers: StoredValue<HashMap<String, WordInfo>, LocalStorage>,
+    /// Answers behind an `Arc`: recalling one is a refcount bump, not a copy
+    /// of its prose, and the card, the measure twin and the cache all read the
+    /// one allocation.
+    ///
+    /// Deliberately a `StoredValue`, not a signal: `update_value` notifies
+    /// nobody, and nothing should re-render because a session answer was
+    /// recorded. The writes that matter are the ones to `content.word_info`.
+    answers: StoredValue<HashMap<String, Arc<WordInfo>>, LocalStorage>,
 }
 
 impl GlossCache {
@@ -156,12 +166,12 @@ impl GlossCache {
     }
 
     /// The cached answer for a mark id, if this session already fetched it.
-    pub fn get(&self, id: &str) -> Option<WordInfo> {
+    pub fn get(&self, id: &str) -> Option<Arc<WordInfo>> {
         self.answers.with_value(|c| c.get(id).cloned())
     }
 
     /// Record a finished answer.
-    pub fn insert(&self, id: String, info: WordInfo) {
+    pub fn insert(&self, id: String, info: Arc<WordInfo>) {
         self.answers.update_value(|c| {
             c.insert(id, info);
         });
@@ -230,7 +240,7 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
     let content = GlossContent {
         phase: RwSignal::new(AiPhase::Idle),
         word: RwSignal::new(String::new()),
-        word_info: RwSignal::new(None::<WordInfo>),
+        word_info: RwSignal::new(None::<Arc<WordInfo>>),
         error: RwSignal::new(None::<AiError>),
     };
     let geometry = GlossGeometry {
@@ -289,12 +299,19 @@ pub fn use_gloss_controller(state: AppState) -> GlossController {
         if let Some(existing) = existing {
             return existing;
         }
+        let mut evicted = None;
         marks.update(|v| {
             v.push(m.clone());
             if v.len() > MARK_CAP {
-                v.remove(0);
+                evicted = Some(v.remove(0));
             }
         });
+        // The cap drops the oldest mark; its answer must go with it, or the
+        // session cache outlives every stroke it belongs to and grows without
+        // the bound MARK_CAP exists to impose.
+        if let Some(old) = evicted {
+            cache.remove(&old.id);
+        }
         if let Some(path) = doc_path.get_untracked() {
             crate::storage::persist_gloss(&path, &marks.get_untracked());
         }
@@ -510,7 +527,7 @@ fn begin_open(
 fn serve_cached(
     ctrl: GlossController,
     processing_id: RwSignal<Option<String>>,
-    info: WordInfo,
+    info: Arc<WordInfo>,
 ) {
     ctrl.content.word_info.set(Some(info));
     ctrl.content.error.set(None);
