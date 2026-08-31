@@ -518,11 +518,17 @@ impl VirtualizerCore {
     }
 
     /// The mounted items, DOM-ready (`start` includes `padding_start`).
+    ///
+    /// The window length is known before the loop, so the vector is sized
+    /// once: this runs on every window recompute, which is every scroll tick.
     pub fn items(&self) -> Vec<VirtualItem> {
         let Some(window) = self.range else {
             return Vec::new();
         };
-        (window.first..=window.last).map(|index| self.item_at(index)).collect()
+        let count = window.last.saturating_sub(window.first) + 1;
+        let mut items = Vec::with_capacity(count);
+        items.extend((window.first..=window.last).map(|index| self.item_at(index)));
+        items
     }
 
     /// One item's render contract, window-independent: valid for any index
@@ -553,21 +559,25 @@ impl VirtualizerCore {
             LayoutKind::Grid(grid) => {
                 let row_first = grid.row_of(window.first);
                 let row_last = grid.row_of(window.last);
-                (row_first..=row_last)
-                    .map(|row| VirtualRow {
-                        row,
-                        start: grid.row_offset(row) + self.padding_start,
-                        items: grid.row_items(row),
-                    })
-                    .collect()
+                let mut rows = Vec::with_capacity(row_last.saturating_sub(row_first) + 1);
+                rows.extend((row_first..=row_last).map(|row| VirtualRow {
+                    row,
+                    start: grid.row_offset(row) + self.padding_start,
+                    items: grid.row_items(row),
+                }));
+                rows
             }
-            LayoutKind::List(_) => (window.first..=window.last)
-                .map(|index| VirtualRow {
+            LayoutKind::List(_) => {
+                // Same as `items`: sized once, because a scroll tick re-asks.
+                let count = window.last.saturating_sub(window.first) + 1;
+                let mut rows = Vec::with_capacity(count);
+                rows.extend((window.first..=window.last).map(|index| VirtualRow {
                     row: index,
                     start: self.layout.offset(index) + self.padding_start,
                     items: index..index + 1,
-                })
-                .collect(),
+                }));
+                rows
+            }
         }
     }
 
