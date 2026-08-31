@@ -11,6 +11,7 @@ import type {
   PDFDocumentProxy,
 } from "./types";
 import { errorInfo, fail, releaseCanvas } from "./canvas";
+import { runLimited } from "./concurrency";
 import { resetPaperForDocument } from "./paper";
 import {
   currentPath,
@@ -255,39 +256,73 @@ function outlineTitle(raw: string | null | undefined): string {
   return String(raw == null ? "" : raw).trim() || "(untitled)";
 }
 
-async function flattenOutline(
+/** A pending outline node: title, raw destination, and tree depth, in
+ *  document order. Children are collected whether or not their parent
+ *  resolves — a dead parent link must not hide its chapters. */
+type PendingOutlineNode = { title: string; dest: OutlineItem["dest"]; depth: number };
+
+function collectOutlineNodes(
   items: OutlineItem[] | null | undefined,
   depth: number,
-  acc: { title: string; page: number; depth: number }[]
-): Promise<typeof acc> {
+  acc: PendingOutlineNode[],
+): void {
   for (const it of items || []) {
-    let page: number | null = null;
-    try {
-      if (Array.isArray(it.dest)) {
-        const ref = it.dest[0];
+    acc.push({ title: outlineTitle(it.title), dest: it.dest, depth });
+    collectOutlineNodes(it.items, depth + 1, acc);
+  }
+}
+
+/** Resolve one outline destination to a 1-based page number through the
+ *  pdf.js worker. `null` = unresolvable (the node is skipped). */
+async function resolveDest(dest: string | unknown[]): Promise<number | null> {
+  try {
+    if (Array.isArray(dest)) {
+      const ref = dest[0];
+      if (ref && typeof ref === "object" && "num" in ref) {
+        const idx = await pdf!.getPageIndex(ref);
+        return idx + 1;
+      }
+      if (typeof ref === "number") {
+        return ref + 1;
+      }
+    } else if (typeof dest === "string") {
+      const d = await pdf!.getDestination(dest);
+      if (d && d[0]) {
+        const ref = d[0];
         if (ref && typeof ref === "object" && "num" in ref) {
           const idx = await pdf!.getPageIndex(ref);
-          page = idx + 1;
-        } else if (typeof ref === "number") {
-          page = ref + 1;
-        }
-      } else if (typeof it.dest === "string") {
-        const d = await pdf!.getDestination(it.dest);
-        if (d && d[0]) {
-          const ref = d[0];
-          if (ref && typeof ref === "object" && "num" in ref) {
-            const idx = await pdf!.getPageIndex(ref);
-            page = idx + 1;
-          }
+          return idx + 1;
         }
       }
-    } catch (_) {
-      page = null;
     }
-    if (page) acc.push({ title: outlineTitle(it.title), page, depth });
-    await flattenOutline(it.items, depth + 1, acc);
+  } catch (_) {
+    /* unresolvable */
   }
-  return acc;
+  return null;
+}
+
+/** Flatten the outline tree and resolve every destination. Each entry costs
+ *  one worker round trip, so the nodes resolve through a bounded-parallel
+ *  window rather than one serial await each — a textbook-sized outline no
+ *  longer pays for its size twice (once per chapter, once serially).
+ *  runLimited returns results in job order, so document order is preserved
+ *  by construction. */
+async function flattenOutline(
+  items: OutlineItem[] | null | undefined,
+): Promise<{ title: string; page: number; depth: number }[]> {
+  const nodes: PendingOutlineNode[] = [];
+  collectOutlineNodes(items, 0, nodes);
+  const pages = await runLimited(
+    nodes.map((n) => () => resolveDest(n.dest)),
+    6,
+  );
+  const out: { title: string; page: number; depth: number }[] = [];
+  for (let i = 0; i < nodes.length; i += 1) {
+    const node = nodes[i]!;
+    const page = pages[i]!;
+    if (page) out.push({ title: node.title, page, depth: node.depth });
+  }
+  return out;
 }
 
 export async function open(path: string): Promise<OpenResult> {
@@ -370,9 +405,7 @@ export async function resolveOutline(): Promise<{
   try {
     // Race the timer against getOutline() AND flattenOutline(). Awaiting
     // getOutline() first meant a hung outline never started the 4s timeout.
-    const outlinePromise = pdf.getOutline().then((items) =>
-      flattenOutline(items, 0, []),
-    );
+    const outlinePromise = pdf.getOutline().then((items) => flattenOutline(items));
     const outline = await withTimeout(outlinePromise, 4000, "outline timeout");
     return { ok: true, outline };
   } catch (_) {
