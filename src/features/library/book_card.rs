@@ -13,10 +13,11 @@ use crate::state::AppState;
 /// One book on the shelf.
 #[component]
 pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
-    // Owned copies so each closure below captures its own value (the card
-    // renders many closures that outlive this function's frame).
-    let path = book.path.clone();
-    let title = book.title.clone().unwrap_or_else(|| {
+    // `book` is an owned prop: move the two strings out instead of cloning
+    // them (the clones below are the ones that are load-bearing — each
+    // closure owns its own copy because they outlive this frame).
+    let path = book.path;
+    let title = book.title.unwrap_or_else(|| {
         pdf_core::filename::file_stem_from_path(&path).unwrap_or_else(|| path.clone())
     });
     let page = book.page;
