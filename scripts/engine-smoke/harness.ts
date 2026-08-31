@@ -391,6 +391,10 @@ const sandbox: Record<string, unknown> = {
   Map,
   Set,
   Uint8Array,
+  // The engine's wasm-baker delegation path constructs Float64Array views
+  // of the filter matrix; tests register fake bakers, so the class must
+  // exist inside the sandbox too.
+  Float64Array,
   ArrayBuffer,
   Node: { TEXT_NODE: 3 },
   CustomEvent: class CustomEvent<T> {
@@ -450,6 +454,16 @@ interface PDFReaderHandle {
   cancelThumb(canvasId: string): void;
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
+  setFilterMatrix(m: { m: number[]; o: number[] } | null): void;
+  setWasmBaker(
+    baker:
+      | ((
+          data: Uint8ClampedArray,
+          m: Float64Array,
+          o: Float64Array,
+        ) => Uint8ClampedArray)
+      | null,
+  ): void;
   setScrubMode(on: boolean): Promise<void>;
   setPaper(hex: string, persist: boolean, area: "whole" | "edges"): void;
   setPaperActive(on: boolean): void;

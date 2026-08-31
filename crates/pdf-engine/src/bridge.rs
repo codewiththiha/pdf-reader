@@ -127,6 +127,18 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 
+    // --- Engine: structured filter + compiled hot paths ---
+    // `refresh_theme` announces a new pipeline; `set_filter_matrix` delivers
+    // the SAME transform as composed numbers, so the engine's raster baker
+    // never re-parses the CSS text. `set_wasm_baker` registers the compiled
+    // pixel loop the app owns (see crate::wasm_ops) — the one call whose
+    // direction is engine→wasm rather than wasm→engine.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setFilterMatrix")]
+    pub fn set_filter_matrix(payload: JsValue);
+
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setWasmBaker")]
+    pub fn set_wasm_baker(baker: js_sys::Function);
+
     // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
     // The engine owns the CANVASES; the crate (via this crate's `paper`
     // session) owns every colour decision. Five calls carry the whole

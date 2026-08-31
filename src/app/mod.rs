@@ -26,6 +26,12 @@ pub fn App() -> impl IntoView {
     provide_context(state);
     provide_app_contexts(state);
 
+    // Compiled hot paths for the JS engine (the raster pixel baker — see
+    // pdf_engine::wasm_ops). Registered before the first theme paint so any
+    // bake that follows runs in wasm; the engine keeps its JS loop as the
+    // standalone fallback. Idempotent and a no-op without the engine.
+    pdf_engine::wasm_ops::install();
+
     // App-root hooks: theme (both pages), motion prefs, global keyboard
     // shortcuts, internal PDF link jumps, and text-selection tracking (page-range pinning for
     // virtualization, plus the AI selection detail).

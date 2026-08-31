@@ -27,7 +27,8 @@ import {
 } from "./engine/thumbnails";
 import { buildSearchIndex, clearHighlights, search, setActiveMatch } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline } from "./engine/theme/pipeline";
+import { invalidatePipeline, setFilterMatrix as engineSetFilterMatrix } from "./engine/theme/pipeline";
+import { setWasmBaker as engineSetWasmBaker } from "./engine/theme/bake";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   getCachedPaper,
@@ -240,6 +241,8 @@ globalThis.PDFReader = {
   setActiveMatch,
   clearHighlights,
   refreshTheme,
+  setFilterMatrix: engineSetFilterMatrix,
+  setWasmBaker: engineSetWasmBaker,
   setScrubMode,
   setPaper,
   setPaperActive,

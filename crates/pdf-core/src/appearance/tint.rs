@@ -7,6 +7,7 @@
 //! hierarchy: page brighter than chrome, chrome brighter than its borders) —
 //! only hue and chroma move, so contrast ratios survive a 100% tint.
 
+use crate::appearance::filter::{compose_filter_ops, FilterKind, FilterOp};
 use crate::appearance::{Appearance, BaseMode};
 
 /// Map an sRGB hue angle (`tint_hue`, applied via `hue-rotate()`) to the
@@ -39,21 +40,56 @@ pub fn ui_hue_oklch(srgb_hue: f64) -> f64 {
 }
 
 impl Appearance {
-    pub fn canvas_filter(&self) -> String {
-        let mut parts: Vec<String> = Vec::new();
+    /// The canvas filter chain as ops — the single list both the CSS string
+    /// and the structured matrix are derived from, so `canvas_filter()` and
+    /// `canvas_filter_matrix()` can never describe different pipelines.
+    ///
+    /// Each op carries its token's exact CSS text: the per-site precision
+    /// (base chains print plain values, the tint chain prints `{:.3}` /
+    /// `{:.1}`) is load-bearing — tests assert the painted strings verbatim.
+    fn filter_ops(&self) -> Vec<FilterOp> {
+        let mut ops: Vec<FilterOp> = Vec::new();
 
         match self.base {
             BaseMode::Light => {}
             BaseMode::Dark => {
-                parts.push("invert(0.92)".into());
-                parts.push("hue-rotate(180deg)".into());
-                parts.push("saturate(0.85)".into());
-                parts.push("brightness(1.02)".into());
+                ops.push(FilterOp::new(
+                    FilterKind::Invert,
+                    0.92,
+                    "invert(0.92)".into(),
+                ));
+                ops.push(FilterOp::new(
+                    FilterKind::HueRotate,
+                    180.0,
+                    "hue-rotate(180deg)".into(),
+                ));
+                ops.push(FilterOp::new(
+                    FilterKind::Saturate,
+                    0.85,
+                    "saturate(0.85)".into(),
+                ));
+                ops.push(FilterOp::new(
+                    FilterKind::Brightness,
+                    1.02,
+                    "brightness(1.02)".into(),
+                ));
             }
             BaseMode::Dim => {
-                parts.push("brightness(0.8)".into());
-                parts.push("saturate(0.75)".into());
-                parts.push("contrast(0.9)".into());
+                ops.push(FilterOp::new(
+                    FilterKind::Brightness,
+                    0.8,
+                    "brightness(0.8)".into(),
+                ));
+                ops.push(FilterOp::new(
+                    FilterKind::Saturate,
+                    0.75,
+                    "saturate(0.75)".into(),
+                ));
+                ops.push(FilterOp::new(
+                    FilterKind::Contrast,
+                    0.9,
+                    "contrast(0.9)".into(),
+                ));
             }
         }
 
@@ -69,16 +105,48 @@ impl Appearance {
             // sepia() lands around 34deg (a warm brown). Measure the requested
             // hue from there so tint_hue is an absolute target, not an offset.
             let rot = (self.tint_hue as f64) - 34.0;
-            parts.push(format!("sepia({sep:.3})"));
-            parts.push(format!("saturate({sat:.3})"));
-            parts.push(format!("hue-rotate({rot:.1}deg)"));
+            ops.push(FilterOp::new(
+                FilterKind::Sepia,
+                sep,
+                format!("sepia({sep:.3})"),
+            ));
+            ops.push(FilterOp::new(
+                FilterKind::Saturate,
+                sat,
+                format!("saturate({sat:.3})"),
+            ));
+            ops.push(FilterOp::new(
+                FilterKind::HueRotate,
+                rot,
+                format!("hue-rotate({rot:.1}deg)"),
+            ));
         }
 
-        if parts.is_empty() {
+        ops
+    }
+
+    pub fn canvas_filter(&self) -> String {
+        let ops = self.filter_ops();
+        if ops.is_empty() {
             "none".to_string()
         } else {
-            parts.join(" ")
+            ops.iter()
+                .map(|op| op.css.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
         }
+    }
+
+    /// The same filter chain, composed into one [`FilterMatrix`] — the
+    /// structured twin of [`Self::canvas_filter`], handed straight to the
+    /// engine's raster baker so the JS side no longer re-parses the CSS
+    /// string to rebuild this transform.
+    ///
+    /// Composed from the exact arguments rather than the rounded CSS text,
+    /// so the two can differ by at most one CSS-rounding step in a
+    /// coefficient (sub-quantum at the 0..=255 pixel scale).
+    pub fn canvas_filter_matrix(&self) -> FilterMatrix {
+        compose_filter_ops(&self.filter_ops())
     }
 
     /// Blend mode for the canvas against the page background.

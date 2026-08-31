@@ -98,12 +98,24 @@ export type PipelineCache = {
   token: string | null;
   filter: string;
   blend: string;
+  /** Structured twin of `filter` — the composed matrix handed over by the
+   *  Rust theme applier in the same task that writes the CSS variables.
+   *  Null when the engine runs standalone (the string is parsed instead). */
+  matrix: FilterMatrix | null;
   paperInfo: PaperInfo | null;
   gen: number;
 };
 
 export type PaperInfo = { color: string; rgb: [number, number, number] };
 export type FilterMatrix = { m: number[]; o: number[] };
+
+/** The compiled pixel baker the wasm app registers (pdf_engine::wasm_ops):
+ *  transforms one RGBA buffer and returns the transformed copy. */
+export type WasmBakeFn = (
+  data: Uint8ClampedArray,
+  m: Float64Array,
+  o: Float64Array,
+) => Uint8ClampedArray;
 
 /** A raw page frame for the paper pipeline: the raster downscaled to a
  * ≤96px long edge, with its RGBA pixels. */
@@ -190,6 +202,11 @@ export type PDFReaderApi = {
   setActiveMatch: (page: number, index: number) => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
+  /** Publish (or, with null, clear) the structured filter matrix — the
+   *  composed twin of the `--canvas-filter` CSS string. */
+  setFilterMatrix: (matrix: FilterMatrix | null) => void;
+  /** Register (or, with null, remove) the wasm-compiled pixel baker. */
+  setWasmBaker: (baker: WasmBakeFn | null) => void;
   setScrubMode: (on: boolean) => Promise<void>;
   setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle

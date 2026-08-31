@@ -276,6 +276,23 @@ pub fn refresh_theme() {
     bridge::refresh_theme();
 }
 
+/// Hand the engine the structured twin of the `--canvas-filter` CSS string:
+/// the same transform, composed into one matrix, so the engine's raster
+/// baker applies it directly instead of re-parsing the CSS text per bake.
+///
+/// Must be called right after the CSS variables are written (the theme
+/// applier does both in one synchronous task) — the engine treats the most
+/// recent delivery as current for the pipeline that follows.
+pub fn publish_filter_matrix(a: &pdf_core::appearance::Appearance) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    let matrix = a.canvas_filter_matrix();
+    if let Ok(value) = serde_wasm_bindgen::to_value(&matrix) {
+        bridge::set_filter_matrix(value);
+    }
+}
+
 /// Enter/leave appearance-scrub mode. While a slider drag repaints the theme
 /// variables every frame, the engine shows the RAW rasters under the live
 /// CSS filter/blend (the pre-baking pipeline) so the page re-colours per

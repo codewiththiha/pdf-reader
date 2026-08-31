@@ -103,6 +103,13 @@ pub fn paint_appearance_now(a: Appearance) {
         );
         _ = style.set_property("--canvas-filter", &a.canvas_filter());
         _ = style.set_property("--canvas-blend", a.canvas_blend());
+        // The structured twin of the filter string just written: the same
+        // transform as a composed matrix, handed straight to the engine's
+        // raster baker so it never re-parses the CSS text. Must follow the
+        // CSS writes — both then describe one pipeline state, and the app is
+        // the only writer of `--canvas-filter`, so a matrix delivery and a
+        // filter change always travel together.
+        pdf_engine::api::publish_filter_matrix(&a);
         for tok in UI_TOKENS {
             _ = style.remove_property(tok);
         }

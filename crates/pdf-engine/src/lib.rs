@@ -14,5 +14,6 @@ mod host;
 pub mod api;
 pub mod paper;
 pub mod types;
+pub mod wasm_ops;
 
 pub use host::{has_pdf_reader, has_tauri, listen, tauri_get_current_window, version};

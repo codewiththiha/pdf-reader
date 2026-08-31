@@ -4,7 +4,7 @@
 // baker exists). Intermediates recycle the shared scratch canvas so a bake
 // never pins a second full-page buffer after it returns.
 
-import type { FilterMatrix, PipelineCache } from "../types";
+import type { FilterMatrix, PipelineCache, WasmBakeFn } from "../types";
 import {
   acquirePooledCanvas,
   acquireScratch,
@@ -15,8 +15,20 @@ import {
   releasePooledCanvas,
   releaseScratch,
 } from "../canvas";
-import { pipelineIsIdentity } from "./pipeline";
+import { matrixIsIdentity, pipelineIsIdentity } from "./pipeline";
 import { paperInfo } from "./paper";
+
+// The compiled pixel loop, registered by the wasm app (pdf_engine's
+// wasm_ops) right at boot. Present only when the Leptos app has installed
+// it; the JS loop below remains the engine-standalone path AND the safety
+// net for a baker that throws — a broken registration degrades to the
+// previous behaviour instead of blanking pages.
+let wasmBake: WasmBakeFn | null = null;
+
+/** Register (or, with null, remove) the wasm-compiled pixel baker. */
+export function setWasmBaker(fn: WasmBakeFn | null): void {
+  wasmBake = typeof fn === "function" ? fn : null;
+}
 
 function filterTokenToMatrix(tok: string): FilterMatrix | null {
   const m = /^([a-z-]+)\(([^)]*)\)$/.exec(String(tok).trim());
@@ -101,17 +113,15 @@ function composeFilter(filterString: string): FilterMatrix {
   }
   return { m, o };
 }
+/** Apply one composed filter matrix to the canvas's pixels and return the
+ *  baked raster (a scratch copy — `src` keeps the unbaked original, see the
+ *  comment at the bottom). The per-pixel work runs in wasm when the app has
+ *  registered a baker; the local LUT loop is the fallback. */
 function applyFilterPixels(
   src: HTMLCanvasElement,
-  filterString: string
+  matrix: FilterMatrix
 ): HTMLCanvasElement {
-  const { m, o } = composeFilter(filterString);
-  const identity =
-    m[0] === 1 && m[1] === 0 && m[2] === 0 &&
-    m[3] === 0 && m[4] === 1 && m[5] === 0 &&
-    m[6] === 0 && m[7] === 0 && m[8] === 1 &&
-    o[0] === 0 && o[1] === 0 && o[2] === 0;
-  if (identity) return src;
+  if (matrixIsIdentity(matrix)) return src;
 
   const w = src.width;
   const h = src.height;
@@ -124,28 +134,44 @@ function applyFilterPixels(
   }
   if (!img) return src;
 
-  const SCALE = 1 << 16;
-  const luts: Int32Array[] = new Array(9);
-  for (let i = 0; i < 9; i += 1) {
-    const coef = m[i] ?? 0;
-    const lut = new Int32Array(256);
-    for (let v = 0; v < 256; v += 1) lut[v] = Math.round(coef * v * SCALE);
-    luts[i] = lut;
-  }
-  const o0 = Math.round((o[0] ?? 0) * 255 * SCALE);
-  const o1 = Math.round((o[1] ?? 0) * 255 * SCALE);
-  const o2 = Math.round((o[2] ?? 0) * 255 * SCALE);
-  const L0 = luts[0]!, L1 = luts[1]!, L2 = luts[2]!;
-  const L3 = luts[3]!, L4 = luts[4]!, L5 = luts[5]!;
-  const L6 = luts[6]!, L7 = luts[7]!, L8 = luts[8]!;
   const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const r = d[i]!;
-    const g = d[i + 1]!;
-    const b = d[i + 2]!;
-    d[i] = (L0[r] + L1[g] + L2[b] + o0) >> 16;
-    d[i + 1] = (L3[r] + L4[g] + L5[b] + o1) >> 16;
-    d[i + 2] = (L6[r] + L7[g] + L8[b] + o2) >> 16;
+  let baked = false;
+  if (wasmBake) {
+    try {
+      const out = wasmBake(d, new Float64Array(matrix.m), new Float64Array(matrix.o));
+      if (out && out.length === d.length) {
+        d.set(out);
+        baked = true;
+      }
+    } catch (_) {
+      // A throwing baker is a dead baker: drop it and bake locally.
+      wasmBake = null;
+    }
+  }
+
+  if (!baked) {
+    const SCALE = 1 << 16;
+    const luts: Int32Array[] = new Array(9);
+    for (let i = 0; i < 9; i += 1) {
+      const coef = matrix.m[i] ?? 0;
+      const lut = new Int32Array(256);
+      for (let v = 0; v < 256; v += 1) lut[v] = Math.round(coef * v * SCALE);
+      luts[i] = lut;
+    }
+    const o0 = Math.round((matrix.o[0] ?? 0) * 255 * SCALE);
+    const o1 = Math.round((matrix.o[1] ?? 0) * 255 * SCALE);
+    const o2 = Math.round((matrix.o[2] ?? 0) * 255 * SCALE);
+    const L0 = luts[0]!, L1 = luts[1]!, L2 = luts[2]!;
+    const L3 = luts[3]!, L4 = luts[4]!, L5 = luts[5]!;
+    const L6 = luts[6]!, L7 = luts[7]!, L8 = luts[8]!;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i]!;
+      const g = d[i + 1]!;
+      const b = d[i + 2]!;
+      d[i] = (L0[r] + L1[g] + L2[b] + o0) >> 16;
+      d[i + 1] = (L3[r] + L4[g] + L5[b] + o1) >> 16;
+      d[i + 2] = (L6[r] + L7[g] + L8[b] + o2) >> 16;
+    }
   }
 
   // Always write to a scratch copy. Mutating `src` in place destroyed the
@@ -178,10 +204,11 @@ export function bakeRaster(
 ): HTMLCanvasElement {
   if (pipelineIsIdentity(pipeline)) return src;
 
-  let filtered: HTMLCanvasElement = src;
-  if (pipeline.filter !== "none") {
-    filtered = applyFilterPixels(src, pipeline.filter);
-  }
+  // The structured matrix when the app delivered one (the normal path);
+  // otherwise re-derive it from the CSS string — the engine-standalone
+  // fallback that keeps working with no wasm behind it.
+  const matrix = pipeline.matrix ?? composeFilter(pipeline.filter);
+  let filtered: HTMLCanvasElement = applyFilterPixels(src, matrix);
   if (pipeline.blend === "normal") return filtered;
 
   const out = acquirePooledCanvas(src.width, src.height);

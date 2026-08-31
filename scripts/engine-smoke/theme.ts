@@ -86,4 +86,68 @@ export async function run(): Promise<void> {
   assertClose(nightPx, nightExpect, "dark+tint bake");
   console.log("dark+tint bake ok: page pixel", Array.from(nightPx).slice(0, 3), "expected", nightExpect);
 
+  // 13. STRUCTURED FILTER MATRIX: the Rust theme applier hands the composed
+  // matrix over directly; a hand-computed invert(0.5) matrix
+  // (m = diag(1 - 2·0.5) = 0, o = 0.5) must bake exactly like the string.
+  // Fresh render each time so the scenarios never depend on a page raw
+  // surviving the 10s idle drop.
+  const cv0b = getEl("cont-0-cv") as unknown as { _ctx: FakeCtx };
+  const invExpect = expectedBakePixel([255, 255, 255], "invert(0.5)", "normal", [255, 255, 255]);
+  setFakeComputed({ "--canvas-filter": "invert(0.5)", "--canvas-blend": "normal" });
+  PDFReader.setFilterMatrix({ m: [0, 0, 0, 0, 0, 0, 0, 0, 0], o: [0.5, 0.5, 0.5] });
+  PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
+  const r13 = await PDFReader.renderPage("cont-0-cv", 1.5, true);
+  if (!r13.ok) throw new Error("render13 failed: " + JSON.stringify(r13));
+  assertClose(cv0b._ctx.getImageData(0, 0, 1, 1).data, invExpect, "structured matrix bake");
+  console.log("structured matrix bake ok:", Array.from(cv0b._ctx.getImageData(0, 0, 1, 1).data).slice(0, 3), "expected", invExpect);
+
+  // Clearing the matrix returns the pipeline to the CSS-string fallback.
+  PDFReader.setFilterMatrix(null);
+  setFakeComputed({
+    "--canvas-filter": "brightness(0.8) saturate(0.75) contrast(0.9)",
+    "--canvas-blend": "soft-light",
+    paper: "#1a1c1f",
+  });
+  PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
+  const r13b = await PDFReader.renderPage("cont-0-cv", 1.5, true);
+  if (!r13b.ok) throw new Error("render13b failed: " + JSON.stringify(r13b));
+  const dimExpect2 = expectedBakePixel([255, 255, 255], fakeComputed["--canvas-filter"], "soft-light", [26, 28, 31]);
+  assertClose(cv0b._ctx.getImageData(0, 0, 1, 1).data, dimExpect2, "cleared matrix falls back to the CSS string");
+  console.log("cleared matrix fallback ok");
+
+  // 14. WASM BAKER DELEGATION: a registered baker owns the pixel transform.
+  let delegated = 0;
+  PDFReader.setWasmBaker((data) => {
+    delegated += 1;
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 10;
+      data[i + 1] = 20;
+      data[i + 2] = 30;
+    }
+    return data;
+  });
+  setFakeComputed({ "--canvas-filter": "invert(0.92)", "--canvas-blend": "normal" });
+  PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
+  const r14 = await PDFReader.renderPage("cont-0-cv", 1.5, true);
+  if (!r14.ok) throw new Error("render14 failed: " + JSON.stringify(r14));
+  if (delegated < 1) throw new Error("the registered baker was never invoked");
+  const delPx = cv0b._ctx.getImageData(0, 0, 1, 1).data;
+  if (delPx[0]! !== 10 || delPx[1]! !== 20 || delPx[2]! !== 30) {
+    throw new Error(
+      "wasm baker output was not painted: got [" + Array.from(delPx).slice(0, 3).join(",") + "]",
+    );
+  }
+  console.log("wasm baker delegation ok (invocations:", delegated + ")");
+
+  // A baker that throws is dropped and the local loop bakes instead.
+  PDFReader.setWasmBaker(() => {
+    throw new Error("busted baker");
+  });
+  setFakeComputed({ "--canvas-filter": "invert(0.5)", "--canvas-blend": "normal" });
+  PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
+  const r14b = await PDFReader.renderPage("cont-0-cv", 1.5, true);
+  if (!r14b.ok) throw new Error("render14b failed: " + JSON.stringify(r14b));
+  assertClose(cv0b._ctx.getImageData(0, 0, 1, 1).data, invExpect, "throwing baker falls back");
+  PDFReader.setWasmBaker(null);
+  console.log("wasm baker fallback ok");
 }
