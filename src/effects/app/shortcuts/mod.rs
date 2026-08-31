@@ -6,6 +6,7 @@
 //! OUTSIDE the reactive owner, so everything it touches is a Copy signal
 //! handle / ReaderState captured by value.
 
+mod keymap;
 mod navigation;
 mod window;
 mod zoom;
