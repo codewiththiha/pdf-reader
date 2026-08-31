@@ -369,7 +369,9 @@ mod tests {
         let head = format!("{}{}", "find", "y".repeat(60));
         let p = payload(1, "find", vec![geo(&head, 0.0, 0.0, 1000.0, 10.0)]);
         let ms = search_page(&p);
-        assert_eq!(ms[0].text, format!("find{}", "y".repeat(30)));
+        // No leading ellipsis (hit at 0), but the window ends 30 bytes past
+        // the hit while the line continues — trailing ellipsis.
+        assert_eq!(ms[0].text, format!("find{}…", "y".repeat(30)));
     }
 
     /// Overlapping-step semantics: the scan resumes at hit + query length, so

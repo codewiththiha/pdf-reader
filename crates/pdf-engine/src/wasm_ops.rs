@@ -54,20 +54,12 @@ pub fn install() {
              -> js_sys::Uint8ClampedArray {
                 let mut pixels = data.to_vec();
                 // A malformed matrix (wrong lengths) bakes nothing: the JS
-                // caller re-checks identity and skips on no-op results.
+                // caller re-checks identity and treats an unchanged buffer
+                // as "leave the page unbaked".
                 if let Some(filter) = FilterMatrix::from_slice(&m.to_vec(), &o.to_vec()) {
                     pdf_core::appearance::bake_pixels(&mut pixels, &filter);
                 }
-                let Ok(out) =
-                    js_sys::Uint8ClampedArray::new_with_byte_length(pixels.len() as u32)
-                else {
-                    // Allocation refused (or the length overflowed): hand the
-                    // original buffer back instead of trapping — the caller
-                    // treats an unchanged buffer as "leave the page unbaked".
-                    return data;
-                };
-                out.copy_from(&pixels);
-                out
+                js_sys::Uint8ClampedArray::new_from_slice(&pixels)
             },
         );
         crate::bridge::set_wasm_baker(

@@ -7,7 +7,7 @@
 //! hierarchy: page brighter than chrome, chrome brighter than its borders) —
 //! only hue and chroma move, so contrast ratios survive a 100% tint.
 
-use crate::appearance::filter::{compose_filter_ops, FilterKind, FilterOp};
+use crate::appearance::filter::{compose_filter_ops, FilterKind, FilterOp, FilterMatrix};
 use crate::appearance::{Appearance, BaseMode};
 
 /// Map an sRGB hue angle (`tint_hue`, applied via `hue-rotate()`) to the

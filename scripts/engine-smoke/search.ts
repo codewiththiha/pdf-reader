@@ -104,7 +104,10 @@ export async function run(): Promise<void> {
     throw new Error("busted matcher");
   });
   const fallback = await PDFReader.search("the");
-  if (!fallback.ok || fallback.total !== 7) {
+  if (!fallback.ok) {
+    throw new Error("fallback search failed: " + JSON.stringify(fallback));
+  }
+  if (fallback.total !== 7) {
     throw new Error("throwing matcher should fall back to 7, got " + fallback.total);
   }
   if (fallback.matches[0]!.text.startsWith("FROM_WASM:")) {

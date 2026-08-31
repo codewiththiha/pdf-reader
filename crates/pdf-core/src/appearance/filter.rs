@@ -261,7 +261,10 @@ pub fn bake_pixels(pixels: &mut [u8], filter: &FilterMatrix) {
 
     let [l0, l1, l2, l3, l4, l5, l6, l7, l8] = luts;
     let [o0, o1, o2] = o;
-    for px in pixels.chunks_exact_mut(4) {
+    // Full RGBA quads; a ragged tail (never produced by ImageData) is left
+    // untouched, exactly like the JS loop's `i += 4` stride.
+    let (quads, _tail) = pixels.as_chunks_mut::<4>();
+    for px in quads {
         let r = px[0] as usize;
         let g = px[1] as usize;
         let b = px[2] as usize;
@@ -310,12 +313,16 @@ mod tests {
 
     #[test]
     fn token_matrices_match_the_reference_formulas() {
-        // invert(0.92): k = 1 - 2·0.92 = -0.84, offsets 0.92.
+        // invert(0.92): k = 1 - 2·0.92 = -0.84, offsets 0.92. (The arithmetic
+        // lands one ulp off the decimal literal — exactly what the JS baker's
+        // identical expression produces, so parity is the point.)
         let inv = token_matrix(FilterKind::Invert, 0.92);
-        assert_eq!(inv.m[0], -0.84);
-        assert_eq!(inv.m[4], -0.84);
-        assert_eq!(inv.m[8], -0.84);
-        assert_eq!(inv.o, [0.92, 0.92, 0.92]);
+        assert!((inv.m[0] + 0.84).abs() < 1e-12, "{}", inv.m[0]);
+        assert!((inv.m[4] + 0.84).abs() < 1e-12, "{}", inv.m[4]);
+        assert!((inv.m[8] + 0.84).abs() < 1e-12, "{}", inv.m[8]);
+        assert!((inv.o[0] - 0.92).abs() < 1e-12);
+        assert!((inv.o[1] - 0.92).abs() < 1e-12);
+        assert!((inv.o[2] - 0.92).abs() < 1e-12);
 
         // saturate(0.75): t = 0.25 → luminance row weights + arg on the diagonal.
         let sat = token_matrix(FilterKind::Saturate, 0.75);
@@ -324,10 +331,13 @@ mod tests {
         assert!((sat.m[4] - 0.92875).abs() < 1e-12);
         assert_eq!(sat.o, [0.0, 0.0, 0.0]);
 
-        // contrast(0.9): diag 0.9 with offset 0.05 per channel.
+        // contrast(0.9): diag 0.9 with offset 0.05 per channel (0.5·(1-0.9)
+        // is one ulp under 0.05 — same as JS).
         let con = token_matrix(FilterKind::Contrast, 0.9);
         assert_eq!(con.m[0], 0.9);
-        assert_eq!(con.o, [0.05, 0.05, 0.05]);
+        for v in con.o {
+            assert!((v - 0.05).abs() < 1e-12, "offset {v}");
+        }
 
         // sepia(1) is the pure sepia matrix.
         let sep = token_matrix(FilterKind::Sepia, 1.0);
@@ -368,7 +378,11 @@ mod tests {
                 );
             }
         }
-        assert_eq!(got.o, [0.05, 0.05, 0.05]);
+        // Contrast's offset is 0.5·(1-0.9), one ulp under the decimal 0.05 —
+        // the same value the JS expression produces.
+        for v in got.o {
+            assert!((v - 0.05).abs() < 1e-12, "offset {v}");
+        }
     }
 
     #[test]

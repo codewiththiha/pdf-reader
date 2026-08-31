@@ -127,6 +127,10 @@ export async function run(): Promise<void> {
     return data;
   });
   setFakeComputed({ "--canvas-filter": "invert(0.92)", "--canvas-blend": "normal" });
+  // The theme applier always announces a pipeline change with refreshTheme
+  // (that is what invalidates readPipeline's cache); without it the render
+  // below would still bake the previous scenario's pipeline.
+  await PDFReader.refreshTheme();
   PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
   const r14 = await PDFReader.renderPage("cont-0-cv", 1.5, true);
   if (!r14.ok) throw new Error("render14 failed: " + JSON.stringify(r14));
@@ -144,6 +148,7 @@ export async function run(): Promise<void> {
     throw new Error("busted baker");
   });
   setFakeComputed({ "--canvas-filter": "invert(0.5)", "--canvas-blend": "normal" });
+  await PDFReader.refreshTheme();
   PDFReader.registerPage({ canvasId: "cont-0-cv", hostId: "cont-0-pg", page: 1 });
   const r14b = await PDFReader.renderPage("cont-0-cv", 1.5, true);
   if (!r14b.ok) throw new Error("render14b failed: " + JSON.stringify(r14b));
