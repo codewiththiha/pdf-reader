@@ -3,6 +3,8 @@
 //! library record → cover generation). Driven by the toolbar button,
 //! Ctrl+O, drag-and-drop and the empty-state placeholder.
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 // NOTE: the open flow spawns on the wasm-bindgen-futures executor, NOT
 // `leptos::task::spawn_local`. The latter ties the future to the reactive
@@ -144,7 +146,7 @@ pub fn open_path(state: AppState, path: String) {
                 // tree resolves (a mid-read open never passes through
                 // close_document's reset). The engine's `open` no longer
                 // resolves the outline at all — see the task below.
-                state.reader.document.outline.set(Vec::new());
+                state.reader.document.outline.set(Arc::new(Vec::new()));
                 state.reader.document.outline_pending.set(true);
                 state.reader.document.page1_size.set(Some(page1.clone()));
                 state.reader.document.path.set(Some(path.clone()));
@@ -256,7 +258,11 @@ pub fn open_path(state: AppState, path: String) {
                                 .as_deref()
                                 == Some(outline_path.as_str())
                         {
-                            outline_state.reader.document.outline.set(nodes);
+                            outline_state
+                                .reader
+                                .document
+                                .outline
+                                .set(Arc::new(nodes));
                         }
                         // The pending flag clears even when the book changed
                         // under the lookup: a pending state that outlives its

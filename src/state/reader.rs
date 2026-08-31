@@ -2,6 +2,8 @@
 //! search state and the AI text-selection state. Pure UI chrome (sidebar,
 //! toast) lives in `state/ui` + `state/app`; pure domain logic in `pdf-core`.
 
+use std::sync::Arc;
+
 use leptos::prelude::{Get, GetUntracked, Memo, RwSignal, Set, Signal};
 use serde::Deserialize;
 
@@ -26,7 +28,16 @@ pub struct DocumentState {
     pub num_pages: RwSignal<u32>,
     pub title: RwSignal<Option<String>>,
     pub author: RwSignal<Option<String>>,
-    pub outline: RwSignal<Vec<OutlineNode>>,
+    /// The document's flattened chapter tree, behind a shared handle.
+    ///
+    /// `Arc` rather than a plain `Vec` because Leptos hands every reader its
+    /// own clone of a signal's value: a textbook outline is several hundred
+    /// `OutlineNode`s, each with an owned `String` title, and the panel reads
+    /// the list on every page turn (the active-entry memo, the reveal effect,
+    /// the row list) as well as the floating label. Cloning the handle is a
+    /// refcount bump; cloning the list was several hundred allocations per
+    /// notify.
+    pub outline: RwSignal<Arc<Vec<OutlineNode>>>,
     /// True while the (lazy) outline resolution is in flight — the panel
     /// shows "resolving" instead of a definitive "No outline" for a book
     /// whose chapters are merely not back yet.
@@ -48,7 +59,7 @@ impl DocumentState {
         self.num_pages.set(0);
         self.title.set(None);
         self.author.set(None);
-        self.outline.set(Vec::new());
+        self.outline.set(Arc::new(Vec::new()));
         self.outline_pending.set(false);
         self.page1_size.set(None);
         self.metrics.reset();
@@ -138,7 +149,7 @@ impl Default for DocumentState {
             num_pages: RwSignal::new(0),
             title: RwSignal::new(None),
             author: RwSignal::new(None),
-            outline: RwSignal::new(Vec::new()),
+            outline: RwSignal::new(Arc::new(Vec::new())),
             outline_pending: RwSignal::new(false),
             page1_size: RwSignal::new(None),
             metrics: PageMetrics::default(),

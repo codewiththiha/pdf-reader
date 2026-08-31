@@ -306,9 +306,9 @@ pub fn OutlinePanel(
                                 let outline = state.document.outline.get();
                                 let active = active.get();
                                 outline
-                                    .into_iter()
+                                    .iter()
                                     .enumerate()
-                                    .map(|(i, n)| (i, n, Some(i) == active))
+                                    .map(|(i, n)| (i, n.clone(), Some(i) == active))
                                     .collect::<Vec<_>>()
                             }
                             key=|(i, node, is_active): &(usize, OutlineNode, bool)| {
