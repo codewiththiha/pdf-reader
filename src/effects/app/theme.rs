@@ -30,7 +30,8 @@ use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
 use pdf_core::appearance::Appearance;
-use crate::state::AppState;
+use pdf_core::settings::GlossColor;
+use crate::state::{AppearanceSignal, AppState};
 
 use crate::effects::appearance::schedule_save;
 
@@ -145,7 +146,7 @@ pub fn paint_appearance_now(a: Appearance) {
     );
 }
 
-pub fn apply_theme(state: AppState) {
+pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     // One effect, one paint: hue / texture / grain all live on Appearance,
     // and the live-preview path writes the same properties, so splitting
     // them into three effects just tripled the work on every settings write.
@@ -153,8 +154,13 @@ pub fn apply_theme(state: AppState) {
     // same variables this effect paints (--canvas-filter / --canvas-blend)
     // plus --pdf-paper, which the engine publishes on the first render of
     // each document.
+    //
+    // It subscribes to the appearance MEMO, not to `settings`. Reading the
+    // whole blob had a layout toggle, a gloss colour and `last_path` on every
+    // document open all repainting eight custom properties and re-baking the
+    // engine's rasters for a look that had not moved.
     Effect::new(move || {
-        let a = state.settings.with(|s| s.appearance);
+        let a = appearance.get();
         paint_appearance_now(a);
         // The engine bakes the theme into its rasters (pages + thumbnails);
         // re-bake them at the freshly painted variables. A no-op while a
@@ -163,10 +169,16 @@ pub fn apply_theme(state: AppState) {
         pdf_engine::api::refresh_theme();
     });
 
-    Effect::new(move || {
-        let (color, custom, opacity) = state.settings.with(|st| {
+    // Same narrowing for the gloss tokens: three fields out of the blob, so a
+    // slider tick elsewhere in settings cannot rewrite them.
+    let gloss: Memo<(GlossColor, String, f64)> = Memo::new(move |_| {
+        state.settings.with(|st| {
             (st.gloss_color, st.gloss_custom.clone(), st.gloss_opacity)
-        });
+        })
+    });
+
+    Effect::new(move || {
+        let (color, custom, opacity) = gloss.get();
         let Some(el) = document_element() else {
             return;
         };

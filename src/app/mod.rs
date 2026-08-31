@@ -24,12 +24,12 @@ use shell::AppShell;
 pub fn App() -> impl IntoView {
     let state = create_app_state();
     provide_context(state);
-    provide_app_contexts(state);
+    let appearance = provide_app_contexts(state);
 
     // App-root hooks: theme (both pages), motion prefs, global keyboard
     // shortcuts, internal PDF link jumps, and text-selection tracking (page-range pinning for
     // virtualization, plus the AI selection detail).
-    apply_theme(state);
+    apply_theme(state, appearance);
     // The paper session's settings must land before the FIRST document opens:
     // the open flow asks the engine's colour cache under the reader's real
     // blend/detection settings, and that is earlier than any reader mounts.
