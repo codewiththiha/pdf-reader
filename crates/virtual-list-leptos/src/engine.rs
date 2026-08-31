@@ -502,6 +502,18 @@ impl VirtualizerCore {
         self.padding_start + self.layout.offset(index)
     }
 
+    /// Index of the item whose span contains `pos` (leading-edge semantics),
+    /// `O(log n)` over the layout's prefix sums. Positions past the end resolve
+    /// to the last item. The inverse of [`Self::offset_of`]: subtracting
+    /// `padding_start` keeps the two in the same coordinate frame.
+    pub fn index_at(&self, pos: f64) -> usize {
+        if self.layout.is_empty() {
+            0
+        } else {
+            self.layout.index_at(pos - self.padding_start)
+        }
+    }
+
     /// Resolved column count for grids.
     pub fn columns(&self) -> Option<usize> {
         match &self.layout {

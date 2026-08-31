@@ -583,6 +583,14 @@ impl Virtualizer {
         self.inner.core.borrow().offset_of(index)
     }
 
+    /// Index of the item whose span contains `pos` (leading-edge semantics),
+    /// `O(log n)` over the strip's prefix sums. The inverse of
+    /// [`offset_of`](Self::offset_of): a position handed back by that method
+    /// resolves to the same item it came from.
+    pub fn index_at(&self, pos: f64) -> usize {
+        self.inner.core.borrow().index_at(pos)
+    }
+
     /// Reactive main-axis offset of one item, padding included.
     ///
     /// Create this once per mounted child. It depends only on the layout
