@@ -72,7 +72,11 @@ pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
         state.library.covers.update(|covers| {
             covers.remove(&remove_path);
         });
-        if let Err(e) = crate::storage::save_library(&state.library.books.get_untracked()) {
+        if let Err(e) = state
+            .library
+            .books
+            .with_untracked(|books| crate::storage::save_library(books))
+        {
             e.report();
         }
         if let Err(e) = state

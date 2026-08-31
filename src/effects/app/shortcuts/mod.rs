@@ -37,18 +37,17 @@ fn is_chrome_scroll_target(ev: &leptos::ev::KeyboardEvent) -> bool {
     else {
         return false;
     };
-    for sel in [
-        "#thumb-scroll",
-        "aside",
-        ".menu-popover",
-        "[data-search-chrome]",
-    ] {
-        if el.closest(sel).ok().flatten().is_some() {
-            return true;
-        }
-    }
-    false
+    // One selector list, one ancestor walk. This runs on EVERY keydown, and
+    // asking `closest` four times walked the tree to the root four times over
+    // before concluding that a key pressed over the document is the document's.
+    el.closest(CHROME_SCROLL_SELECTOR)
+        .ok()
+        .flatten()
+        .is_some()
 }
+
+/// Chrome surfaces that own their own arrow keys.
+const CHROME_SCROLL_SELECTOR: &str = "#thumb-scroll, aside, .menu-popover, [data-search-chrome]";
 
 /// Must be called once from the app root. `on_open` is the app's open-file
 /// action (Cmd/Ctrl+O), injected so the viewer never depends on app chrome.

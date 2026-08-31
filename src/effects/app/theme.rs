@@ -159,6 +159,12 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     // whole blob had a layout toggle, a gloss colour and `last_path` on every
     // document open all repainting eight custom properties and re-baking the
     // engine's rasters for a look that had not moved.
+
+    // What the engine's rasters are baked against: the filter, the blend mode
+    // and the base palette. Texture, grain and the UI tokens are CSS layers
+    // over the canvas, so they repaint without touching a single bitmap.
+    let baked = StoredValue::new_local(None::<(String, String, String)>);
+
     Effect::new(move || {
         let a = appearance.get();
         paint_appearance_now(a);
@@ -166,7 +172,20 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         // re-bake them at the freshly painted variables. A no-op while a
         // scrub is in flight (scrub mode owns the canvases then) and before
         // the first document opens.
-        pdf_engine::api::refresh_theme();
+        //
+        // Only when the BAKE changed, though: dragging the grain or texture
+        // slider moves an overlay, not the pixels underneath, and re-baking
+        // every mounted page and thumbnail for it was the most expensive
+        // thing an appearance tick could do.
+        let signature = (
+            a.canvas_filter(),
+            a.canvas_blend().to_string(),
+            a.base.as_str().to_string(),
+        );
+        if baked.try_get_value().flatten().as_ref() != Some(&signature) {
+            baked.set_value(Some(signature));
+            pdf_engine::api::refresh_theme();
+        }
     });
 
     // Same narrowing for the gloss tokens: three fields out of the blob, so a

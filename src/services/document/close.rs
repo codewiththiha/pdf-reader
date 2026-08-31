@@ -43,7 +43,7 @@ pub fn close_document(state: AppState) {
             }
         });
         if changed
-            && let Err(e) = save_library(&state.library.books.get_untracked())
+            && let Err(e) = state.library.books.with_untracked(|books| save_library(books))
         {
             e.report();
         }

@@ -35,7 +35,7 @@ pub(super) fn record(
         },
     );
     state.library.books.set(recent);
-    if let Err(e) = save_library(&state.library.books.get_untracked()) {
+    if let Err(e) = state.library.books.with_untracked(|books| save_library(books)) {
         e.report();
     }
     if let Some(evicted_path) = evicted {
