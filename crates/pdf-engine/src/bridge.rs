@@ -124,6 +124,17 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "refreshTheme")]
     pub fn refresh_theme();
 
+    /// Hand the engine the appearance filter as a composed matrix
+    /// (`{m: [9], o: [3]}`, or `null` to clear) instead of making it parse
+    /// the `--canvas-filter` CSS string this crate just produced. Must land
+    /// BEFORE the variable is written, so the first pipeline read after the
+    /// change already has the numbers.
+    ///
+    /// SYNC on purpose — the TS side returns nothing, and an `async` extern
+    /// would raw-cast `undefined` to a Promise (see `get_cached_paper`).
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setFilterMatrix")]
+    pub fn set_filter_matrix(matrix: JsValue);
+
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 

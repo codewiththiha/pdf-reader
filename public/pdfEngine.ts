@@ -26,8 +26,9 @@ import {
   renderThumb,
 } from "./engine/thumbnails";
 import { buildSearchIndex, clearHighlights, search, setActiveMatch } from "./engine/search";
+import { resetPageLinks } from "./engine/links";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline } from "./engine/theme/pipeline";
+import { invalidatePipeline, setFilterMatrix } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   getCachedPaper,
@@ -54,7 +55,6 @@ import {
   thumbCancelled,
   thumbLive,
   thumbTasks,
-  textIndex,
   highlightsByPage,
   setSearchQuery,
   setActiveMatchValue,
@@ -101,7 +101,7 @@ async function destroy(): Promise<void> {
   thumbLive.clear();
   for (const entry of thumbCache.values()) releaseThumbEntry(entry);
   thumbCache.clear();
-  textIndex.clear();
+  resetPageLinks();
   highlightsByPage.clear();
   setSearchQuery("");
   setActiveMatchValue(null);
@@ -240,6 +240,7 @@ globalThis.PDFReader = {
   setActiveMatch,
   clearHighlights,
   refreshTheme,
+  setFilterMatrix,
   setScrubMode,
   setPaper,
   setPaperActive,

@@ -11,6 +11,7 @@ use wasm_bindgen::JsValue;
 
 use crate::bridge;
 use crate::types::{CoverResult, OpenResult, RenderResult, ThumbResult};
+use pdf_core::appearance::FilterMatrix;
 use pdf_core::search::SearchResponse;
 use pdf_paper::PaperArea;
 
@@ -263,6 +264,27 @@ pub async fn take_pending_file() -> Option<String> {
     }
     let value = bridge::take_pending_file().await;
     value.as_string().filter(|s| !s.is_empty())
+}
+
+/// Hand the engine the appearance filter as numbers.
+///
+/// `Appearance::canvas_filter()` produces a CSS string for the stylesheet,
+/// and the engine used to regex-parse that same string back into a matrix to
+/// bake it into pixels. This closes that round trip: the theme applier pushes
+/// the composed matrix straight from `pdf_core::appearance`, so the string is
+/// now only what the CSS cascade and the scrub mode consume.
+///
+/// Call BEFORE writing `--canvas-filter` — `refresh_theme` invalidates the
+/// engine's pipeline cache immediately after, and the first read that follows
+/// must already see the new matrix.
+pub fn set_filter_matrix(matrix: &FilterMatrix) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    let Ok(value) = serde_wasm_bindgen::to_value(matrix) else {
+        return;
+    };
+    bridge::set_filter_matrix(value);
 }
 
 /// Re-bake the theme into every raster the engine already holds (mounted

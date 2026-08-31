@@ -1,8 +1,15 @@
-// Raster baking: apply the CSS filter chain + paper blend to raw page
+// Raster baking: apply the appearance filter + paper blend to raw page
 // pixels on the CPU. Hardware `ctx.filter` is not byte-identical across
 // WebKit/Blink and would regress dark-mode inversion (the reason this
 // baker exists). Intermediates recycle the shared scratch canvas so a bake
 // never pins a second full-page buffer after it returns.
+//
+// The filter arrives as a composed matrix, not a CSS string: Rust owns the
+// pipeline definition (`pdf_core::appearance::filter`) and pushes it through
+// `setFilterMatrix`. What used to happen here — regex-parsing the CSS string
+// Rust had just produced back into the same nine coefficients — lives in
+// `./filter` now, and only as a fallback for a consumer with no Rust on the
+// other end.
 
 import type { FilterMatrix, PipelineCache } from "../types";
 import {
@@ -18,94 +25,11 @@ import {
 import { pipelineIsIdentity } from "./pipeline";
 import { paperInfo } from "./paper";
 
-function filterTokenToMatrix(tok: string): FilterMatrix | null {
-  const m = /^([a-z-]+)\(([^)]*)\)$/.exec(String(tok).trim());
-  if (!m || !m[1] || !m[2]) return null;
-  const name = m[1];
-  const arg = parseFloat(m[2]);
-  if (!Number.isFinite(arg)) return null;
-  switch (name) {
-    case "invert": {
-      const k = 1 - 2 * arg;
-      return { m: [k, 0, 0, 0, k, 0, 0, 0, k], o: [arg, arg, arg] };
-    }
-    case "brightness":
-      return { m: [arg, 0, 0, 0, arg, 0, 0, 0, arg], o: [0, 0, 0] };
-    case "contrast": {
-      const off = 0.5 * (1 - arg);
-      return { m: [arg, 0, 0, 0, arg, 0, 0, 0, arg], o: [off, off, off] };
-    }
-    case "saturate": {
-      const t = 1 - arg;
-      const a = 0.213 * t;
-      const b = 0.715 * t;
-      const c = 0.072 * t;
-      return {
-        m: [a + arg, b, c, a, b + arg, c, a, b, c + arg],
-        o: [0, 0, 0],
-      };
-    }
-    case "sepia": {
-      const S = [0.393, 0.769, 0.189, 0.349, 0.686, 0.168, 0.272, 0.534, 0.131];
-      const out: number[] = [];
-      for (let i = 0; i < 9; i += 1) {
-        const ident = i === 0 || i === 4 || i === 8 ? 1 : 0;
-        out.push((1 - arg) * ident + arg * (S[i] ?? 0));
-      }
-      return { m: out, o: [0, 0, 0] };
-    }
-    case "hue-rotate": {
-      const th = (arg * Math.PI) / 180;
-      const c = Math.cos(th);
-      const s = Math.sin(th);
-      return {
-        m: [
-          0.213 + 0.787 * c - 0.213 * s,
-          0.715 - 0.715 * c - 0.715 * s,
-          0.072 - 0.072 * c + 0.928 * s,
-          0.213 - 0.213 * c + 0.143 * s,
-          0.715 + 0.285 * c + 0.140 * s,
-          0.072 - 0.072 * c - 0.283 * s,
-          0.213 - 0.213 * c - 0.787 * s,
-          0.715 - 0.715 * c + 0.715 * s,
-          0.072 + 0.928 * c + 0.072 * s,
-        ],
-        o: [0, 0, 0],
-      };
-    }
-    default:
-      return null;
-  }
-}
-function composeFilter(filterString: string): FilterMatrix {
-  let m = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-  let o = [0, 0, 0];
-  for (const tok of String(filterString).split(/\s+/)) {
-    if (!tok) continue;
-    const op = filterTokenToMatrix(tok);
-    if (!op) continue;
-    const nm: number[] = [];
-    const no: number[] = [];
-    for (let r = 0; r < 3; r += 1) {
-      nm[r * 3] =
-        op.m[r * 3] * m[0] + op.m[r * 3 + 1] * m[3] + op.m[r * 3 + 2] * m[6];
-      nm[r * 3 + 1] =
-        op.m[r * 3] * m[1] + op.m[r * 3 + 1] * m[4] + op.m[r * 3 + 2] * m[7];
-      nm[r * 3 + 2] =
-        op.m[r * 3] * m[2] + op.m[r * 3 + 1] * m[5] + op.m[r * 3 + 2] * m[8];
-      no[r] =
-        op.m[r * 3] * o[0] + op.m[r * 3 + 1] * o[1] + op.m[r * 3 + 2] * o[2] + op.o[r];
-    }
-    m = nm;
-    o = no;
-  }
-  return { m, o };
-}
 function applyFilterPixels(
   src: HTMLCanvasElement,
-  filterString: string
+  filter: FilterMatrix
 ): HTMLCanvasElement {
-  const { m, o } = composeFilter(filterString);
+  const { m, o } = filter;
   const identity =
     m[0] === 1 && m[1] === 0 && m[2] === 0 &&
     m[3] === 0 && m[4] === 1 && m[5] === 0 &&
@@ -180,7 +104,10 @@ export function bakeRaster(
 
   let filtered: HTMLCanvasElement = src;
   if (pipeline.filter !== "none") {
-    filtered = applyFilterPixels(src, pipeline.filter);
+    // No matrix means the filter named nothing this engine can bake (the
+    // string fallback found no recognised token, or a malformed push was
+    // rejected). Leave the raster alone rather than baking with identity.
+    if (pipeline.matrix) filtered = applyFilterPixels(src, pipeline.matrix);
   }
   if (pipeline.blend === "normal") return filtered;
 

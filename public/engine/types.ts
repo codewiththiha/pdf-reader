@@ -43,6 +43,10 @@ export type TextLayerHandle = { render: () => Promise<void>; cancel: () => void 
 export type Viewport = {
   width: number;
   height: number;
+  /** The CSS scale this viewport was built at. The link layer keys its
+   *  reuse on it, because that is the only thing about a re-render that
+   *  changes where a link rect lands. */
+  scale: number;
   convertToViewportPoint: (x: number, y: number) => [number, number];
 };
 
@@ -74,6 +78,11 @@ export type PageState = {
   canvas: HTMLCanvasElement | null;
   host: HTMLElement | null;
   textLayerEl: HTMLElement | null;
+  /** The mounted `.linkLayer`, and the viewport scale its rects were
+   *  converted at. Together they let a re-render skip the rebuild entirely
+   *  while the layer is still where it was put. */
+  linkLayerEl: HTMLElement | null;
+  linkLayerScale: number;
   renderTask: RenderTask | null;
   textLayer: TextLayerHandle | null;
   viewport: Viewport | null;
@@ -97,6 +106,11 @@ export type ThumbEntry = {
 export type PipelineCache = {
   token: string | null;
   filter: string;
+  /** The same pipeline as `filter`, already composed into a matrix. Handed
+   *  over by Rust (`setFilterMatrix`) so the bake never re-parses the CSS
+   *  string this engine was given; only the string-parser fallback leaves it
+   *  null. */
+  matrix: FilterMatrix | null;
   blend: string;
   paperInfo: PaperInfo | null;
   gen: number;
@@ -120,7 +134,6 @@ export type PaperFrame = {
 export type PaperArea = "whole" | "edges";
 
 export type SearchRect = { x: number; y: number; w: number; h: number };
-export type TextIndexEntry = { str: string; x: number; y: number; w: number; h: number };
 export type SearchMatch = SearchRect & { page: number; index: number; text: string };
 export type ActiveMatch = { page: number; index: number } | null;
 
@@ -190,6 +203,10 @@ export type PDFReaderApi = {
   setActiveMatch: (page: number, index: number) => void;
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
+  /** Rust's composed appearance filter, as `{m:[9], o:[3]}` (or null).
+   *  Arrives BEFORE `--canvas-filter` is written, so the first pipeline read
+   *  after an appearance change already has the numbers. */
+  setFilterMatrix: (matrix: FilterMatrix | null) => void;
   setScrubMode: (on: boolean) => Promise<void>;
   setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle

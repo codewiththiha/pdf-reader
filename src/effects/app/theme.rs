@@ -96,6 +96,13 @@ pub fn paint_appearance_now(a: Appearance) {
         _ = class.add_1("theme-switching");
     }
 
+    // Push the filter as numbers BEFORE the string goes on the element.
+    // `refresh_theme` invalidates the engine's pipeline cache right after
+    // this returns, and the first read that follows must already find the
+    // matrix — otherwise the engine falls back to parsing the CSS string
+    // this crate just produced.
+    pdf_engine::api::set_filter_matrix(&a.canvas_filter_matrix());
+
     if let Some(style) = html_style() {
         let _ = style.set_property(
             "color-scheme",

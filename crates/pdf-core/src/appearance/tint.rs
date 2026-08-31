@@ -7,6 +7,7 @@
 //! hierarchy: page brighter than chrome, chrome brighter than its borders) —
 //! only hue and chroma move, so contrast ratios survive a 100% tint.
 
+use crate::appearance::filter::{FilterMatrix, FilterOp};
 use crate::appearance::{Appearance, BaseMode};
 
 /// Map an sRGB hue angle (`tint_hue`, applied via `hue-rotate()`) to the
@@ -39,21 +40,25 @@ pub fn ui_hue_oklch(srgb_hue: f64) -> f64 {
 }
 
 impl Appearance {
-    pub fn canvas_filter(&self) -> String {
-        let mut parts: Vec<String> = Vec::new();
+    /// The canvas filter pipeline as an ordered list of operations — the one
+    /// place the pipeline is defined. Both [`Self::canvas_filter`] (the CSS
+    /// string) and [`Self::canvas_filter_matrix`] (the numbers the engine
+    /// bakes with) are derived from this, so the two cannot drift.
+    pub fn filter_ops(&self) -> Vec<FilterOp> {
+        let mut ops: Vec<FilterOp> = Vec::new();
 
         match self.base {
             BaseMode::Light => {}
             BaseMode::Dark => {
-                parts.push("invert(0.92)".into());
-                parts.push("hue-rotate(180deg)".into());
-                parts.push("saturate(0.85)".into());
-                parts.push("brightness(1.02)".into());
+                ops.push(FilterOp { name: "invert", amount: 0.92, decimals: None });
+                ops.push(FilterOp { name: "hue-rotate", amount: 180.0, decimals: None });
+                ops.push(FilterOp { name: "saturate", amount: 0.85, decimals: None });
+                ops.push(FilterOp { name: "brightness", amount: 1.02, decimals: None });
             }
             BaseMode::Dim => {
-                parts.push("brightness(0.8)".into());
-                parts.push("saturate(0.75)".into());
-                parts.push("contrast(0.9)".into());
+                ops.push(FilterOp { name: "brightness", amount: 0.8, decimals: None });
+                ops.push(FilterOp { name: "saturate", amount: 0.75, decimals: None });
+                ops.push(FilterOp { name: "contrast", amount: 0.9, decimals: None });
             }
         }
 
@@ -69,16 +74,31 @@ impl Appearance {
             // sepia() lands around 34deg (a warm brown). Measure the requested
             // hue from there so tint_hue is an absolute target, not an offset.
             let rot = (self.tint_hue as f64) - 34.0;
-            parts.push(format!("sepia({sep:.3})"));
-            parts.push(format!("saturate({sat:.3})"));
-            parts.push(format!("hue-rotate({rot:.1}deg)"));
+            ops.push(FilterOp { name: "sepia", amount: sep, decimals: Some(3) });
+            ops.push(FilterOp { name: "saturate", amount: sat, decimals: Some(3) });
+            ops.push(FilterOp { name: "hue-rotate", amount: rot, decimals: Some(1) });
         }
 
-        if parts.is_empty() {
+        ops
+    }
+
+    pub fn canvas_filter(&self) -> String {
+        let ops = self.filter_ops();
+        if ops.is_empty() {
             "none".to_string()
         } else {
-            parts.join(" ")
+            ops.iter()
+                .map(FilterOp::to_css)
+                .collect::<Vec<_>>()
+                .join(" ")
         }
+    }
+
+    /// The same pipeline as [`Self::canvas_filter`], already composed into a
+    /// single matrix. This is what the engine bakes with: it arrives as
+    /// numbers instead of a CSS string the engine would have to parse back.
+    pub fn canvas_filter_matrix(&self) -> FilterMatrix {
+        FilterMatrix::compose(&self.filter_ops())
     }
 
     /// Blend mode for the canvas against the page background.
@@ -200,6 +220,7 @@ impl Appearance {
 }
 #[cfg(test)]
 mod tests {
+    use crate::appearance::filter::FilterMatrix;
     use crate::appearance::{Appearance, BaseMode};
     use super::ui_hue_oklch;
     fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
@@ -402,5 +423,58 @@ mod tests {
         // pick it over Dark.
         assert!(!tinted(BaseMode::Dim, 0, 0).canvas_filter().contains("invert"));
         assert!(tinted(BaseMode::Dark, 0, 0).canvas_filter().contains("invert"));
+    }
+
+    /// The CSS string and the matrix the engine bakes with are both derived
+    /// from `filter_ops`, so they cannot drift — but nothing enforced that
+    /// when they were two hand-written implementations. This parses the
+    /// emitted string back with an independent `name(amount)` reader and
+    /// folds it, then compares against `canvas_filter_matrix`. If someone
+    /// changes a format specifier or a coefficient in only one of the two
+    /// paths, this is the test that catches it.
+    #[test]
+    fn the_matrix_is_the_string_the_engine_would_have_parsed() {
+        let looks = [
+            tinted(BaseMode::Light, 34, 0),
+            tinted(BaseMode::Dark, 34, 0),
+            tinted(BaseMode::Dim, 34, 0),
+            tinted(BaseMode::Light, 200, 100),
+            tinted(BaseMode::Dark, 200, 60),
+            tinted(BaseMode::Dim, 96, 35),
+        ];
+        for a in looks {
+            let css = a.canvas_filter();
+            let mut want = FilterMatrix::identity();
+            if css != "none" {
+                for token in css.split_whitespace() {
+                    let open = token.find('(').unwrap_or_else(|| panic!("bad token {token}"));
+                    assert_eq!(&token[token.len() - 1..], ")", "bad token {token}");
+                    let name = &token[..open];
+                    let arg = &token[open + 1..token.len() - 1];
+                    let arg = arg.strip_suffix("deg").unwrap_or(arg);
+                    let amount: f64 = arg.parse().unwrap_or_else(|_| panic!("bad arg {token}"));
+                    let op = FilterMatrix::css_token(name, amount)
+                        .unwrap_or_else(|| panic!("unmodelled function in {css}"));
+                    want = want.then(&op);
+                }
+            }
+            assert_eq!(
+                a.canvas_filter_matrix(),
+                want,
+                "matrix and string disagree for base={} tint={}/{} ({css})",
+                a.base.as_str(),
+                a.tint_hue,
+                a.tint_strength
+            );
+        }
+    }
+
+    /// Light with no tint is the identity matrix, which is the condition that
+    /// lets the engine skip the bake entirely.
+    #[test]
+    fn untinted_light_is_the_identity_matrix() {
+        assert!(tinted(BaseMode::Light, 34, 0).canvas_filter_matrix().is_identity());
+        assert!(!tinted(BaseMode::Dark, 34, 0).canvas_filter_matrix().is_identity());
+        assert!(!tinted(BaseMode::Light, 200, 100).canvas_filter_matrix().is_identity());
     }
 }
