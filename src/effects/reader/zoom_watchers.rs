@@ -61,7 +61,7 @@ use crate::components::primitives::hooks::use_viewport::use_viewport;
 use crate::state::reader::ZoomCommand;
 use crate::state::{AppState, SidebarMode};
 use crate::viewer::zoom::config::FOLLOW_SETTLE_MS;
-use crate::viewer::zoom::coordinator::{Gate, posting_gate};
+use crate::viewer::zoom::command::{Gate, posting_gate};
 
 /// Trailing debounce for a discrete refit: the same window of quiet a held
 /// follow waits for before it commits, so a page turn and the end of a resize
