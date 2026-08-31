@@ -423,6 +423,47 @@ export async function resolveOutline(): Promise<{
   }
 }
 
+/**
+ * JPEG quality for shelf covers. Small art at a small size; 0.82 is the knee
+ * where further quality stops being visible on a 240px-wide cover.
+ */
+const COVER_QUALITY = 0.82;
+
+/**
+ * Encode a canvas as a JPEG data URL without blocking the frame.
+ *
+ * `toDataURL` encodes AND base64-writes synchronously on the main thread —
+ * for a cover that lands right as the reader is painting its first page, that
+ * is a visible hitch. `toBlob` hands the encode to the browser off-thread and
+ * FileReader does the base64 in a task of its own; the canvas stays untouched
+ * until the blob is out.
+ *
+ * Falls back to the synchronous path where either API is missing (older
+ * webviews, and the smoke-test harness's stub canvas).
+ */
+function encodeJpeg(canvas: HTMLCanvasElement): Promise<string> {
+  const sync = () => canvas.toDataURL("image/jpeg", COVER_QUALITY);
+  if (typeof canvas.toBlob !== "function" || typeof FileReader === "undefined") {
+    return Promise.resolve(sync());
+  }
+  return new Promise<string>((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return resolve(sync());
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const url = reader.result;
+          resolve(typeof url === "string" ? url : sync());
+        };
+        reader.onerror = () => resolve(sync());
+        reader.readAsDataURL(blob);
+      },
+      "image/jpeg",
+      COVER_QUALITY,
+    );
+  });
+}
+
 function renderCoverFromPdf(
   doc: PDFDocumentProxy,
   maxWidth: number
@@ -441,9 +482,10 @@ function renderCoverFromPdf(
       .render({ canvasContext: ctx, viewport })
       .promise.then(() => {
         try { page.cleanup(); } catch (_) { /* ignore */ }
-        const dataUrl = off.toDataURL("image/jpeg", 0.82);
-        releaseCanvas(off);
-        return { dataUrl, width: viewport.width, height: viewport.height };
+        return encodeJpeg(off).then((dataUrl) => {
+          releaseCanvas(off);
+          return { dataUrl, width: viewport.width, height: viewport.height };
+        });
       });
   });
 }
