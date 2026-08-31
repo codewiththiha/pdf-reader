@@ -21,6 +21,8 @@ use pdf_core::math::fit_scale;
 use crate::state::{AppState, Toast};
 use crate::storage::{save_covers, save_library};
 
+use super::session;
+
 /// Wire OS-level file opening (double-click / "Open with" / default-app
 /// launch) into the shared open flow. Called once from the app root.
 ///
@@ -83,6 +85,12 @@ pub fn open_dialog(state: AppState) {
 /// was opened before, and records it in the recent-books library. Drag-drop
 /// calls this directly.
 pub fn open_path(state: AppState, path: String) {
+    // Claim the document state for THIS attempt. Pick a second book while the
+    // first is still resolving and the loser's tail would otherwise still run:
+    // it would write the old book's page count, geometry and scale over the
+    // new one's and flip `status` to Ready a second time, resuming the winner
+    // at the loser's page. Every hop below re-checks the stamp.
+    let stamp = session::claim();
     state.reader.document.status.set(DocStatus::Opening);
     state.reader.document.error.set(None);
 
@@ -95,7 +103,14 @@ pub fn open_path(state: AppState, path: String) {
         .unwrap_or(1);
 
     spawn_local(async move {
-        match engine::open(&path).await {
+        let opened = engine::open(&path).await;
+        // The engine answered — but a second open (or a close) may have taken
+        // the document state over while it was working. Standing down here is
+        // what keeps the winner's `Ready` from being followed by the loser's.
+        if !session::owns(stamp) {
+            return;
+        }
+        match opened {
             Ok(open) => {
                 let page1 = open.page1_size;
                 let num_pages = open.num_pages;
@@ -199,6 +214,12 @@ pub fn open_path(state: AppState, path: String) {
                 if resume > 1 {
                     let jump_state = state;
                     request_animation_frame(move || {
+                        // A close (or another open) between the flip and this
+                        // frame means the jump belongs to a book that is no
+                        // longer on screen.
+                        if !session::owns(stamp) {
+                            return;
+                        }
                         jump_state.reader.viewer.page.set(resume);
                     });
                 }
@@ -222,13 +243,18 @@ pub fn open_path(state: AppState, path: String) {
                     let outline_path = path.clone();
                     spawn_local(async move {
                         let nodes = engine::outline().await.unwrap_or_default();
-                        if outline_state
-                            .reader
-                            .document
-                            .path
-                            .get_untracked()
-                            .as_deref()
-                            == Some(outline_path.as_str())
+                        // Two guards, and both earn their place: the stamp
+                        // rules out a superseded attempt on the SAME path
+                        // (close-and-reopen), the path rules out a tree that
+                        // resolved for a different book.
+                        if session::owns(stamp)
+                            && outline_state
+                                .reader
+                                .document
+                                .path
+                                .get_untracked()
+                                .as_deref()
+                                == Some(outline_path.as_str())
                         {
                             outline_state.reader.document.outline.set(nodes);
                         }
@@ -289,7 +315,15 @@ pub fn open_path(state: AppState, path: String) {
                     let cover_state = state;
                     let cover_path = path.clone();
                     spawn_local(async move {
-                        match engine::cover_data_url(&cover_path, 240.0).await {
+                        let cover = engine::cover_data_url(&cover_path, 240.0).await;
+                        // A cover rendered by a superseded attempt is page 1
+                        // of whatever the engine has open NOW, not of the book
+                        // it was asked for; filing it under `cover_path` would
+                        // put the wrong art on the shelf.
+                        if !session::owns(stamp) {
+                            return;
+                        }
+                        match cover {
                             Ok(c) => {
                                 cover_state.library.covers.update(|covers| {
                                     covers.insert(
