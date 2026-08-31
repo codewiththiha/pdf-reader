@@ -42,7 +42,7 @@ pub(super) fn record(
         state.library.covers.update(|c| {
             c.remove(&evicted_path);
         });
-        if let Err(e) = save_covers(&state.library.covers.get_untracked()) {
+        if let Err(e) = state.library.covers.with_untracked(save_covers) {
             e.report();
         }
     }

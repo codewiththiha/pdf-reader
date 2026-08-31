@@ -1,5 +1,7 @@
 //! The shelf cover: page 1 of the book, as a small JPEG.
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -19,7 +21,11 @@ const COVER_WIDTH: f64 = 240.0;
 /// store on the main thread, right when the reader was fighting for both. A
 /// failed render just leaves the stylised fallback cover on the shelf.
 pub(super) fn ensure(state: AppState, path: String, stamp: u64) {
-    if state.library.covers.get_untracked().contains_key(&path) {
+    if state
+        .library
+        .covers
+        .with_untracked(|covers| covers.contains_key(&path))
+    {
         return;
     }
     spawn_local(async move {
@@ -37,14 +43,18 @@ pub(super) fn ensure(state: AppState, path: String, stamp: u64) {
         state.library.covers.update(|covers| {
             covers.insert(
                 path,
-                CoverImage {
+                Arc::new(CoverImage {
                     data_url: c.data_url,
                     width: c.width,
                     height: c.height,
-                },
+                }),
             );
         });
-        if let Err(e) = crate::storage::save_covers(&state.library.covers.get_untracked()) {
+        if let Err(e) = state
+            .library
+            .covers
+            .with_untracked(crate::storage::save_covers)
+        {
             e.report();
         }
     });
