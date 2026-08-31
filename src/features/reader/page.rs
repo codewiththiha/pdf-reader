@@ -117,6 +117,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // commands; nothing else writes a zoom scale or rescales a strip.
     let zoom = crate::viewer::zoom::ZoomController::new(engine);
     zoom.drive(vs);
+    // BEFORE reading_progress, and that is a contract rather than a habit.
+    // Leptos runs effects in insertion order, so when a zoom transaction
+    // closes both wake in the same flush: this one replays its held jump
+    // first, and reading progress then persists the page the reader actually
+    // asked for instead of the stale dominant the strip still shows.
     navigation_sync(vs, rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom sources come last, after the controller that consumes them:
     // a container follow on every frame of a sidebar slide or a window drag
