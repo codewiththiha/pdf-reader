@@ -67,12 +67,33 @@ pub async fn explain_word(
 
     let mut stream = provider().explain_word(word, context);
 
+    // Coalesce Snapshot chunks so a 10k-token stream does not pay one IPC
+    // emit per ~100 characters. Flush after 4 snapshots or 64 ms, whichever
+    // comes first; Done/Error always flush immediately.
+    let mut pending: Option<AiChunk> = None;
+    let mut batch = 0u8;
+    let mut last_flush = std::time::Instant::now();
     while let Some(chunk) = stream.next().await {
         let last = matches!(chunk, AiChunk::Done | AiChunk::Error(_));
-        emit(&app, &run, chunk)?;
         if last {
+            if let Some(prev) = pending.take() {
+                emit(&app, &run, prev)?;
+            }
+            emit(&app, &run, chunk)?;
             break;
         }
+        pending = Some(chunk);
+        batch = batch.saturating_add(1);
+        if batch >= 4 || last_flush.elapsed() >= std::time::Duration::from_millis(64) {
+            if let Some(prev) = pending.take() {
+                emit(&app, &run, prev)?;
+            }
+            batch = 0;
+            last_flush = std::time::Instant::now();
+        }
+    }
+    if let Some(prev) = pending.take() {
+        emit(&app, &run, prev)?;
     }
 
     Ok(())

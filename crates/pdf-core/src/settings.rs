@@ -227,8 +227,17 @@ pub enum GlossColor {
 }
 
 impl GlossColor {
-    pub fn all() -> [GlossColor; 6] {
-        [Self::Accent, Self::Red, Self::Yellow, Self::Green, Self::Blue, Self::Custom]
+    pub const ALL: &'static [GlossColor] = &[
+        Self::Accent,
+        Self::Red,
+        Self::Yellow,
+        Self::Green,
+        Self::Blue,
+        Self::Custom,
+    ];
+
+    pub fn all() -> &'static [GlossColor] {
+        Self::ALL
     }
 
     pub fn label(&self) -> &'static str {

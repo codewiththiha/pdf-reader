@@ -6,6 +6,8 @@
 //! current page. A match's rect is in scale-1 CSS px relative to its page's
 //! top-left; the UI multiplies by the current scale to place it.
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 /// One occurrence of the query.
@@ -17,8 +19,10 @@ pub struct SearchMatch {
     /// stamps the same number onto the highlight box it paints, so this pair
     /// names one box on screen without matching geometry.
     pub index: u32,
-    /// Snippet of surrounding text, for the results list.
-    pub text: String,
+    /// Snippet of surrounding text, for the results list. Shared so a
+    /// 500-hit query does not clone 500 independent `String`s of the same
+    /// haystack windows.
+    pub text: Arc<str>,
     pub x: f64,
     pub y: f64,
     pub w: f64,
@@ -203,7 +207,7 @@ impl SearchIndex {
                     matches.push(SearchMatch {
                         page: page.page,
                         index: ord,
-                        text: snippet(&item.text, qlen, at),
+                        text: Arc::<str>::from(snippet(&item.text, qlen, at)),
                         x: item.x + (item.w * at_f) / len as f64,
                         y: item.y,
                         w: (item.w * qlen as f64 / len as f64).max(1.0),
@@ -257,7 +261,7 @@ mod index_tests {
         let resp = index.query("WORLD");
         assert_eq!(resp.total, 1);
         assert_eq!(resp.query, "WORLD");
-        assert_eq!(resp.matches[0].text, "Hello World");
+        assert_eq!(resp.matches[0].text.as_ref(), "Hello World");
     }
 
     #[test]
@@ -291,7 +295,7 @@ mod index_tests {
         let mut index = SearchIndex::new();
         index.add_page(page(1, vec![item("a needle here", 0.0, 100.0)]));
         let resp = index.query("needle");
-        assert_eq!(resp.matches[0].text, "a needle here");
+        assert_eq!(resp.matches[0].text.as_ref(), "a needle here");
     }
 
     #[test]
@@ -320,7 +324,7 @@ mod index_tests {
         index.add_page(page(1, vec![item("héllo wörld", 0.0, 100.0)]));
         let resp = index.query("wörld");
         assert_eq!(resp.total, 1);
-        assert_eq!(resp.matches[0].text, "héllo wörld");
+        assert_eq!(resp.matches[0].text.as_ref(), "héllo wörld");
         // And the casefold path: 'É' lowercases to 'é', which IS in "héllo".
         let resp = index.query("É");
         assert_eq!(resp.total, 1);

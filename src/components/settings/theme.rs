@@ -32,7 +32,8 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
         <div class="rounded-xl border border-line">
             <div class="grid grid-cols-6 gap-2 px-4 py-4">
                 {GlossColor::all()
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .map(|c| {
                         let active = Signal::derive(move || s.with(|st| st.gloss_color) == c);
                         if c == GlossColor::Custom {

@@ -89,12 +89,18 @@ fn ensure_readable_pdf(path: &str) -> Result<(), String> {
 /// Read a file's bytes for the webview. Returned as an IPC `Response` so the
 /// JS side receives an `ArrayBuffer` (no JSON round-trip for megabytes).
 /// Errors resolve as a rejected invoke, which the engine falls back from.
+/// The read itself runs on the blocking pool so a 50 MB book does not stall
+/// the async runtime while the bytes come off disk.
 #[tauri::command]
-fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     ensure_readable_pdf(&path)?;
-    std::fs::read(&path)
-        .map(tauri::ipc::Response::new)
-        .map_err(|e| format!("could not read {path}: {e}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::read(&path)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| format!("could not read {path}: {e}"))
+    })
+    .await
+    .map_err(|e| format!("read worker failed: {e}"))?
 }
 
 /// Show/hide the native macOS traffic lights.
