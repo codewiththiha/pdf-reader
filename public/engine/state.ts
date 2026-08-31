@@ -6,7 +6,6 @@ import type {
   PageState,
   RenderTask,
   SearchRect,
-  TextIndexEntry,
   ThumbEntry,
   ActiveMatch,
 } from "./types";
@@ -47,6 +46,28 @@ export function setCurrentPath(p: string | null): void {
 }
 
 export const stateByCanvasId = new Map<string, PageState>();
+
+/** Ceiling on the page registry, ~20x the mounted-page budget
+ *  (`RENDER_BUDGET max_items: 3`). Registration and unregistration are
+ *  paired everywhere today, so this only ever fires when a code path starts
+ *  leaking — and when it does it drops exactly the entries already marked
+ *  dead, never one the reader is looking at. An unbounded module-level map
+ *  holding page-sized rasters is not worth the risk of having no ceiling. */
+export const PAGE_STATE_MAX = 64;
+
+/** Drop entries already marked dead once the registry outgrows its ceiling.
+ *  Live entries are never pruned: evicting a mounted page blanks the screen,
+ *  which is worse than the memory it would reclaim. */
+export function pruneDeadPageStates(): void {
+  if (stateByCanvasId.size <= PAGE_STATE_MAX) return;
+  for (const [id, st] of stateByCanvasId) {
+    if (!st.dead) continue;
+    releasePageSurfaces(st);
+    stateByCanvasId.delete(id);
+    if (stateByCanvasId.size <= PAGE_STATE_MAX) return;
+  }
+}
+
 export const thumbCache = new Map<number, ThumbEntry>();
 /** Cap kept tight: each thumb is a pair of rasters. 16 keeps several
  *  scroll-windowfuls warm: ~8MB total (thumb pairs at 0.25 scale are small). */
@@ -55,7 +76,6 @@ export const thumbTasks = new Map<string, RenderTask>();
 export const thumbCancelled = new Set<string>();
 export const thumbLive = new Map<string, { page: number }>();
 
-export const textIndex = new Map<number, TextIndexEntry[]>();
 export const highlightsByPage = new Map<number, SearchRect[]>();
 export let searchQuery = "";
 export let activeMatch: ActiveMatch = null;
@@ -142,6 +162,11 @@ export function releasePageSurfaces(st: PageState | null): void {
   st.canvas = null;
   st.host = null;
   st.textLayerEl = null;
+  // The layer node itself was removed from the host above; drop the
+  // reference so a later reuse of this PageState rebuilds rather than
+  // trusting a detached element.
+  st.linkLayerEl = null;
+  st.linkLayerScale = 0;
   st.viewport = null;
 }
 

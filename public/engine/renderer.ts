@@ -5,6 +5,7 @@ import type {
   RenderResult,
 } from "./types";
 import { el, errorInfo, fail, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { RERENDER_CONCURRENCY, runLimited } from "./concurrent";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
@@ -19,6 +20,7 @@ import {
   noteActivity,
   sweepPdf,
   PAGE_MAX_PIXELS,
+  pruneDeadPageStates,
 } from "./state";
 import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
@@ -52,6 +54,13 @@ function ensurePage(
   if (existing) {
     existing.dead = false;
     existing.canvas = canvas;
+    // A swapped host means the old link layer is detached from the page:
+    // forget it so the next render rebuilds into the new host instead of
+    // seeing a stale reference that still reports the right scale.
+    if (existing.host !== host) {
+      existing.linkLayerEl = null;
+      existing.linkLayerScale = 0;
+    }
     existing.host = host;
     existing.textLayerEl = textLayerEl;
     return existing;
@@ -61,6 +70,8 @@ function ensurePage(
     canvas,
     host,
     textLayerEl,
+    linkLayerEl: null,
+    linkLayerScale: 0,
     renderTask: null,
     textLayer: null,
     viewport: null,
@@ -75,6 +86,9 @@ function ensurePage(
 }
 
 export function registerPage(payload: { canvasId: string; hostId: string; page: number }): void {
+  // Belt and braces: if the registry ever outgrows its ceiling, this is the
+  // one place that can notice, because it is the only path that grows it.
+  pruneDeadPageStates();
   const existing = stateByCanvasId.get(payload.canvasId);
   if (existing) {
     existing.dead = true;
@@ -94,6 +108,8 @@ export function registerPage(payload: { canvasId: string; hostId: string; page: 
       canvas: null,
       host: payload.hostId ? el(payload.hostId) : null,
       textLayerEl: null,
+      linkLayerEl: null,
+      linkLayerScale: 0,
       renderTask: null,
       textLayer: null,
       viewport: null,
@@ -291,24 +307,6 @@ export async function renderPageInternal(
   return { ok: true, width: cssW, height: cssH, scale };
 }
 
-async function runLimited<T>(jobs: Array<() => Promise<T>>, limit = 2): Promise<T[]> {
-  const out: T[] = [];
-  let i = 0;
-  const workers = Array.from(
-    { length: Math.min(Math.max(limit, 1), Math.max(jobs.length, 1)) },
-    async () => {
-      while (i < jobs.length) {
-        const idx = i;
-        i += 1;
-        const job = jobs[idx];
-        if (job) out[idx] = await job();
-      }
-    },
-  );
-  await Promise.all(workers);
-  return out;
-}
-
 export async function renderPage(
   canvasId: string,
   scale: number,
@@ -358,7 +356,7 @@ export async function preparePagesForScrub(): Promise<void> {
       jobs.push(() => renderPageInternal(id, st.scale || 1, false));
     }
   }
-  if (jobs.length) await runLimited(jobs, 2);
+  if (jobs.length) await runLimited(jobs, RERENDER_CONCURRENCY);
 }
 
 /** Re-render every live page from pdf.js. Used when a theme change arrives
@@ -369,5 +367,5 @@ export async function rerenderLivePages(): Promise<void> {
     if (st.dead || !st.canvas) continue;
     jobs.push(() => renderPageInternal(id, st.scale || 1, !!st.textLayerEl));
   }
-  await runLimited(jobs, 2);
+  await runLimited(jobs, RERENDER_CONCURRENCY);
 }

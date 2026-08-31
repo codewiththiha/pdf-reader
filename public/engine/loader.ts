@@ -11,6 +11,7 @@ import type {
   PDFDocumentProxy,
 } from "./types";
 import { errorInfo, fail, releaseCanvas } from "./canvas";
+import { OUTLINE_CONCURRENCY, runLimited } from "./concurrent";
 import { resetPaperForDocument } from "./paper";
 import {
   currentPath,
@@ -255,37 +256,76 @@ function outlineTitle(raw: string | null | undefined): string {
   return String(raw == null ? "" : raw).trim() || "(untitled)";
 }
 
-async function flattenOutline(
+type FlatOutlineEntry = { title: string; page: number; depth: number };
+
+/** One outline node with its destination still unresolved. */
+type PendingOutlineNode = { title: string; depth: number; dest: string | unknown[] | null };
+
+/** Pre-order walk of the chapter tree. Synchronous, so the flattened order is
+ *  exactly the order the sidebar renders — parents before children, siblings
+ *  in document order — and nothing downstream has to re-sort it. */
+function collectOutline(
   items: OutlineItem[] | null | undefined,
   depth: number,
-  acc: { title: string; page: number; depth: number }[]
-): Promise<typeof acc> {
+  acc: PendingOutlineNode[]
+): PendingOutlineNode[] {
   for (const it of items || []) {
-    let page: number | null = null;
-    try {
-      if (Array.isArray(it.dest)) {
-        const ref = it.dest[0];
-        if (ref && typeof ref === "object" && "num" in ref) {
-          const idx = await pdf!.getPageIndex(ref);
-          page = idx + 1;
-        } else if (typeof ref === "number") {
-          page = ref + 1;
-        }
-      } else if (typeof it.dest === "string") {
-        const d = await pdf!.getDestination(it.dest);
-        if (d && d[0]) {
-          const ref = d[0];
-          if (ref && typeof ref === "object" && "num" in ref) {
-            const idx = await pdf!.getPageIndex(ref);
-            page = idx + 1;
-          }
-        }
+    acc.push({
+      title: outlineTitle(it.title),
+      depth,
+      dest: it.dest ?? null,
+    });
+    collectOutline(it.items, depth + 1, acc);
+  }
+  return acc;
+}
+
+/** Resolve one destination to a 1-based page, or null when it cannot be.
+ *  Each call is one worker round trip, which is why the caller fans these out
+ *  instead of awaiting them one at a time. */
+async function resolveOutlineDest(dest: string | unknown[] | null): Promise<number | null> {
+  if (!pdf || !dest) return null;
+  try {
+    if (Array.isArray(dest)) {
+      const ref = dest[0];
+      if (ref && typeof ref === "object" && "num" in ref) {
+        return (await pdf.getPageIndex(ref)) + 1;
       }
-    } catch (_) {
-      page = null;
+      return typeof ref === "number" ? ref + 1 : null;
     }
-    if (page) acc.push({ title: outlineTitle(it.title), page, depth });
-    await flattenOutline(it.items, depth + 1, acc);
+    if (typeof dest !== "string") return null;
+    const d = await pdf.getDestination(dest);
+    if (!d || !d[0]) return null;
+    const ref = d[0];
+    if (ref && typeof ref === "object" && "num" in ref) {
+      return (await pdf.getPageIndex(ref)) + 1;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Flatten the chapter tree, resolving destinations with bounded
+ *  concurrency. Used to be a recursive `await` per node: a textbook outline
+ *  cost one serialised worker round trip per chapter AFTER the reader was
+ *  already up, so the sidebar sat empty for the whole walk. */
+async function flattenOutline(
+  items: OutlineItem[] | null | undefined
+): Promise<FlatOutlineEntry[]> {
+  const nodes = collectOutline(items, 0, []);
+  if (!nodes.length) return [];
+  const jobs = nodes.map((n) => () => resolveOutlineDest(n.dest));
+  const pages = await runLimited(jobs, OUTLINE_CONCURRENCY);
+
+  // Assemble in collected order: `runLimited` indexes each answer back to its
+  // job position, so a destination that resolves late cannot reorder the tree.
+  const acc: FlatOutlineEntry[] = [];
+  for (let i = 0; i < nodes.length; i += 1) {
+    const page = pages[i];
+    const node = nodes[i];
+    if (!page || !node) continue;
+    acc.push({ title: node.title, page, depth: node.depth });
   }
   return acc;
 }
@@ -370,9 +410,7 @@ export async function resolveOutline(): Promise<{
   try {
     // Race the timer against getOutline() AND flattenOutline(). Awaiting
     // getOutline() first meant a hung outline never started the 4s timeout.
-    const outlinePromise = pdf.getOutline().then((items) =>
-      flattenOutline(items, 0, []),
-    );
+    const outlinePromise = pdf.getOutline().then((items) => flattenOutline(items));
     const outline = await withTimeout(outlinePromise, 4000, "outline timeout");
     return { ok: true, outline };
   } catch (_) {
