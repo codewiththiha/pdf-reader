@@ -7,8 +7,9 @@
 //! flows down the reactive tree, so a sibling overlay would not see it.
 //!
 //! The shell knows nothing about the application: pin state, the native
-//! traffic lights, sidebar insets and search holds arrive as props/signals
-//! computed by `app_title_bar.rs` from the shell controller.
+//! traffic lights, the frameless caption cluster (`end`), sidebar insets
+//! and search holds arrive as props/signals computed by `app_title_bar.rs`
+//! from the shell controller.
 
 use std::time::Duration;
 
@@ -59,6 +60,14 @@ pub fn TitleBar(
     #[prop(into, default = ViewFn::from(|| ()))]
     center: ViewFn,
     #[prop(into)] right: ViewFn,
+    /// The row's far-edge cluster — the frameless caption buttons on
+    /// Windows/Linux, rendered AFTER the right cluster and flush to the
+    /// window's right edge (its own CSS cancels the row's `pr-2`). Empty
+    /// wherever the OS still draws its own window controls. Defaults to
+    /// empty so the shell stays platform-agnostic; `app_title_bar.rs`
+    /// decides what (if anything) runs here.
+    #[prop(into, default = ViewFn::from(|| ()))]
+    end: ViewFn,
     children: Children,
 ) -> impl IntoView {
     let held_count = RwSignal::new(0usize);
@@ -145,6 +154,7 @@ pub fn TitleBar(
                         {right.run()}
                         <PinButton pinned=pinned on_pin_change=on_pin_change />
                     </div>
+                    {end.run()}
                 </div>
             </div>
         </>

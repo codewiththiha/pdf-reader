@@ -5,7 +5,8 @@
 //! payload objects), `types` mirrors the engine's return shapes, `api`
 //! provides typed `Result`-returning wrappers for the rest of the app (one
 //! focused module per surface: document, render, search, paper, dialog,
-//! theme, window), and `paper` is the paper session state machine.
+//! theme, window, window_controls), and `paper` is the paper session state
+//! machine.
 //!
 //! `bridge` is private: callers go through `api`, except for the few raw
 //! probes/surfaces the app legitimately needs directly (engine version,

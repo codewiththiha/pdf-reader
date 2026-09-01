@@ -11,6 +11,8 @@ use leptos::prelude::*;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::root::TitleBar;
 use crate::components::shell::titlebar::traffic_lights::TrafficLights;
+use crate::components::shell::titlebar::window_controls::WindowControls;
+use crate::services::platform::{is_macos, uses_frameless_controls};
 use crate::state::AppState;
 
 #[component]
@@ -18,8 +20,7 @@ pub fn AppTitleBar(
     state: AppState,
     #[prop(into)] left: ViewFn,
     /// Centered overlay passed through to the generic title bar. Defaults to empty.
-    #[prop(into, default = ViewFn::from(|| ()))]
-    center: ViewFn,
+    #[prop(into, default = ViewFn::from(|| ()))] center: ViewFn,
     #[prop(into)] right: ViewFn,
     children: Children,
 ) -> impl IntoView {
@@ -33,6 +34,15 @@ pub fn AppTitleBar(
     // The open floating search holds the bar (like an open popover).
     let extra_hold = Signal::derive(move || state.reader.search.visible.get());
 
+    // Window chrome is platform-split, and the split is fixed for the
+    // process: macOS drives its native traffic lights (shown/hidden and
+    // guttered by the shell controller), while Windows and Linux run
+    // frameless — the platform config strips their title bar — and get
+    // the app's own caption cluster at the bar's far edge. Probed once
+    // (services/platform.rs), so neither branch is reactive.
+    let macos = is_macos();
+    let frameless = uses_frameless_controls();
+
     view! {
         <TitleBar
             pinned=pinned
@@ -43,11 +53,19 @@ pub fn AppTitleBar(
             left=left
             center=center
             right=right
+            end=ViewFn::from(move || {
+                if frameless {
+                    view! { <WindowControls maximized=state.ui.window_maximized /> }.into_any()
+                } else {
+                    ().into_any()
+                }
+            })
         >
-            // Native traffic lights. The generic TitleBar does not know
-            // about them; they read the controller (and this bar's
-            // visibility) themselves.
-            <TrafficLights />
+            // Native traffic lights, macOS only. The generic TitleBar does
+            // not know about them; they read the controller (and this
+            // bar's visibility) themselves. Elsewhere they do not exist,
+            // so there is nothing to drive and no command to invoke.
+            {macos.then(|| view! { <TrafficLights /> })}
             {children()}
         </TitleBar>
     }

@@ -13,10 +13,12 @@ js-sys = "0.3"
 # Trimmed to what src/ actually uses (audited after the feature-folder
 # refactor): window/document/element access, the html::Div/Span node refs,
 # classList + inline style writes, drag-drop (DragEvent + DataTransfer),
-# scroll anchoring, resize observation, the reveal CustomEvent, and the
-# non-passive wheel listener the horizontal strip needs (AddEventListenerOptions).
+# scroll anchoring, resize observation, the reveal CustomEvent, the
+# non-passive wheel listener the horizontal strip needs (AddEventListenerOptions),
+# and the navigator user-agent read behind the platform probe (services/platform.rs).
 web-sys = { version = "0.3", features = [
   "Window",
+  "Navigator",
   "Document",
   "Element",
   "HtmlElement",

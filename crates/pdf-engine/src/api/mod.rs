@@ -13,7 +13,8 @@
 //!   - [`paper`]     — the paper session's pixel plumbing
 //!   - [`dialog`]    — the native open-file dialog
 //!   - [`theme`]     — re-bake / scrub mode / advisory sweeps
-//!   - [`window`]    — window chrome + AI word explanation
+//!   - [`window`]    — traffic lights + AI word explanation
+//!   - [`window_controls`] — the frameless captions (Windows/Linux)
 //!
 //! [`resolve`] and the hoisted property keys live here: they are the one
 //! parser for the `{ok,...}` envelope and the hottest allocations in the
@@ -30,6 +31,7 @@ pub mod render;
 pub mod search;
 pub mod theme;
 pub mod window;
+pub mod window_controls;
 
 pub use dialog::pick_pdf;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
@@ -41,6 +43,7 @@ pub use render::{
 pub use search::{build_search_index, clear_highlights, search, set_active_match};
 pub use theme::{refresh_theme, set_live_pipeline, set_scrub_mode, sweep};
 pub use window::{explain_word, set_traffic_lights};
+pub use window_controls::{close_window, is_window_maximized, minimize_window, toggle_maximize_window};
 
 /// Error returned by any engine call: the engine-side error `name` and
 /// `message`, or a local failure to parse/communicate.
