@@ -2,19 +2,20 @@
 
 use wasm_bindgen::JsValue;
 
-use super::{reflect_set, KEY_CONTEXT, KEY_RUN, KEY_VISIBLE, KEY_WORD};
+use super::{reflect_set, KEY_CONTEXT, KEY_HEADER_HEIGHT, KEY_RUN, KEY_VISIBLE, KEY_WORD};
 use crate::bridge;
 
 /// Show/hide the native macOS traffic lights via the backend command. The
 /// backend is a no-op outside macOS, and outside Tauri there is nothing to
 /// invoke, so this is safe to call unconditionally (the reader-view effect
 /// drives it from the hover-reveal signal).
-pub async fn set_traffic_lights(visible: bool) {
+pub async fn set_traffic_lights(visible: bool, header_height: f64) {
     if !bridge::has_tauri() {
         return;
     }
     let args: JsValue = js_sys::Object::new().into();
     _ = reflect_set(&args, &KEY_VISIBLE, &JsValue::from_bool(visible));
+    _ = reflect_set(&args, &KEY_HEADER_HEIGHT, &JsValue::from_f64(header_height));
     _ = bridge::tauri_invoke("set_traffic_lights", args).await;
 }
 

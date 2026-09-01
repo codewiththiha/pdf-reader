@@ -106,6 +106,7 @@ js_keys! {
     KEY_FILTERS => "filters",
     KEY_EXTENSIONS => "extensions",
     KEY_PDF => "PDF",
+    KEY_HEADER_HEIGHT => "headerHeight",
 }
 
 /// `obj[key]` using one of the hoisted keys.
