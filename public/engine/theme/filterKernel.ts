@@ -15,6 +15,11 @@
 import type { FilterMatrix } from "../types";
 
 const LU_TSCALE = 1 << 16;
+// Add half a fixed-point unit before shifting so the final channel value is
+// rounded to nearest instead of floored. The compositor applies the same
+// pipeline with floating-point math; matching its rounding avoids a one-LSB
+// seam between baked page pixels and the CSS backdrop.
+const LU_ROUND = 1 << 15;
 
 const lutCache = new Map<string, Int32Array[]>();
 
@@ -147,9 +152,9 @@ export function applyFilterToData(
     const r = data[i]!;
     const g = data[i + 1]!;
     const b = data[i + 2]!;
-    data[i] = (L0[r] + L1[g] + L2[b] + o0) >> 16;
-    data[i + 1] = (L3[r] + L4[g] + L5[b] + o1) >> 16;
-    data[i + 2] = (L6[r] + L7[g] + L8[b] + o2) >> 16;
+    data[i] = (L0[r] + L1[g] + L2[b] + o0 + LU_ROUND) >> 16;
+    data[i + 1] = (L3[r] + L4[g] + L5[b] + o1 + LU_ROUND) >> 16;
+    data[i + 2] = (L6[r] + L7[g] + L8[b] + o2 + LU_ROUND) >> 16;
   }
   return true;
 }

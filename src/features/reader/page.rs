@@ -106,7 +106,15 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
         prev_mode.set_value(mode);
         let auto = state.settings.with(|s| s.layout.auto_scale);
-        if matches!(mode, ViewMode::Spread | ViewMode::ScrollHorizontal) || (auto && mode.is_paginated()) {
+        if mode == ViewMode::ScrollHorizontal {
+            // Horizontal is one page per virtual item. Do not reinterpret the
+            // outgoing layout's fit against the new axis: a single/vertical
+            // width fit would become a height fit here and drop the readout
+            // by almost half, while a spread width fit would jump the other
+            // way. Hand ownership to the already-resolved `desired` scale so
+            // every mode switch preserves the reader's zoom.
+            vs.viewer.fit.set(FitMode::None);
+        } else if matches!(mode, ViewMode::Spread) || (auto && mode.is_paginated()) {
             vs.viewer.fit.set(FitMode::Width);
         }
     });

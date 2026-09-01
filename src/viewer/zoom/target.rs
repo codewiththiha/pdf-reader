@@ -127,9 +127,8 @@ pub(crate) struct FitDims {
     pub ph_eff: f64,
     /// Vertical air a fit must leave in scrolling-vertical mode.
     pub pad: f64,
-    /// Whether the strip runs horizontally (its only real constraint is the
-    /// viewport height: several pages are visible at once, so "fit width"
-    /// has no single-page meaning there).
+    /// Whether the strip runs horizontally. In that mode Fit Page uses the
+    /// viewport height, while Fit Width still means the width of one page.
     pub horizontal: bool,
 }
 
@@ -187,12 +186,18 @@ impl FitDims {
         })
     }
 
-    /// The scale a fit mode wants. In the horizontal strip both fit modes
-    /// resolve to the height fit: width follows from the page aspect, which
-    /// is how fixed-layout horizontal readers scale their spreads.
+    /// The scale a fit mode wants. The horizontal strip has one page per
+    /// virtual item: Fit Width therefore uses that page's width, while Fit
+    /// Page keeps the height-fit behaviour that makes the full page visible.
+    /// `None` is included for completeness even though callers only ask this
+    /// method to resolve an active fit.
     pub fn fit(&self, fit: FitMode, current: f64) -> f64 {
         if self.horizontal {
-            return clamp_scale(self.ch_eff.max(1.0) / self.ph_eff.max(1.0));
+            return match fit {
+                FitMode::Width => clamp_scale(self.cw_eff.max(1.0) / self.pw_eff.max(1.0)),
+                FitMode::Page => clamp_scale(self.ch_eff.max(1.0) / self.ph_eff.max(1.0)),
+                FitMode::None => clamp_scale(current),
+            };
         }
         fit_scale(
             fit,
@@ -222,13 +227,13 @@ mod tests {
     }
 
     #[test]
-    fn the_horizontal_strip_fits_the_viewport_height_for_both_fit_modes() {
-        // 600px of height for a 792px-tall letter page: ~0.758.
+    fn horizontal_fit_width_uses_one_page_while_fit_page_uses_height() {
         let d = dims(true, false, 1200.0, 600.0, 612.0, 792.0, 0.0);
         let by_width = d.fit(FitMode::Width, 1.0);
         let by_page = d.fit(FitMode::Page, 1.0);
-        assert!((by_width - 600.0 / 792.0).abs() < 1e-9);
-        assert_eq!(by_width, by_page);
+        assert!((by_width - 1200.0 / 612.0).abs() < 1e-9);
+        assert!((by_page - 600.0 / 792.0).abs() < 1e-9);
+        assert!(by_width > by_page);
     }
 
     #[test]

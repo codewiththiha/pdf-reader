@@ -54,6 +54,19 @@ pub struct PaperDetector {
     pixels: u64,
 }
 
+/// Round a non-negative integer mean to the nearest channel value. Keeping
+/// this in integer arithmetic makes the result deterministic across targets
+/// while avoiding the downward bias of plain integer division. The remainder
+/// comparison is written without `2 * remainder`, so even a very large
+/// histogram cannot overflow while deciding whether to round up.
+fn rounded_mean(sum: u64, count: u64) -> u8 {
+    debug_assert!(count > 0);
+    let whole = sum / count;
+    let remainder = sum % count;
+    let half_up = count / 2 + count % 2;
+    (whole + u64::from(remainder >= half_up)) as u8
+}
+
 impl PaperDetector {
     pub fn new() -> Self {
         Self::default()
@@ -117,9 +130,10 @@ impl PaperDetector {
     }
 
     /// The dominant colour, provided one bucket owns at least `min_share` of
-    /// every pixel this detector has ever counted. The result is the exact
-    /// mean of that bucket's pixels, not a bucket centre — the mean keeps a
-    /// paper colour that straddles a quantisation edge from wobbling.
+    /// every pixel this detector has ever counted. The result is the nearest
+    /// representable channel value of that bucket's exact mean, not a bucket
+    /// centre — the mean keeps a paper colour that straddles a quantisation
+    /// edge from wobbling.
     pub fn dominant(&self, min_share: f64) -> Option<Rgb> {
         let best = self.buckets.values().max_by_key(|b| b.n)?;
         if self.pixels == 0 || best.n == 0 {
@@ -130,9 +144,9 @@ impl PaperDetector {
             return None;
         }
         Some(Rgb::new(
-            (best.r / best.n) as u8,
-            (best.g / best.n) as u8,
-            (best.b / best.n) as u8,
+            rounded_mean(best.r, best.n),
+            rounded_mean(best.g, best.n),
+            rounded_mean(best.b, best.n),
         ))
     }
 
@@ -201,6 +215,17 @@ mod tests {
         let n = d.feed_rgba(&frame(32, 32, [0x40, 0x40, 0x40]));
         assert_eq!(n, 32 * 32);
         assert_eq!(d.dominant(PAPER_SHARE), Some(Rgb::new(0x40, 0x40, 0x40)));
+    }
+
+    #[test]
+    fn dominant_means_round_to_nearest_channel_value() {
+        // Two pixels in one bucket with a 0.5 mean expose the old truncation:
+        // the detector must agree with the floating-point compositor and pick
+        // 1 rather than the systematically darker 0.
+        let rgba = [0, 0, 0, 255, 1, 1, 1, 255];
+        let mut d = PaperDetector::new();
+        d.feed_rgba(&rgba);
+        assert_eq!(d.dominant(PAPER_SHARE), Some(Rgb::new(1, 1, 1)));
     }
 
     #[test]
