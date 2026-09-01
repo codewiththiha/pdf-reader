@@ -4,6 +4,12 @@
 import type { PipelineCache } from "../types";
 import { paperInfo } from "./paper";
 
+/** Keep the compositor's live filter + blend on every canvas permanently.
+ * Baking re-quantizes the same pipeline in integer stages, so a baked page
+ * cannot be bit-identical to the live backdrop's floating-point composite.
+ * Set this to false to restore the worker/inline bake path. */
+export const LIVE_PIPELINE = true;
+
 export const pipelineCache: PipelineCache = {
   token: null,
   filter: "none",

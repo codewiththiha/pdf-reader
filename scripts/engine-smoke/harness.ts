@@ -136,6 +136,28 @@ interface FakeStyle {
 
 type CanvasLike = FakeCanvas & { width: number; height: number; data?: Uint8ClampedArray };
 
+type FakeClassList = {
+  add: (...names: string[]) => void;
+  remove: (...names: string[]) => void;
+  toggle: (name: string, force?: boolean) => boolean;
+  contains: (name: string) => boolean;
+};
+
+function makeClassList(): FakeClassList {
+  const names = new Set<string>();
+  return {
+    add: (...tokens) => tokens.forEach((token) => names.add(token)),
+    remove: (...tokens) => tokens.forEach((token) => names.delete(token)),
+    toggle: (token, force) => {
+      const on = force ?? !names.has(token);
+      if (on) names.add(token);
+      else names.delete(token);
+      return on;
+    },
+    contains: (token) => names.has(token),
+  };
+}
+
 export class FakeCanvas {
   tagName: string;
   width = 300;
@@ -143,7 +165,7 @@ export class FakeCanvas {
   _ctx: FakeCtx;
   style: FakeStyle = { setProperty() {}, removeProperty() {} };
   className = "";
-  classList = { add() {}, remove() {}, toggle() {}, contains() { return false; } };
+  classList = makeClassList();
   children: unknown[] = [];
   dataset: Record<string, string> = {};
   href = "";
@@ -181,7 +203,7 @@ function makeElement(id: string): FakeCanvas & { id: string; width: number; heig
     height: 0,
     style: { setProperty() {}, removeProperty() {} },
     className: "",
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    classList: makeClassList(),
     children: [],
     querySelectorAll() { return []; },
     querySelector() { return null; },
@@ -231,7 +253,7 @@ const docEl: FakeCanvas & { id: string; width: number; height: number } = (() =>
       removeProperty: (name: string) => { props.delete(name); },
       getPropertyValue: (name: string) => props.get(name) ?? "",
     },
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    classList: makeClassList(),
     getAttribute() { return _style; },
     setAttribute(k: string, v: string) { if (k === "style") _style = v; },
     appendChild() {},
@@ -245,6 +267,13 @@ const docEl: FakeCanvas & { id: string; width: number; height: number } = (() =>
   } as unknown as FakeCanvas & { id: string; width: number; height: number };
   return el;
 })();
+
+/** The live-pipeline boot switch is represented by the same class the browser
+ * uses for the active CSS path. Smoke tests use it to avoid pretending the
+ * fake canvas can run a browser compositor. */
+export function isLivePipelineActive(): boolean {
+  return docEl.classList.contains("appearance-scrubbing");
+}
 
 export const fakeDocument = {
   documentElement: docEl,

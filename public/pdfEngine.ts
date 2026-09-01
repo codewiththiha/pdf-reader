@@ -32,7 +32,7 @@ import {
   setSearchContext,
 } from "./engine/search";
 import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline } from "./engine/theme/pipeline";
+import { invalidatePipeline, LIVE_PIPELINE } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   getCachedPaper,
@@ -251,3 +251,9 @@ globalThis.PDFReader = {
 // The engine contract is fixed by the Rust bridge: surface integrity beats
 // extensibility, so freeze the object (has_pdf_reader only checks existence).
 Object.freeze(globalThis.PDFReader);
+
+// Keep the exact compositor pipeline live when configured. The guard preserves
+// the old opt-in scrub behavior if LIVE_PIPELINE is later switched off.
+if (LIVE_PIPELINE) {
+  void setScrubMode(true);
+}

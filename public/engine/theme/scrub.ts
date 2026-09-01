@@ -1,11 +1,12 @@
-// Theme refresh + appearance-scrub mode: re-bake every live page and
-// thumbnail after a theme change, and swap raw/unbaked pixels in/out while
-// the appearance sliders are being dragged.
+// Theme refresh + appearance-scrub mode. With LIVE_PIPELINE enabled, raw page
+// and thumbnail pixels stay under CSS filter + blend permanently, so theme
+// changes never need a bake. The rebake/swap path remains available when the
+// flag is disabled.
 
 import { bakeInto } from "./bake";
 import { showRaw } from "../canvas";
 import { session } from "../state";
-import { readPipeline } from "./pipeline";
+import { LIVE_PIPELINE, readPipeline } from "./pipeline";
 import { paperInfo } from "./paper";
 import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
 import { preparePagesForScrub, rerenderLivePages } from "../renderer";
@@ -21,6 +22,7 @@ function pipelineFingerprint(): string {
 }
 
 export async function rebakeTheme(force = false): Promise<void> {
+  if (LIVE_PIPELINE) return;
   if (session.themeScrubActive) return;
   const pipeline = readPipeline();
   const fingerprint = pipelineFingerprint();
@@ -58,6 +60,10 @@ export async function rebakeTheme(force = false): Promise<void> {
  * This function is called only through pdfEngine's serialized theme queue.
  */
 export async function setScrubModeInternal(on: boolean): Promise<void> {
+  // In live-pipeline mode this is a permanent state. Keep accepting the
+  // existing Rust/API calls so the fallback remains compatible when the
+  // constant is flipped back to false.
+  if (LIVE_PIPELINE) on = true;
   if (session.themeScrubActive === on) return;
 
   if (on) {

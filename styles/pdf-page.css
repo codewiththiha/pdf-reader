@@ -9,17 +9,15 @@
   background-color: var(--color-paper);
   overflow: hidden;
 
-  /* THEME BAKING (pdfEngine.js). The canvas no longer carries the theme as
-     live CSS (filter + mix-blend-mode over the paper backdrop) — the engine
-     bakes the SAME pipeline into the raster once per render, so each page is
-     ONE opaque compositor texture instead of texture + filter intermediate +
-     blend group. That stack is what made the webview's GPU process outgrow
-     the renderer: every scroll-mounted page, every sidebar-slide frame and
-     every zoom frame re-rasterised it. Colours are byte-identical, and the
-     render scale / DPR budget is untouched, so text stays exactly as sharp.
-     During an appearance slider scrub, only canvases holding raw pixels get
-     the live CSS pipeline via their `.canvas-raw` / `.thumb-raw` tag. The
-     tag travels with each raster, so a baked canvas is never double-filtered.
+  /* THEME PIPELINE (pdfEngine.js). LIVE_PIPELINE keeps the raw canvas under
+     the compositor's filter + mix-blend-mode permanently. The page and the
+     document backdrop therefore share one floating-point pass, which is the
+     sliding look and avoids a bake/compositor seam. This intentionally brings
+     back one filter intermediate per mounted canvas; the reader's bounded
+     virtualization window keeps that cost predictable. When LIVE_PIPELINE is
+     false, the engine falls back to baking the same pipeline into one opaque
+     texture per render, and the `.canvas-raw` / `.thumb-raw` tags are used only
+     while the appearance scrub temporarily exposes raw pixels.
 
      `contain: content` (layout + paint) keeps page-internal repaints — text
      layer swaps, highlight boxes — from invalidating anything outside the
@@ -77,9 +75,10 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* Filter + blend are BAKED into the raster by the engine (see above).
-     Keeping them off the live canvas is the GPU-memory fix: the compositor
-     holds one opaque texture per page and nothing else. */
+  /* LIVE_PIPELINE keeps filter + blend on this raw canvas so the page and
+     backdrop stay in the same compositor pass. With the flag disabled this
+     remains unfiltered for the baked display; `.canvas-raw` below opts into
+     the live path only during a fallback scrub. */
 }
 
 /* APPEARANCE SCRUB — raw rasters carry a tag as they are painted, and only
