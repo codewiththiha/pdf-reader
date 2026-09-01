@@ -39,7 +39,7 @@ pub use render::{
     unregister_page,
 };
 pub use search::{build_search_index, clear_highlights, search, set_active_match};
-pub use theme::{refresh_theme, set_scrub_mode, sweep};
+pub use theme::{refresh_theme, set_live_pipeline, set_scrub_mode, sweep};
 pub use window::{explain_word, set_traffic_lights};
 
 /// Error returned by any engine call: the engine-side error `name` and

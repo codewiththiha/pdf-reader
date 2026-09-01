@@ -70,9 +70,9 @@ export async function run(): Promise<void> {
     console.log("render ok (dark/baked):", r2.width, "x", r2.height, `(${darkAllocs} canvases)`);
   }
 
-  // 5. Scrub mode must expose raw pixels. With LIVE_PIPELINE it is already
-  // permanent, so both API calls are intentional no-ops and the raw marker
-  // remains in place. The fallback path still verifies the old swap behavior.
+  // 5. Scrub mode must expose raw pixels. In live mode the exposure is
+  // already permanent, so both API calls are intentional no-ops and the raw
+  // marker remains in place. Baked mode still verifies the enter/leave swap.
   await PDFReader.setScrubMode(true);
   const scrubPx = cv0._ctx.getImageData(0, 0, 1, 1).data;
   if (livePipeline) {
@@ -158,4 +158,29 @@ export async function run(): Promise<void> {
     console.log("dark+tint bake ok: page pixel", Array.from(nightPx).slice(0, 3), "expected", nightExpect);
   }
 
+  // 13. THE PIPELINE SWITCH (Appearance > Rendering). Flipping to baked must
+  // burn the CURRENT pipeline into the rasters already on screen and drop the
+  // raw markers; flipping back must expose the raws again untouched. The
+  // pipeline is left as it started so the later scenarios still describe the
+  // engine's default mode.
+  const startedLive = PDFReader.isLivePipeline();
+  await PDFReader.setLivePipeline(false);
+  if (PDFReader.isLivePipeline()) throw new Error("engine should report baked mode after the switch");
+  const bakedPx = cv3._ctx.getImageData(0, 0, 1, 1).data;
+  assertClose(bakedPx, nightExpect, "switch to baked");
+  if (cv3.classList.contains("canvas-raw")) {
+    throw new Error("a baked page must not keep the canvas-raw marker");
+  }
+  console.log("pipeline switch ok (baked):", Array.from(bakedPx).slice(0, 3));
+
+  await PDFReader.setLivePipeline(true);
+  if (!PDFReader.isLivePipeline()) throw new Error("engine should report live mode after the switch back");
+  const backLivePx = cv3._ctx.getImageData(0, 0, 1, 1).data;
+  assertRawWhite(backLivePx, "switch back to live");
+  if (!cv3.classList.contains("canvas-raw")) {
+    throw new Error("a live page must carry the canvas-raw marker again");
+  }
+  console.log("pipeline switch ok (live): raw pixels restored");
+
+  if (!startedLive) await PDFReader.setLivePipeline(false);
 }

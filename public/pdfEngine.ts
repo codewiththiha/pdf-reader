@@ -31,8 +31,8 @@ import {
   setActiveMatch,
   setSearchContext,
 } from "./engine/search";
-import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline, LIVE_PIPELINE } from "./engine/theme/pipeline";
+import { rebakeTheme, setPipelineModeInternal, setScrubModeInternal } from "./engine/theme/scrub";
+import { invalidatePipeline, isLivePipeline } from "./engine/theme/pipeline";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   getCachedPaper,
@@ -168,6 +168,13 @@ function setScrubMode(on: boolean): Promise<void> {
   return enqueueTheme(() => setScrubModeInternal(on));
 }
 
+/** Reader-facing pipeline switch (Appearance ▸ Rendering). Queued with every
+ * other theme mutation so a mode flip mid-scrub still ends in a consistent
+ * raster state. */
+function setLivePipelineMode(on: boolean): Promise<void> {
+  return enqueueTheme(() => setPipelineModeInternal(on));
+}
+
 function stats(): Stats {
   return {
     pages: session.stateByCanvasId.size,
@@ -235,6 +242,8 @@ globalThis.PDFReader = {
   clearHighlights,
   refreshTheme,
   setScrubMode,
+  setLivePipeline: setLivePipelineMode,
+  isLivePipeline,
   setPaper,
   setPaperActive,
   persistPaper,
@@ -252,8 +261,9 @@ globalThis.PDFReader = {
 // extensibility, so freeze the object (has_pdf_reader only checks existence).
 Object.freeze(globalThis.PDFReader);
 
-// Keep the exact compositor pipeline live when configured. The guard preserves
-// the old opt-in scrub behavior if LIVE_PIPELINE is later switched off.
-if (LIVE_PIPELINE) {
+// Boot in the engine's default mode. Live means the raw rasters go under the
+// CSS pipeline immediately; the reader's persisted choice is applied by the
+// app right after mount, through setLivePipeline.
+if (isLivePipeline()) {
   void setScrubMode(true);
 }

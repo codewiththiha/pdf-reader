@@ -139,6 +139,13 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setScrubMode")]
     pub fn set_scrub_mode(on: bool);
 
+    // The reader's rendering-pipeline choice. `true` keeps the compositor's
+    // filter + blend on the raw rasters (one floating-point pass shared with
+    // the backdrop); `false` bakes the pipeline into each raster instead. The
+    // engine performs the raster swap inside its own theme queue.
+    #[wasm_bindgen(js_namespace = ["window", "PDFReader"], js_name = "setLivePipeline")]
+    pub fn set_live_pipeline(on: bool);
+
     // --- Engine: paper pipeline (the `pdf-paper` crate's eyes) ---
     // The engine owns the CANVASES; the crate (via this crate's `paper`
     // session) owns every colour decision. Five calls carry the whole

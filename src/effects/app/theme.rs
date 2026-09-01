@@ -30,7 +30,7 @@ use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
 use pdf_core::appearance::Appearance;
-use pdf_core::settings::GlossColor;
+use pdf_core::settings::{GlossColor, RenderPipeline};
 use crate::state::{AppearanceSignal, AppState};
 
 use crate::effects::appearance::schedule_save;
@@ -186,6 +186,17 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
             baked.set_value(Some(signature));
             pdf_engine::api::refresh_theme();
         }
+    });
+
+    // The rendering pipeline is a one-field choice with an expensive
+    // consequence (every mounted raster is swapped), so it gets its own
+    // narrow effect: no other settings write may trigger it, and the engine
+    // is told only when the reader actually flips it. The first run also
+    // pushes the persisted choice into an engine that always boots live.
+    let pipeline: Memo<RenderPipeline> = Memo::new(move |_| state.settings.with(|st| st.render_pipeline));
+
+    Effect::new(move || {
+        pdf_engine::api::set_live_pipeline(pipeline.get().is_live());
     });
 
     // Same narrowing for the gloss tokens: three fields out of the blob, so a

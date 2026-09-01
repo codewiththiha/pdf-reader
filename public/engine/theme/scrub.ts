@@ -1,12 +1,12 @@
-// Theme refresh + appearance-scrub mode. With LIVE_PIPELINE enabled, raw page
-// and thumbnail pixels stay under CSS filter + blend permanently, so theme
-// changes never need a bake. The rebake/swap path remains available when the
-// flag is disabled.
+// Theme refresh + appearance-scrub mode. In live mode, raw page and thumbnail
+// pixels stay under CSS filter + blend permanently, so theme changes never
+// need a bake. In baked mode the rebake/swap path below runs instead, and the
+// raw exposure lasts only for the duration of a slider scrub.
 
 import { bakeInto } from "./bake";
 import { showRaw } from "../canvas";
 import { session } from "../state";
-import { LIVE_PIPELINE, readPipeline } from "./pipeline";
+import { isLivePipeline, readPipeline, setLivePipeline } from "./pipeline";
 import { paperInfo } from "./paper";
 import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
 import { preparePagesForScrub, rerenderLivePages } from "../renderer";
@@ -22,7 +22,7 @@ function pipelineFingerprint(): string {
 }
 
 export async function rebakeTheme(force = false): Promise<void> {
-  if (LIVE_PIPELINE) return;
+  if (isLivePipeline()) return;
   if (session.themeScrubActive) return;
   const pipeline = readPipeline();
   const fingerprint = pipelineFingerprint();
@@ -60,10 +60,10 @@ export async function rebakeTheme(force = false): Promise<void> {
  * This function is called only through pdfEngine's serialized theme queue.
  */
 export async function setScrubModeInternal(on: boolean): Promise<void> {
-  // In live-pipeline mode this is a permanent state. Keep accepting the
-  // existing Rust/API calls so the fallback remains compatible when the
-  // constant is flipped back to false.
-  if (LIVE_PIPELINE) on = true;
+  // In live mode the raw exposure is permanent, so a scrub request is already
+  // satisfied and a scrub exit must not bake. Baked mode uses the real
+  // enter/leave transitions below.
+  if (isLivePipeline()) on = true;
   if (session.themeScrubActive === on) return;
 
   if (on) {
@@ -93,4 +93,25 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
   await rebakeTheme(true);
   if (needsRerender) await rerenderLivePages();
   document.documentElement.classList.remove("appearance-scrubbing");
+}
+
+/**
+ * Switch the whole theming pipeline between live (compositor filter + blend on
+ * the raw rasters) and baked (the filter burned into every raster). Called
+ * only through pdfEngine's serialized theme queue, so the raster swap below
+ * can never interleave with a refresh or a scrub.
+ */
+export async function setPipelineModeInternal(live: boolean): Promise<void> {
+  if (isLivePipeline() === live) return;
+  setLivePipeline(live);
+  if (live) {
+    // Expose the raws and hand the theming back to CSS. Identical to entering
+    // a scrub, except nothing will leave it again.
+    await setScrubModeInternal(true);
+    return;
+  }
+  // Leaving live: bake the current pipeline into every raster and drop the
+  // raw markers. A page whose only backing is its live canvas is re-rendered
+  // rather than baked in place, or it would be filtered twice.
+  await setScrubModeInternal(false);
 }

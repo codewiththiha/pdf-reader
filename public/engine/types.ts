@@ -185,6 +185,9 @@ export type PDFReaderApi = {
   clearHighlights: () => void;
   refreshTheme: () => Promise<void>;
   setScrubMode: (on: boolean) => Promise<void>;
+  /** Switch between the live compositor pipeline and the baked-raster one. */
+  setLivePipeline: (on: boolean) => Promise<void>;
+  isLivePipeline: () => boolean;
   setPaper: (hex: string, persist: boolean, area: PaperArea) => void;
   /** The Rust paper session's blend switch — gates stashPaperFrame so idle
    * renders cost nothing on the paper pipeline. */

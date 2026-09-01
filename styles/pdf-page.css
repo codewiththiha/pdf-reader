@@ -9,15 +9,15 @@
   background-color: var(--color-paper);
   overflow: hidden;
 
-  /* THEME PIPELINE (pdfEngine.js). LIVE_PIPELINE keeps the raw canvas under
-     the compositor's filter + mix-blend-mode permanently. The page and the
-     document backdrop therefore share one floating-point pass, which is the
-     sliding look and avoids a bake/compositor seam. This intentionally brings
-     back one filter intermediate per mounted canvas; the reader's bounded
-     virtualization window keeps that cost predictable. When LIVE_PIPELINE is
-     false, the engine falls back to baking the same pipeline into one opaque
-     texture per render, and the `.canvas-raw` / `.thumb-raw` tags are used only
-     while the appearance scrub temporarily exposes raw pixels.
+  /* THEME PIPELINE (pdfEngine.js), chosen by the reader in Settings ▸ Theme ▸
+     Rendering. LIVE keeps the raw canvas under the compositor's filter +
+     mix-blend-mode, so the page and the document backdrop share one
+     floating-point pass — the seamless look — at the cost of one filter
+     intermediate per mounted canvas; the reader's bounded virtualization
+     window keeps that cost predictable. BAKED burns the same pipeline into one
+     opaque texture per render instead, and the `.canvas-raw` / `.thumb-raw`
+     tags then appear only while an appearance scrub temporarily exposes raw
+     pixels.
 
      `contain: content` (layout + paint) keeps page-internal repaints — text
      layer swaps, highlight boxes — from invalidating anything outside the
@@ -75,10 +75,10 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* LIVE_PIPELINE keeps filter + blend on this raw canvas so the page and
-     backdrop stay in the same compositor pass. With the flag disabled this
-     remains unfiltered for the baked display; `.canvas-raw` below opts into
-     the live path only during a fallback scrub. */
+  /* Live mode keeps filter + blend on this raw canvas so the page and
+     backdrop stay in the same compositor pass. In baked mode this stays
+     unfiltered for the baked display, and `.canvas-raw` below opts into the
+     live path only for the duration of a scrub. */
 }
 
 /* APPEARANCE SCRUB — raw rasters carry a tag as they are painted, and only

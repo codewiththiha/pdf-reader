@@ -27,6 +27,18 @@ pub fn set_scrub_mode(on: bool) {
     bridge::set_scrub_mode(on);
 }
 
+/// Choose how the appearance reaches the pixels: live (the compositor filters
+/// and blends the raw rasters every frame, so pages and the backdrop share one
+/// pass) or baked (the filter is burned into each raster once per appearance
+/// change, leaving plain opaque textures on screen). The engine swaps the
+/// rasters for the new mode; the caller only states the preference.
+pub fn set_live_pipeline(on: bool) {
+    if !guard_pdf_reader() {
+        return;
+    }
+    bridge::set_live_pipeline(on);
+}
+
 /// Release rasters/caches the engine no longer needs (advisory
 /// `pdf.cleanup`). Fired when reading work ends: zoom commit, mode flip,
 /// scroll idle — so memory drops immediately instead of waiting for the
