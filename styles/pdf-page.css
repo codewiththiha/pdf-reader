@@ -343,6 +343,23 @@ html.appearance-scrubbing .pdf-page::before {
   pointer-events: none;
 }
 
+/* LIVE-MODE SNAPSHOT THEMING.
+   The snapshot is a raw `drawImage` pixel copy of the live canvas, so in LIVE
+   mode — where the theme is nothing but the compositor's filter + blend on
+   `canvas.canvas-raw` — it captures the UN-themed pixels. The flicker fix
+   below hides the live canvas for as long as the snapshot is mounted, so
+   those raw white pixels are what the reader sees for the whole re-render:
+   a white flash across the page on every zoom commit.
+   Keying off `.canvas-raw` (the tag that means "this canvas is themed by
+   CSS") hands the snapshot the same filter and blend, so it composites
+   exactly like the canvas it copied. Baked canvases carry no such tag, the
+   `:has()` stays false, and the baked snapshot is left unfiltered — correct,
+   since its pixels are already themed and filtering them would double up. */
+.pdf-page:has(canvas.canvas-raw) canvas.page-snapshot {
+  filter: var(--canvas-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
+}
+
 /* END-OF-ZOOM FLICKER FIX.
    For the one frame where the snapshot and the freshly rendered canvas are both
    in the host, BOTH carry `mix-blend-mode` + `--canvas-filter`. Two layers each
