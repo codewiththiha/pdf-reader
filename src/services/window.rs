@@ -28,7 +28,7 @@ use crate::state::AppState;
 /// Publish the window's maximized state into `state.ui.window_maximized`:
 /// once at install, then on every window resize.
 pub fn install_window_state_bridge(state: AppState) {
-    if !pdf_engine::has_tauri() || !uses_frameless_controls() {
+    if !tauri_bridge::has_tauri() || !uses_frameless_controls() {
         return;
     }
 

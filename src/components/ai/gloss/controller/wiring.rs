@@ -163,7 +163,7 @@ fn begin_fetch(
     ctrl.geometry.surface_visible.set(false);
     processing_id.set(Some(mark.id.clone()));
 
-    if pdf_engine::has_tauri() {
+    if tauri_bridge::has_tauri() {
         let run = ctrl.open.begin_run(&mark.id);
         invoke_explain_word(mark.word, mark.context, run);
     } else {

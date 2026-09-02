@@ -74,11 +74,11 @@ pub fn invoke_explain_word(word: String, context: String, run: String) {
 /// walks that global chain eagerly, so calling it throws a TypeError. Because
 /// this runs from the app root, that throw took the whole mount down with it —
 /// the probe is the same one every other Tauri surface uses (see
-/// `bridge::has_tauri` and `services::document::open::init_open_file_handling`).
+/// `tauri_bridge::has_tauri` and `services::document::open::init_open_file_handling`).
 /// With no backend there are no chunks to bridge, so skipping is the correct
 /// behaviour, not a degraded one.
 pub fn install_ai_chunk_bridge() {
-    if !pdf_engine::has_tauri() {
+    if !tauri_bridge::has_tauri() {
         return;
     }
 

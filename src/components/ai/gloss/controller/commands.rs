@@ -172,7 +172,7 @@ pub(super) fn build_commands(
         let Some(mark) = open.mark.get_untracked() else {
             return;
         };
-        if !pdf_engine::has_tauri() {
+        if !tauri_bridge::has_tauri() {
             return; // the environment cannot change mid-session
         }
         content.error.set(None);

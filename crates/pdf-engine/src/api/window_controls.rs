@@ -12,17 +12,15 @@
 
 use wasm_bindgen::JsValue;
 
-use crate::bridge;
-
 /// The current Tauri window handle, or `None` outside Tauri. Same probe
-/// contract as [`super::window::set_traffic_lights`]: `getCurrentWindow`
+/// contract as [`super::window::set_traffic_lights`]: `get_current_window`
 /// dereferences the `window.__TAURI__` chain, and the wasm-bindgen shim
 /// throws when the global is absent — so the guard must come first.
 fn window() -> Option<JsValue> {
-    if !bridge::has_tauri() {
+    if !tauri_bridge::has_tauri() {
         return None;
     }
-    let win = bridge::tauri_get_current_window();
+    let win = tauri_bridge::get_current_window();
     if win.is_undefined() || win.is_null() {
         None
     } else {

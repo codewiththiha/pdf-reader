@@ -24,7 +24,7 @@ pub fn tauri_listen(event: &str, handler: impl FnMut(Event) + 'static) {
     let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
     let event = event.to_string();
     wasm_bindgen_futures::spawn_local(async move {
-        _ = pdf_engine::listen(&event, f).await;
+        _ = tauri_bridge::listen(&event, f).await;
     });
     // Park the closure in the current owner: dropping it would free the wasm
     // function table entry while Tauri's JS still holds a reference.

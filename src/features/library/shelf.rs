@@ -35,7 +35,7 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
     let is_opening = move || status.get() == DocStatus::Opening;
     let is_error = move || status.get() == DocStatus::Error;
 
-    let has_tauri = pdf_engine::has_tauri();
+    let has_tauri = tauri_bridge::has_tauri();
     let open_state = state;
 
     view! {

@@ -67,9 +67,10 @@ virtual-list-leptos = { path = "crates/virtual-list-leptos" }
 pdf-core = { path = "crates/pdf-core" }
 pdf-engine = { path = "crates/pdf-engine" }
 pdf-paper = { path = "crates/pdf-paper" }
+tauri-bridge = { path = "crates/tauri-bridge" }
 
 [workspace]
-members = ["src-tauri", "crates/virtual-list", "crates/virtual-list-leptos", "crates/pdf-core", "crates/pdf-engine", "crates/pdf-paper"]
+members = ["src-tauri", "crates/virtual-list", "crates/virtual-list-leptos", "crates/pdf-core", "crates/pdf-engine", "crates/pdf-paper", "crates/tauri-bridge"]
 
 [profile.release]
 # Keep wasm small for a desktop app.
