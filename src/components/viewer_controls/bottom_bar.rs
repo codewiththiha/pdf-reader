@@ -10,110 +10,48 @@
 //! jump (and the dominant-item tracker does the reverse), so dragging the
 //! thumb and stepping with the PageNavigation stay consistent for free.
 //!
-//! THE HIDE MACHINE mirrors the title bar's (`app_chrome::titlebar::root`),
-//! because the old shape — an enter-only strip plus a leave on the bar alone —
-//! could leave the bar up after the pointer was already gone. An exit through
-//! the window's bottom edge fires the strip's leave while the animating bar
-//! has not become the hover target yet, so the bar never learns the pointer
-//! left; a scrubber drag is the second case, because pointer capture keeps
-//! every event glued to the input and swallows the bar's mouseleave until the
-//! thumb is released. So the strip now carries BOTH hover edges like the
-//! title bar's band, strip and bar share one `hovered` truth, the scrubber
-//! drag is the bar's hold (the title bar's open popovers are its own), and a
-//! recheck settles the visibility the moment that hold releases — the same
-//! recheck the title bar runs for its holds.
-
-use std::time::Duration;
+//! THE HIDE MACHINE is `app_chrome::hooks::better_hover`, the same reveal the
+//! title bar runs, because the old shape — an enter-only strip plus a leave on
+//! the bar alone — could leave the bar up after the pointer was already gone.
+//! An exit through the window's bottom edge fires the strip's leave while the
+//! animating bar has not become the hover target yet, so the bar never learns
+//! the pointer left; a scrubber drag is the second case, because pointer
+//! capture keeps every event glued to the input and swallows the bar's
+//! mouseleave until the thumb is released. The reveal answers both: the strip
+//! and the bar bind BOTH hover edges onto one shared `hovered` truth, the
+//! scrubber drag is this bar's hold (the title bar's open popovers are its
+//! own), and the recheck settles the visibility the moment that hold releases.
+//! `use_drag_hold` contributes the capture half — the release coordinates
+//! stand in for the mouseleave that never came.
 
 use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::primitives::floating::types::z::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
-use app_chrome::hooks::use_timeout::use_hover_visibility;
+use app_chrome::hooks::better_hover::{use_drag_hold, use_hover_reveal_with, DEFAULT_HOVER_DELAY};
 use crate::components::viewer_controls::page_navigation::PageNavigation;
 use crate::state::ReaderState;
-
-/// Pointer must be off the bar this long before it hides.
-const BOTTOM_HIDE_DELAY_MS: u64 = 400;
-
-/// Whether the point still lands on the bar. Pointer capture keeps a scrubber
-/// drag's events glued to the input — including releases that land outside
-/// the bar — so after a drag the release coordinates are the only trustworthy
-/// answer to "is the pointer still over us?". `element_from_point` skips
-/// pointer-events:none decorations (the corner page indicator is one), so a
-/// release over an inert overlay still counts as on-bar.
-fn released_on_bar(bar: &web_sys::Element, x: f32, y: f32) -> bool {
-    web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.element_from_point(x, y))
-        .is_some_and(|el| bar.contains(Some(&el)))
-}
 
 #[component]
 pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
     let bar_ref = NodeRef::<html::Div>::new();
     // The scrubber drag is this bar's hold — what an open popover is to the
     // title bar: while it lasts the surface stays up, and when it ends the
-    // recheck below settles the visibility.
+    // shared reveal's recheck settles the visibility.
     let dragging = RwSignal::new(false);
-    // Show on enter, hide after a grace period unless the drag holds the bar
-    // open. The shared primitive owns the timer + re-check-at-fire semantics;
-    // the bar owns the hold definition — same split as the title bar.
-    let hover = use_hover_visibility(
-        Duration::from_millis(BOTTOM_HIDE_DELAY_MS),
-        move || dragging.get(),
-    );
+    // The shared reveal owns the timer, the one `hovered` truth the strip
+    // and the bar both feed, and that recheck; the bar owns the hold
+    // definition — same split as the title bar.
+    let hover = use_hover_reveal_with(DEFAULT_HOVER_DELAY, move || dragging.get());
     let visible = hover.visible;
 
-    // One `hovered` truth serves the strip and the bar alike, exactly like
-    // the title bar's band and row share theirs.
-    let hovered = StoredValue::new_local(false);
-    let enter = {
-        let show = hover.show.clone();
-        move || {
-            hovered.set_value(true);
-            show();
-        }
-    };
-    let leave = {
-        let hide = hover.hide_later.clone();
-        move || {
-            hovered.set_value(false);
-            hide();
-        }
-    };
-    let recheck = hover.hide_later.clone();
-    Effect::new(move |_| {
-        let _ = dragging.get();
-        if !dragging.get() && !hovered.get_value() {
-            recheck(); // the hold is gone and so is the pointer → hide
-        }
-    });
-
-    let enter_strip = enter.clone();
-    let leave_strip = leave.clone();
-    let enter_bar = enter;
-    let leave_bar = leave.clone();
-    let leave_drag = leave;
-
-    // End of drag. The captured pointerup / pointercancel bubble from the
-    // input even when the release lands outside the bar; capture swallowed
-    // the bar's mouseleave for the whole drag, so this is where the bar
-    // learns the pointer's real position again — and records a leave when
-    // the release did not come back to it.
-    let end_drag = move |ev: leptos::ev::PointerEvent| {
-        if !dragging.get_untracked() {
-            return;
-        }
-        dragging.set(false);
-        let over = bar_ref
-            .get()
-            .is_some_and(|bar| released_on_bar(&bar, ev.client_x() as f32, ev.client_y() as f32));
-        if !over {
-            leave_drag();
-        }
-    };
+    let (enter_strip, leave_strip) = hover.bind();
+    let (enter_bar, leave_bar) = hover.bind();
+    // End of drag: the captured pointerup / pointercancel bubble from the
+    // input even when the release lands outside the bar, and the helper
+    // records the leave capture swallowed.
+    let end_drag = use_drag_hold(bar_ref, dragging, hover.clone());
 
     view! {
         // The hover strip: this bar's band. Like the title bar's band it

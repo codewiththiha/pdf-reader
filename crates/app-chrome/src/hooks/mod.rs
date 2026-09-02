@@ -7,7 +7,14 @@
 //! hook that is NOT format-agnostic — the typed CustomEvent hook, which
 //! dispatches the app's own event protocol — stays in the app
 //! (`primitives::hooks::use_custom_event`).
+//!
+//! One composite lives here too: [`better_hover`] sits on top of
+//! `use_timeout`'s hover primitive and owns the whole auto-hide surface —
+//! the shared `hovered` truth, the hold recheck, the pin — so the title bar
+//! and the bottom bar (and the next surface) wire one call, not twenty
+//! copied lines.
 
+pub mod better_hover;
 pub mod dom;
 pub mod use_content_size;
 pub mod use_raf;
