@@ -18,6 +18,16 @@
 //! lands in the same frame the floating rail finishes fading — which is the
 //! whole point of the fade's timing.
 //!
+//! THE HIDE ALWAYS LANDS. The lights follow the bar's hover-reveal through
+//! [`TitleBarCtx::visible`], and the bar's hide is re-checked at both ends
+//! of its hold (see `app_chrome::titlebar::root`) — so the decision here is
+//! sound, but the command is async IPC while the decision is synchronous: a
+//! decision that changes mid-flight could otherwise let a stale command land
+//! last, leaving the native lights up with nothing left to re-run the
+//! effect. Every send therefore re-checks the live truth once its promise
+//! resolves and answers a mismatch — the lights' version of the bar's own
+//! recheck, and why an unfocus always ends with the lights gone.
+//!
 //! Dynamic `y` (Tahoe-proof centering) — mirrors `readest` `traffic_light.rs`
 //! `compute_traffic_light_y + OnceLock + ResizeObserver`. The bar is `h-12`
 //! (48px, `TOOLBAR_H`) but `y` is NOT `tauri.conf.json:trafficLightPosition`
@@ -27,6 +37,7 @@
 //! `y = ((h - btn_h)/2 + natural_origin_y).max(0)` with a cached
 //! `natural_origin_y` (~5pt Sonoma, ~7pt Tahoe) so no per-OS branch.
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::prelude::*;
@@ -76,6 +87,32 @@ pub fn TrafficLights(
         });
     });
 
+    // The live truth about whether the lights should be on, read WITHOUT
+    // subscribing — the verification pass inside `send` probes it after the
+    // command lands, where a tracked read would create a dependency on an
+    // owner that no longer runs it.
+    let truth: Rc<dyn Fn() -> bool> = Rc::new(move || {
+        rail_hosted.get_untracked()
+            || (bar_hosted.get_untracked() && ctx.is_some_and(|c| c.visible.get_untracked()))
+    });
+
+    // Send one visibility command and verify it landed: record the decision,
+    // fire, and once the promise resolves re-check the live truth — a
+    // decision that moved mid-flight gets answered here instead of leaving
+    // the native side settled on the stale state.
+    let send: Rc<dyn Fn(bool, f64)> = Rc::new(move |want, h| {
+        last_sent.set_value(Some(want));
+        let truth = Rc::clone(&truth);
+        wasm_bindgen_futures::spawn_local(async move {
+            set_traffic_lights(want, h).await;
+            let on_now = truth();
+            if on_now != want {
+                last_sent.set_value(Some(on_now));
+                set_traffic_lights(on_now, h).await;
+            }
+        });
+    });
+
     Effect::new(move |_| {
         let Some(ctx) = ctx else {
             return;
@@ -96,10 +133,7 @@ pub fn TrafficLights(
             if last_sent.get_value() == Some(true) {
                 return;
             }
-            last_sent.set_value(Some(true));
-            wasm_bindgen_futures::spawn_local(async move {
-                set_traffic_lights(true, h).await;
-            });
+            send(true, h);
         } else {
             // An already-hidden or pending hide does not schedule another
             // command.
@@ -113,19 +147,14 @@ pub fn TrafficLights(
             // buttons floating over the rail that has just finished fading
             // out from under them.
             if !bar_hosted.get_untracked() {
-                last_sent.set_value(Some(false));
-                wasm_bindgen_futures::spawn_local(async move {
-                    set_traffic_lights(false, h).await;
-                });
+                send(false, h);
                 return;
             }
+            let send = Rc::clone(&send);
             let handle = set_timeout_with_handle(
                 move || {
                     hide_grace.set_value(None);
-                    last_sent.set_value(Some(false));
-                    wasm_bindgen_futures::spawn_local(async move {
-                        set_traffic_lights(false, h).await;
-                    });
+                    send(false, h);
                 },
                 Duration::from_millis(120),
             )
