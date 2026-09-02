@@ -59,6 +59,14 @@ pub fn is_macos() -> bool {
     platform() == DesktopPlatform::MacOs
 }
 
+/// True on Linux, where the frameless caption cluster draws GNOME-style
+/// circular buttons instead of the Windows squares — the circles match
+/// what a GNOME shell's header bar draws, so the window reads as native
+/// to the desktop.
+pub fn is_linux() -> bool {
+    platform() == DesktopPlatform::Linux
+}
+
 /// True where the window is frameless and the app owes the user its own
 /// caption buttons (minimize / maximize / close at the bar's far edge).
 /// Also true in a plain browser on those hosts — the cluster renders (its
