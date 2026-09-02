@@ -2,7 +2,7 @@
 //! the four view layouts, and the shells they share. Pure PDF math stays in
 //! `pdf-core`; the pdf.js bridge in `pdf-engine`; generic virtualization math
 //! in `virtual-list`. Shared DOM lookups live in
-//! [`crate::components::primitives::hooks::dom`].
+//! [`app_chrome::hooks::dom`].
 //!
 //! [`Viewer`] is the dispatch point; the layouts under `layouts/` arrange
 //! pages, the shells under `shells/` own the shared scroller chrome, and

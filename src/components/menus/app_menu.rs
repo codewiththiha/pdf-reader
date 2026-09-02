@@ -13,8 +13,8 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu_item::MenuItem;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::components::primitives::shortcut_row::ShortcutRow;

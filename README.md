@@ -365,8 +365,10 @@ src/
   main.rs                 mount entry point
   app/                    bootstrap, routes, the shell that hosts the sidebar
   components/
-    primitives/           button, icon, switch, tooltip, popover, floating
-                          positioning, motion and interaction hooks
+    primitives/           button, switch, popover, floating positioning,
+                          motion and interaction hooks (the chrome's own
+                          primitives — icon, icon button, tooltip, the
+                          generic DOM/timer hooks — live in app-chrome)
     shell/                the unified application shell: the ShellController
                           (one source of truth for layout), the titlebar
                           family, the sidebar rail family
@@ -402,6 +404,14 @@ crates/
   virtual-list/           generic windowing math: the prefix-sum strip,
                           windows, budgets, anchor correction
   virtual-list-leptos/    the Leptos adapter: virtualizer, rows, retention
+  tauri-bridge/           the raw window.__TAURI__ externs (invoke, event
+                          listen, window handle, dialog) + the has_tauri
+                          probe, declared once for every frontend crate
+  app-chrome/             format-agnostic window chrome: the platform probe,
+                          the window commands, the caption cluster (Windows
+                          squares, GNOME circles), the native macOS traffic
+                          lights, the generic titlebar shell, and the shared
+                          UI primitives + hooks those surfaces render with
 public/
   pdfEngine.ts            the imperative engine wrapper (bundled to .js)
   engine/                 the engine modules the wrapper imports

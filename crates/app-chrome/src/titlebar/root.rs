@@ -16,12 +16,12 @@ use std::time::Duration;
 use leptos::children::ViewFn;
 use leptos::prelude::*;
 
-use crate::components::primitives::floating::types::z::BAR;
-use crate::components::primitives::hooks::dom::TOOLBAR_ROW_ID;
-use crate::components::primitives::hooks::use_timeout::use_hover_visibility;
-use crate::components::primitives::icon::IconName;
-use crate::components::primitives::icon_button::IconButton;
-use crate::components::primitives::tooltip::Tooltip;
+use crate::z::BAR;
+use crate::hooks::dom::TOOLBAR_ROW_ID;
+use crate::hooks::use_timeout::use_hover_visibility;
+use crate::icon::IconName;
+use crate::icon_button::IconButton;
+use crate::tooltip::Tooltip;
 
 /// Pointer must be off the bar this long before it hides.
 const HIDE_DELAY_MS: u64 = 400;

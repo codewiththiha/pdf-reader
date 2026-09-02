@@ -18,7 +18,7 @@ use pdf_core::gloss::{GlossBox, GlossMark};
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
 use crate::components::ai::types::{AiError, AiErrorKind, AiPhase, GlossPhase, WordInfo};
-use crate::components::primitives::hooks::use_viewport::viewport_size;
+use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::primitives::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;

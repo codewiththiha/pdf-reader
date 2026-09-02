@@ -62,7 +62,7 @@
 //! with "no rail": the bar keeps the full window width, its 88px gutter and
 //! its lights. That keeps the no-rail rules in this file too, instead of an
 //! `Option`-shaped fork in every consumer. The traffic-light questions are
-//! macOS-only at heart (`services/platform.rs`): Windows and Linux run
+//! macOS-only at heart (`app_chrome::platform`): Windows and Linux run
 //! frameless, so both gutter answers are constant `false` there and the
 //! row's leading control starts at the resting padding.
 
@@ -70,7 +70,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::use_timeout::use_debounce_for;
+use app_chrome::hooks::use_timeout::use_debounce_for;
 use crate::state::{AppState, SidebarMode};
 use pdf_core::settings::Settings;
 
@@ -343,7 +343,7 @@ impl ShellController {
     pub fn lights_gutter(&self) -> Signal<bool> {
         let this = *self;
         Signal::derive(move || {
-            crate::services::platform::is_macos()
+            app_chrome::platform::is_macos()
                 && !this.is_overlay().get()
                 && !this.rail_present().get()
         })
@@ -359,7 +359,7 @@ impl ShellController {
     /// as `lights_gutter`.
     pub fn bar_gutter(&self) -> Signal<bool> {
         let this = *self;
-        Signal::derive(move || crate::services::platform::is_macos() && !this.is_overlay().get())
+        Signal::derive(move || app_chrome::platform::is_macos() && !this.is_overlay().get())
     }
 
     /// The bar row's left padding in px: the traffic-light gutter while the

@@ -1,6 +1,6 @@
 //! App-lifetime window-state bridge: the live maximized flag.
 //!
-//! The frameless caption cluster (titlebar/window_controls.rs) shows
+//! The frameless caption cluster (app_chrome::window::caption) shows
 //! maximize or restore per the window's REAL state, and that state changes
 //! under it by more than its own button: Win+Arrow snapping, drag-to-edge,
 //! taskbar restores, double-clicking the drag region. Every one of those
@@ -22,7 +22,7 @@
 
 use leptos::prelude::*;
 
-use crate::services::platform::uses_frameless_controls;
+use app_chrome::platform::uses_frameless_controls;
 use crate::state::AppState;
 
 /// Publish the window's maximized state into `state.ui.window_maximized`:
@@ -41,7 +41,7 @@ pub fn install_window_state_bridge(state: AppState) {
         let st = state;
         wasm_bindgen_futures::spawn_local(async move {
             st.ui.window_maximized
-                .set(pdf_engine::api::is_window_maximized().await);
+                .set(app_chrome::window::api::is_window_maximized().await);
             probing.set_value(false);
         });
     };

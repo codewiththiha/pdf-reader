@@ -9,9 +9,9 @@
 use leptos::prelude::*;
 
 use crate::components::primitives::button::{Button, ButtonVariant};
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::icon_button::IconButton;
-use crate::components::primitives::tooltip::Tooltip;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
+use app_chrome::tooltip::Tooltip;
 use crate::state::SidebarMode;
 use crate::components::menus::app_menu::MoreMenu;
 use crate::state::ReaderState;
@@ -24,7 +24,7 @@ pub(crate) fn SidebarHeader(
     // The chrome row's lead: the 48px traffic-light inset on macOS, the
     // resting 12px everywhere else. Fixed per process, like the split it
     // comes from — no reason for it to be reactive.
-    let lead = if crate::services::platform::is_macos() {
+    let lead = if app_chrome::platform::is_macos() {
         "pl-[88px]"
     } else {
         "pl-3"

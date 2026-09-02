@@ -3,7 +3,7 @@ use pdf_core::gloss::{GlossMark, is_glossable, is_hintable};
 
 use crate::components::ai::anchor::{MENU_EXIT_FRAC, capture_selection_mark, watch_page_anchor};
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
-use crate::components::primitives::icon::{Icon, IconName};
+use app_chrome::icon::{Icon, IconName};
 use crate::state::AppState;
 
 /// A small floating pill that appears near the user's text selection.

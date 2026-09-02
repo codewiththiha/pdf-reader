@@ -8,8 +8,8 @@ use pdf_core::layout::ViewMode;
 use pdf_core::math::FitMode;
 
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::icon_button::IconButton;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::icon_button::IconButton;
 use crate::components::primitives::kbd::Kbd;
 use crate::components::primitives::menu_item::MenuItem;
 use crate::components::primitives::separator::Separator;

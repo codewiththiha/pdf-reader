@@ -6,10 +6,10 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::dom::{TOOLBAR_LEADING_ID, TOOLBAR_TRAILING_ID};
+use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, TOOLBAR_TRAILING_ID};
 use crate::components::primitives::button::{Button, ButtonVariant};
-use crate::components::primitives::icon::{Icon, IconName};
-use crate::components::primitives::tooltip::Tooltip;
+use app_chrome::icon::{Icon, IconName};
+use app_chrome::tooltip::Tooltip;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::components::menus::appearance_menu::AppearanceMenu;

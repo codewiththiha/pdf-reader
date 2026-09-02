@@ -11,10 +11,10 @@ use pdf_core::layout::ViewMode;
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
-use crate::components::primitives::hooks::dom::by_id;
-use crate::components::primitives::hooks::use_viewport::viewport_size;
-use crate::components::primitives::hooks::use_raf::raf_coalesce;
-use crate::components::primitives::hooks::use_window_event::{add_window_capture_listener, use_window_event};
+use app_chrome::hooks::dom::by_id;
+use app_chrome::hooks::use_viewport::viewport_size;
+use app_chrome::hooks::use_raf::raf_coalesce;
+use app_chrome::hooks::use_window_event::{add_window_capture_listener, use_window_event};
 
 // Single public binding — do not also `use` PageAnchor above or rustc E0252s.
 pub use pdf_core::gloss::PageAnchor;

@@ -5,10 +5,10 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::hooks::dom::{
+use app_chrome::hooks::dom::{
     by_id, by_id_warn, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,
 };
-use crate::components::primitives::hooks::use_resize_observer::observe_elements;
+use app_chrome::hooks::use_resize_observer::observe_elements;
 use crate::components::shell::sidebar::container::SIDEBAR_ASIDE_SELECTOR;
 
 use crate::state::AppState;

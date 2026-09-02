@@ -1,22 +1,12 @@
-//! Window chrome (traffic lights) and the AI word-explanation kickoff.
+//! The AI word-explanation kickoff.
+//!
+//! (The window commands that shared this module — traffic lights, minimize,
+//! maximize, close — are chrome, not engine: they live in the `app-chrome`
+//! crate's `window::api`.)
 
 use wasm_bindgen::JsValue;
 
-use super::{reflect_set, KEY_CONTEXT, KEY_HEADER_HEIGHT, KEY_RUN, KEY_VISIBLE, KEY_WORD};
-
-/// Show/hide the native macOS traffic lights via the backend command. The
-/// backend is a no-op outside macOS, and outside Tauri there is nothing to
-/// invoke, so this is safe to call unconditionally (the reader-view effect
-/// drives it from the hover-reveal signal).
-pub async fn set_traffic_lights(visible: bool, header_height: f64) {
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
-    let args: JsValue = js_sys::Object::new().into();
-    _ = reflect_set(&args, &KEY_VISIBLE, &JsValue::from_bool(visible));
-    _ = reflect_set(&args, &KEY_HEADER_HEIGHT, &JsValue::from_f64(header_height));
-    _ = tauri_bridge::invoke("set_traffic_lights", args).await;
-}
+use super::{reflect_set, KEY_CONTEXT, KEY_RUN, KEY_WORD};
 
 /// Fire-and-forget start of an `explain_word` run on the backend. Nothing
 /// comes back here: the backend streams its chunks over the
