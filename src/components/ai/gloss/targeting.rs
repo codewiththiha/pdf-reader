@@ -9,8 +9,8 @@
 //! watcher reads the anchor and the sprung box) share one named bundle
 //! instead of twelve loose locals.
 
+use ai_core::gloss::GlossBox;
 use leptos::{html, prelude::*};
-use pdf_core::gloss::GlossBox;
 
 use crate::components::ai::anchor::{watch_page_anchor, AnchorWatch, PageAnchor, CARD_EXIT_FRAC};
 use crate::components::ai::gloss::controller::GlossController;

@@ -2,11 +2,11 @@
 //! host so the selection Info pill and the gloss card both follow scroll/zoom
 //! and die when their origin leaves a configurable band of the viewport.
 //!
-//! The pure data type lives in `pdf_core::gloss::PageAnchor` so state can hold
+//! The pure data type lives in `ai_core::gloss::PageAnchor` so state can hold
 //! it without depending on the component layer.
 
+use ai_core::gloss::{GlossBox, GlossMark};
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossBox, GlossMark};
 use pdf_core::layout::ViewMode;
 use wasm_bindgen::JsCast;
 
@@ -17,7 +17,7 @@ use app_chrome::hooks::use_raf::raf_coalesce;
 use app_chrome::hooks::use_window_event::{add_window_capture_listener, use_window_event};
 
 // Single public binding — do not also `use` PageAnchor above or rustc E0252s.
-pub use pdf_core::gloss::PageAnchor;
+pub use ai_core::gloss::PageAnchor;
 
 /// The selection "Info" pill lives until its origin fully leaves the viewport.
 ///

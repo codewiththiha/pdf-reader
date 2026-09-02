@@ -42,7 +42,7 @@ use leptos::prelude::Signal;
 /// cannot arrive half-configured.
 pub struct GlossOverlayProps {
     /// The document's persisted gloss marks.
-    pub marks: Signal<Vec<pdf_core::gloss::GlossMark>>,
+    pub marks: Signal<Vec<ai_core::gloss::GlossMark>>,
     /// Id of the gloss mark currently waiting on the model.
     pub processing: Signal<Option<String>>,
     /// Shared gloss multi-select mode.

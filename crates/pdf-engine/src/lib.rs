@@ -5,9 +5,9 @@
 //! allocates no payload objects), `types` mirrors the engine's return shapes,
 //! `api` provides typed `Result`-returning wrappers for the rest of the app
 //! (one focused module per surface: document, render, search, paper, dialog,
-//! theme, window), and `paper` is the paper session state machine. The `window.__TAURI__` externs this crate still touches (the file
-//! dialog, the AI kickoff) come from the `tauri-bridge` crate, which owns
-//! that surface so no format crate does.
+//! theme), and `paper` is the paper session state machine. The `window.__TAURI__` externs this crate still touches (the
+//! file dialog) come from the `tauri-bridge` crate, which owns that surface
+//! so no format crate does.
 //!
 //! `bridge` is private: callers go through `api`, except for the raw engine
 //! probes the app legitimately needs directly (engine version,

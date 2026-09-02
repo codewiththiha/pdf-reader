@@ -12,8 +12,8 @@
 
 use std::sync::Arc;
 
+use ai_core::gloss::{GlossBox, GlossMark};
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossBox, GlossMark};
 
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;

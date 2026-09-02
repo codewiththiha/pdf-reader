@@ -6,7 +6,8 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_core::settings::{GlossColor, GlossDensity, PaperArea, PaperMode, RenderPipeline};
+use ai_core::settings::{GlossColor, GlossDensity};
+use pdf_core::settings::{PaperArea, PaperMode, RenderPipeline};
 use pdf_paper::{MAX_SCAN_PAGES, MIN_SCAN_PAGES};
 
 use crate::components::settings::common::{Row, StyleSelect};

@@ -62,6 +62,7 @@ serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
 serde_json = "1"
 console_error_panic_hook = "0.1.7"
+ai-core = { path = "crates/ai-core" }
 virtual-list = { path = "crates/virtual-list" }
 virtual-list-leptos = { path = "crates/virtual-list-leptos" }
 pdf-core = { path = "crates/pdf-core" }
@@ -71,7 +72,7 @@ tauri-bridge = { path = "crates/tauri-bridge" }
 app-chrome = { path = "crates/app-chrome" }
 
 [workspace]
-members = ["src-tauri", "crates/virtual-list", "crates/virtual-list-leptos", "crates/pdf-core", "crates/pdf-engine", "crates/pdf-paper", "crates/tauri-bridge", "crates/app-chrome"]
+members = ["src-tauri", "crates/ai-core", "crates/virtual-list", "crates/virtual-list-leptos", "crates/pdf-core", "crates/pdf-engine", "crates/pdf-paper", "crates/tauri-bridge", "crates/app-chrome"]
 
 [profile.release]
 # Keep wasm small for a desktop app.

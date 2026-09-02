@@ -6,8 +6,8 @@
 //! two-step gloss semantics (first Escape collapses, second gives up) stay
 //! here.
 
+use ai_core::gloss::{boxes_close, GlossBox};
 use leptos::prelude::*;
-use pdf_core::gloss::{boxes_close, GlossBox};
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::anchor::{origin_outside_band, AnchorWatch, MENU_EXIT_FRAC};

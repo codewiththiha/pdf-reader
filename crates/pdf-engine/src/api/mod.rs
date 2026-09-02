@@ -13,10 +13,10 @@
 //!   - [`paper`]     — the paper session's pixel plumbing
 //!   - [`dialog`]    — the native open-file dialog
 //!   - [`theme`]     — re-bake / scrub mode / advisory sweeps
-//!   - [`window`]    — the AI word-explanation kickoff
 //!
-//! (Window chrome — traffic lights, the frameless captions — is not an
-//! engine surface; it lives in the `app-chrome` crate.)
+//! (Window chrome — traffic lights, the frameless captions — and the AI
+//! word-explanation kickoff are not engine surfaces: they live in the
+//! `app-chrome` and `ai-core` crates.)
 //!
 //! [`resolve`] and the hoisted property keys live here: they are the one
 //! parser for the `{ok,...}` envelope and the hottest allocations in the
@@ -32,7 +32,6 @@ pub mod paper;
 pub mod render;
 pub mod search;
 pub mod theme;
-pub mod window;
 
 pub use dialog::pick_pdf;
 pub use document::{cover_data_url, destroy, open, outline, take_pending_file};
@@ -43,7 +42,6 @@ pub use render::{
 };
 pub use search::{build_search_index, clear_highlights, search, set_active_match};
 pub use theme::{refresh_theme, set_live_pipeline, set_scrub_mode, sweep};
-pub use window::explain_word;
 
 /// Error returned by any engine call: the engine-side error `name` and
 /// `message`, or a local failure to parse/communicate.
@@ -98,9 +96,6 @@ js_keys! {
     KEY_WIDTH => "width",
     KEY_HEIGHT => "height",
     KEY_DATA => "data",
-    KEY_WORD => "word",
-    KEY_CONTEXT => "context",
-    KEY_RUN => "run",
     // Native dialog options (built once per dialog open — still hoisted so
     // the pattern is uniform and the picker never allocates a key twice).
     KEY_MULTIPLE => "multiple",

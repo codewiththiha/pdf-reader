@@ -1,5 +1,5 @@
+use ai_core::gloss::{GlossMark, is_glossable, is_hintable};
 use leptos::prelude::*;
-use pdf_core::gloss::{GlossMark, is_glossable, is_hintable};
 
 use crate::components::ai::anchor::{MENU_EXIT_FRAC, capture_selection_mark, watch_page_anchor};
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
@@ -14,7 +14,7 @@ use crate::state::AppState;
 /// fully leaves the viewport.
 ///
 /// Length gate: word lookup is for words and short phrases. Past
-/// `pdf_core::gloss::MAX_GLOSS_CHARS` the pill stays visible but MUTED
+/// `ai_core::gloss::MAX_GLOSS_CHARS` the pill stays visible but MUTED
 /// (disabled, explaining tooltip) up to the hint band's edge, and vanishes
 /// beyond it — a disabled affordance reads as a rule, where a silently
 /// vanishing menu reads as a bug.

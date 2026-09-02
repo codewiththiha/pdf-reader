@@ -353,10 +353,11 @@ stays visible.
 +-------------------------------------------------------------+
 ```
 
-Pure logic lives in the `pdf-core` crate with no WebAssembly dependencies, so the zoom maths,
-layout maths, filename rules, colour conversion, search index arithmetic and settings
-migration are all unit-testable on the host. `virtual-list` is the generic windowing-math
-library under the viewer.
+Pure logic lives in the `pdf-core` and `ai-core` crates with no DOM and no
+Leptos, so the zoom maths, layout maths, filename rules, colour conversion,
+search index arithmetic, settings migration and the AI word-card's geometry
+and spring are all unit-testable on the host. `virtual-list` is the generic
+windowing-math library under the viewer.
 
 ### Project layout
 
@@ -395,6 +396,12 @@ src/
                           library, covers, gloss marks)
   viewer/                 engine selection and the zoom coordinator
 crates/
+  ai-core/                the format-agnostic AI core: the word-explanation
+                          wire types (WordInfo, AiError, the chunk envelope),
+                          the gloss card's geometry + shared spring, the
+                          gloss mark + MarkAnchor trait (PageAnchor is the
+                          PDF impl), the AI settings types, and the Tauri
+                          explain_word kickoff
   pdf-core/               pure PDF domain math: the settings schema, the zoom
                           ladder, fit, layout, filename rules, search index
   pdf-engine/             wasm-bindgen bridge to the imperative engine
