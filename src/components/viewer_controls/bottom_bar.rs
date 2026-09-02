@@ -29,7 +29,7 @@ use leptos::prelude::*;
 
 use crate::components::primitives::floating::types::z::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
-use app_chrome::hooks::better_hover::{use_drag_hold, use_hover_reveal_with, DEFAULT_HOVER_DELAY};
+use app_chrome::hooks::{use_drag_hold, use_hover_reveal_with, DEFAULT_HOVER_DELAY};
 use crate::components::viewer_controls::page_navigation::PageNavigation;
 use crate::state::ReaderState;
 

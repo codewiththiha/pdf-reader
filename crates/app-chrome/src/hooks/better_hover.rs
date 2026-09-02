@@ -15,7 +15,8 @@
 //!
 //! This module owns that composite so a new auto-hide surface is one call
 //! instead of another twenty copied lines (and another chance to re-invent
-//! the bottom-edge-exit and pointer-capture bugs).
+//! the bottom-edge-exit and pointer-capture bugs). Three surfaces run it
+//! today: the title bar, the reader's bottom bar and the overlay rail.
 //!
 //! Contract, same as the rest of `hooks`: nothing here knows what holds a
 //! surface open. A hold is a `Signal<bool>` — the title bar's open popovers
@@ -24,8 +25,9 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use leptos::html;
 use leptos::prelude::*;
+use leptos::tachys::html::element::ElementType;
+use wasm_bindgen::JsCast;
 
 use crate::hooks::use_timeout::use_hover_visibility;
 
@@ -58,8 +60,9 @@ pub struct HoverReveal {
     /// What to render from: `pin || hovered_visible`.
     pub visible: Signal<bool>,
     /// The raw hover truth, without the pin — the title bar publishes this
-    /// one to its descendants.
-    pub hovered_visible: RwSignal<bool>,
+    /// one to its descendants. Read-only on purpose: the reveal owns the
+    /// writes, and a consumer that sets it would desynchronise the timer.
+    pub hovered_visible: Signal<bool>,
     enter: Rc<dyn Fn()>,
     leave: Rc<dyn Fn()>,
 }
@@ -89,19 +92,36 @@ impl HoverReveal {
 /// the component's owner, not to an effect scope that is disposed per run.
 pub fn use_hover_reveal(config: HoverConfig) -> HoverReveal {
     let hold = config.hold;
-    let held: Rc<dyn Fn() -> bool> = Rc::new(move || hold.is_some_and(|h| h.get()));
-    build(config.delay, held, config.pin)
+    reveal(config.delay, move || hold.is_some_and(|h| h.get()), config.pin)
 }
 
-/// [`use_hover_reveal`] for a hold that is a closure rather than a signal,
-/// with the shared delay and no pin — the common case.
-pub fn use_hover_reveal_with(delay: Duration, hold: impl Fn() -> bool + 'static) -> HoverReveal {
-    build(delay, Rc::new(hold), None)
+/// Sugar for the common shape: a closure hold, no pin. Same machine as
+/// [`use_hover_reveal`] — the closure is only spared the `Signal::derive`
+/// at the call site (and stays `LocalStorage`-friendly, since a derived
+/// signal would demand `Send + Sync` this hook does not need). Read every
+/// signal the hold depends on unconditionally in it (`|`, not `||`): the
+/// recheck effect subscribes through this closure, and a short-circuited
+/// read is a hold whose release never settles the surface.
+pub fn use_hover_reveal_with(
+    delay: Duration,
+    hold: impl Fn() -> bool + Copy + 'static,
+) -> HoverReveal {
+    reveal(delay, hold, None)
 }
 
-fn build(delay: Duration, hold: Rc<dyn Fn() -> bool>, pin: Option<Signal<bool>>) -> HoverReveal {
-    let postpone = Rc::clone(&hold);
-    let hover = use_hover_visibility(delay, move || postpone());
+/// The one implementation both entry points funnel into.
+///
+/// `held` is `Copy` rather than `Rc`-wrapped because it has two readers
+/// that must agree — the primitive's postpone gate and the recheck effect
+/// below — and a closure over `Copy` signal handles is itself `Copy`. A
+/// hold that ever needs owned state should be lifted into a signal at the
+/// call site rather than boxed here.
+fn reveal(
+    delay: Duration,
+    held: impl Fn() -> bool + Copy + 'static,
+    pin: Option<Signal<bool>>,
+) -> HoverReveal {
+    let hover = use_hover_visibility(delay, held);
 
     // `StoredValue`, not a signal: the flag is read inside the recheck
     // effect (a tracked read there would re-run it on every hover) and
@@ -124,20 +144,21 @@ fn build(delay: Duration, hold: Rc<dyn Fn() -> bool>, pin: Option<Signal<bool>>)
 
     // The non-obvious edge: a hold released while the pointer is already
     // elsewhere produces no `mouseleave`, so nothing would ever schedule
-    // the hide. This effect tracks the hold and settles it.
+    // the hide. This effect tracks the hold and settles it. The untracked
+    // `visible` read is the cheap guard that keeps a holdless surface (and
+    // every mount) from arming a timer that has nothing to hide.
     let recheck = hover.hide_later.clone();
-    let watch = Rc::clone(&hold);
+    let shown = hover.visible;
     Effect::new(move |_| {
-        let held_now = watch();
-        if !held_now && !hovered.get_value() {
+        if !held() && !hovered.get_value() && shown.get_untracked() {
             recheck(); // the hold is gone and so is the pointer → hide
         }
     });
 
-    let hovered_visible = hover.visible;
+    let hovered_visible: Signal<bool> = hover.visible.into();
     let visible = match pin {
         Some(pin) => Signal::derive(move || pin.get() || hovered_visible.get()),
-        None => Signal::derive(move || hovered_visible.get()),
+        None => hovered_visible,
     };
 
     HoverReveal { visible, hovered_visible, enter, leave }
@@ -165,11 +186,15 @@ fn released_on(surface: &web_sys::Element, x: f32, y: f32) -> bool {
 /// which is why it is passed in rather than created here. The reveal is
 /// taken by value (it is `Clone`): the returned handler outlives this call,
 /// and a borrow would tie it to the caller's stack frame.
-pub fn use_drag_hold(
-    surface: NodeRef<html::Div>,
+pub fn use_drag_hold<E>(
+    surface: NodeRef<E>,
     dragging: RwSignal<bool>,
     reveal: HoverReveal,
-) -> impl Fn(leptos::ev::PointerEvent) + Clone + 'static {
+) -> impl Fn(leptos::ev::PointerEvent) + Clone + 'static
+where
+    E: ElementType + 'static,
+    E::Output: JsCast + Clone + AsRef<web_sys::Element> + 'static,
+{
     let (_, leave) = reveal.bind();
     move |ev: leptos::ev::PointerEvent| {
         if !dragging.get_untracked() {
@@ -180,7 +205,7 @@ pub fn use_drag_hold(
         // so this is where it learns the pointer's real position again.
         let over = surface
             .get()
-            .is_some_and(|el| released_on(&el, ev.client_x() as f32, ev.client_y() as f32));
+            .is_some_and(|el| released_on(el.as_ref(), ev.client_x() as f32, ev.client_y() as f32));
         if !over {
             leave();
         }
@@ -196,24 +221,36 @@ pub fn HoverRevealSurface(
     /// The controller — build it with [`use_hover_reveal`] so the caller
     /// can read `visible` for its own layout too.
     reveal: HoverReveal,
-    /// Classes for the wrapper element, applied on top of the hidden-state
-    /// toggles below.
-    #[prop(optional, into)]
+    /// Classes the element always carries.
+    #[prop(into)]
     class: String,
+    /// Classes added while the surface is hidden. Defaults to a plain fade
+    /// out; a bar that also travels passes its own (`"opacity-0
+    /// translate-y-3"` at the bottom edge, `"-translate-y-3"` at the top),
+    /// which is why this is not hard-coded.
+    #[prop(optional, into)]
+    hidden_class: String,
     children: Children,
 ) -> impl IntoView {
     let (enter, leave) = reveal.bind();
     let visible = reveal.visible;
+    // Both states resolved once: the class attribute is a closure, and
+    // formatting a string per frame is the thing to avoid there.
+    let shown = class.clone();
+    let hidden_class = if hidden_class.is_empty() { HIDDEN_CLASS.to_string() } else { hidden_class };
+    let hidden = format!("{class} {hidden_class}");
     view! {
         <div
-            class=class
+            class=move || if visible.get() { shown.clone() } else { hidden.clone() }
             prop:inert=move || !visible.get()
             on:mouseenter=move |_| enter()
             on:mouseleave=move |_| leave()
-            class=("opacity-0", move || !visible.get())
-            class=("pointer-events-none", move || !visible.get())
         >
             {children()}
         </div>
     }
 }
+
+/// What a hidden surface looks like unless the caller says otherwise: gone,
+/// and click-transparent so it cannot swallow the hover that reopens it.
+pub const HIDDEN_CLASS: &str = "opacity-0 pointer-events-none";

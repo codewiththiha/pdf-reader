@@ -37,12 +37,12 @@
 //! `y = ((h - btn_h)/2 + natural_origin_y).max(0)` with a cached
 //! `natural_origin_y` (~5pt Sonoma, ~7pt Tahoe) so no per-OS branch.
 
-use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::prelude::*;
 
 use crate::hooks::dom::{by_id, TOOLBAR_ROW_ID};
+use crate::hooks::use_async_truth::use_async_truth;
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::titlebar::root::TitleBarCtx;
 use crate::window::api::set_traffic_lights;
@@ -62,7 +62,6 @@ pub fn TrafficLights(
     bar_hosted: Signal<bool>,
 ) -> impl IntoView {
     let ctx = use_context::<TitleBarCtx>();
-    let last_sent = StoredValue::new_local(None::<bool>);
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
     // Live header height for Tahoe-proof centering. Observed on
     // `#toolbar-row`; `on_cleanup` in `observe_content_size` disconnects it.
@@ -88,30 +87,17 @@ pub fn TrafficLights(
     });
 
     // The live truth about whether the lights should be on, read WITHOUT
-    // subscribing — the verification pass inside `send` probes it after the
-    // command lands, where a tracked read would create a dependency on an
-    // owner that no longer runs it.
-    let truth: Rc<dyn Fn() -> bool> = Rc::new(move || {
+    // subscribing — the verification pass probes it after the command has
+    // landed, where a tracked read would create a dependency on an owner
+    // that no longer runs it.
+    let truth = move || {
         rail_hosted.get_untracked()
             || (bar_hosted.get_untracked() && ctx.is_some_and(|c| c.visible.get_untracked()))
-    });
-
-    // Send one visibility command and verify it landed: record the decision,
-    // fire, and once the promise resolves re-check the live truth — a
-    // decision that moved mid-flight gets answered here instead of leaving
-    // the native side settled on the stale state.
-    let send: Rc<dyn Fn(bool, f64)> = Rc::new(move |want, h| {
-        last_sent.set_value(Some(want));
-        let truth = Rc::clone(&truth);
-        wasm_bindgen_futures::spawn_local(async move {
-            set_traffic_lights(want, h).await;
-            let on_now = truth();
-            if on_now != want {
-                last_sent.set_value(Some(on_now));
-                set_traffic_lights(on_now, h).await;
-            }
-        });
-    });
+    };
+    // Send-and-verify lives in the shared hook: the decision is recorded,
+    // the IPC awaited, and a truth that moved mid-flight answered with one
+    // more command — so a stale send can never settle the native side last.
+    let lights = use_async_truth(truth, |want, height: f64| set_traffic_lights(want, height));
 
     Effect::new(move |_| {
         let Some(ctx) = ctx else {
@@ -130,14 +116,14 @@ pub fn TrafficLights(
                 h.clear();
                 hide_grace.set_value(None);
             }
-            if last_sent.get_value() == Some(true) {
+            if lights.last_sent() == Some(true) {
                 return;
             }
-            send(true, h);
+            lights.send(true, h);
         } else {
             // An already-hidden or pending hide does not schedule another
             // command.
-            if last_sent.get_value() == Some(false) || hide_grace.get_value().is_some() {
+            if lights.last_sent() == Some(false) || hide_grace.get_value().is_some() {
                 return;
             }
             // The grace exists for the docked handoff (rail releases chrome,
@@ -147,14 +133,14 @@ pub fn TrafficLights(
             // buttons floating over the rail that has just finished fading
             // out from under them.
             if !bar_hosted.get_untracked() {
-                send(false, h);
+                lights.send(false, h);
                 return;
             }
-            let send = Rc::clone(&send);
+            let lights = lights.clone();
             let handle = set_timeout_with_handle(
                 move || {
                     hide_grace.set_value(None);
-                    send(false, h);
+                    lights.send(false, h);
                 },
                 Duration::from_millis(120),
             )
