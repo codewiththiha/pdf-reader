@@ -21,23 +21,30 @@ use super::geometry::GlossBox;
 /// The field names are the serde schema persisted to localStorage
 /// (`pdfreader.gloss.v1`) — do not rename.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GlossMark {
+pub struct GlossMark<A = PageAnchor> {
     pub id: String,
-    pub page: u32,
     pub word: String,
     pub context: String,
-    /// Document space (page space for the PDF format: unscaled CSS px from
-    /// the page origin). Screen = rect * display_scale.
-    pub rect: GlossBox,
+    /// Format-specific persisted identity. Flattening keeps the PDF schema's
+    /// existing top-level `page` and `rect` fields compatible.
+    #[serde(flatten)]
+    pub anchor: A,
 }
 
-impl GlossMark {
+impl<A: MarkAnchor> GlossMark<A> {
     /// Whether two marks denote the same glossed spot: the same word, and
     /// rects at the same anchor spot. The single identity definition shared
     /// by capture-time dedup and re-click toggle-to-close.
-    pub fn same_spot(&self, other: &GlossMark) -> bool {
-        self.word == other.word
-            && PageAnchor::from_mark(self).same_spot(&PageAnchor::from_mark(other))
+    pub fn same_spot(&self, other: &Self) -> bool {
+        self.word == other.word && self.anchor.same_spot(&other.anchor)
+    }
+}
+
+impl<A> std::ops::Deref for GlossMark<A> {
+    type Target = A;
+
+    fn deref(&self) -> &Self::Target {
+        &self.anchor
     }
 }
 
@@ -85,10 +92,7 @@ impl MarkAnchor for PageAnchor {
 
 impl PageAnchor {
     pub fn from_mark(m: &GlossMark) -> Self {
-        Self {
-            page: m.page,
-            rect: m.rect,
-        }
+        m.anchor
     }
 }
 
@@ -100,15 +104,17 @@ mod tests {
     fn same_spot_tolerates_sub_pixel_drift_but_not_a_new_word() {
         let base = GlossMark {
             id: "g1".into(),
-            page: 1,
             word: "palimpsest".into(),
             context: String::new(),
-            rect: GlossBox { x: 100.0, y: 40.0, w: 60.0, h: 12.0, r: 0.0 },
+            anchor: PageAnchor {
+                page: 1,
+                rect: GlossBox { x: 100.0, y: 40.0, w: 60.0, h: 12.0, r: 0.0 },
+            },
         };
 
         let mut drifted = base.clone();
         drifted.id = "g2".into();
-        drifted.rect.x += 0.4;
+        drifted.anchor.rect.x += 0.4;
         assert!(base.same_spot(&drifted), "sub-pixel drift is the same spot");
 
         let mut other_word = base.clone();
@@ -116,11 +122,11 @@ mod tests {
         assert!(!base.same_spot(&other_word));
 
         let mut other_page = base.clone();
-        other_page.page = 2;
+        other_page.anchor.page = 2;
         assert!(!base.same_spot(&other_page));
 
         let mut moved = base.clone();
-        moved.rect.y += 2.0;
+        moved.anchor.rect.y += 2.0;
         assert!(!base.same_spot(&moved));
     }
 
@@ -149,13 +155,56 @@ mod tests {
         // field would put the highlight on the wrong word after a restart.
         let mark = GlossMark {
             id: "g3-1700000000000".to_string(),
-            page: 3,
             word: "palimpsest".to_string(),
             context: "a manuscript page, a palimpsest, scraped clean".to_string(),
-            rect: GlossBox { x: 120.5, y: 44.25, w: 62.0, h: 13.5, r: 0.0 },
+            anchor: PageAnchor {
+                page: 3,
+                rect: GlossBox { x: 120.5, y: 44.25, w: 62.0, h: 13.5, r: 0.0 },
+            },
         };
         let json = serde_json::to_string(&mark).expect("serialize");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("json value");
+        assert_eq!(value["page"], 3);
+        assert_eq!(value["rect"]["x"], 120.5);
+        assert!(
+            value.get("anchor").is_none(),
+            "PDF anchor must remain flattened"
+        );
         let back: GlossMark = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(mark, back);
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct TextAnchor {
+        block: String,
+        offset: usize,
+    }
+
+    impl MarkAnchor for TextAnchor {
+        fn same_spot(&self, other: &Self) -> bool {
+            self.block == other.block && self.offset == other.offset
+        }
+    }
+
+    #[test]
+    fn a_non_pdf_anchor_defines_mark_identity_and_persists() {
+        let mark = GlossMark {
+            id: "text-1".to_string(),
+            word: "palimpsest".to_string(),
+            context: String::new(),
+            anchor: TextAnchor {
+                block: "chapter-2".to_string(),
+                offset: 14,
+            },
+        };
+        let mut same = mark.clone();
+        same.id = "text-2".to_string();
+        assert!(mark.same_spot(&same));
+        same.anchor.offset += 1;
+        assert!(!mark.same_spot(&same));
+
+        let json = serde_json::to_string(&mark).expect("serialize");
+        let back: GlossMark<TextAnchor> = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(mark, back);
     }
 }

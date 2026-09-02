@@ -142,9 +142,12 @@ pub fn DocumentTitle(state: AppState) -> impl IntoView {
 /// move the window instead of doing nothing.
 #[component]
 pub fn CenteredDocTitle(state: AppState) -> impl IntoView {
+    let center_title_ref =
+        expect_context::<app_chrome::titlebar::root::TitleBarCtx>().center_title_ref;
     let name = move || state.reader.document.display_name();
     view! {
         <span
+            node_ref=center_title_ref
             // The shell's natural-width anchor (its scrollWidth) for the
             // center-slot decision, observed to re-measure on renames.
             // pointer-events-auto: the slot overlay is click-transparent,

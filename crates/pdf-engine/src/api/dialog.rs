@@ -29,7 +29,10 @@ pub async fn pick_pdf() -> Result<String, String> {
     filters.push(&filter);
     _ = reflect_set(&opts, &KEY_FILTERS, &filters);
 
-    let value = tauri_bridge::open(opts).await;
+    let value = tauri_bridge::open(opts).await.map_err(|error| {
+        let detail = error.as_string().unwrap_or_else(|| format!("{error:?}"));
+        format!("Open dialog failed: {detail}")
+    })?;
     match value.as_string() {
         Some(path) if !path.is_empty() => Ok(path),
         _ => Err("Open cancelled".to_string()),

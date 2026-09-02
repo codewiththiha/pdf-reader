@@ -162,10 +162,9 @@ pub fn capture_selection_mark(scale: f64, word: String, context: String) -> Opti
     let a = capture_selection(scale)?;
     Some(GlossMark {
         id: format!("g{}-{}", a.page, js_sys::Date::now() as u64),
-        page: a.page,
         word,
         context,
-        rect: a.rect,
+        anchor: a,
     })
 }
 

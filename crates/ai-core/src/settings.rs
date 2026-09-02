@@ -84,6 +84,7 @@ impl GlossColor {
 /// section gaps of the gloss card's body. Compact is the default because a
 /// definition is scanned, not read like a page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum GlossDensity {
     #[default]
     Compact,
@@ -96,5 +97,22 @@ impl GlossDensity {
             Self::Compact => "Compact",
             Self::Comfortable => "Comfortable",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GlossDensity;
+
+    #[test]
+    fn gloss_density_uses_the_persisted_snake_case_schema() {
+        assert_eq!(
+            serde_json::to_string(&GlossDensity::Compact).unwrap(),
+            "\"compact\""
+        );
+        assert_eq!(
+            serde_json::from_str::<GlossDensity>("\"comfortable\"").unwrap(),
+            GlossDensity::Comfortable
+        );
     }
 }

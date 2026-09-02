@@ -237,15 +237,17 @@ mod tests {
     fn mark(page: u32, word: &str, x: f64) -> GlossMark {
         GlossMark {
             id: format!("g{page}-{x}"),
-            page,
             word: word.to_string(),
             context: String::new(),
-            rect: GlossBox {
-                x,
-                y: 100.0,
-                w: 40.0,
-                h: 12.0,
-                r: 6.0,
+            anchor: ai_core::gloss::PageAnchor {
+                page,
+                rect: GlossBox {
+                    x,
+                    y: 100.0,
+                    w: 40.0,
+                    h: 12.0,
+                    r: 6.0,
+                },
             },
         }
     }

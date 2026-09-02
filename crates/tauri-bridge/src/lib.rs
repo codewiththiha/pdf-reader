@@ -31,8 +31,8 @@ extern "C" {
 
     // Tauri event listener (window.__TAURI__.event.listen). Resolves to the
     // unlisten handle.
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen")]
-    pub async fn listen(event: &str, handler: js_sys::Function) -> JsValue;
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = "listen", catch)]
+    pub async fn listen(event: &str, handler: js_sys::Function) -> Result<JsValue, JsValue>;
 
     // Tauri v2 window handle (window methods: minimize, toggleMaximize,
     // close, isMaximized, …).
@@ -40,8 +40,8 @@ extern "C" {
     pub fn get_current_window() -> JsValue;
 
     // Tauri dialog plugin: window.__TAURI__.dialog.open({...}) -> Promise<string|null>
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "dialog"], js_name = open)]
-    pub async fn open(options: JsValue) -> JsValue;
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "dialog"], js_name = open, catch)]
+    pub async fn open(options: JsValue) -> Result<JsValue, JsValue>;
 }
 
 /// True when the app runs inside Tauri (`window.__TAURI__` is present).

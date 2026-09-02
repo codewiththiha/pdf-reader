@@ -17,6 +17,7 @@
 use std::time::Duration;
 
 use leptos::children::ViewFn;
+use leptos::html;
 use leptos::prelude::*;
 
 use crate::z::BAR;
@@ -109,19 +110,21 @@ fn schedule_slot_measure(center_slot: RwSignal<Option<(f64, f64)>>) {
 /// the row, both clusters and the title (any size change among them
 /// re-measures), a window-resize re-measure, and an immediate first pass.
 /// See [`resolve_center_slot`] for the box itself.
-fn use_center_slot() -> RwSignal<Option<(f64, f64)>> {
+fn use_center_slot(center_title_ref: NodeRef<html::Span>) -> RwSignal<Option<(f64, f64)>> {
     let center_slot = RwSignal::new(None::<(f64, f64)>);
     Effect::new(move |_| {
-        let els = [
+        let mut els: Vec<_> = [
             TOOLBAR_ROW_ID,
             TOOLBAR_LEADING_ID,
             TOOLBAR_TRAILING_ID,
-            TOOLBAR_CENTER_TITLE_ID,
         ]
         .iter()
         .copied()
         .filter_map(by_id)
         .collect();
+        if let Some(title) = center_title_ref.get() {
+            els.push(title.into());
+        }
         observe_elements(els, move |_| schedule_slot_measure(center_slot));
     });
     use_window_event("resize", move |_| schedule_slot_measure(center_slot));
@@ -137,6 +140,8 @@ pub struct TitleBarCtx {
     pub visible: Signal<bool>,
     /// Active holds count from open popovers in the titlebar.
     pub held_count: RwSignal<usize>,
+    /// The resolved center-title node, reactive across conditional remounts.
+    pub center_title_ref: NodeRef<html::Span>,
 }
 
 #[component]
@@ -179,6 +184,7 @@ pub fn TitleBar(
 ) -> impl IntoView {
     let held_count = RwSignal::new(0usize);
     let is_held = Signal::derive(move || held_count.get() > 0);
+    let center_title_ref = NodeRef::<html::Span>::new();
     // Show on enter, hide after a grace period unless something holds the bar
     // open (an open popover, the floating search). The shared primitive owns
     // the timer + re-check-both-ends semantics; the shell owns the hold
@@ -189,7 +195,7 @@ pub fn TitleBar(
     );
     let bar_hovered = hover.visible;
     let visible = Signal::derive(move || pinned.get() || bar_hovered.get());
-    provide_context(TitleBarCtx { visible, held_count });
+    provide_context(TitleBarCtx { visible, held_count, center_title_ref });
 
     let hovered = StoredValue::new_local(false);
     let enter = {
@@ -225,7 +231,7 @@ pub fn TitleBar(
     // stretch once it does not — resolved off live rects, so the caption
     // cluster, the pin and the traffic-light gutter are reserved on every
     // platform without any OS-specific branch.
-    let center_slot = use_center_slot();
+    let center_slot = use_center_slot(center_title_ref);
 
     view! {
         <>
