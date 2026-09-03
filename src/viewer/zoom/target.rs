@@ -125,8 +125,6 @@ pub(crate) struct FitDims {
     pub pw_eff: f64,
     /// Effective page height.
     pub ph_eff: f64,
-    /// Vertical air a fit must leave in scrolling-vertical mode.
-    pub pad: f64,
     /// Whether the strip runs horizontally. In that mode Fit Page uses the
     /// viewport height, while Fit Width still means the width of one page.
     pub horizontal: bool,
@@ -166,12 +164,12 @@ impl FitDims {
         // strip lays out one page per virtual item.
         let spread = matches!(mode, ViewMode::Spread);
         let (pw_eff, ph_eff) = if spread { (pw * 2.0, ph) } else { (pw, ph) };
-        let pad = if mode.is_paginated() || horizontal {
-            0.0
-        } else {
-            TOOLBAR_H
-        };
-
+        // No extra horizontal air here: the toolbar band a vertical strip
+        // scrolls under is already accounted for in `ch_eff`, so subtracting
+        // it again from the width would push the page off its true
+        // edge-to-edge fit (a phantom 24px on each side at margin 0). Fit is
+        // therefore always edge-to-edge against `cw_eff`/`ch_eff`, and any
+        // breathing room is the reader's `page_margin`.
         if cw_eff <= 1.0 || ch_eff <= 1.0 {
             return None;
         }
@@ -181,7 +179,6 @@ impl FitDims {
             ch_eff,
             pw_eff,
             ph_eff,
-            pad,
             horizontal,
         })
     }
@@ -199,13 +196,17 @@ impl FitDims {
                 FitMode::None => clamp_scale(current),
             };
         }
+        // Vertical and paginated share the same contract: fit edge-to-edge
+        // against the effective dims (`cw_eff`/`ch_eff` already carry the
+        // reader margin and, for the vertical strip, the toolbar band that
+        // scrolls under it), with no extra padding subtracted again here.
         fit_scale(
             fit,
             self.cw_eff,
             self.ch_eff,
             self.pw_eff,
             self.ph_eff,
-            self.pad,
+            0.0,
             current,
         )
     }
@@ -215,20 +216,19 @@ impl FitDims {
 mod tests {
     use super::*;
 
-    fn dims(horizontal: bool, spread: bool, cw: f64, ch: f64, pw: f64, ph: f64, pad: f64) -> FitDims {
+    fn dims(horizontal: bool, spread: bool, cw: f64, ch: f64, pw: f64, ph: f64) -> FitDims {
         FitDims {
             cw_eff: cw,
             ch_eff: ch,
             pw_eff: if spread { pw * 2.0 } else { pw },
             ph_eff: ph,
-            pad,
             horizontal,
         }
     }
 
     #[test]
     fn horizontal_fit_width_uses_one_page_while_fit_page_uses_height() {
-        let d = dims(true, false, 1200.0, 600.0, 612.0, 792.0, 0.0);
+        let d = dims(true, false, 1200.0, 600.0, 612.0, 792.0);
         let by_width = d.fit(FitMode::Width, 1.0);
         let by_page = d.fit(FitMode::Page, 1.0);
         assert!((by_width - 1200.0 / 612.0).abs() < 1e-9);
@@ -238,19 +238,28 @@ mod tests {
 
     #[test]
     fn a_spread_fits_two_pages_across() {
-        let single = dims(false, false, 1024.0, 768.0, 612.0, 792.0, 0.0);
-        let spread = dims(false, true, 1024.0, 768.0, 612.0, 792.0, 0.0);
+        let single = dims(false, false, 1024.0, 768.0, 612.0, 792.0);
+        let spread = dims(false, true, 1024.0, 768.0, 612.0, 792.0);
         assert!((spread.fit(FitMode::Width, 1.0) - single.fit(FitMode::Width, 1.0) / 2.0).abs() < 1e-9);
     }
 
     #[test]
-    fn the_toolbar_band_is_reserved_only_where_the_strip_scrolls_under_it() {
-        // Vertical: fit-page leaves the toolbar band as air on the height.
-        let vertical = dims(false, false, 1000.0, 800.0, 500.0, 700.0, 56.0);
-        assert!((vertical.fit(FitMode::Page, 1.0) - (800.0 - 56.0) / 700.0).abs() < 1e-9);
-        // fit_scale subtracts the pad from the constrained axis in both
-        // modes, so the width fit keeps it as side air too.
-        assert!((vertical.fit(FitMode::Width, 1.0) - (1000.0 - 56.0) / 500.0).abs() < 1e-9);
+    fn a_vertical_fit_is_edge_to_edge_and_never_double_reserves_the_toolbar() {
+        // Vertical scroll. `dims` carries the EFFECTIVE dims — FitDims::of has
+        // already removed the reader margin from the width and, for the
+        // vertical strip (which scrolls under the fixed toolbar), the
+        // TOOLBAR_H band from the height. So `ch` here is the post-reservation
+        // height (e.g. 800 = 848 - 48) and `cw` is the margin-free width.
+        let vertical = dims(false, false, 1000.0, 800.0, 500.0, 700.0);
+        let by_w = 1000.0 / 500.0;
+        let by_h = 800.0 / 700.0;
+        // Fit Width spans the full usable width — no phantom toolbar air is
+        // re-applied to the horizontal axis (this was the bug: a 48px width
+        // pad left a 24px gap on each side at margin 0).
+        assert!((vertical.fit(FitMode::Width, 1.0) - by_w).abs() < 1e-9);
+        // Fit Page consumes the already-reserved height directly, never
+        // subtracting the band a second time.
+        assert!((vertical.fit(FitMode::Page, 1.0) - by_w.min(by_h)).abs() < 1e-9);
     }
 
     use pdf_core::math::{MAX_SCALE, MIN_SCALE};

@@ -9,8 +9,8 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use pdf_core::filename::display_name;
-use pdf_core::layout::TOOLBAR_H;
-use pdf_core::math::fit_scale;
+use pdf_core::layout::{TOOLBAR_H, ViewMode};
+use pdf_core::math::{clamp_scale, fit_scale, FitMode};
 use pdf_engine::types::{OpenResult, PageSize};
 
 use crate::state::AppState;
@@ -96,8 +96,37 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // gesture. ReaderPage re-seeds them from the intrinsic page sizes at the
     // current scale.
     state.reader.document.metrics.css_heights.set(Vec::new());
+    // Mirror `FitDims::of` (zoom/target.rs) so the seed scale carries the same
+    // geometry as the first live fit: the reader margin comes off the width,
+    // the toolbar band comes off the height ONLY for the vertical strip that
+    // scrolls under it, and a spread doubles the page width. Crucially, the
+    // toolbar band is never subtracted from the width — that phantom 48px of
+    // side air is exactly what made a margin-0 vertical fit sit 24px off each
+    // edge on the very first frame.
+    let mode = state.reader.viewer.mode.get_untracked();
+    let margin = state.reader.viewer.page_margin.get_untracked();
+    let horizontal = mode == ViewMode::ScrollHorizontal;
+    let spread = matches!(mode, ViewMode::Spread);
     let (cw, ch) = state.reader.viewer.container_size.get();
-    let scale = fit_scale(startup_fit, cw, ch, page1.width, page1.height, TOOLBAR_H, 1.0);
+    let cw_eff = (cw - 2.0 * margin).max(1.0);
+    let ch_eff = if mode.is_paginated() || horizontal {
+        ch.max(1.0)
+    } else {
+        (ch - TOOLBAR_H).max(1.0)
+    };
+    let pw = if spread { page1.width * 2.0 } else { page1.width };
+    // Horizontal Fit Page is a pure height fit (full page visible), matching
+    // `FitDims::fit`; every other mode is the shared edge-to-edge `fit_scale`
+    // with no extra padding.
+    let scale = if horizontal {
+        match startup_fit {
+            FitMode::Width => clamp_scale(cw_eff / pw.max(1.0)),
+            FitMode::Page => clamp_scale(ch_eff / page1.height.max(1.0)),
+            FitMode::None => clamp_scale(1.0),
+        }
+    } else {
+        fit_scale(startup_fit, cw_eff, ch_eff, pw, page1.height, 0.0, 1.0)
+    };
     // Seeding the zoom state is correct HERE and nowhere else: this is the
     // initial scale for a brand-new document, so there is no layout to
     // animate from and nothing to anchor to. All three scales start in
