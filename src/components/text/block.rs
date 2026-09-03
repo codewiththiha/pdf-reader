@@ -55,7 +55,10 @@ pub fn TextBlockView(block: TextBlock) -> impl IntoView {
             }
         }
     };
+    // The tail of a split paragraph drops its paragraph space (see
+    // `text_core::blocks::subdivide`); the class does exactly that.
+    let class = if block.continuation { "tx-block tx-cont" } else { "tx-block" };
     view! {
-        <div class="tx-block">{content}</div>
+        <div class=class>{content}</div>
     }
 }

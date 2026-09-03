@@ -56,12 +56,16 @@ pub fn TextMeasureColumn(app: AppState) -> impl IntoView {
     });
 
     // The column itself: fixed offscreen, exactly the page's content width,
-    // wearing exactly the page's typography (at scale 1). `visibility:
-    // hidden` keeps layout honest — `display:none` would not lay out at all.
+    // wearing exactly the page's typography (at scale 1). The `tx-content`
+    // class is the load-bearing half of that promise: every typographic
+    // rule (font, size, line height, spacing) resolves on that class, so a
+    // measure column without it measures the browser's fallback face and
+    // paginates against fiction. `visibility: hidden` keeps layout honest —
+    // `display:none` would not lay out at all.
     view! {
         <div
             node_ref=container
-            class="tx-measure"
+            class="tx-measure tx-content"
             aria-hidden="true"
             lang="en"
             style:width=move || format!("{}px", geometry(typography.get().book_layout).content_width)

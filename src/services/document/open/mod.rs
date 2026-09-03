@@ -113,15 +113,15 @@ pub fn open_path(state: AppState, path: String) {
 
     // The resume point is read BEFORE the open resolves so it can't be
     // clobbered by a concurrent page-tracking write from the closing document.
-    let saved_page = state
-        .library
-        .books
-        .with_untracked(|books| library::find_page(books, &path))
-        .unwrap_or(1);
+    // The reflowable tail also takes the fractional stream position, when the
+    // last session left one.
+    let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
+        (library::find_page(books, &path).unwrap_or(1), library::find_fraction(books, &path))
+    });
 
     match format_of(&path) {
         Format::Pdf => open_pdf(state, path, saved_page, stamp),
-        fmt => text::open_text(state, path, fmt, saved_page, stamp),
+        fmt => text::open_text(state, path, fmt, saved_page, saved_fraction, stamp),
     }
 }
 

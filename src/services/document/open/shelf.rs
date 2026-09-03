@@ -25,6 +25,11 @@ pub(super) fn record(
         .update(|s| s.last_path = Some(path.to_string()));
 
     let mut recent = state.library.books.get_untracked();
+    // A reflowable book's fractional stream position survives the re-open's
+    // upsert: the entry below replaces this one in the same breath, and the
+    // open flow just consumed this fraction to place the stream. The first
+    // scroll of the new session overwrites it with the truth of this read.
+    let fraction = recent.iter().find(|b| b.path == path).and_then(|b| b.fraction);
     let evicted = library::upsert(
         &mut recent,
         RecentBook {
@@ -32,6 +37,7 @@ pub(super) fn record(
             title,
             page,
             num_pages,
+            fraction,
         },
     );
     state.library.books.set(recent);

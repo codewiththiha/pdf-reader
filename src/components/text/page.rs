@@ -51,28 +51,8 @@ pub enum SpineSide {
 /// The page's inline style at the live scale: the A4 box and its
 /// book-layout (or symmetric) paddings. All paddings are geometry, scaled
 /// here; the TYPE inside scales through `--ts` on the content column.
-///
-/// `flow` is the vertical-strip rendering, where a "page" is invisible:
-/// the host is exactly as tall as its blocks (the size model agrees, see
-/// `effects::reader::text_layout`), carries no box of its own, and pads
-/// the column symmetrically — an alternating gutter would read as a twitch
-/// in a continuous column.
-fn page_style(
-    page: u32,
-    scale: f64,
-    settings: &TextSettings,
-    flow: bool,
-    spine: SpineSide,
-) -> String {
+fn page_style(page: u32, scale: f64, settings: &TextSettings, spine: SpineSide) -> String {
     let geo = text_core::page::geometry(settings.book_layout);
-    if flow {
-        let pad_inline = (PAGE_WIDTH - geo.content_width) / 2.0;
-        return format!(
-            "width:{}px;padding:0 {}px;",
-            PAGE_WIDTH * scale,
-            pad_inline * scale,
-        );
-    }
     let (pad_left, pad_right) = match spine {
         SpineSide::Left => geo.spread_pads(settings.book_layout, false),
         SpineSide::Right => geo.spread_pads(settings.book_layout, true),
@@ -110,10 +90,6 @@ pub fn TextPage(
     /// The page texture mode, shared with the PDF hosts.
     #[prop(into)]
     texture: Signal<TextureMode>,
-    /// The vertical strip's invisible-page rendering: no box, no height of
-    /// its own, blocks flowing straight through (see [`page_style`]).
-    #[prop(default = false)]
-    flow: bool,
     /// Where this page sits relative to the book spine (see [`SpineSide`]).
     /// The spread fixes its two pages to the two sides; everywhere else the
     /// parity alternates on its own.
@@ -124,17 +100,11 @@ pub fn TextPage(
         use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
     let texture = Memo::new(move |_| texture.get());
     let host_class = move || {
-        let base = if flow {
-            // The flow host paints nothing of its own — no paper, no
-            // texture, no shadow — so the texture class has no work here.
-            "tx-page tx-flow".to_string()
+        let t = texture.get();
+        let base = if t == TextureMode::None {
+            "tx-page".to_string()
         } else {
-            let t = texture.get();
-            if t == TextureMode::None {
-                "tx-page".to_string()
-            } else {
-                format!("tx-page texture-{}", t.as_str())
-            }
+            format!("tx-page texture-{}", t.as_str())
         };
         if class.is_empty() {
             base
@@ -153,7 +123,7 @@ pub fn TextPage(
         <div
             id=format!("tx-{page}-pg")
             class=host_class
-            style=move || page_style(page, scale.get(), &typography.get(), flow, spine)
+            style=move || page_style(page, scale.get(), &typography.get(), spine)
         >
             <div
                 class="tx-content"

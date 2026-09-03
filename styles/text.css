@@ -40,15 +40,10 @@
   box-shadow: none;
 }
 
-/* The vertical strip's invisible pages: no paper, no shadow, no filter —
-   the blocks flow through as one continuous column, and only the strip's
-   scroller carries the reading surface. */
-.tx-page.tx-flow {
-  background: none;
-  box-shadow: none;
-  filter: none;
-  contain: none;
-}
+/* The vertical strip's invisible pages were retired with the continuous
+   stream (`.tx-stream` below): in vertical reading a reflowable document
+   is one uninterrupted column of blocks, and only the paginated modes —
+   single, spread, horizontal — render `.tx-page` cards at all. */
 
 /* ---------------------------------------------------------------------
    The content column — every typography knob resolves here.
@@ -67,7 +62,18 @@
   word-spacing: calc(var(--tx-word-spacing, 0px) * var(--ts, 1));
   text-align: var(--tx-text-align, start);
   hyphens: var(--tx-hyphens, none);
-  color: var(--color-ink);
+
+  /* The ink dial. Text is native DOM — no canvas filter, no blend mode —
+     so intensity is just arithmetic: the theme's ink mixed toward the
+     theme's paper by the setting's percentage (100 keeps the ink pure).
+     The mix follows the base mode on its own: dark ink dims toward the
+     dark paper, light ink toward the light one, and a tinted paper tints
+     the soft end of the dial with it. */
+  color: color-mix(
+    in oklab,
+    var(--color-ink) calc(var(--tx-ink-contrast, 100) * 1%),
+    var(--color-paper)
+  );
 }
 
 /* One layout atom. Spacing under a block rides `padding-bottom` (never a
@@ -75,6 +81,14 @@
    agree — margins would collapse, padding cannot. */
 .tx-block {
   padding-bottom: var(--tx-para-margin, 1em);
+}
+
+/* The tail of a paragraph the block splitter cut: no paragraph space of
+   its own (the paragraph's one share belongs to its first chunk), so a
+   split paragraph reads as one in every mode — paged, measured or
+   streamed. */
+.tx-block.tx-cont {
+  padding-bottom: 0;
 }
 
 /* Plain text keeps its hard line breaks; wrapping happens only at the
@@ -215,6 +229,12 @@
    The measure column — offscreen, invisible, but laid out for real, at
    scale 1 and the page's exact width. `visibility:hidden` (not
    `display:none`) is what keeps the layout honest enough to read.
+
+   The host ALSO carries `.tx-content`: measurement is only truthful when
+   the measured column resolves the very typography the pages do — font,
+   size, line height, spacing all live on `.tx-content`, so a column
+   without it measures the browser's fallback face and paginates against
+   fiction.
    --------------------------------------------------------------------- */
 .tx-measure {
   position: fixed;
@@ -222,4 +242,46 @@
   top: 0;
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Parity must not move the column: the typography rules the host just
+   inherited (`.tx-content` sets its own position) give way to the
+   offscreen box, declared here so the pair can never be reordered by
+   accident. */
+.tx-measure.tx-content {
+  position: fixed;
+}
+
+/* ---------------------------------------------------------------------
+   The continuous stream — vertical reading of a reflowable document.
+
+   The window is the page: no paper cards, no gaps, no boxes — the
+   scroller itself paints the paper and the blocks flow over it in one
+   column, sized by the virtualizer (see components::text::stream).
+   --------------------------------------------------------------------- */
+.tx-stream {
+  background-color: var(--color-paper);
+}
+
+/* The reading column inside the stream: narrower than the viewport (its
+   width is set inline from the zoom and the page margin), and positioned
+   by the alignment classes below. The blocks themselves are absolutely
+   positioned inside it by the virtualizer. */
+.tx-stream-col {
+  position: relative;
+}
+
+.tx-align-left {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.tx-align-center {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tx-align-right {
+  margin-left: auto;
+  margin-right: 0;
 }

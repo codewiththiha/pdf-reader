@@ -25,6 +25,7 @@ use text_core::blocks::TextBlock;
 use text_core::page::{PageGeometry, PAGE_HEIGHT, PAGE_WIDTH};
 use text_core::pager::{block_page_index, paginate, PageCut};
 use text_core::typography::TextSettings;
+use virtual_list_leptos::Virtualizer;
 
 /// One opened text document: its blocks. The format and the title the file
 /// claimed live on `DocumentState` with every other document's identity.
@@ -32,7 +33,7 @@ pub struct TextDocument {
     pub blocks: Arc<Vec<TextBlock>>,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct TextDocState {
     /// The open text document, or `None` while a PDF (or nothing) is open.
     pub doc: RwSignal<Option<Arc<TextDocument>>>,
@@ -48,6 +49,40 @@ pub struct TextDocState {
     /// Bumped to force a re-measure (e.g. after fonts settle); the measure
     /// column tracks it alongside the typography.
     pub remeasure: RwSignal<u64>,
+    /// The continuous stream's virtualizer while that layout is mounted
+    /// (`None` otherwise). The stream — not the page-cut strip — scrolls
+    /// reflowable documents in vertical reading, and the readers that need
+    /// to aim it (search reveal, the bottom bar's scrubber) reach it
+    /// through here rather than a second wiring through the page
+    /// virtualizers, which in this mode are deliberately unbound.
+    pub stream: StoredValue<Option<Virtualizer>, LocalStorage>,
+    /// The fractional reading position the open flow found in the library
+    /// (0..=1), for the stream to anchor on when it mounts. Consumed by
+    /// the anchor itself, so a later remount anchors on the page instead.
+    pub resume_fraction: RwSignal<Option<f64>>,
+    /// The stream's current extent (the virtualizer's total size), mirrored
+    /// by the stream layout as it changes. The virtualizer's own signals
+    /// are thread-local — they cannot be read from the `Send` closures the
+    /// chrome builds (the progress strip, the percentage indicator) — so
+    /// the one number that chrome needs travels through this plain signal
+    /// instead.
+    pub stream_total: RwSignal<f64>,
+}
+
+impl Default for TextDocState {
+    fn default() -> Self {
+        Self {
+            doc: RwSignal::new(None),
+            heights: RwSignal::new(Arc::new(Vec::new())),
+            cuts: RwSignal::new(Arc::new(Vec::new())),
+            block_page: RwSignal::new(Arc::new(Vec::new())),
+            geometry: RwSignal::new(PageGeometry::default()),
+            remeasure: RwSignal::new(0),
+            stream: StoredValue::new_local(None),
+            resume_fraction: RwSignal::new(None),
+            stream_total: RwSignal::new(0.0),
+        }
+    }
 }
 
 impl TextDocState {
@@ -60,6 +95,16 @@ impl TextDocState {
         self.cuts.set(Arc::new(Vec::new()));
         self.block_page.set(Arc::new(Vec::new()));
         self.remeasure.set(0);
+        self.stream.set_value(None);
+        self.resume_fraction.set(None);
+        self.stream_total.set(0.0);
+    }
+
+    /// The live stream virtualizer, when the continuous text stream is
+    /// mounted. (The handle lives in local storage — the virtualizer is
+    /// not `Send` — so callers read it where they run, on the UI thread.)
+    pub fn stream_handle(&self) -> Option<Virtualizer> {
+        self.stream.try_with_value(|v| v.clone()).flatten()
     }
 
     /// Publish a new set of block heights: re-cut the pages, publish the

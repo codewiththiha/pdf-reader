@@ -42,6 +42,14 @@ pub(super) fn install(arms: Arms, axis: ViewMode, v: Virtualizer, gate: Rc<JumpG
         if mode.get() != axis {
             return;
         }
+        // The continuous text stream owns the page bookkeeping for itself:
+        // it virtualizes BLOCKS, so this arm's page-cut dominant would be
+        // reading a virtualizer that has no container and no window — and
+        // its one honest write (page 1) would clobber the resume position.
+        // The stream maps its dominant block to the page cut directly.
+        if axis == ViewMode::ScrollVertical && state.document.format.get().is_text() {
+            return;
+        }
         // A strip that has just mounted (document open, back from the
         // library, a mode switch) is still being placed on `viewer.page`
         // by `ScrollShell`; until then it sits at whatever offset it last

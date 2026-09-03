@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use leptos::prelude::*;
-use virtual_list_leptos::{ScrollMode, Virtualizer};
+use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use app_chrome::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
@@ -170,6 +170,26 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
         ) {
             list.set_scroll_left(next as i32);
         }
+        return;
+    }
+
+    // The text tail of the vertical branch: the stream scrolls BLOCKS, so
+    // the match reveals through the stream's own virtualizer — the page
+    // names the block its cut starts at, and the stream knows where that
+    // block lies. (The page-cut virtualizer this function was handed has
+    // no container in this mode; its offsets describe a layout nothing is
+    // rendering.) Reveal precision is the page's first block: a text hit
+    // carries no rect, and the cut packs tightly enough that the match
+    // sits within a screen of it.
+    if state.document.format.get_untracked().is_text() {
+        let Some(stream) = state.text.stream_handle() else {
+            return;
+        };
+        let block = state
+            .text
+            .cuts
+            .with_untracked(|cuts| text_core::pager::first_block_of_page(cuts, m.page));
+        stream.scroll_to_index(block, Align::Start, ScrollMode::Auto);
         return;
     }
 

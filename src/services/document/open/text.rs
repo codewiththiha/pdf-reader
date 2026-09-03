@@ -2,11 +2,14 @@
 //!
 //! The shape mirrors the PDF open — claim the session, read, seed, flip the
 //! status — but the content never touches the pdf.js engine. The file is
-//! read through the shell's `read_file_text` command, parsed into blocks,
-//! and seeded into the SAME page machinery the PDF uses: text documents are
-//! cut into A4 pages, so fit, zoom, navigation and the virtualized strips
-//! all serve them unchanged. The one difference is the page content — real
-//! text in the DOM instead of a rasterised canvas (see `components::text`).
+//! read through the shell's `read_file_text` command, parsed into blocks
+//! (with oversized prose paragraphs subdivided for a tight page pack), and
+//! seeded into the SAME page machinery the PDF uses: text documents are cut
+//! into A4 pages, so fit, zoom, navigation and the paged modes all serve
+//! them unchanged. The one difference is the page content — real text in
+//! the DOM instead of a rasterised canvas (see `components::text`) — and
+//! the second: opened straight into the vertical mode, the document seeds
+//! at scale 1 and mounts as the continuous stream rather than pages.
 //!
 //! Pagination starts from the pure estimate (character counts against the
 //! column width) so the reader is up the instant the file is read; the
@@ -21,8 +24,10 @@ use wasm_bindgen_futures::spawn_local;
 
 use pdf_core::documents::Format;
 use pdf_core::filename::display_name;
+use pdf_core::layout::ViewMode;
+use pdf_core::math::FitMode;
 use pdf_engine::types::{DocStatus, PageSize};
-use text_core::blocks::{markdown_title, parse_markdown, parse_text};
+use text_core::blocks::{markdown_title, parse_markdown, parse_text, subdivide, SPLIT_MAX_LINES};
 use text_core::page::{geometry, PAGE_HEIGHT, PAGE_WIDTH};
 use text_core::pager::estimate_heights;
 
@@ -58,7 +63,14 @@ async fn read_file_text(path: &str) -> Result<String, String> {
 /// Shared open-flow for the reflowable formats: read the file, cut it into
 /// blocks, and populate the whole app state. Mirrors [`super::open_path`]'s
 /// PDF tail, session stamp and all.
-pub(super) fn open_text(state: AppState, path: String, format: Format, saved_page: u32, stamp: u64) {
+pub(super) fn open_text(
+    state: AppState,
+    path: String,
+    format: Format,
+    saved_page: u32,
+    saved_fraction: Option<f64>,
+    stamp: u64,
+) {
     spawn_local(async move {
         let raw = match read_file_text(&path).await {
             Ok(raw) => raw,
@@ -87,9 +99,14 @@ pub(super) fn open_text(state: AppState, path: String, format: Format, saved_pag
             super::fail(state, "This file has no readable text.".to_string());
             return;
         }
+        // Cut oversized prose paragraphs into line-bounded chunks before
+        // anything downstream sees them, so block identities stay stable for
+        // the whole session and every consumer (pages, stream, search)
+        // works in the same atoms.
+        let blocks = subdivide(blocks, SPLIT_MAX_LINES);
         // Everything below is synchronous, and the session was just checked,
         // so no tail of this flow can outlive its stamp.
-        ready_text(state, path, format, title, blocks, saved_page);
+        ready_text(state, path, format, title, blocks, saved_page, saved_fraction);
     });
 }
 
@@ -102,6 +119,7 @@ fn ready_text(
     title: Option<String>,
     blocks: Vec<text_core::blocks::TextBlock>,
     saved_page: u32,
+    saved_fraction: Option<f64>,
 ) {
     let settings = state.settings.get_untracked();
     let geo = geometry(settings.text.book_layout);
@@ -142,19 +160,36 @@ fn ready_text(
         })));
 
     // The seed scale, resolved exactly the way the first live refit will
-    // (a text page is always A4, so the fit inputs are known up front).
-    let startup_fit = settings.layout.default_fit;
-    let scale = FitDims::from_geometry(
-        state.reader.viewer.mode.get_untracked(),
-        state.reader.viewer.container_size.get_untracked(),
-        state.reader.viewer.page_margin.get_untracked(),
-        (PAGE_WIDTH, PAGE_HEIGHT),
-    )
-    .map_or(1.0, |dims| dims.fit(startup_fit, 1.0));
+    // (a text page is always A4, so the fit inputs are known up front) —
+    // except in the continuous stream, where there is no page to fit: the
+    // window is the page, type size belongs to the typography settings,
+    // and the zoom starts at 1.
+    let streaming = state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
+    let startup_fit = if streaming {
+        FitMode::None
+    } else {
+        settings.layout.default_fit
+    };
+    let scale = if streaming {
+        1.0
+    } else {
+        FitDims::from_geometry(
+            state.reader.viewer.mode.get_untracked(),
+            state.reader.viewer.container_size.get_untracked(),
+            state.reader.viewer.page_margin.get_untracked(),
+            (PAGE_WIDTH, PAGE_HEIGHT),
+        )
+        .map_or(1.0, |dims| dims.fit(startup_fit, 1.0))
+    };
 
     // Reading position + zoom, seeded in the same order the PDF seed uses:
     // anchor guard up BEFORE the page is written, zoom initialised BEFORE
-    // the heights are published at that scale.
+    // the heights are published at that scale. The stream's fractional
+    // resume rides along only when the document opens INTO the stream — a
+    // fraction saved by an earlier streamed session means nothing to a
+    // paged read, and letting it linger would hijack the anchor when the
+    // reader later flips the mode.
+    state.reader.text.resume_fraction.set(if streaming { saved_fraction } else { None });
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.fit.set(startup_fit);
     state.reader.viewer.zoom.initialize(scale);

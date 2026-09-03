@@ -34,6 +34,7 @@ use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
 use pdf_core::layout::{PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
+use pdf_core::settings::PageIndicatorStyle;
 use pdf_engine::types::DocStatus;
 
 #[component]
@@ -61,22 +62,15 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         vs.viewer.page_margin.set(if horizontal { 0.0 } else { m });
     }
 
-    // No-gap pref → runtime gap + rescale. The vertical text strip joins
-    // the no-gap case on its own terms: it renders as one continuous
-    // column, so its page units always butt against each other — the gap is
-    // exactly the zero that makes the paragraph rhythm seamless across a
-    // page cut (see `effects::reader::text_layout`).
+    // No-gap pref → runtime gap + rescale. (The continuous text stream is
+    // not party to this: it lays blocks edge to edge with no gap at all,
+    // and the vertical page strip it replaced is simply not mounted while
+    // a text document streams.)
     {
         let v = rv.virtualizer.clone();
         Effect::new(move |_| {
             let no_gap = state.settings.with(|st| st.layout.no_gap);
-            let is_text = vs.document.format.get().is_text();
-            let mode = vs.viewer.mode.get();
-            let gap = if no_gap || (is_text && mode == ViewMode::ScrollVertical) {
-                0.0
-            } else {
-                PAGE_GAP
-            };
+            let gap = if no_gap { 0.0 } else { PAGE_GAP };
             if (vs.viewer.page_gap.get_untracked() - gap).abs() < 1e-9 {
                 return;
             }
@@ -156,6 +150,19 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         if matches!(mode, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal) {
             vs.viewer.awaiting_anchor.set(true);
         }
+        // Entering the continuous text stream resets the zoom to 1: the
+        // stream has no page to fit — the window is the page, and type
+        // size belongs to the typography settings — so a fit resolved
+        // against the A4 page model would only shrink the text below its
+        // setting. The paged modes re-resolve their own fit on entry (the
+        // branch below), so nothing needs restoring on the way out.
+        if mode == ViewMode::ScrollVertical
+            && vs.text_streaming()
+            && !vs.viewer.zooming().get_untracked()
+        {
+            vs.viewer.fit.set(FitMode::None);
+            vs.viewer.zoom.initialize(1.0);
+        }
         // A mode flip leaves the outgoing view's rasters behind and nothing
         // necessarily renders right after, so the engine's own sweep (which
         // only runs inside a render) would never fire. Release now.
@@ -216,6 +223,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
     let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
+    // Continuous text reading has no meaningful page number: while the
+    // stream is live the badge is a percentage of the document whatever the
+    // indicator style says (the style selector stands disabled for exactly
+    // as long, so it cannot show a choice that is not being honoured).
+    let stream_live = Signal::derive(move || vs.text_streaming());
+    let stream_percent = Signal::derive(move || vs.stream_percent());
 
     // Left: sidebar toggle + Library. Title is centered; right is the 3-dash
     // view menu + Appearance.
@@ -318,9 +331,27 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         <Show when=move || is_ready() && show_indicator.get()>
                             <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", crate::components::primitives::floating::types::z::CONTROLS)>
                                 <PageIndicator
-                                    current=state.reader.viewer.page
-                                    total=state.reader.document.num_pages
-                                    style=indicator_style
+                                    current=Signal::derive(move || {
+                                        if stream_live.get() {
+                                            stream_percent.get()
+                                        } else {
+                                            vs.viewer.page.get()
+                                        }
+                                    })
+                                    total=Signal::derive(move || {
+                                        if stream_live.get() {
+                                            100
+                                        } else {
+                                            vs.document.num_pages.get()
+                                        }
+                                    })
+                                    style=Signal::derive(move || {
+                                        if stream_live.get() {
+                                            PageIndicatorStyle::Percentage
+                                        } else {
+                                            indicator_style.get()
+                                        }
+                                    })
                                     hidden=Signal::derive(move || state.reader.gloss.selection_active.get())
                                 />
                             </div>

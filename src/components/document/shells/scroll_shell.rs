@@ -131,6 +131,10 @@ pub fn ScrollShell(
             // real-type pages. Both bind the SAME scroller id and the SAME
             // virtualizer, so the shell's anchor, wheel and scroll→page
             // machinery drives either without knowing which one is mounted.
+            // (The text strip walks A4 cards, which is the horizontal mode's
+            // shape; a reflowable document in the VERTICAL mode never
+            // reaches this shell — it renders as the continuous block
+            // stream from the layout that dispatches here.)
             {move || {
                 let virtualizer = strip_virtualizer.get_value();
                 if state.document.format.get().is_text() {
@@ -138,7 +142,6 @@ pub fn ScrollShell(
                         <TextPageStrip
                             state=state
                             virtualizer=virtualizer.clone()
-                            axis=axis
                             scroller_id=scroller_id
                             list_ref=list_ref
                         />

@@ -48,6 +48,14 @@ pub(super) fn install(
         if mode.get() != axis {
             return;
         }
+        // A page write means a page-cut strip in this mode only for PDFs;
+        // the continuous text stream scrolls blocks, and a page number
+        // commanded at its (unbound) page virtualizer would be a no-op at
+        // best. The stream's own layout is placed by its anchor, its
+        // search reveal and its scrubber — none of which write the page.
+        if axis == ViewMode::ScrollVertical && state.document.format.get().is_text() {
+            return;
+        }
         // Scroll restoration is the transaction's job while one is open;
         // letting a page write fight the anchor mid-zoom is the other half
         // of the loop. The gate holds the write instead of losing it, and
