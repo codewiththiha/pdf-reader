@@ -20,6 +20,11 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     let s = state.settings;
     let indicator_off = Signal::derive(move || !s.with(|st| st.layout.page_indicator));
     let label_off = Signal::derive(move || !s.with(|st| st.layout.floating_label));
+    // The page margin only applies to the vertical / paginated modes. The
+    // horizontal strip is an edge-to-edge carousel, so while it is active the
+    // margin is not applied and the adjuster is disabled (leaving the stored
+    // value untouched so it returns when the mode does).
+    let horizontal_mode = Signal::derive(move || !state.reader.viewer.mode.get().uses_page_margin());
     view! {
         <SectionLabel text="Reader chrome" />
         <div class="divide-y divide-line rounded-xl border border-line">
@@ -169,12 +174,25 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
             // which No Gap never touches — No Gap only removes the vertical
             // gap between stacked pages. The two stay fully independent, so
             // the margin adjuster is always live whether or not No Gap is on.
+            // It is NOT live in the horizontal scroll mode: that strip is an
+            // edge-to-edge carousel, so the margin is not applied there and
+            // the adjuster is disabled (the stored value is preserved and
+            // returns when a non-horizontal mode is active).
             <Row label="Page Margin">
                 <span class="flex items-center gap-3">
-                    <span class="w-10 text-right text-sm tabular-nums text-ink">
+                    <span
+                        class=move || {
+                            let base = "w-10 text-right text-sm tabular-nums text-ink";
+                            if horizontal_mode.get() {
+                                format!("{base} opacity-50")
+                            } else {
+                                base.to_string()
+                            }
+                        }
+                    >
                         {move || {
                             let m = s.with(|st| st.layout.page_margin) as u32;
-                            if m == 0 {
+                            if horizontal_mode.get() || m == 0 {
                                 "Off".into()
                             } else {
                                 format!("{m}")
@@ -188,7 +206,8 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             title="Less margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                s.with(|st| st.layout.page_margin) <= 0.0
+                                horizontal_mode.get()
+                                    || s.with(|st| st.layout.page_margin) <= 0.0
                             })
                             on_click=move || {
                                 s.update(|st| {
@@ -203,7 +222,8 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             title="More margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                s.with(|st| st.layout.page_margin) >= 64.0
+                                horizontal_mode.get()
+                                    || s.with(|st| st.layout.page_margin) >= 64.0
                             })
                             on_click=move || {
                                 s.update(|st| {

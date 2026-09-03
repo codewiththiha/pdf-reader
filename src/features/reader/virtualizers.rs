@@ -153,10 +153,11 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     // layout is relaid out to as a zoom runs — so the two axes can never
     // disagree about how big a page is.
     let h_estimate = move |index: usize| {
+        // The horizontal strip is edge-to-edge: it ignores the reader's page
+        // margin, so each item's main-axis extent is the width alone.
         state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
         }) * state.viewer.zoom.visual_scale()
-            + 2.0 * state.viewer.page_margin.get_untracked()
     };
     let h_virtualizer = use_virtualizer(
         VirtualizerOptions::list(count, h_estimate)

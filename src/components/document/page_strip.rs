@@ -89,7 +89,10 @@ pub fn PageStrip(
 
     // Report a rendered page's main-axis extent back into the virtualizer.
     // Vertical uses the measured height (+ gap); horizontal uses the measured
-    // width (+ the two horizontal margins, which are part of the main span).
+    // width. Note that the horizontal strip ignores the reader's page margin
+    // (see `ViewMode::uses_page_margin`), so its width carries no margin —
+    // the margin is cross-axis air in the vertical strip and would only
+    // inflate the carousel's main-axis span here.
     // The sizes arriving here are already snapped to the device-pixel grid by
     // the page host, so the offsets the virtualizer derives from them are
     // grid-aligned too, and every page's wrapper sits exactly on the edge the
@@ -123,9 +126,9 @@ pub fn PageStrip(
                     return;
                 }
                 if w > 0.0 {
-                    let m = state.viewer.page_margin.get_untracked();
-                    handle
-                        .with_value(|v| v.report_size(_page.saturating_sub(1) as usize, w + 2.0 * m));
+                    // Horizontal applies no page margin, so the reported
+                    // extent is the page width alone.
+                    handle.with_value(|v| v.report_size(_page.saturating_sub(1) as usize, w));
                 }
             })
         }
@@ -230,9 +233,13 @@ pub fn PageStrip(
                                     // grid, same as the vertical strip's `top`: an
                                     // unsnapped left edge rounds against the gutter behind
                                     // it and paints a hairline down the side of the page.
+                                    // The horizontal strip does not take the page margin
+                                    // (see `ViewMode::uses_page_margin`), so its inline
+                                    // padding is 0 — the page runs edge-to-edge along the
+                                    // carousel's main axis.
                                     let style = move || format!(
-                                        "position:absolute;top:0;left:{}px;height:100%;display:flex;padding-inline:{}px",
-                                        snap_px(left.get()), state.viewer.page_margin.get()
+                                        "position:absolute;top:0;left:{}px;height:100%;display:flex;padding-inline:0px",
+                                        snap_px(left.get())
                                     );
                                     view! {
                                         <div id=wrapper_id(Axis::Horizontal, index, page) style=style>

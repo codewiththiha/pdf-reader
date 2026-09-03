@@ -92,8 +92,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
             // Vertical: margin is cross-axis; sizes unchanged aside from gap.
             v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
-            // Horizontal: margin is main-axis.
-            hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
+            // Horizontal: margin is main-axis, but the horizontal strip ignores
+            // the reader's margin (edge-to-edge carousel), so its widths carry
+            // no side air.
+            hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale);
             // A margin change must re-fit the page under the reader: the fit
             // target derives from the usable width (`cw - 2*margin`), so the
             // page only visibly gains side space once that scale is re-resolved

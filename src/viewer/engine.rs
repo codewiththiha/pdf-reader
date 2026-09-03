@@ -82,14 +82,15 @@ impl ViewerEngine {
         // virtualizer reads the sizes once per item, and an array read beats a
         // signal read per page. The virtualizer's own rescale anchor holds the
         // cross-axis position.
-        let margin = state.viewer.page_margin.get_untracked();
+        // The horizontal strip ignores the reader's page margin (an
+        // edge-to-edge carousel), so the rebuilt widths carry no side air.
         let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
             sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
         });
         let new_scale = state.viewer.zoom.visual_scale() * factor;
         if !widths.is_empty() {
             self.horizontal.rescale(factor, move |index| {
-                widths.get(index).copied().unwrap_or(0.0) * new_scale + 2.0 * margin
+                widths.get(index).copied().unwrap_or(0.0) * new_scale
             });
             let hv = self.horizontal.clone();
             let h_scroll = self.horizontal.scroll_offset().get_untracked();

@@ -108,7 +108,10 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     let horizontal = mode == ViewMode::ScrollHorizontal;
     let spread = matches!(mode, ViewMode::Spread);
     let (cw, ch) = state.reader.viewer.container_size.get();
-    let cw_eff = (cw - 2.0 * margin).max(1.0);
+    // The horizontal strip ignores the reader's margin (edge-to-edge
+    // carousel), so its usable width is the full container width.
+    let side_margin = if horizontal { 0.0 } else { margin };
+    let cw_eff = (cw - 2.0 * side_margin).max(1.0);
     let ch_eff = if mode.is_paginated() || horizontal {
         ch.max(1.0)
     } else {

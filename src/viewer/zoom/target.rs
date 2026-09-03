@@ -151,7 +151,10 @@ impl FitDims {
         });
 
         let horizontal = mode == ViewMode::ScrollHorizontal;
-        let cw_eff = (cw - 2.0 * margin).max(1.0);
+        // The horizontal strip is edge-to-edge: it ignores the reader's page
+        // margin, so the usable width here is the full container width.
+        let side_margin = if horizontal { 0.0 } else { margin };
+        let cw_eff = (cw - 2.0 * side_margin).max(1.0);
         // The horizontal strip joins the paginated modes: it owns the full
         // window height and the auto-hiding title bar overlays it. Reserving
         // that band would leave a permanent dead strip above the pages.

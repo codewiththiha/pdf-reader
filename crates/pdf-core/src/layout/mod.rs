@@ -49,6 +49,17 @@ impl ViewMode {
     pub fn is_paginated(self) -> bool {
         matches!(self, ViewMode::Single | ViewMode::Spread)
     }
+
+    /// Whether this mode applies the reader's page margin.
+    ///
+    /// The horizontal strip is an edge-to-edge carousel: a side margin would
+    /// only inflate its main-axis span (and its per-page width), so it is the
+    /// one mode that ignores the margin entirely. Every other mode keeps it —
+    /// the vertical strip and the paginated layouts use it as cross-axis air
+    /// around the page.
+    pub fn uses_page_margin(self) -> bool {
+        self != ViewMode::ScrollHorizontal
+    }
 }
 
 /// First 1-based page of the two-up spread containing `page`.
