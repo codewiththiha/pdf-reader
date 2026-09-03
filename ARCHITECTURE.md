@@ -1,8 +1,8 @@
 # Architecture
 
-> Scope note: this document covers the virtualization and motion design — the parts of the
-> reader with the most subtle invariants. For the feature tour, build setup and the crate
-> map, see the README.
+> Scope note: this document covers the virtualization, motion and format-pipeline design — the
+> parts of the reader with the most subtle invariants. For the feature tour, build setup and the
+> crate map, see the README.
 
 This repo now splits virtual scrolling into three layers.
 
@@ -112,3 +112,36 @@ The thumbnail sidebar is a separate grid virtualizer:
 - panel-specific constants stay in `src/components/shell/sidebar/panels/thumbnails`
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
+
+## Text and Markdown pipeline
+
+Plain text and Markdown open through a parallel pipeline that reuses the page machinery above
+the leaf renderer. The split is deliberate: PDF pages are rasters the engine paints, text pages
+are A4 hosts the reader lays out with real type — but both report the same per-page sizes into
+the same virtualized strips, so view modes, zoom, navigation and search reveal stay
+format-agnostic.
+
+- `crates/text-core` is the pure domain layer (no DOM): the typography settings schema and font
+  stacks, block parsing for text and Markdown, the A4 page geometry, the block-granular page
+  cutter, and a substring search index. Everything is unit-testable on the host.
+- On open, the file is parsed into blocks and an estimate cut is published immediately, so the
+  reader is up the instant the bytes land. A hidden measure column then renders every block once
+  at scale 1 with the live typography, reads the true heights, and republishes the cut. Pagination
+  is therefore measurement-true, and re-cuts whenever a typography knob moves — holding the
+  reader on the block they were reading.
+- `apply_heights` is the one place the cut, its inverse block→page map and the per-page size
+  bookkeeping are written together, so a split can never disagree with its map.
+- Zoom never re-paginates. The cut is computed at scale 1; a page host is sized `A4 × scale` and
+  its type resolves through a scale-1 CSS variable times the host's own `--ts`, so the layout is
+  identical at every scale and uniform scaling provably preserves the cut. During the tween the
+  mounted pages reflow frame by frame at the live display scale — cheap, because the window is
+  bounded — while the cut itself stays put.
+- The vertical mode is the one deliberate deviation from "pages everywhere": it renders its page
+  units as an invisible, gap-less continuous column (no boxes, no shadows), and each unit is sized
+  to the SUM of its blocks rather than to A4 (`effects::reader::text_layout` projects that model
+  into `css_heights`). It still virtualizes on page-cut units, so the zoom engine's anchored
+  relayout, search reveal, navigation sync and auto-scroll serve it unchanged; the "no pages" look
+  is presentation, not a second geometry model. Single, spread and horizontal keep real A4 sheets.
+- Text never enters blend mode and never touches the paper session: a text page is recoloured by
+  its own tokens, so the backdrop's colour machine is gated off for the format. Search scans the
+  blocks in-process (the document is its own index), mapping hits through the current page cut.

@@ -1,7 +1,9 @@
 # PDF Reader
 
-A desktop PDF reader built for long-form reading. Native Tauri v2 shell, Rust/WebAssembly
-interface written in Leptos, and Mozilla's pdf.js vendored locally as the rendering engine.
+A desktop document reader built for long-form reading. Native Tauri v2 shell, Rust/WebAssembly
+interface written in Leptos, and Mozilla's pdf.js vendored locally as the PDF rendering engine.
+Alongside PDFs, the reader opens plain text and Markdown files, which it reflows into pages with
+reader-controlled typography.
 
 The design goal is eye comfort over hours of reading: instead of a fixed set of themes, the
 appearance system exposes a continuous colour space (base mode plus a computed tint) layered with
@@ -14,6 +16,7 @@ optional paper textures and film grain, all persisted between sessions.
 - [Highlights](#highlights)
 - [Features](#features)
   - [Document viewing](#document-viewing)
+  - [Text and Markdown formats](#text-and-markdown-formats)
   - [Zoom and fit](#zoom-and-fit)
   - [Motion](#motion)
   - [Navigation](#navigation)
@@ -45,8 +48,13 @@ optional paper textures and film grain, all persisted between sessions.
 
 ## Highlights
 
+- Three document formats: PDF (through pdf.js), plus plain text and Markdown, which the reader
+  paginates and renders itself with full typography control.
 - Four view modes: single page, two-page spread, and virtualized continuous scroll in
   vertical and horizontal orientations, with a unified zoom pipeline across all of them.
+- A Fonts settings tab for the text formats: default and per-family font pickers, size, weight,
+  line spacing, paragraph margin, word/letter spacing, text indent, book layout, full
+  justification and hyphenation.
 - Continuous appearance model with three base modes plus a hue and strength tint, replacing
   hard-coded themes.
 - Five paper textures with adjustable opacity and scale, plus static or animated film grain.
@@ -85,6 +93,31 @@ not cropped.
 detached and swapped in atomically once complete, so a superseded render cannot append overlapping
 spans. Selection paints a translucent tint over transparent text, so the canvas glyphs read
 through and text is never doubled.
+
+### Text and Markdown formats
+
+Plain text (`.txt`) and Markdown (`.md`) files open through the reader's own pipeline instead of
+pdf.js: the file is parsed into blocks, the blocks are packed into A4 pages, and the pages render
+as real text in the DOM.
+
+- **Every view mode works.** Single and spread show pages (spread under the book layout reads as
+  a facing pair); the horizontal strip scrolls page by page; the vertical mode streams the text as
+  one continuous column with no visible page breaks.
+- **Typography you control.** The Fonts settings tab (shown only while a text document is open)
+  offers a default font plus serif/sans/monospace family pickers, font size and weight, line
+  spacing, paragraph margin, word and letter spacing, first-line indent, a book layout with
+  spine-side gutters, full justification and hyphenation. Font pickers list the system faces
+  today; the schema already reserves room for fonts bundled with the app.
+- **Markdown is rendered, not displayed.** Headings, lists, tables, blockquotes, links, images
+  and fenced code (GFM included; raw HTML is refused) render block by block, so a heading never
+  gets split across a page break.
+- **Pagination follows the type.** A hidden measure column renders the document once at scale 1,
+  reads the true block heights and re-cuts the pages, so what you see is paginated by the real
+  fonts — and re-cuts again whenever a typography knob moves, keeping your place on the block you
+  were reading. Zoom never re-paginates: pages scale uniformly, which provably preserves the cut.
+- **Search and theming carry over.** Full-text search scans the document in-process (no engine
+  round-trip), and base mode, tint, textures and grain apply to text pages exactly as they do to
+  PDF pages. Blend mode stays a PDF feature — a text page is recoloured by its tokens directly.
 
 ### Zoom and fit
 
@@ -169,7 +202,9 @@ decorative, so it is not offered.
 
 ### Search
 
-- Full-text index built across the document on demand.
+- Full-text index built across the document on demand. Text and Markdown documents are scanned
+  in-process — the blocks are already Rust strings, so the document is its own index and there is
+  no engine round-trip.
 - Results grouped by page with a surrounding text snippet for context.
 - Match rectangles are returned in scale-independent coordinates and multiplied by the current
   scale, so highlights stay aligned at any zoom.
@@ -222,8 +257,11 @@ rather than claiming an unmodified preset is in effect.
 
 ### Opening documents
 
-- Native file dialog through the Tauri dialog plugin.
+- Native file dialog through the Tauri dialog plugin, admitting PDFs, plain text (`.txt`,
+  `.text`) and Markdown (`.md`, `.markdown`, `.mdown`).
 - Drag and drop, handled through the Tauri drag-drop event with a DOM fallback.
+- OS file associations for the same formats, so double-clicking or "Open with" hands the file
+  to the reader.
 - The last opened document is remembered and restored on the next launch.
 - Six sample PDFs ship in `public/samples`, covering deep outlines, internal links and awkward
   title metadata.
@@ -353,11 +391,16 @@ stays visible.
 +-------------------------------------------------------------+
 ```
 
-Pure logic lives in the `pdf-core` and `ai-core` crates with no DOM and no
+Pure logic lives in the `pdf-core`, `text-core` and `ai-core` crates with no DOM and no
 Leptos, so the zoom maths, layout maths, filename rules, colour conversion,
-search index arithmetic, settings migration and the AI word-card's geometry
-and spring are all unit-testable on the host. `virtual-list` is the generic
+search index arithmetic, text typography and pagination, settings migration and the AI
+word-card's geometry and spring are all unit-testable on the host. `virtual-list` is the generic
 windowing-math library under the viewer.
+
+PDFs and text documents share one page/zoom/navigation machinery above the rendering layer; only
+the leaf differs. A PDF page is a canvas the pdf.js engine paints; a text page is an A4 host the
+reader lays out with real type. Both report the same per-page sizes into the same virtualized
+strips, so view modes, zoom and navigation are format-agnostic.
 
 ### Project layout
 
@@ -375,9 +418,11 @@ src/
                           family, the sidebar rail family
     menus/                app menu, appearance menu, reader menu
     settings/             the settings modal and its tabs (layout, theme,
-                          animations)
+                          animations, fonts)
     document/             page canvas, page strip, the viewer and its scroll
                           shells (continuous, single, two-page)
+    text/                 the text/Markdown page host, its strip, the block
+                          renderer and the offscreen measure column
     viewer_controls/      bottom bar, overlay scrollbar, page indicator,
                           page navigation
     search/               floating search bar and result list
@@ -404,6 +449,10 @@ crates/
                           explain_word kickoff
   pdf-core/               pure PDF domain math: the settings schema, the zoom
                           ladder, fit, layout, filename rules, search index
+  text-core/              pure text-domain math: the typography settings and
+                          font stacks, block parsing (text + Markdown), the A4
+                          page geometry, the block-granular page cutter, and
+                          the substring search index
   pdf-engine/             wasm-bindgen bridge to the imperative engine
   pdf-paper/              the blend backdrop's colour brain: the detection
                           area, dominant-colour detection (whole page or edge
@@ -566,6 +615,7 @@ The default window is 1200 by 800, with a floor of 640 by 480.
 | Bundler | Trunk |
 | Styling | Tailwind CSS v4, CSS-first configuration |
 | PDF rendering | pdf.js 6.2.108, vendored locally |
+| Text/Markdown rendering | In-app pagination plus `leptos-md` (GFM, no raw HTML) |
 | Serialization | serde with `serde-wasm-bindgen` |
 
 pdf.js is vendored into the repository rather than fetched at runtime, so the application renders
