@@ -118,7 +118,7 @@ mod tests {
     use crate::blocks::BlockKind;
 
     fn block(text: &str) -> TextBlock {
-        TextBlock { kind: BlockKind::Text, text: text.to_string() }
+        TextBlock::new(BlockKind::Text, text)
     }
 
     #[test]

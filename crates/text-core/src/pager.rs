@@ -48,6 +48,10 @@ impl BlockMetrics {
 /// the rendered length slightly, which the 0.85 factor takes back. An
 /// estimate is a SEED: the measurement pass replaces it with the real
 /// number as soon as the block has rendered once.
+///
+/// A continuation chunk (the tail of a paragraph `subdivide` cut) carries
+/// no paragraph space — the paragraph's one share of it belongs to its
+/// first chunk — so its estimate skips the margin term to match the render.
 pub fn estimate_block_height(block: &TextBlock, m: &BlockMetrics) -> f64 {
     let per_line = m.chars_per_line();
     let lines: f64 = match block.kind {
@@ -64,7 +68,8 @@ pub fn estimate_block_height(block: &TextBlock, m: &BlockMetrics) -> f64 {
             (chars / per_line).ceil().max(1.0)
         }
     };
-    lines * m.line_height_px() + m.paragraph_margin_em * m.font_size
+    let margin = if block.continuation { 0.0 } else { m.paragraph_margin_em };
+    lines * m.line_height_px() + margin * m.font_size
 }
 
 /// Estimates for a whole document, in block order.
@@ -156,7 +161,11 @@ mod tests {
     }
 
     fn block(text: &str) -> TextBlock {
-        TextBlock { kind: BlockKind::Text, text: text.to_string() }
+        TextBlock::new(BlockKind::Text, text)
+    }
+
+    fn continuation(text: &str) -> TextBlock {
+        TextBlock { kind: BlockKind::Text, text: text.to_string(), continuation: true }
     }
 
     #[test]
@@ -176,15 +185,21 @@ mod tests {
     #[test]
     fn markdown_markup_is_discounted() {
         let m = metrics();
-        let md = TextBlock {
-            kind: BlockKind::Markdown,
-            text: "**bold** and *italic* and `code` and [links](http://example.com)".to_string(),
-        };
-        let plain = TextBlock {
-            kind: BlockKind::Text,
-            text: md.text.clone(),
-        };
+        let md = TextBlock::new(
+            BlockKind::Markdown,
+            "**bold** and *italic* and `code` and [links](http://example.com)",
+        );
+        let plain = TextBlock::new(BlockKind::Text, md.text.clone());
         assert!(estimate_block_height(&md, &m) <= estimate_block_height(&plain, &m));
+    }
+
+    #[test]
+    fn a_continuation_chunk_carries_no_paragraph_space() {
+        let m = metrics();
+        let first = estimate_block_height(&block("same text"), &m);
+        let tail = estimate_block_height(&continuation("same text"), &m);
+        let margin = m.paragraph_margin_em * m.font_size;
+        assert!((first - tail - margin).abs() < 1e-9, "{first} vs {tail}");
     }
 
     #[test]

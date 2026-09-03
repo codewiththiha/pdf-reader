@@ -28,6 +28,18 @@ pub struct TextBlock {
     /// The block's source text. Text blocks keep their internal newlines;
     /// Markdown blocks keep exactly the lines of their construct.
     pub text: String,
+    /// True when [`subdivide`] cut this block out of the MIDDLE of a longer
+    /// one. A continuation carries no paragraph space of its own (the whole
+    /// paragraph owns exactly one), so a paragraph split across a page cut —
+    /// or streamed as several chunks — still reads as one paragraph.
+    pub continuation: bool,
+}
+
+impl TextBlock {
+    /// A first-class (non-continuation) block.
+    pub fn new(kind: BlockKind, text: impl Into<String>) -> Self {
+        Self { kind, text: text.into(), continuation: false }
+    }
 }
 
 /// Normalise a raw file for parsing: drop the UTF-8 BOM, fold CRLF/CR to
@@ -81,7 +93,7 @@ fn split_blocks(text: &str, kind: BlockKind) -> Vec<TextBlock> {
         let joined = current.join("\n");
         current.clear();
         if !joined.trim().is_empty() {
-            blocks.push(TextBlock { kind, text: joined });
+            blocks.push(TextBlock::new(kind, joined));
         }
     };
 
@@ -130,6 +142,83 @@ fn fence_marker_of(trimmed: &str) -> &'static str {
     } else {
         ""
     }
+}
+
+/// The most source lines a splittable block keeps after [`subdivide`].
+///
+/// Five lines is the balance point: at the default typography a chunk
+/// measures ≈150px of type, so the paginator can fill a page to within one
+/// chunk of its bottom edge instead of pushing a whole tall paragraph over
+/// and leaving a blank band behind — while a heading, a code fence, a list
+/// or a table still never splits.
+pub const SPLIT_MAX_LINES: usize = 5;
+
+/// Cut oversized splittable blocks into line-bounded chunks, so the
+/// paginator never has to choose between splitting a paragraph's render and
+/// leaving a near-empty page above it.
+///
+/// Only blocks that READ as running prose are split: every plain-text block
+/// (its hard breaks are the natural cut points), and a Markdown block whose
+/// every line is an unmarked paragraph line — a split there falls on a soft
+/// break, so the two chunks render exactly as the one paragraph did, with
+/// the second marked [`continuation`](TextBlock::continuation) so it carries
+/// no paragraph space of its own. Markdown constructs with structure of
+/// their own (headings, fences, lists, tables, quotes) pass through whole.
+///
+/// Runs once, right after parsing: the split depends only on the source
+/// (line count), never on the live typography, so block identities are
+/// stable for the whole session however the settings move.
+pub fn subdivide(blocks: Vec<TextBlock>, max_lines: usize) -> Vec<TextBlock> {
+    if max_lines == 0 {
+        return blocks;
+    }
+    let mut out = Vec::with_capacity(blocks.len());
+    for block in blocks {
+        let lines: Vec<&str> = block.text.split('\n').collect();
+        if lines.len() <= max_lines || !is_splittable(&block, &lines) {
+            out.push(block);
+            continue;
+        }
+        for (ordinal, chunk) in lines.chunks(max_lines).enumerate() {
+            out.push(TextBlock {
+                kind: block.kind,
+                text: chunk.join("\n"),
+                continuation: ordinal > 0,
+            });
+        }
+    }
+    out
+}
+
+/// Whether a block may be cut at its line boundaries.
+fn is_splittable(block: &TextBlock, lines: &[&str]) -> bool {
+    match block.kind {
+        BlockKind::Text => true,
+        BlockKind::Markdown => lines.iter().all(|line| is_prose_line(line)),
+    }
+}
+
+/// Whether one Markdown line is running prose — no construct opens on it.
+/// The check is deliberately conservative: anything that could begin a
+/// block-level construct disqualifies the whole block, so a false "not
+/// prose" only costs a tighter page pack, never a broken render.
+fn is_prose_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    // An indented code block (4+ spaces) is content, not prose.
+    if line.len() - trimmed.len() >= 4 {
+        return false;
+    }
+    let Some(first) = trimmed.chars().next() else {
+        return false;
+    };
+    // Heading, quote, list bullet, rule, fence, table, heading underline,
+    // raw HTML — every block-level marker disqualifies.
+    if matches!(first, '#' | '>' | '-' | '*' | '+' | '|' | '`' | '~' | '=' | '_' | '<') {
+        return false;
+    }
+    // An ordered list item: digits then `.` or `)`.
+    let digits = trimmed.chars().take_while(|c| c.is_ascii_digit()).count();
+    !(digits > 0 && matches!(trimmed.chars().nth(digits), Some('.' | ')')))
 }
 
 /// The document's title, when the Markdown opens with an ATX heading:
@@ -219,5 +308,69 @@ mod tests {
         assert_eq!(markdown_title("plain prose first\n\n# later"), None);
         assert_eq!(markdown_title("#"), None);
         assert_eq!(markdown_title(""), None);
+    }
+
+    fn block(kind: BlockKind, text: &str) -> TextBlock {
+        TextBlock::new(kind, text)
+    }
+
+    #[test]
+    fn subdivide_splits_long_prose_on_line_boundaries() {
+        let source = "one\ntwo\nthree\nfour\nfive\nsix\nseven";
+        let out = subdivide(vec![block(BlockKind::Text, source)], 3);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].text, "one\ntwo\nthree");
+        assert!(!out[0].continuation);
+        assert!(out[1].continuation);
+        assert!(out[2].continuation);
+        // Nothing is lost or doubled.
+        assert_eq!(out.iter().map(|b| b.text.clone()).collect::<Vec<_>>().join("\n"), source);
+    }
+
+    #[test]
+    fn subdivide_leaves_short_blocks_alone() {
+        let blocks = vec![
+            block(BlockKind::Text, "one\ntwo\nthree"),
+            block(BlockKind::Markdown, "# Heading"),
+            block(BlockKind::Text, "single line"),
+        ];
+        let out = subdivide(blocks.clone(), 5);
+        assert_eq!(out, blocks);
+        // A zero budget disables the pass outright.
+        let blocks2 = vec![block(BlockKind::Text, "a\nb\nc\nd\ne\nf")];
+        assert_eq!(subdivide(blocks2.clone(), 0), blocks2);
+    }
+
+    #[test]
+    fn subdivide_only_touches_markdown_that_is_pure_prose() {
+        // A prose paragraph splits, continuation-flagged.
+        let prose = "word ".repeat(40);
+        let md = block(BlockKind::Markdown, &format!("{prose}\n{prose}\n{prose}"));
+        let out = subdivide(vec![md], 2);
+        assert_eq!(out.len(), 2);
+        assert!(out[1].continuation);
+        // Structured constructs pass whole: a fence, a list, a heading
+        // underline, a table — even when they run past the budget.
+        for structured in [
+            "```\ncode\n\nmore\n```",
+            "- a\n- b\n- c\n- d\n- e\n- f",
+            "# h\n\ntext\nmore\nlines",
+            "| a | b |\n|---|---|\n| 1 | 2 |",
+            "> quoted\n> lines\n> and\n> more",
+            "1. one\n2. two\n3. three\n4. four",
+        ] {
+            let md = block(BlockKind::Markdown, structured);
+            let out = subdivide(vec![md.clone()], 2);
+            assert_eq!(out, vec![md], "{structured}");
+        }
+    }
+
+    #[test]
+    fn the_split_carries_no_trailing_blank_lines() {
+        // A chunk ends where its last line ends — no phantom break line for
+        // `pre-wrap` to render as an empty row.
+        let out = subdivide(vec![block(BlockKind::Text, "a\nb\nc\nd")], 2);
+        assert_eq!(out[0].text, "a\nb");
+        assert!(!out[0].text.ends_with('\n'));
     }
 }

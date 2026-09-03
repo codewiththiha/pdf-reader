@@ -2,10 +2,13 @@
 //!
 //! The reflowable formats (plain text and Markdown) share one pipeline:
 //! a raw file is cut into [`blocks`](blocks) (paragraphs and top-level
-//! Markdown constructs), the blocks are packed into fixed-size
-//! [`pages`](pager) — the page cutter — and typography
-//! ([`typography`]) turns the reader's settings into the CSS that paints
-//! them. [`search`] is the in-document substring index.
+//! Markdown constructs, with oversized prose paragraphs subdivided on line
+//! boundaries so the page cutter can pack tightly), the blocks are packed
+//! into fixed-size [`pages`](pager) — the page cutter, which the paginated
+//! view modes read and the continuous stream ignores in favour of the
+//! blocks themselves — and typography ([`typography`]) turns the reader's
+//! settings into the CSS that paints them. [`search`] is the in-document
+//! substring index.
 //!
 //! Everything here is unit-testable on the host via
 //! `cargo test -p text-core`.
@@ -18,11 +21,11 @@ pub mod pager;
 pub mod search;
 pub mod typography;
 
-pub use blocks::{parse_markdown, parse_text, BlockKind, TextBlock};
+pub use blocks::{parse_markdown, parse_text, subdivide, BlockKind, SPLIT_MAX_LINES, TextBlock};
 pub use page::{geometry, PageGeometry, PAGE_HEIGHT, PAGE_WIDTH};
 pub use pager::{
     block_page_index, estimate_block_height, estimate_heights, first_block_of_page, paginate,
     BlockMetrics, PageCut,
 };
 pub use search::{find_matches, TextHit};
-pub use typography::{sanitize, TextSettings};
+pub use typography::{sanitize, TextColumnAlign, TextSettings};

@@ -301,6 +301,41 @@ pub const DEFAULT_PARAGRAPH_MARGIN: f64 = 1.0;
 /// Default line height (unitless multiple of the font size).
 pub const DEFAULT_LINE_HEIGHT: f64 = 1.7;
 
+/// Default body-ink intensity: the theme's full ink.
+pub const DEFAULT_INK_CONTRAST: f64 = 100.0;
+
+/// Where the reading column sits inside the viewport while a reflowable
+/// document streams continuously (the vertical scroll mode). The text
+/// itself keeps its natural alignment — this positions the COLUMN, exactly
+/// the way a narrower book page sits left, centre or right on a desk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum TextColumnAlign {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+impl TextColumnAlign {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Center => "Center",
+            Self::Right => "Right",
+        }
+    }
+
+    /// The stylesheet class that positions the stream's reading column
+    /// (defined in `styles/text.css` beside the stream itself).
+    pub fn container_class(&self) -> &'static str {
+        match self {
+            Self::Left => "tx-align-left",
+            Self::Center => "tx-align-center",
+            Self::Right => "tx-align-right",
+        }
+    }
+}
+
 /// The persisted typography of the reflowable formats.
 ///
 /// Every knob is independent and additive; a blob missing any of them loads
@@ -345,6 +380,14 @@ pub struct TextSettings {
     /// Override for the monospace family (code). `Default` keeps the
     /// family's natural stack.
     pub mono_font: FontChoice,
+    /// Where the reading column sits in the viewport while a text document
+    /// streams continuously. The paginated modes ignore it — their pages
+    /// centre themselves the way every fixed sheet does.
+    pub column_align: TextColumnAlign,
+    /// Body-ink intensity, 0–100. 100 is the theme's full ink; below that
+    /// the ink mixes toward the paper colour. A comfort dial for long
+    /// reading, not a tint — the paper stays whatever the theme says.
+    pub ink_contrast: f64,
 }
 
 impl Default for TextSettings {
@@ -364,6 +407,8 @@ impl Default for TextSettings {
             serif_font: FontChoice::Default,
             sans_font: FontChoice::Default,
             mono_font: FontChoice::Default,
+            column_align: TextColumnAlign::default(),
+            ink_contrast: DEFAULT_INK_CONTRAST,
         }
     }
 }
@@ -458,7 +503,13 @@ pub fn body_char_width(settings: &TextSettings) -> f64 {
 /// The page-side contract: `--tx-font-size`, `--tx-line-height`,
 /// `--tx-para-margin`, `--tx-word-spacing`, `--tx-letter-spacing`,
 /// `--tx-text-indent`, `--tx-text-align`, `--tx-hyphens`, `--tx-font-body`,
-/// `--tx-font-sans`, `--tx-font-mono`.
+/// `--tx-font-sans`, `--tx-font-mono`, `--tx-ink-contrast`.
+///
+/// The ink dial travels as a NUMBER (not a percentage): the stylesheet
+/// multiplies it by 1% inside a `color-mix()`, mixing the theme's ink
+/// toward the theme's paper. Column alignment is deliberately NOT here —
+/// it positions a container (a class on the stream column), not a value
+/// any rule of the type itself resolves through.
 pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
     vec![
         ("--tx-font-size", format!("{}px", format_px(settings.font_size))),
@@ -479,6 +530,10 @@ pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
         ("--tx-font-body", body_stack(settings)),
         ("--tx-font-sans", family_stack(settings, TextFamily::SansSerif)),
         ("--tx-font-mono", family_stack(settings, TextFamily::Monospace)),
+        (
+            "--tx-ink-contrast",
+            format_scaled(settings.ink_contrast, 1),
+        ),
     ]
 }
 
@@ -512,6 +567,7 @@ pub fn sanitize(s: &mut TextSettings) {
     s.text_indent = s.text_indent.clamp(0.0, 4.0);
     s.font_size = s.font_size.clamp(10.0, 32.0);
     s.font_weight = s.font_weight.clamp(100, 900);
+    s.ink_contrast = s.ink_contrast.clamp(0.0, 100.0);
 }
 
 #[cfg(test)]
@@ -532,6 +588,8 @@ mod tests {
         assert_eq!(s.font_size, 17.0);
         assert_eq!(s.font_weight, 400);
         assert_eq!(s.default_font, FontChoice::Default);
+        assert_eq!(s.column_align, TextColumnAlign::Center);
+        assert_eq!(s.ink_contrast, 100.0);
     }
 
     #[test]
@@ -581,6 +639,7 @@ mod tests {
             text_indent: 40.0,
             font_size: 2.0,
             font_weight: 9999,
+            ink_contrast: 500.0,
             ..TextSettings::default()
         };
         sanitize(&mut s);
@@ -591,6 +650,7 @@ mod tests {
         assert_eq!(s.text_indent, 4.0);
         assert_eq!(s.font_size, 10.0);
         assert_eq!(s.font_weight, 900);
+        assert_eq!(s.ink_contrast, 100.0);
     }
 
     #[test]
@@ -633,6 +693,20 @@ mod tests {
         assert!(joined.contains("--tx-font-body:"), "{joined}");
         assert!(joined.contains("--tx-font-sans:"), "{joined}");
         assert!(joined.contains("--tx-font-mono:"), "{joined}");
+        assert!(joined.contains("--tx-ink-contrast:100"), "{joined}");
+    }
+
+    #[test]
+    fn column_align_carries_labels_and_classes() {
+        assert_eq!(TextColumnAlign::default(), TextColumnAlign::Center);
+        let all = [TextColumnAlign::Left, TextColumnAlign::Center, TextColumnAlign::Right];
+        // Every choice names itself, and positions with its own class.
+        for (i, a) in all.iter().enumerate() {
+            assert_eq!(a.label(), ["Left", "Center", "Right"][i]);
+            for b in &all[i + 1..] {
+                assert_ne!(a.container_class(), b.container_class());
+            }
+        }
     }
 
     #[test]
