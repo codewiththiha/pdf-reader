@@ -165,19 +165,13 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     title="Remove the spacing between pages in scroll view".to_string()
                 />
             </Row>
-            // No Gap suspends the margin rather than zeroing it: the readout
-            // greys out and the stepper stops while the gap owns the spacing,
-            // and the margin the reader dialled in comes back the moment No
-            // Gap turns off again.
+            // Page Margin is the horizontal (left/right) air around each page,
+            // which No Gap never touches — No Gap only removes the vertical
+            // gap between stacked pages. The two stay fully independent, so
+            // the margin adjuster is always live whether or not No Gap is on.
             <Row label="Page Margin">
                 <span class="flex items-center gap-3">
-                    <span class=move || {
-                        if s.with(|st| st.layout.no_gap) {
-                            "w-10 text-right text-sm tabular-nums text-muted/60"
-                        } else {
-                            "w-10 text-right text-sm tabular-nums text-ink"
-                        }
-                    }>
+                    <span class="w-10 text-right text-sm tabular-nums text-ink">
                         {move || {
                             let m = s.with(|st| st.layout.page_margin) as u32;
                             if m == 0 {
@@ -194,8 +188,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             title="Less margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                s.with(|st| st.layout.no_gap)
-                                    || s.with(|st| st.layout.page_margin) <= 0.0
+                                s.with(|st| st.layout.page_margin) <= 0.0
                             })
                             on_click=move || {
                                 s.update(|st| {
@@ -210,8 +203,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                             title="More margin"
                             class="rounded-full bg-line/60 hover:bg-line".to_string()
                             disabled=Signal::derive(move || {
-                                s.with(|st| st.layout.no_gap)
-                                    || s.with(|st| st.layout.page_margin) >= 64.0
+                                s.with(|st| st.layout.page_margin) >= 64.0
                             })
                             on_click=move || {
                                 s.update(|st| {
