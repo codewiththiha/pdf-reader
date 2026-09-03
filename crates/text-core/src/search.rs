@@ -1,0 +1,181 @@
+//! In-document search for text documents: plain, case-insensitive
+//! substring matching over the block list.
+//!
+//! The PDF side indexes through the engine; text documents already hold
+//! their whole content as Rust strings, so the index IS the document and a
+//! query is a scan. Hits carry the block they sit in and a context
+//! snippet; the caller maps blocks to pages (the cut changes with
+//! typography, so that map is the layout's, not the search's).
+
+use crate::blocks::TextBlock;
+
+/// One occurrence of the query.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextHit {
+    /// The block containing the match.
+    pub block: usize,
+    /// Byte offset of the match inside the block's text.
+    pub byte_offset: usize,
+    /// The match's own length in bytes.
+    pub byte_len: usize,
+    /// Surrounding context for the results list, newlines folded to spaces.
+    pub snippet: String,
+}
+
+/// Matches per query are capped: a pathological haystack (a one-character
+/// query in a megabyte file) must not produce a match list that dwarfs the
+/// document.
+pub const MAX_MATCHES: usize = 2000;
+
+/// Characters of context on each side of a match inside its snippet.
+const SNIPPET_RADIUS: usize = 48;
+
+/// Every occurrence of `query` in the document, in reading order. An empty
+/// or whitespace-only query matches nothing.
+pub fn find_matches(blocks: &[TextBlock], query: &str) -> Vec<TextHit> {
+    let needle = query.to_lowercase();
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    for (index, block) in blocks.iter().enumerate() {
+        let haystack = block.text.to_lowercase();
+        for (offset, _) in haystack.match_indices(needle) {
+            hits.push(TextHit {
+                block: index,
+                byte_offset: offset,
+                byte_len: needle.len(),
+                snippet: snippet_of(&block.text, offset, needle.len()),
+            });
+            if hits.len() >= MAX_MATCHES {
+                return hits;
+            }
+        }
+    }
+    hits
+}
+
+/// The context window around a match, in the ORIGINAL text's casing,
+/// clipped to character boundaries and elided at the edges it does not
+/// reach.
+fn snippet_of(text: &str, byte_offset: usize, byte_len: usize) -> String {
+    // Expand to char boundaries: the offset from match_indices is exact,
+    // but the radius is not.
+    let start = expand_left(text, byte_offset, SNIPPET_RADIUS);
+    let end = expand_right(text, byte_offset + byte_len, SNIPPET_RADIUS);
+    let mut snippet: String = text[start..end]
+        .chars()
+        .map(|c| if c == '\n' { ' ' } else { c })
+        .collect();
+    if start > 0 {
+        snippet.insert(0, '…');
+    }
+    if end < text.len() {
+        snippet.push('…');
+    }
+    snippet
+}
+
+/// Move `radius` characters back from `byte_offset`, landing on a char
+/// boundary.
+fn expand_left(text: &str, byte_offset: usize, radius: usize) -> usize {
+    let mut index = byte_offset.min(text.len());
+    for _ in 0..radius {
+        if index == 0 {
+            break;
+        }
+        // Step back one char: find the previous boundary.
+        let mut next = index - 1;
+        while next > 0 && !text.is_char_boundary(next) {
+            next -= 1;
+        }
+        index = next;
+    }
+    index
+}
+
+/// Move `radius` characters forward from `byte_offset`, landing on a char
+/// boundary.
+fn expand_right(text: &str, byte_offset: usize, radius: usize) -> usize {
+    let mut index = byte_offset.min(text.len());
+    for _ in 0..radius {
+        if index >= text.len() {
+            break;
+        }
+        let mut next = index + 1;
+        while next < text.len() && !text.is_char_boundary(next) {
+            next += 1;
+        }
+        index = next;
+    }
+    index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blocks::BlockKind;
+
+    fn block(text: &str) -> TextBlock {
+        TextBlock { kind: BlockKind::Text, text: text.to_string() }
+    }
+
+    #[test]
+    fn matching_is_case_insensitive_and_ordered() {
+        let blocks = [block("The Dune of Dune"), block("no match here"), block("dune again")];
+        let hits = find_matches(&blocks, "dune");
+        assert_eq!(hits.len(), 3);
+        assert_eq!(hits[0].block, 0);
+        assert_eq!(hits[1].block, 0);
+        assert_eq!(hits[2].block, 2);
+    }
+
+    #[test]
+    fn empty_and_blank_queries_match_nothing() {
+        let blocks = [block("anything")];
+        assert!(find_matches(&blocks, "").is_empty());
+        assert!(find_matches(&blocks, "   ").is_empty());
+    }
+
+    #[test]
+    fn snippets_keep_original_casing_and_fold_newlines() {
+        let blocks = [block("alpha\nbeta GAMMA delta")];
+        let hits = find_matches(&blocks, "gamma");
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].snippet.contains("GAMMA"), "{}", hits[0].snippet);
+        assert!(!hits[0].snippet.contains('\n'));
+    }
+
+    #[test]
+    fn snippets_elide_only_the_edges_they_cut() {
+        let long = format!("{}target{}", "x".repeat(200), "y".repeat(200));
+        let blocks = [block(&long)];
+        let hits = find_matches(&blocks, "target");
+        let s = &hits[0].snippet;
+        assert!(s.starts_with('…'), "{s}");
+        assert!(s.ends_with('…'), "{s}");
+        // A match at the very start elides only the right edge.
+        let blocks = [block(&format!("target{}", "y".repeat(200)))];
+        let s = &find_matches(&blocks, "target")[0].snippet;
+        assert!(!s.starts_with('…'), "{s}");
+        assert!(s.ends_with('…'));
+    }
+
+    #[test]
+    fn unicode_does_not_break_the_window() {
+        let blocks = [block("héllo wörld — héllo again")];
+        let hits = find_matches(&blocks, "héllo");
+        assert_eq!(hits.len(), 2);
+        for hit in &hits {
+            assert!(!hit.snippet.is_empty());
+        }
+    }
+
+    #[test]
+    fn the_match_list_is_capped() {
+        let blocks = [block(&"a".repeat(MAX_MATCHES * 4))];
+        let hits = find_matches(&blocks, "a");
+        assert_eq!(hits.len(), MAX_MATCHES);
+    }
+}

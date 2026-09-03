@@ -57,6 +57,20 @@
         "description": "PDF document",
         "mimeType": "application/pdf",
         "role": "Viewer"
+      },
+      {
+        "ext": ["txt", "text"],
+        "name": "Text Document",
+        "description": "Plain text document",
+        "mimeType": "text/plain",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["md", "markdown", "mdown"],
+        "name": "Markdown Document",
+        "description": "Markdown document",
+        "mimeType": "text/markdown",
+        "role": "Viewer"
       }
     ]
   }

@@ -34,7 +34,7 @@
 //! and scroll have to move in the same tick.
 
 use leptos::prelude::*;
-use pdf_core::layout::ViewMode;
+use pdf_core::layout::{anchored_position, ViewMode};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::state::reader::ReaderState;
@@ -195,76 +195,3 @@ impl ViewerEngine {
     }
 }
 
-/// Where the document point that was under the viewport centre lands once the
-/// page it sits on has been scaled by `factor` and the gaps between pages have
-/// been left alone.
-///
-/// `index` is the anchored page, already resolved in `O(log n)` by the strip's
-/// `index_at`; `height` is that page's pre-scale height, `above_with_gap` the
-/// extent of the pages above it (gaps included) and `height_sum` their heights
-/// alone — the part that scales. Keeping the arithmetic here, divorced from any
-/// strip or signal, is what makes the gap-aware anchoring host-testable.
-fn anchored_position(
-    height: f64,
-    above_with_gap: f64,
-    height_sum: f64,
-    gap: f64,
-    centre_y_doc: f64,
-    factor: f64,
-    index: usize,
-) -> f64 {
-    // Where the pages above land at the new scale, plus this point's offset
-    // inside them. An anchor that fell in the gap keeps the unscaled
-    // remainder: the gap is fixed chrome and never scales.
-    let above = height_sum * factor + index as f64 * gap;
-    let offset_inside = centre_y_doc - above_with_gap;
-    above + if offset_inside <= height {
-        offset_inside * factor
-    } else {
-        height * factor + (offset_inside - height)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::anchored_position;
-
-    /// A point inside a page moves with the page: page 0 spans 0..100, so 40
-    /// inside it lands at 80 after a 2× zoom.
-    #[test]
-    fn an_anchor_on_a_page_scales_with_it() {
-        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 40.0, 2.0, 0), 80.0);
-    }
-
-    /// The load-bearing case: the gap between pages is fixed chrome, so an
-    /// anchor that falls in it is carried along by the pages above it at their
-    /// scale and keeps the unscaled remainder of the gap. A uniform rescale of
-    /// the whole extent would put it at 110 × 2 = 220 instead.
-    #[test]
-    fn an_anchor_in_a_gap_keeps_the_gap_unscaled() {
-        // Page 0 ends at 100, the gap spans 100..120; 110 is 10 into the gap,
-        // so after doubling, page 0 ends at 200 and the gap is still 20.
-        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 110.0, 2.0, 0), 210.0);
-    }
-
-    /// Every gap above the reader counts, not just the one it is standing in:
-    /// deep in a long document the unscaled sum is what keeps the page still.
-    #[test]
-    fn gaps_above_the_anchor_hold_the_page_still() {
-        // Page 5 starts at 5 * (100 + 20) = 600; +30 into it is 630, which
-        // scales to 5 * 200 + 5 * 20 + 60 = 1160.
-        assert_eq!(anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5), 1160.0);
-        // Zooming back out by the same factor returns to the exact start.
-        let forward = anchored_position(100.0, 600.0, 500.0, 20.0, 630.0, 2.0, 5);
-        assert_eq!(anchored_position(200.0, 1100.0, 1000.0, 20.0, forward, 0.5, 5), 630.0);
-    }
-
-    /// A centre past the end of a short document still lands at the scaled end,
-    /// keeping the overflow beyond the single page exactly as long as it was.
-    #[test]
-    fn a_centre_past_the_end_keeps_the_overflow_unscaled() {
-        // 900 is far past the single page: the page scales to 200 and the 800
-        // of overflow beyond it stays exactly as long as it was.
-        assert_eq!(anchored_position(100.0, 0.0, 0.0, 20.0, 900.0, 2.0, 0), 1000.0);
-    }
-}

@@ -22,6 +22,10 @@ pub use ai_core::settings::{
     default_custom_gloss, default_gloss_opacity, is_hex6, GlossColor, GlossDensity,
 };
 
+/// The reflowable formats' typography lives in the `text-core` crate; the
+/// settings model stays the one place the reader's persisted knobs live.
+pub use text_core::typography::TextSettings;
+
 pub const SETTINGS_KEY: &str = "pdfreader.settings.v1";
 
 fn on_true() -> bool { true }
@@ -266,6 +270,12 @@ pub struct Settings {
     /// field existed load as `Live`, which is the behaviour they had.
     #[serde(default)]
     pub render_pipeline: RenderPipeline,
+    /// Typography of the reflowable formats (plain text and Markdown):
+    /// fonts, spacing, justification, the book layout. PDFs never read
+    /// this — their type is baked into the page. Blobs saved before the
+    /// text formats existed load the defaults.
+    #[serde(default)]
+    pub text: TextSettings,
 
     // --- legacy fields, read once then dropped -------------------------------
     #[serde(skip_serializing, default)]
@@ -297,6 +307,7 @@ impl Default for Settings {
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
             render_pipeline: RenderPipeline::default(),
+            text: TextSettings::default(),
             theme_id: None,
             texture: None,
             noise_enabled: None,
@@ -410,6 +421,7 @@ pub fn sanitize(settings: &mut Settings) {
 
     // --- validation ----------------------------------------------------------
     settings.appearance.sanitize();
+    text_core::typography::sanitize(&mut settings.text);
     settings.default_zoom = settings.default_zoom.clamp(0.25, 5.0);
     settings.gloss_opacity = settings.gloss_opacity.clamp(0.1, 1.0);
     settings.layout.page_margin = settings.layout.page_margin.clamp(0.0, 64.0);
