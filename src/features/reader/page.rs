@@ -22,7 +22,6 @@ use crate::components::settings::modal::SettingsModal;
 use crate::components::primitives::button::{Button, ButtonVariant};
 use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use app_chrome::icon::{Icon, IconName};
-use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
 use crate::features::reader::rail::ReaderRail;
 use crate::components::viewer_controls::bottom_bar::ReaderBottomBar;
@@ -153,21 +152,28 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let is_ready = move || status.get() == DocStatus::Ready;
 
     let settings_open = RwSignal::new(false);
+    // The settings modal is opened from several places (the 3-dash menu's
+    // Settings… item, the sidebar header's gear) that sit under different
+    // mount points, so the open signal is shared through context rather than
+    // threaded as a prop through the rail composition.
+    provide_context(settings_open);
     let show_indicator = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator));
     let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
 
-    // Left: sidebar toggle + Library + Settings. Title is centered; right is
-    // the 3-dash view menu + Appearance.
+    // Left: sidebar toggle + Library. Title is centered; right is the 3-dash
+    // view menu + Appearance.
     //
     // The sidebar toggle's visibility is the controller's rule: overlay mode
     // drops it (the rail opens by brushing the window's left edge and closes
     // from its own header, so a second switch in the bar only competes with
-    // both). The Library and Settings buttons stay exactly where they are —
-    // the rail floats above the bar and covers them while it is up, which is
-    // the rail's job, not this cluster's. The cluster is always mounted so
-    // the row keeps its left edge (and `#toolbar-leading`, the measurement
-    // anchor the library title uses) wherever the mode puts it.
+    // both). The Library button stays exactly where it is — the rail floats
+    // above the bar and covers it while it is up, which is the rail's job,
+    // not this cluster's. The cluster is always mounted so the row keeps its
+    // left edge (and `#toolbar-leading`, the measurement anchor the library
+    // title uses) wherever the mode puts it. Reader settings have no button
+    // of their own here: they open from the 3-dash menu's Settings… item and
+    // the sidebar header's gear.
     let left = move || {
         view! {
             <div
@@ -202,11 +208,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         </Button>
                     </Tooltip>
                 </Show>
-                <IconButton
-                    icon=IconName::Settings
-                    title="Reader settings"
-                    on_click=move || settings_open.set(true)
-                />
             </div>
         }
     };
