@@ -52,10 +52,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let rv = use_reader_virtualizers(vs);
 
-    // Seed margin from persisted settings once the reader mounts.
+    // Seed margin from persisted settings once the reader mounts. The
+    // horizontal strip is the one mode that never carries a page margin, so
+    // the seed honours the same mode rule as the sync effect below.
     {
         let m = state.settings.with_untracked(|st| st.layout.page_margin);
-        vs.viewer.page_margin.set(m);
+        let horizontal = vs.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
+        vs.viewer.page_margin.set(if horizontal { 0.0 } else { m });
     }
 
     // No-gap pref → runtime gap + rescale.
@@ -73,11 +76,20 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
 
-    // Page margin pref — cross-axis for vertical, main-axis for horizontal.
+    // Page margin pref — cross-axis for the vertical strip and both
+    // paginated shells. The horizontal strip is exempt: it lays pages
+    // edge-to-edge along the scroll axis, so side air there would read as
+    // dead space between pages rather than margin. This effect resolves the
+    // stored pref to an effective margin of 0 whenever the mode is
+    // ScrollHorizontal — without touching the stored value — and tracks the
+    // mode, so leaving the horizontal strip restores whatever the setting
+    // holds on the flip itself.
     {
         let (v, hv) = (rv.virtualizer.clone(), rv.h_virtualizer.clone());
         Effect::new(move |_| {
-            let m = state.settings.with(|st| st.layout.page_margin);
+            let stored = state.settings.with(|st| st.layout.page_margin);
+            let horizontal = vs.viewer.mode.get() == ViewMode::ScrollHorizontal;
+            let m = if horizontal { 0.0 } else { stored };
             if (vs.viewer.page_margin.get_untracked() - m).abs() < 1e-9 {
                 return;
             }
@@ -92,15 +104,20 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
             // Vertical: margin is cross-axis; sizes unchanged aside from gap.
             v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
-            // Horizontal: margin is main-axis.
+            // Horizontal: margin is main-axis — which the exempt mode simply
+            // never has (m resolves to 0 there).
             hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
             // A margin change must re-fit the page under the reader: the fit
             // target derives from the usable width (`cw - 2*margin`), so the
             // page only visibly gains side space once that scale is re-resolved
             // against the newly applied margin. Posting here guarantees the
             // refit even if no other watcher happens to fire for a setting-only
-            // change, and is a no-op when no fit is active.
-            if vs.viewer.fit.get_untracked() != FitMode::None {
+            // change, and is a no-op when no fit is active. Entering the
+            // horizontal strip skips the post: that switch drops the fit to
+            // None anyway, and resolving the OUTGOING fit against the new axis
+            // is exactly the zoom jump the mode-change guard below exists to
+            // prevent.
+            if !horizontal && vs.viewer.fit.get_untracked() != FitMode::None {
                 vs.viewer.zoom.post(ZoomCommand::Refit, false);
             }
         });
