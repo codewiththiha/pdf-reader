@@ -13,6 +13,7 @@
 use leptos::prelude::*;
 
 use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::feedback::loader::CenteredLoader;
 use app_chrome::icon::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::services::document;
@@ -40,23 +41,11 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
 
     view! {
         <div class="flex h-full w-full flex-col">
-            // Opening: centered spinner.
+            // Opening: the loading mark alone, for exactly as long as the
+            // engine takes — `status` flips to Ready (and the route to the
+            // reader) the moment the book exists, which unmounts it.
             <Show when=is_opening fallback=|| ()>
-                <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
-                    <div class="flex flex-col items-center gap-4">
-                        <div class="flex items-center gap-3">
-                            <div class="h-6 w-6 animate-spin rounded-full border-2 border-line border-t-accent"></div>
-                            <p class="text-lg">"Opening…"</p>
-                        </div>
-                        <Button
-                            on_click=move |_| document::close_document(state)
-                            variant=ButtonVariant::Ghost
-                            title="Cancel and return to the library"
-                        >
-                            <span>"Cancel"</span>
-                        </Button>
-                    </div>
-                </div>
+                <CenteredLoader />
             </Show>
             // Error: centered message.
             <Show when=is_error fallback=|| ()>
