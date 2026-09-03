@@ -13,6 +13,10 @@
 //! button.origin = (x_inset + i*spacing, natural_origin_y) // AppKit's rest
 //! ```
 //!
+//! The state is re-applied on `Resized` and `ThemeChanged` (AppKit re-lays
+//! out the button container on both), and a hide also hides the buttons
+//! themselves, so a relayout can never surface them on its own.
+//!
 //! `natural_origin_y` is cached in `OnceLock` on first read (~5pt on
 //! Sonoma/Sequoia, ~7pt on Tahoe/26). Re-reading after AppKit autoresizes
 //! the container would feed back and drift `y` — caching makes the formula
@@ -105,13 +109,24 @@ mod imp {
         rect.origin.y = window_frame.size.height - title_bar_frame_height;
         container.setFrame(rect);
 
+        // The geometry alone is not a durable hide: AppKit re-lays out the
+        // title-bar container on every window resize and hands it its natural
+        // height back, which used to pop the three lights into view with
+        // nothing on either side left to hide them again (the frontend had
+        // already sent its `false` and, rightly, does not repeat it). Hide the
+        // buttons themselves too, so a relayout has nothing to reveal — and
+        // `init` re-applies this whole function on `Resized` besides.
+        let Some(mini) = miniaturize else { return; };
+        let Some(zm) = zoom else { return; };
+        for btn in [&close as &NSButton, &mini as &NSButton, &zm as &NSButton] {
+            let v: &NSView = btn;
+            v.setHidden(!visible);
+        }
+
         if !visible {
             return;
         }
         // Re-anchor buttons horizontally and at their natural y.
-        let Some(mini) = miniaturize else { return; };
-        let Some(zm) = zoom else { return; };
-
         let cached_origin_y = *NATURAL_BUTTON_ORIGIN_Y.get().unwrap_or(&5.0);
         let close_rect: CGRect = {
             let v: &NSView = &close;
@@ -179,9 +194,16 @@ mod imp {
                         }
                     });
                 }
+                // Re-apply the last requested state whenever AppKit may have
+                // re-laid out the title-bar container from under us: a theme
+                // change, and — the case that used to leak the lights back
+                // onto a hidden bar — every window resize.
                 let w2 = window.clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::ThemeChanged(_) = event {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::ThemeChanged(_) | tauri::WindowEvent::Resized(_)
+                    ) {
                         let w_for_main = w2.clone();
                         let w_for_closure = w_for_main.clone();
                         let _ = w_for_main.run_on_main_thread(move || {
