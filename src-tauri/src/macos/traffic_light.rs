@@ -67,9 +67,18 @@ mod imp {
         // NSButton is an NSView subclass — `frame()` is on NSView.
         let view: &NSView = &close;
         let frame: CGRect = view.frame();
-        let h = frame.size.height;
-        let cached = *NATURAL_BUTTON_ORIGIN_Y.get_or_init(|| frame.origin.y);
-        (h, cached)
+        let h = if frame.size.height > 0.0 { frame.size.height } else { 14.0 };
+        // Cache the rest position only from a laid-out button. This runs on
+        // every `Resized` now, and the first of those can arrive before
+        // AppKit has placed the buttons at all (origin 0) — caching that
+        // would pin the lights a few points too high for the rest of the
+        // process. A plausible rest is a small positive inset; anything else
+        // is a not-yet-laid-out frame and is not worth remembering.
+        let looks_settled = frame.size.height > 0.0 && frame.origin.y > 0.0 && frame.origin.y < 20.0;
+        if looks_settled {
+            let _ = NATURAL_BUTTON_ORIGIN_Y.set(frame.origin.y);
+        }
+        (h, *NATURAL_BUTTON_ORIGIN_Y.get().unwrap_or(&5.0))
     }
 
     /// Owns both the container size and the button origins. This is the
@@ -94,6 +103,24 @@ mod imp {
             return;
         };
 
+        let Some(mini) = miniaturize else { return; };
+        let Some(zm) = zoom else { return; };
+        let buttons = [&close as &NSButton, &mini as &NSButton, &zm as &NSButton];
+
+        // A hide also hides the three buttons themselves — the geometry
+        // alone is not durable, because AppKit re-lays the container out on
+        // every window resize and hands it its natural height back, which
+        // used to pop the lights into view with nothing left to hide them
+        // again (the frontend had already sent its `false` and, rightly,
+        // does not repeat it). Unhide BEFORE measuring: a hidden button is
+        // not a reliable ruler for the centering maths.
+        for btn in buttons {
+            let v: &NSView = btn;
+            if v.isHidden() != !visible {
+                v.setHidden(!visible);
+            }
+        }
+
         let title_bar_frame_height = if visible {
             let (button_height, button_origin_y) = measure_close_button(ns_window);
             let y = compute_traffic_light_y(header_height, button_height, button_origin_y);
@@ -108,20 +135,6 @@ mod imp {
         rect.size.height = title_bar_frame_height;
         rect.origin.y = window_frame.size.height - title_bar_frame_height;
         container.setFrame(rect);
-
-        // The geometry alone is not a durable hide: AppKit re-lays out the
-        // title-bar container on every window resize and hands it its natural
-        // height back, which used to pop the three lights into view with
-        // nothing on either side left to hide them again (the frontend had
-        // already sent its `false` and, rightly, does not repeat it). Hide the
-        // buttons themselves too, so a relayout has nothing to reveal — and
-        // `init` re-applies this whole function on `Resized` besides.
-        let Some(mini) = miniaturize else { return; };
-        let Some(zm) = zoom else { return; };
-        for btn in [&close as &NSButton, &mini as &NSButton, &zm as &NSButton] {
-            let v: &NSView = btn;
-            v.setHidden(!visible);
-        }
 
         if !visible {
             return;
@@ -142,7 +155,7 @@ mod imp {
         // Avoid a stale zero spacing on first paint (can happen before layout).
         let space_between = if space_between.abs() < 0.5 { 20.0 } else { space_between };
 
-        for (i, btn) in [&close as &NSButton, &mini as &NSButton, &zm as &NSButton].into_iter().enumerate() {
+        for (i, btn) in buttons.into_iter().enumerate() {
             let v: &NSView = btn;
             let origin = CGPoint {
                 x: TRAFFIC_LIGHT_X_INSET + (i as f64 * space_between),
