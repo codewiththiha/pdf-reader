@@ -13,7 +13,7 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{TOOLBAR_H, ViewMode};
+use pdf_core::layout::ViewMode;
 use pdf_core::math::{clamp_scale, fit_scale, nearest_zoom, FitMode};
 
 use crate::state::reader::{ZoomCommand, ReaderState};
@@ -118,8 +118,8 @@ fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
 pub(crate) struct FitDims {
     /// Usable container width (margins removed), `>= 1`.
     pub cw_eff: f64,
-    /// Usable container height (`>= 1`; the toolbar band is reserved only
-    /// for the vertical strip, which scrolls under a fixed bar).
+    /// Usable container height (`>= 1`). Every mode owns the full window
+    /// height: the title bar is a hover-revealed overlay, not a band.
     pub ch_eff: f64,
     /// Effective page width (doubled in spread mode).
     pub pw_eff: f64,
@@ -152,24 +152,16 @@ impl FitDims {
 
         let horizontal = mode == ViewMode::ScrollHorizontal;
         let cw_eff = (cw - 2.0 * margin).max(1.0);
-        // The horizontal strip joins the paginated modes: it owns the full
-        // window height and the auto-hiding title bar overlays it. Reserving
-        // that band would leave a permanent dead strip above the pages.
-        let ch_eff = if mode.is_paginated() || horizontal {
-            ch.max(1.0)
-        } else {
-            (ch - TOOLBAR_H).max(1.0)
-        };
+        // Every mode owns the full window height: the auto-hiding title bar
+        // overlays the pages, and reserving a band for it would leave a
+        // permanent dead strip above the first page.
+        let ch_eff = ch.max(1.0);
         // Only the spread renders a true two-page spread; the horizontal
         // strip lays out one page per virtual item.
         let spread = matches!(mode, ViewMode::Spread);
         let (pw_eff, ph_eff) = if spread { (pw * 2.0, ph) } else { (pw, ph) };
-        // No extra horizontal air here: the toolbar band a vertical strip
-        // scrolls under is already accounted for in `ch_eff`, so subtracting
-        // it again from the width would push the page off its true
-        // edge-to-edge fit (a phantom 24px on each side at margin 0). Fit is
-        // therefore always edge-to-edge against `cw_eff`/`ch_eff`, and any
-        // breathing room is the reader's `page_margin`.
+        // Fit is always edge-to-edge against `cw_eff`/`ch_eff`; any breathing
+        // room is the reader's `page_margin`, never phantom toolbar air.
         if cw_eff <= 1.0 || ch_eff <= 1.0 {
             return None;
         }
@@ -197,9 +189,8 @@ impl FitDims {
             };
         }
         // Vertical and paginated share the same contract: fit edge-to-edge
-        // against the effective dims (`cw_eff`/`ch_eff` already carry the
-        // reader margin and, for the vertical strip, the toolbar band that
-        // scrolls under it), with no extra padding subtracted again here.
+        // against the effective dims (`cw_eff` already carries the reader
+        // margin), with no extra padding subtracted again here.
         fit_scale(
             fit,
             self.cw_eff,
@@ -244,21 +235,17 @@ mod tests {
     }
 
     #[test]
-    fn a_vertical_fit_is_edge_to_edge_and_never_double_reserves_the_toolbar() {
+    fn a_vertical_fit_is_edge_to_edge_on_both_axes() {
         // Vertical scroll. `dims` carries the EFFECTIVE dims — FitDims::of has
-        // already removed the reader margin from the width and, for the
-        // vertical strip (which scrolls under the fixed toolbar), the
-        // TOOLBAR_H band from the height. So `ch` here is the post-reservation
-        // height (e.g. 800 = 848 - 48) and `cw` is the margin-free width.
+        // already removed the reader margin from the width; the height is the
+        // full window's, because nothing is reserved for the overlay bar.
         let vertical = dims(false, false, 1000.0, 800.0, 500.0, 700.0);
         let by_w = 1000.0 / 500.0;
         let by_h = 800.0 / 700.0;
-        // Fit Width spans the full usable width — no phantom toolbar air is
-        // re-applied to the horizontal axis (this was the bug: a 48px width
-        // pad left a 24px gap on each side at margin 0).
+        // Fit Width spans the full usable width with no phantom air on
+        // either side (a 48px width pad once left 24px per side at margin 0).
         assert!((vertical.fit(FitMode::Width, 1.0) - by_w).abs() < 1e-9);
-        // Fit Page consumes the already-reserved height directly, never
-        // subtracting the band a second time.
+        // Fit Page consumes the full height directly.
         assert!((vertical.fit(FitMode::Page, 1.0) - by_w.min(by_h)).abs() < 1e-9);
     }
 

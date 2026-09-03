@@ -9,7 +9,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use pdf_core::filename::display_name;
-use pdf_core::layout::{TOOLBAR_H, ViewMode};
+use pdf_core::layout::ViewMode;
 use pdf_core::math::{clamp_scale, fit_scale, FitMode};
 use pdf_engine::types::{OpenResult, PageSize};
 
@@ -96,10 +96,9 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     state.reader.document.metrics.css_heights.set(Vec::new());
     // Mirror `FitDims::of` (zoom/target.rs) so the seed scale carries the same
     // geometry as the first live fit: the reader margin comes off the width,
-    // the toolbar band comes off the height ONLY for the vertical strip that
-    // scrolls under it, and a spread doubles the page width. Crucially, the
-    // toolbar band is never subtracted from the width — that phantom 48px of
-    // side air is exactly what made a margin-0 vertical fit sit 24px off each
+    // every mode keeps the full height (the title bar is an overlay, not a
+    // band), and a spread doubles the page width. Nothing else is subtracted
+    // — phantom side air once made a margin-0 vertical fit sit 24px off each
     // edge on the very first frame.
     let mode = state.reader.viewer.mode.get_untracked();
     let margin = state.reader.viewer.page_margin.get_untracked();
@@ -107,11 +106,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     let spread = matches!(mode, ViewMode::Spread);
     let (cw, ch) = state.reader.viewer.container_size.get();
     let cw_eff = (cw - 2.0 * margin).max(1.0);
-    let ch_eff = if mode.is_paginated() || horizontal {
-        ch.max(1.0)
-    } else {
-        (ch - TOOLBAR_H).max(1.0)
-    };
+    let ch_eff = ch.max(1.0);
     let pw = if spread { page1.width * 2.0 } else { page1.width };
     // Horizontal Fit Page is a pure height fit (full page visible), matching
     // `FitDims::fit`; every other mode is the shared edge-to-edge `fit_scale`
