@@ -98,6 +98,15 @@ pub struct ViewerSignals {
     /// Which motions animate. Written only by the shell, from the settings
     /// (`Motion::from_prefs`); see the type's contract.
     pub motion: RwSignal<Motion>,
+    /// True from the moment `page` is seeded for a freshly opened document
+    /// until a scrolling strip has anchored itself to that page on mount.
+    ///
+    /// The resume point is authored by the open flow, not by the strip, so
+    /// until the strip has been placed on it the strip's own dominant page
+    /// (still whatever offset it last held, usually the top) is not an
+    /// opinion worth listening to. The scroll→page sync stands down while
+    /// this is raised; the strip's mount anchor lowers it.
+    pub awaiting_anchor: RwSignal<bool>,
 }
 
 impl ViewerSignals {
@@ -107,6 +116,7 @@ impl ViewerSignals {
     pub fn reset_position(&self) {
         self.page.set(1);
         self.scroll_top.set(0.0);
+        self.awaiting_anchor.set(false);
         self.auto_scroll.set(false);
         self.page_gap.set(PAGE_GAP);
         self.page_margin.set(0.0);
@@ -159,6 +169,7 @@ impl Default for ViewerSignals {
             page_gap: RwSignal::new(PAGE_GAP),
             page_margin: RwSignal::new(0.0),
             motion: RwSignal::new(Motion::default()),
+            awaiting_anchor: RwSignal::new(false),
         }
     }
 }

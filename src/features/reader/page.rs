@@ -131,6 +131,18 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             return;
         }
         prev_mode.set_value(mode);
+        // The incoming view's strip (if it has one) mounts fresh and anchors
+        // itself to `viewer.page` in `ScrollShell`; until it has, its
+        // dominant is not the reader's page. Raised HERE, in the same flush
+        // as the mode flip, so the scroll→page arm that re-runs for the flip
+        // sees it and stands down rather than reading the unplaced strip.
+        if matches!(mode, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal) {
+            vs.viewer.awaiting_anchor.set(true);
+        }
+        // A mode flip leaves the outgoing view's rasters behind and nothing
+        // necessarily renders right after, so the engine's own sweep (which
+        // only runs inside a render) would never fire. Release now.
+        pdf_engine::api::sweep();
         let auto = state.settings.with(|s| s.layout.auto_scale);
         if mode == ViewMode::ScrollHorizontal {
             // Horizontal is one page per virtual item. Do not reinterpret the

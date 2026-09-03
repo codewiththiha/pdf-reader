@@ -64,7 +64,12 @@ fn seed_css_heights(state: ReaderState) {
             });
             hasher.finish()
         };
-        if last_key.with_value(|stored| *stored == Some(key)) {
+        // Same book, same geometry: nothing to do — unless the store was
+        // emptied under us (a document open resets it, and re-opening the
+        // very same book yields the same key), in which case the strip
+        // would otherwise be left estimating against a blank column.
+        let emptied = state.document.metrics.css_heights.with_untracked(|h| h.is_empty());
+        if !emptied && last_key.with_value(|stored| *stored == Some(key)) {
             return;
         }
         last_key.set_value(Some(key));
