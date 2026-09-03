@@ -157,17 +157,17 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     let indicator_style = Signal::derive(move || state.settings.with(|st| st.layout.page_indicator_style));
     let progress_visible = Signal::derive(move || state.settings.with(|st| st.layout.progress_bar));
 
-    // Left: sidebar toggle + Library. Title is centered; right is appearance +
-    // settings + the 3-dash view menu.
+    // Left: sidebar toggle + Library + Settings. Title is centered; right is
+    // the 3-dash view menu + Appearance.
     //
     // The sidebar toggle's visibility is the controller's rule: overlay mode
     // drops it (the rail opens by brushing the window's left edge and closes
     // from its own header, so a second switch in the bar only competes with
-    // both). The Library button stays exactly where it is — the rail floats
-    // above the bar and covers it while it is up, which is the rail's job,
-    // not this cluster's. The cluster is always mounted so the row keeps its
-    // left edge (and `#toolbar-leading`, the measurement anchor the library
-    // title uses) wherever the mode puts it.
+    // both). The Library and Settings buttons stay exactly where they are —
+    // the rail floats above the bar and covers them while it is up, which is
+    // the rail's job, not this cluster's. The cluster is always mounted so
+    // the row keeps its left edge (and `#toolbar-leading`, the measurement
+    // anchor the library title uses) wherever the mode puts it.
     let left = move || {
         view! {
             <div
@@ -202,19 +202,19 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         </Button>
                     </Tooltip>
                 </Show>
+                <IconButton
+                    icon=IconName::Settings
+                    title="Reader settings"
+                    on_click=move || settings_open.set(true)
+                />
             </div>
         }
     };
     let center = move || view! { <CenteredDocTitle state=state /> };
     let right = move || {
         view! {
-            <AppearanceMenu state=state />
-            <IconButton
-                icon=IconName::Settings
-                title="Reader settings"
-                on_click=move || settings_open.set(true)
-            />
             <ReaderMenu state=state settings_open=settings_open />
+            <AppearanceMenu state=state />
         }
     };
 
