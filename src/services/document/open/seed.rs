@@ -32,11 +32,9 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     let name = display_name(open.title.as_deref(), Some(path));
     // Document state.
     state.reader.document.num_pages.set(num_pages);
-    // The paper session resets for the new book and asks the engine's
-    // per-document cache for its colour — synchronously, while the status is
-    // still `Opening` and nothing is mounted, so a cache hit repaints the
-    // blend backdrop with the intended colour in the reader's very first
-    // frame (zero sampling work) instead of flashing the theme paper first.
+    // The paper session resets for the new book — synchronously, while the
+    // status is still `Opening` and nothing is mounted, so the previous
+    // book's backdrop colour is gone before the reader's first frame.
     pdf_engine::paper::document_open(path, num_pages);
     state
         .reader
