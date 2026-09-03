@@ -165,11 +165,10 @@ mod imp {
 
     /// Re-apply the last requested state on the main thread (AppKit's).
     fn reapply(window: &Window) {
-        let window = window.clone();
         let target = window.clone();
-        let _ = target.run_on_main_thread(move || {
+        let _ = window.run_on_main_thread(move || {
             let (visible, h) = (VISIBLE.load(Ordering::Relaxed), header_height());
-            with_ns_window(&window, |ns| position_traffic_lights(ns, visible, h));
+            with_ns_window(&target, |ns| position_traffic_lights(ns, visible, h));
         });
     }
 

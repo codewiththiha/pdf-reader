@@ -46,8 +46,9 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
     let hover = use_hover_reveal_with(DEFAULT_HOVER_DELAY, move || dragging.get());
     let visible = hover.visible;
 
-    let (enter_strip, leave_strip) = hover.bind();
-    let (enter_bar, leave_bar) = hover.bind();
+    // One `hovered` truth, fed from both the strip and the bar.
+    let (enter, leave) = hover.bind();
+    let (enter_strip, leave_strip) = (enter.clone(), leave.clone());
     // End of drag: the captured pointerup / pointercancel bubble from the
     // input even when the release lands outside the bar, and the helper
     // records the leave capture swallowed.
@@ -72,8 +73,8 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
                  gap-3 px-3 transition-all duration-200 ease-out"
             )
             prop:inert=move || !visible.get()
-            on:mouseenter=move |_| enter_bar()
-            on:mouseleave=move |_| leave_bar()
+            on:mouseenter=move |_| enter()
+            on:mouseleave=move |_| leave()
             on:pointerdown=move |_| dragging.set(true)
             on:pointerup=end_drag.clone()
             on:pointercancel=end_drag

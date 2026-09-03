@@ -94,13 +94,12 @@ pub fn OverlayRail(shell: ShellController, children: ChildrenFn) -> impl IntoVie
     // value, so every enter/leave fires its side exactly once.
     let request_show = RwSignal::new(0u32);
     let request_hide = RwSignal::new(0u32);
-    let (enter, _) = hover.bind();
+    let (enter, leave) = hover.bind();
     Effect::new(move |_| {
         if request_show.get() > 0 {
             enter();
         }
     });
-    let (_, leave) = hover.bind();
     Effect::new(move |_| {
         if request_hide.get() > 0 {
             leave();
