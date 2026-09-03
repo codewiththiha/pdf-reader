@@ -30,6 +30,7 @@ use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::features::reader::use_reader_virtualizers;
 use crate::services::document::close_document;
+use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
 use pdf_core::layout::{PAGE_GAP, ViewMode};
 use pdf_core::math::FitMode;
@@ -93,6 +94,15 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
             // Horizontal: margin is main-axis.
             hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
+            // A margin change must re-fit the page under the reader: the fit
+            // target derives from the usable width (`cw - 2*margin`), so the
+            // page only visibly gains side space once that scale is re-resolved
+            // against the newly applied margin. Posting here guarantees the
+            // refit even if no other watcher happens to fire for a setting-only
+            // change, and is a no-op when no fit is active.
+            if vs.viewer.fit.get_untracked() != FitMode::None {
+                vs.viewer.zoom.post(ZoomCommand::Refit, false);
+            }
         });
     }
 
