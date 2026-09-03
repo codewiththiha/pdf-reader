@@ -13,6 +13,7 @@ use wasm_bindgen::JsCast;
 
 use crate::components::settings::animations::AnimationsTab;
 use crate::components::settings::common::{Tab, TabButton};
+use crate::components::settings::fonts::FontsTab;
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
 use app_chrome::icon::IconName;
@@ -37,8 +38,14 @@ pub fn SettingsModal(
     // that tab happens to be open falls back to Layout for as long as it is
     // off, and the reader's own selection survives to be returned to.
     let animations_on = Signal::derive(move || state.settings.with(|st| st.animations.enabled));
+    // The Fonts tab exists only while a reflowable document is open — a
+    // PDF carries none of the type it controls — and follows the same
+    // fallback rule as the Animations tab: selected while a PDF opens over
+    // it, the strip shows Layout, and the selection survives the return.
+    let fonts_on = Signal::derive(move || state.reader.document.format.get().is_text());
     let shown = Signal::derive(move || match tab.get() {
         Tab::Animations if !animations_on.get() => Tab::Layout,
+        Tab::Fonts if !fonts_on.get() => Tab::Layout,
         other => other,
     });
     Effect::new(move |_| {
@@ -96,6 +103,15 @@ pub fn SettingsModal(
                                 label="Animations"
                             />
                         </Show>
+                        <Show when=move || fonts_on.get()>
+                            <TabButton
+                                tab=tab
+                                active=shown
+                                t=Tab::Fonts
+                                icon=IconName::Type
+                                label="Fonts"
+                            />
+                        </Show>
                         <div class="ml-auto">
                             <IconButton
                                 icon=IconName::Close
@@ -112,6 +128,7 @@ pub fn SettingsModal(
                             Tab::Animations => {
                                 view! { <AnimationsTab state=state /> }.into_any()
                             }
+                            Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
                         }}
                     </div>
                 </div>
