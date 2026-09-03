@@ -71,6 +71,13 @@ impl PageGeometry {
     }
 }
 
+impl Default for PageGeometry {
+    /// The symmetric (non-book) geometry — what a fresh reader starts from.
+    fn default() -> Self {
+        geometry(false)
+    }
+}
+
 /// The geometry for a layout choice.
 pub fn geometry(book_layout: bool) -> PageGeometry {
     let (left, right) = if book_layout { (GUTTER, EDGE) } else { (PAD, PAD) };

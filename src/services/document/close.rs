@@ -59,6 +59,7 @@ pub fn close_document(state: AppState) {
     });
 
     state.reader.document.reset();
+    state.reader.text.reset();
     state.reader.viewer.reset_position();
     state.reader.search.reset();
     // The marks stay on disk under this path; only the in-memory copy goes,

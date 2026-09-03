@@ -13,6 +13,7 @@ pub mod ai;
 pub mod document;
 pub mod gloss;
 pub mod search;
+pub mod text;
 pub mod viewer;
 pub mod zoom;
 
@@ -27,6 +28,7 @@ pub use ai::{AiSelectionState, SelectionDetail};
 pub use document::{DEFAULT_PAGE_ASPECT, DocumentState, NO_DOCUMENT};
 pub use gloss::GlossState;
 pub use search::SearchState;
+pub use text::TextDocState;
 pub use viewer::{Motion, ViewerSignals};
 pub use zoom::{ZoomCommand, ZoomTransition};
 
@@ -45,4 +47,7 @@ pub struct ReaderState {
     pub search: SearchState,
     pub ai_selection: AiSelectionState,
     pub gloss: GlossState,
+    /// The reflowable formats' document (blocks + the current page cut).
+    /// Empty while a PDF — or nothing — is open.
+    pub text: TextDocState,
 }

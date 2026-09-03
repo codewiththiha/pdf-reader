@@ -5,11 +5,16 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use pdf_core::documents::Format;
 use pdf_engine::types::{DocStatus, OutlineNode, PageSize};
 
 #[derive(Clone, Copy)]
 pub struct DocumentState {
     pub status: RwSignal<DocStatus>,
+    /// Which pipeline the open document renders through. PDF while nothing
+    /// is open (the historical default), so chrome that branches on it has
+    /// a sane answer on the empty shelf.
+    pub format: RwSignal<Format>,
     pub error: RwSignal<Option<String>>,
     pub path: RwSignal<Option<String>>,
     pub num_pages: RwSignal<u32>,
@@ -41,6 +46,7 @@ impl DocumentState {
     /// forgotten by close_document.
     pub fn reset(&self) {
         self.status.set(DocStatus::Idle);
+        self.format.set(Format::default());
         self.error.set(None);
         self.path.set(None);
         self.num_pages.set(0);
@@ -131,6 +137,7 @@ impl Default for DocumentState {
     fn default() -> Self {
         Self {
             status: RwSignal::new(DocStatus::Idle),
+            format: RwSignal::new(Format::default()),
             error: RwSignal::new(None),
             path: RwSignal::new(None),
             num_pages: RwSignal::new(0),

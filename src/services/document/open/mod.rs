@@ -12,6 +12,7 @@ mod cover;
 mod outline;
 mod seed;
 mod shelf;
+mod text;
 mod warmup;
 
 use leptos::prelude::*;
@@ -23,6 +24,7 @@ use leptos::prelude::*;
 // wasm-bindgen executor runs the future to completion regardless of owner.
 use wasm_bindgen_futures::spawn_local;
 
+use pdf_core::documents::{format_of, Format};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
@@ -75,22 +77,30 @@ pub fn init_open_file_handling(state: AppState) {
 /// doc status / status bar.
 pub fn open_dialog(state: AppState) {
     spawn_local(async move {
-        match engine::pick_pdf().await {
+        match engine::pick_document().await {
             Ok(path) => open_path(state, path),
             Err(msg) => {
                 if msg != "Open cancelled" {
                     state.reader.document.error.set(Some(msg.clone()));
                     state.reader.document.status.set(DocStatus::Error);
-                    state.ui.toast.set(Some(Toast::new(format!("Could not open PDF: {}", msg))));
+                    state.ui.toast.set(Some(Toast::new(format!(
+                        "Could not open document: {}",
+                        msg
+                    ))));
                 }
             }
         }
     });
 }
-/// Shared open-flow: open `path` in the engine and populate the whole app state
-/// (document, viewer, search, library). Resumes at the saved page if this book
-/// was opened before, and records it in the recent-books library. Drag-drop
-/// calls this directly.
+/// Shared open-flow: open `path` through the pipeline its format needs and
+/// populate the whole app state (document, viewer, search, library). Resumes
+/// at the saved page if this book was opened before, and records it in the
+/// recent-books library. Drag-drop calls this directly.
+///
+/// The pipeline fork happens here and only here: PDFs go to the pdf.js
+/// engine, the reflowable formats go to the text pipeline ([`text`]). Both
+/// tails converge on the same state contract, so everything downstream —
+/// the viewer, navigation, the shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
     // Claim the document state for THIS attempt. Pick a second book while the
     // first is still resolving and the loser's tail would otherwise still run:
@@ -109,6 +119,15 @@ pub fn open_path(state: AppState, path: String) {
         .with_untracked(|books| library::find_page(books, &path))
         .unwrap_or(1);
 
+    match format_of(&path) {
+        Format::Pdf => open_pdf(state, path, saved_page, stamp),
+        fmt => text::open_text(state, path, fmt, saved_page, stamp),
+    }
+}
+
+/// The PDF tail of the open flow: hand the path to the engine and seed from
+/// its answer.
+fn open_pdf(state: AppState, path: String, saved_page: u32, stamp: u64) {
     spawn_local(async move {
         let opened = engine::open(&path).await;
         // The engine answered — but a second open (or a close) may have taken
@@ -164,12 +183,15 @@ fn ready(
     warmup::prewarm_thumbs(seeded.num_pages);
 }
 
-/// The book did not open: surface it on the status bar and as a toast.
+/// The document did not open: surface it on the status bar and as a toast.
 fn fail(state: AppState, message: String) {
     state.reader.document.error.set(Some(message.clone()));
     state.reader.document.status.set(DocStatus::Error);
     state
         .ui
         .toast
-        .set(Some(Toast::new(format!("Could not open PDF: {}", message))));
+        .set(Some(Toast::new(format!(
+            "Could not open document: {}",
+            message
+        ))));
 }

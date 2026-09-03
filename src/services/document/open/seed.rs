@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
+use pdf_core::documents::Format;
 use pdf_core::filename::display_name;
 use pdf_engine::types::{OpenResult, PageSize};
 
@@ -29,7 +30,13 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     let page1 = open.page1_size;
     let num_pages = open.num_pages;
     let name = display_name(open.title.as_deref(), Some(path));
-    // Document state.
+    // Document state. The format flips BACK here: a PDF opening over a text
+    // document must shed the text pipeline's gates (blend, thumbnails, the
+    // Fonts tab) the same way the text open claims them.
+    state.reader.document.format.set(Format::Pdf);
+    // A text document's model must not survive the PDF that opens over it
+    // (the measure column mounts while `text.doc` is a document).
+    state.reader.text.reset();
     state.reader.document.num_pages.set(num_pages);
     // The paper session resets for the new book — synchronously, while the
     // status is still `Opening` and nothing is mounted, so the previous
