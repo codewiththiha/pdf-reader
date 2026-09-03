@@ -124,11 +124,16 @@ format-agnostic.
 - `crates/text-core` is the pure domain layer (no DOM): the typography settings schema and font
   stacks, block parsing for text and Markdown, the A4 page geometry, the block-granular page
   cutter, and a substring search index. Everything is unit-testable on the host.
-- On open, the file is parsed into blocks and an estimate cut is published immediately, so the
-  reader is up the instant the bytes land. A hidden measure column then renders every block once
-  at scale 1 with the live typography, reads the true heights, and republishes the cut. Pagination
-  is therefore measurement-true, and re-cuts whenever a typography knob moves — holding the
-  reader on the block they were reading.
+- On open, the file is parsed into blocks, oversized prose paragraphs are subdivided on line
+  boundaries into continuation-flagged chunks (`subdivide`, five lines each), and an estimate cut
+  is published immediately, so the reader is up the instant the bytes land. The subdivision is
+  what lets the paginator pack pages tightly: no single block is taller than a few lines of type,
+  so a page bottom never carries a blank band a pushed-over paragraph used to leave. A hidden
+  measure column (carrying the page content's own `tx-content` rules, so it measures the reading
+  face and not the browser's fallback) then renders every block once at scale 1 with the live
+  typography, reads the true heights, and republishes the cut. Pagination is therefore
+  measurement-true, and re-cuts whenever a typography knob moves — holding the reader on the
+  block they were reading.
 - `apply_heights` is the one place the cut, its inverse block→page map and the per-page size
   bookkeeping are written together, so a split can never disagree with its map.
 - Zoom never re-paginates. The cut is computed at scale 1; a page host is sized `A4 × scale` and
@@ -136,12 +141,22 @@ format-agnostic.
   identical at every scale and uniform scaling provably preserves the cut. During the tween the
   mounted pages reflow frame by frame at the live display scale — cheap, because the window is
   bounded — while the cut itself stays put.
-- The vertical mode is the one deliberate deviation from "pages everywhere": it renders its page
-  units as an invisible, gap-less continuous column (no boxes, no shadows), and each unit is sized
-  to the SUM of its blocks rather than to A4 (`effects::reader::text_layout` projects that model
-  into `css_heights`). It still virtualizes on page-cut units, so the zoom engine's anchored
-  relayout, search reveal, navigation sync and auto-scroll serve it unchanged; the "no pages" look
-  is presentation, not a second geometry model. Single, spread and horizontal keep real A4 sheets.
+- Vertical reading is the one deliberate deviation from "pages everywhere": a reflowable document
+  in the vertical mode renders as the CONTINUOUS STREAM (`components::text::stream`), which
+  virtualizes the blocks themselves — not page-cut units — on the shared scroller id, with the
+  window itself painted as the paper and the blocks flowing in a reading column narrowed by the
+  page margin and positioned by the column-alignment setting. The page cut still backs the paged
+  modes, the page bookkeeping and the resume flow; it simply is not what scrolls. The stream owns
+  its zoom relayout (the page virtualizer is unbound there, and `navigation_sync`'s two page arms
+  stand down), maps its dominant block back onto `viewer.page` for progress persistence, reveals
+  search hits through its own virtualizer, and reports its rendered item heights back so a column
+  narrower than the page model still lays out truthfully. Single, spread and horizontal keep real
+  A4 sheets.
 - Text never enters blend mode and never touches the paper session: a text page is recoloured by
-  its own tokens, so the backdrop's colour machine is gated off for the format. Search scans the
-  blocks in-process (the document is its own index), mapping hits through the current page cut.
+  its own tokens, so the backdrop's colour machine is gated off for the format (the Theme tab
+  hides the Paper and Rendering sections accordingly). Body ink has its own comfort dial —
+  `ink_contrast`, a `color-mix` of the theme's ink toward its paper, exposed as the "Text ink
+  intensity" slider while a text document is open. Search scans the blocks in-process (the
+  document is its own index), mapping hits through the current page cut. Progress persistence
+  saves the fractional stream position alongside the page, so a continuous read resumes where it
+  stopped, not at a page top.

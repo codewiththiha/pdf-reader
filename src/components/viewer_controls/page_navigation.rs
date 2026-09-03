@@ -1,4 +1,4 @@
-//! Previous/next + page-number input.
+//! Previous/next + page-number input — and the stream's screenful twin.
 //! Prev/Next clamp viewer.page to 1..=num_pages; the editable readout parses on
 //! commit and clamps the same way. In Dual mode the buttons step whole spreads.
 //!
@@ -8,11 +8,56 @@
 
 use leptos::prelude::*;
 
+use app_chrome::hooks::dom::page_list;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
 use crate::state::ReaderState;
 use pdf_core::layout::{ViewMode, last_spread_start, spread_start, spread_step_next, spread_step_prev};
+
+/// One screenful step through the continuous text stream, with the
+/// percentage standing where the page readout sits in the paged modes.
+/// A page number means nothing where the stream flows, but the gesture —
+/// step forward, step back, see where you are — is the same gesture, so
+/// the control keeps the same seat and shape. The step keeps a sliver of
+/// the outgoing screen (the keyboard's PageDown keeps the same overlap) so
+/// a screen turn never loses the reading line.
+#[component]
+pub fn StreamPageNav(state: ReaderState) -> impl IntoView {
+    view! {
+        <div class="flex items-center gap-1">
+            <Tooltip text="Previous screen (ArrowLeft)">
+                <IconButton
+                    icon=IconName::Prev
+                    title="Previous screen (ArrowLeft)"
+                    on_click=move || step_screen(-1.0)
+                />
+            </Tooltip>
+            <span class="w-10 text-center text-sm tabular-nums text-muted">
+                {move || format!("{}%", state.stream_percent())}
+            </span>
+            <Tooltip text="Next screen (ArrowRight)">
+                <IconButton
+                    icon=IconName::Next
+                    title="Next screen (ArrowRight)"
+                    on_click=move || step_screen(1.0)
+                />
+            </Tooltip>
+        </div>
+    }
+}
+
+/// Scroll the stream one screenful in `direction` (-1 up, 1 down), keeping
+/// a tenth of the outgoing screen for continuity.
+fn step_screen(direction: f64) {
+    let Some(el) = page_list() else {
+        return;
+    };
+    let viewport = el.client_height() as f64;
+    let max = (el.scroll_height() - el.client_height()).max(0) as f64;
+    let next = ((el.scroll_top() as f64) + direction * viewport * 0.9).clamp(0.0, max);
+    el.set_scroll_top(next as i32);
+}
 
 #[component]
 pub fn PageNavigation(state: ReaderState) -> impl IntoView {

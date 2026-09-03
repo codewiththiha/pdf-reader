@@ -22,6 +22,12 @@ use crate::state::AppState;
 
 #[component]
 pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
+    // The paper and pipeline sections are raster concerns: blend sampling,
+    // edge detection and the live-vs-baked choice all act on the PDF's
+    // always-light bitmaps. A reflowable document paints its paper and ink
+    // straight from the theme tokens, so the sections are not merely inert
+    // while one is open — they describe machinery that does not run.
+    let is_text = Signal::derive(move || state.reader.document.format.get().is_text());
     let s = state.settings;
     let custom_open = RwSignal::new(false);
     let custom_anchor: NodeRef<html::Div> = NodeRef::new();
@@ -155,6 +161,7 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                 </Row>
             </div>
         </div>
+        <Show when=move || !is_text.get()>
         <div class="mt-5"><Separator vertical=false /></div>
         <SectionLabel text="Paper" />
         <div class="divide-y divide-line rounded-xl border border-line">
@@ -214,6 +221,7 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
              backdrop share one pass. Baked burns the look into the rasters — \
              lighter to composite, slightly slower to change."
         </p>
+        </Show>
         <div class="mt-5"><Separator vertical=false /></div>
         <p class="mt-2 text-xs text-muted">
             "Colour, tint, textures and presets live in the palette menu on the title bar."

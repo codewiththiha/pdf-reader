@@ -28,6 +28,12 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     let horizontal_mode = Signal::derive(move || {
         state.reader.viewer.mode.get() == ViewMode::ScrollHorizontal
     });
+    // Continuous text reading has no pages to number: while the stream is
+    // live the indicator is a percentage by definition, so the style
+    // selector stands disabled rather than offering a choice that is not
+    // being honoured. (The stream has no inter-page gap to remove either,
+    // so No Gap joins it.)
+    let stream_live = Signal::derive(move || state.reader.text_streaming());
     view! {
         <SectionLabel text="Reader chrome" />
         <div class="divide-y divide-line rounded-xl border border-line">
@@ -54,7 +60,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                         PageIndicatorStyle::PageNumber => "Page Number",
                         PageIndicatorStyle::Percentage => "Percentage",
                     }
-                    disabled=indicator_off
+                    disabled=Signal::derive(move || indicator_off.get() || stream_live.get())
                 />
             </Row>
             <Row label="Floating Label">
@@ -170,7 +176,10 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     on_change=Callback::new(move |v| {
                         s.update(|st| st.layout.no_gap = v);
                     })
-                    title="Remove the spacing between pages in scroll view".to_string()
+                    disabled=Signal::derive(move || stream_live.get())
+                    title="Remove the spacing between pages in scroll view. A continuously \
+                           streaming text document has no pages — and so no gap — to remove."
+                        .to_string()
                 />
             </Row>
             // Page Margin is the horizontal (left/right) air around each page,

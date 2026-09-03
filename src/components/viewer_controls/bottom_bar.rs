@@ -29,8 +29,9 @@ use leptos::prelude::*;
 
 use crate::components::primitives::floating::types::z::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
+use app_chrome::hooks::dom::page_list;
 use app_chrome::hooks::{use_drag_hold, use_hover_reveal_with, DEFAULT_HOVER_DELAY};
-use crate::components::viewer_controls::page_navigation::PageNavigation;
+use crate::components::viewer_controls::page_navigation::{PageNavigation, StreamPageNav};
 use crate::state::ReaderState;
 
 #[component]
@@ -82,16 +83,48 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
             class=("opacity-0", move || !visible.get())
             class=("pointer-events-none", move || !visible.get())
         >
-            <PageNavigation state=reader />
-            <RangeInput
-                value=Signal::derive(move || reader.viewer.page.get() as f64)
-                min=Signal::derive(|| 1.0)
-                max=Signal::derive(move || (reader.document.num_pages.get() as f64).max(1.0))
-                step=Signal::derive(|| 1.0)
-                on_input=move |page| {
-                    reader.viewer.page.set(page.round() as u32);
+            // The page controls are meaningless while a reflowable
+            // document streams — there are no pages to name — so the
+            // screenful stepper takes their seat and the scrubber stops
+            // being a page index. Same bar, same reveal; different unit.
+            {move || {
+                if reader.text_streaming() {
+                    view! { <StreamPageNav state=reader /> }.into_any()
+                } else {
+                    view! { <PageNavigation state=reader /> }.into_any()
                 }
-                aria_label="Page position"
+            }}
+            <RangeInput
+                value=Signal::derive(move || {
+                    if reader.text_streaming() {
+                        f64::from(reader.stream_percent())
+                    } else {
+                        reader.viewer.page.get() as f64
+                    }
+                })
+                min=Signal::derive(move || if reader.text_streaming() { 0.0 } else { 1.0 })
+                max=Signal::derive(move || {
+                    if reader.text_streaming() {
+                        100.0
+                    } else {
+                        (reader.document.num_pages.get() as f64).max(1.0)
+                    }
+                })
+                step=Signal::derive(|| 1.0)
+                on_input=move |position| {
+                    if reader.text_streaming() {
+                        // A percentage of the document: resolve it against
+                        // the scroller's real extent, where the stream's
+                        // every measured height already lives.
+                        if let Some(el) = page_list() {
+                            let max = (el.scroll_height() - el.client_height()).max(0) as f64;
+                            el.set_scroll_top((position / 100.0 * max) as i32);
+                        }
+                    } else {
+                        reader.viewer.page.set(position.round() as u32);
+                    }
+                }
+                aria_label="Reading position"
                 class="h-2 w-full cursor-pointer appearance-none rounded-full bg-line accent-accent"
             />
         </div>

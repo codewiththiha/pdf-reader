@@ -13,7 +13,7 @@
 
 use leptos::prelude::*;
 
-use text_core::typography::{FontChoice, SystemFont, TextSettings};
+use text_core::typography::{FontChoice, SystemFont, TextColumnAlign, TextSettings};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use app_chrome::icon::IconName;
@@ -23,8 +23,10 @@ use crate::components::primitives::switch::Switch;
 use crate::state::AppState;
 
 /// One write path for every knob: mutate, then sanitize — so a clamped
-/// range is enforced no matter which control produced the value.
-fn update_text(state: AppState, apply: impl Fn(&mut TextSettings) + 'static) {
+/// range is enforced no matter which control produced the value. Shared
+/// with the Appearance menu, whose ink-intensity slider writes through the
+/// same path for the same reason.
+pub(crate) fn update_text(state: AppState, apply: impl Fn(&mut TextSettings) + 'static) {
     state.settings.update(move |st| {
         apply(&mut st.text);
         text_core::typography::sanitize(&mut st.text);
@@ -249,6 +251,21 @@ pub(crate) fn FontsTab(state: AppState) -> impl IntoView {
 
         <SectionLabel text="Layout" />
         <div class="divide-y divide-line rounded-xl border border-line">
+            <Row label="Column Align">
+                <StyleSelect
+                    value=Signal::derive(move || s.with(|st| st.text.column_align))
+                    on_change=Callback::new(move |v: TextColumnAlign| {
+                        update_text(state, move |t| t.column_align = v);
+                    })
+                    options=vec![
+                        (TextColumnAlign::Left, "Left"),
+                        (TextColumnAlign::Center, "Center"),
+                        (TextColumnAlign::Right, "Right"),
+                    ]
+                    label_of=|v: &TextColumnAlign| v.label()
+                    disabled=Signal::derive(|| false)
+                />
+            </Row>
             <Row label="Use Book Layout">
                 <Switch
                     checked=Signal::derive(move || s.with(|st| st.text.book_layout))

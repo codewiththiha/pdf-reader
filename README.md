@@ -106,8 +106,11 @@ as real text in the DOM.
 - **Typography you control.** The Fonts settings tab (shown only while a text document is open)
   offers a default font plus serif/sans/monospace family pickers, font size and weight, line
   spacing, paragraph margin, word and letter spacing, first-line indent, a book layout with
-  spine-side gutters, full justification and hyphenation. Font pickers list the system faces
-  today; the schema already reserves room for fonts bundled with the app.
+  spine-side gutters, full justification, hyphenation, and where the reading column sits while
+  streaming (left, centre or right). The Appearance menu adds a body-ink intensity slider for
+  text documents — a comfort dial that softens the ink toward the paper without filtering
+  anything. Font pickers list the system faces today; the schema already reserves room for fonts
+  bundled with the app.
 - **Markdown is rendered, not displayed.** Headings, lists, tables, blockquotes, links, images
   and fenced code (GFM included; raw HTML is refused) render block by block, so a heading never
   gets split across a page break.
