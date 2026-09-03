@@ -157,6 +157,20 @@ const ANCHOR_SETTLE_FRAMES: u32 = 3;
 /// `awaiting_anchor`. The page is re-read every frame so a navigation issued
 /// while the strip was settling wins over the value the mount started with.
 fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis, frames_left: u32) {
+    let generation = state.viewer.begin_anchor();
+    anchor_to_page_frame(state, v, axis, frames_left, generation);
+}
+
+fn anchor_to_page_frame(
+    state: ReaderState,
+    v: &Virtualizer,
+    axis: Axis,
+    frames_left: u32,
+    generation: u64,
+) {
+    if !state.viewer.owns_anchor(generation) {
+        return;
+    }
     let align = match axis {
         Axis::Vertical => Align::Start,
         Axis::Horizontal => Align::Center,
@@ -174,18 +188,25 @@ fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis, frames_left: 
         .is_some_and(|dom| (dom - core).abs() <= 1.0)
         && v.viewport().get_untracked().main > 1.0;
     if frames_left == 0 || landed {
-        state.viewer.awaiting_anchor.set(false);
+        if state.viewer.owns_anchor(generation) {
+            state.viewer.awaiting_anchor.set(false);
+        }
         return;
     }
     let v = v.clone();
     request_animation_frame(move || {
+        if !state.viewer.owns_anchor(generation) {
+            return;
+        }
         // The strip may have been unmounted (a close, a mode flip) between
         // frames; a detached surface has nothing to anchor.
         if !v.is_bound() {
-            state.viewer.awaiting_anchor.set(false);
+            if state.viewer.owns_anchor(generation) {
+                state.viewer.awaiting_anchor.set(false);
+            }
             return;
         }
-        anchor_to_page(state, &v, axis, frames_left - 1);
+        anchor_to_page_frame(state, &v, axis, frames_left - 1, generation);
     });
 }
 

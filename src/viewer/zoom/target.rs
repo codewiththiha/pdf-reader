@@ -159,18 +159,19 @@ impl FitDims {
     /// fit and the open flow's seed scale so the first frame and the first
     /// refit agree. The reader margin comes off the width, every mode keeps
     /// the full height (the title bar is an overlay, not a band) and a
-    /// spread doubles the page width. `None` for an unmeasured container.
+    /// spread doubles the page width. `None` when either raw container
+    /// dimension is unmeasured.
     pub(crate) fn from_geometry(
         mode: ViewMode,
         (cw, ch): (f64, f64),
         margin: f64,
         (pw, ph): (f64, f64),
     ) -> Option<Self> {
-        let cw_eff = (cw - 2.0 * margin).max(1.0);
-        let ch_eff = ch.max(1.0);
-        if cw_eff <= 1.0 || ch_eff <= 1.0 {
+        if !(cw > 1.0 && ch > 1.0) {
             return None;
         }
+        let cw_eff = (cw - 2.0 * margin).max(1.0);
+        let ch_eff = ch.max(1.0);
         // Only the spread renders a true two-page spread; the horizontal
         // strip lays out one page per virtual item.
         let pw_eff = if mode == ViewMode::Spread { pw * 2.0 } else { pw };
@@ -238,6 +239,19 @@ mod tests {
             .unwrap();
         assert!((d.fit(FitMode::Width, 1.0) - 960.0 / 500.0).abs() < 1e-9);
         assert!(FitDims::from_geometry(ViewMode::Single, (0.0, 800.0), 0.0, (500.0, 700.0)).is_none());
+    }
+
+    #[test]
+    fn a_measured_narrow_container_keeps_the_effective_width_fallback() {
+        let d = FitDims::from_geometry(
+            ViewMode::ScrollVertical,
+            (30.0, 800.0),
+            20.0,
+            (500.0, 700.0),
+        )
+        .expect("the raw container is measured");
+        assert_eq!(d.cw_eff, 1.0);
+        assert_eq!(d.ch_eff, 800.0);
     }
 
     use pdf_core::math::{MAX_SCALE, MIN_SCALE};

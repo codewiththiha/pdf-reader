@@ -38,14 +38,25 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
 
     let has_tauri = tauri_bridge::has_tauri();
     let open_state = state;
+    let cancel_state = state;
 
     view! {
         <div class="flex h-full w-full flex-col">
-            // Opening: the loading mark alone, for exactly as long as the
-            // engine takes — `status` flips to Ready (and the route to the
-            // reader) the moment the book exists, which unmounts it.
+            // Opening stays on the library route, so cancellation has to live
+            // here rather than in the reader toolbar (which is unmounted).
             <Show when=is_opening fallback=|| ()>
-                <CenteredLoader />
+                <div class="relative h-full w-full">
+                    <CenteredLoader />
+                    <div class="absolute inset-x-0 top-1/2 flex justify-center pt-20">
+                        <Button
+                            on_click=move |_| document::close_document(cancel_state)
+                            variant=ButtonVariant::Toolbar
+                            title="Cancel opening this PDF"
+                        >
+                            <span>"Cancel opening"</span>
+                        </Button>
+                    </div>
+                </div>
             </Show>
             // Error: centered message.
             <Show when=is_error fallback=|| ()>
@@ -105,4 +116,3 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
         </div>
     }
 }
-
