@@ -55,7 +55,7 @@ fn document_element() -> Option<web_sys::Element> {
         .and_then(|d| d.document_element())
 }
 
-fn html_style() -> Option<web_sys::CssStyleDeclaration> {
+pub(crate) fn html_style() -> Option<web_sys::CssStyleDeclaration> {
     document_element()
         .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
         .map(|h| h.style())

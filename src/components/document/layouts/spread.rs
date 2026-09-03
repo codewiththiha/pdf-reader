@@ -1,10 +1,16 @@
 //! Spread (`spread`) layout: two pages side by side with no gap.
+//!
+//! Format-aware like its single sibling: text documents render two
+//! [`TextPage`] hosts, which under the book layout read as a facing pair —
+//! each page carries its own gutter-side padding, so the spine falls exactly
+//! where the two hosts meet.
 
 use leptos::prelude::*;
 
 use crate::components::document::page_canvas::component::GlossOverlayProps;
 use crate::components::document::shells::page_shell::PageShell;
 use crate::components::document::PageCanvas;
+use crate::components::text::{SpineSide, TextPage};
 use app_chrome::hooks::dom::DUAL_PAGE_CONTAINER_ID;
 use crate::state::{ReaderState, TextureSignal};
 
@@ -27,42 +33,66 @@ pub fn SpreadLayout(
                 each=move || std::iter::once(pdf_core::layout::spread_index(state.viewer.page.get()))
                 key=|s: &u32| *s
                 children=move |spread: u32| {
-                    let n = state.document.num_pages.get();
                     let p1 = spread * 2 + 1;
                     let p2 = p1 + 1;
                     view! {
                         <div class="flex items-start justify-center gap-0">
-                                <PageCanvas
-                                    page=p1
-                                    scale=page_scale
-                                    render_scale=state.viewer.zoom.committed
-                                    zoom_animating=state.viewer.zooming()
-                                    gesture_owns=gesture_owns
-                                    texture=texture
-                                    canvas_id=format!("dp-{p1}-cv")
-                                    host_id=format!("dp-{p1}-pg")
-                                    render_text=true
-                                    gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
-                                />
-                                {if p2 <= n {
+                            {move || {
+                                let n = state.document.num_pages.get();
+                                if state.document.format.get().is_text() {
+                                    // The two hosts ARE the spread: fix each
+                                    // to its spine side so a book layout's
+                                    // gutter falls between them, not on the
+                                    // outer edges.
+                                    view! {
+                                        <TextPage page=p1 state=state texture=texture spine=SpineSide::Left />
+                                        {if p2 <= n {
+                                            view! {
+                                                <TextPage page=p2 state=state texture=texture spine=SpineSide::Right />
+                                            }
+                                            .into_any()
+                                        } else {
+                                            ().into_any()
+                                        }}
+                                    }
+                                    .into_any()
+                                } else {
                                     view! {
                                         <PageCanvas
-                                            page=p2
+                                            page=p1
                                             scale=page_scale
                                             render_scale=state.viewer.zoom.committed
                                             zoom_animating=state.viewer.zooming()
                                             gesture_owns=gesture_owns
                                             texture=texture
-                                            canvas_id=format!("dp-{p2}-cv")
-                                            host_id=format!("dp-{p2}-pg")
+                                            canvas_id=format!("dp-{p1}-cv")
+                                            host_id=format!("dp-{p1}-pg")
                                             render_text=true
                                             gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
                                         />
-                                    }.into_any()
-                                } else {
-                                    ().into_any()
-                                }}
-                            </div>
+                                        {if p2 <= n {
+                                            view! {
+                                                <PageCanvas
+                                                    page=p2
+                                                    scale=page_scale
+                                                    render_scale=state.viewer.zoom.committed
+                                                    zoom_animating=state.viewer.zooming()
+                                                    gesture_owns=gesture_owns
+                                                    texture=texture
+                                                    canvas_id=format!("dp-{p2}-cv")
+                                                    host_id=format!("dp-{p2}-pg")
+                                                    render_text=true
+                                                    gloss_overlay=GlossOverlayProps::from_gloss(state.gloss)
+                                                />
+                                            }.into_any()
+                                        } else {
+                                            ().into_any()
+                                        }}
+                                    }
+                                    .into_any()
+                                }
+                            }}
+                        </div>
                     }
                 }
             />

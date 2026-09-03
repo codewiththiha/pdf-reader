@@ -13,6 +13,7 @@ use wasm_bindgen::JsCast;
 
 use crate::components::document::layouts::layout_chrome;
 use crate::components::document::PageStrip;
+use crate::components::text::TextPageStrip;
 use app_chrome::hooks::dom::{H_PAGE_LIST_ID, PAGE_LIST_ID};
 use app_chrome::hooks::use_resize_observer::observe_content_size;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
@@ -117,15 +118,45 @@ pub fn ScrollShell(
         }
     };
 
+    // The format branch below is a dynamic child, and a dynamic child's
+    // closure must be Send — which the Rc-backed Virtualizer is not. So the
+    // shell parks it in local (non-thread-safe) storage exactly the way
+    // `Viewer` parks its virtualizers: the closure captures the Send-friendly
+    // handle and resolves the virtualizer lazily at render time.
+    let strip_virtualizer = StoredValue::new_local(virtualizer.clone());
+
     view! {
         <div class="relative h-full w-full">
-            <PageStrip
-                state=state
-                virtualizer=virtualizer
-                axis=axis
-                scroller_id=scroller_id
-                list_ref=list_ref
-            />
+            // The strip is format-aware: PDF streams rasters, text streams
+            // real-type pages. Both bind the SAME scroller id and the SAME
+            // virtualizer, so the shell's anchor, wheel and scroll→page
+            // machinery drives either without knowing which one is mounted.
+            {move || {
+                let virtualizer = strip_virtualizer.get_value();
+                if state.document.format.get().is_text() {
+                    view! {
+                        <TextPageStrip
+                            state=state
+                            virtualizer=virtualizer.clone()
+                            axis=axis
+                            scroller_id=scroller_id
+                            list_ref=list_ref
+                        />
+                    }
+                    .into_any()
+                } else {
+                    view! {
+                        <PageStrip
+                            state=state
+                            virtualizer=virtualizer.clone()
+                            axis=axis
+                            scroller_id=scroller_id
+                            list_ref=list_ref
+                        />
+                    }
+                    .into_any()
+                }
+            }}
             <OverlayScrollbar
                 scroller_id=scroller_id
                 horizontal=axis == Axis::Horizontal

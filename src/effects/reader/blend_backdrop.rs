@@ -85,6 +85,12 @@ pub fn blend_backdrop(state: AppState) {
     // tick, and only while blend mode is actually driving a backdrop — the
     // session ignores the number otherwise, so there is nothing to compute.
     Effect::new(move |_| {
+        // Text documents want for none of this: their pages are a colour
+        // the compositor already has, so the paper session is closed when
+        // one opens and never fed positions.
+        if state.reader.document.format.get().is_text() {
+            return;
+        }
         if !settings.with(|st| st.layout.blend_mode) {
             return;
         }

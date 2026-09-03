@@ -24,7 +24,8 @@
   --texture-blend: screen;
 }
 
-.pdf-page::before {
+.pdf-page::before,
+.tx-page::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -54,7 +55,8 @@
   background-position: 0 0;
 }
 
-.pdf-page.texture-paper::before {
+.pdf-page.texture-paper::before,
+.tx-page.texture-paper::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
   /* Tint the gray fractal noise toward the theme's grain color without losing
      the noise pattern. The blend is driven by --texture-blend: multiply in the
@@ -69,7 +71,8 @@
   background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
 
-.pdf-page.texture-lined::before {
+.pdf-page.texture-lined::before,
+.tx-page.texture-lined::before {
   background-image: repeating-linear-gradient(
     to bottom,
     var(--texture-line) 0 var(--tex-line),
@@ -77,13 +80,15 @@
   );
 }
 
-.pdf-page.texture-grid::before {
+.pdf-page.texture-grid::before,
+.tx-page.texture-grid::before {
   background-image:
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
 }
 
-.pdf-page.texture-dotted::before {
+.pdf-page.texture-dotted::before,
+.tx-page.texture-dotted::before {
   background-image: radial-gradient(
     var(--texture-line) calc(1px * var(--tex-scale)),
     transparent calc(1.5px * var(--tex-scale))
@@ -91,7 +96,8 @@
   background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
-.pdf-page.texture-cross::before {
+.pdf-page.texture-cross::before,
+.tx-page.texture-cross::before {
   background-image:
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),

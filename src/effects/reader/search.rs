@@ -1,6 +1,15 @@
 //! Search pipeline: build the index once, run the query as the reader types,
 //! and step through individual matches — scrolling each one into view rather
 //! than jumping to the top of its page.
+//!
+//! The pipeline forks by format at [`run_search`] and nowhere else: PDF
+//! indexes through the engine, text documents scan their own blocks in
+//! Rust. Both tails converge on the same flat `SearchMatch` list, so the
+//! results UI and the match-stepping maths below serve either. A text match
+//! carries no rect (its page is the unit of reveal), which the reveal path
+//! already tolerates — a zero rect reveals the page's top.
+
+use std::collections::HashMap;
 
 use leptos::prelude::*;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
@@ -23,6 +32,10 @@ const REVEAL_MARGIN: f64 = 24.0;
 
 /// Run the query and store the flat match list.
 pub async fn run_search(state: ReaderState) {
+    if state.document.format.get_untracked().is_text() {
+        run_text_search(state);
+        return;
+    }
     if !state.search.index_built.get_untracked() {
         // The index build extracts ~3 pages per turn (see
         // pdf_engine::api::search::SEARCH_PAGE_CONCURRENCY); the page count
@@ -55,8 +68,54 @@ pub async fn run_search(state: ReaderState) {
     }
 }
 
+/// The text tail of the pipeline: scan the open document's blocks, map each
+/// hit through the current page cut, and publish the same flat match list
+/// the engine tail produces. No index to build — the document IS the index
+/// — and no engine round-trip at all.
+fn run_text_search(state: ReaderState) {
+    let query = state.search.query.get_untracked();
+    if query.trim().is_empty() {
+        clear_search(state);
+        return;
+    }
+    let Some(doc) = state.text.doc.get_untracked() else {
+        return;
+    };
+    let hits = text_core::search::find_matches(&doc.blocks, &query);
+    let block_page = state.text.block_page.get_untracked();
+    // The per-page occurrence ordinal the PDF side gets from the engine;
+    // here it is bookkeeping the results list keeps for parity.
+    let mut ordinal: HashMap<u32, u32> = HashMap::new();
+    let mut matches = Vec::with_capacity(hits.len());
+    for hit in hits {
+        let page = block_page.get(hit.block).map_or(1, |p| p + 1);
+        let index = ordinal.entry(page).and_modify(|n| *n += 1).or_insert(0);
+        matches.push(SearchMatch {
+            page,
+            index: *index,
+            text: hit.snippet.into(),
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+        });
+    }
+    let total = matches.len() as u32;
+    state.search.total.set(total);
+    state.search.matches.set(matches);
+    state.search.active.set(None);
+    // The text pipeline has no build step; keep the flag honest so a
+    // document switch reads it correctly either way.
+    state.search.index_built.set(true);
+}
+
 pub fn clear_search(state: ReaderState) {
-    engine::clear_highlights();
+    // Text documents paint no highlight boxes, so there is nothing to clear
+    // on the engine side — and the call must not reach an engine that has
+    // no document.
+    if !state.document.format.get_untracked().is_text() {
+        engine::clear_highlights();
+    }
     state.search.total.set(0);
     state.search.matches.set(Vec::new());
     state.search.active.set(None);
@@ -72,7 +131,11 @@ pub fn resume_search(state: ReaderState) {
 }
 
 pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
-    engine::set_active_match(m.page, m.index as i32);
+    // The engine's active-match marker drives the highlight box it paints;
+    // text documents have no boxes, only the page the match sits on.
+    if !state.document.format.get_untracked().is_text() {
+        engine::set_active_match(m.page, m.index as i32);
+    }
 
     let mode = state.viewer.mode.get_untracked();
     // Dual is paginated like Single: setting the page shows the spread that

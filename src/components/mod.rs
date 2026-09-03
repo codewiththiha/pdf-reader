@@ -12,6 +12,7 @@
 //!   * `overlays`   — transient UI (toast, drag feedback)
 //!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
 //!   * `document`   — UI whose purpose is displaying PDF documents
+//!   * `text`       — UI that renders the reflowable formats (TXT, Markdown)
 //!   * `search`     — search presentation shared by reader surfaces
 //!
 //! Import discipline: callers import from the owning group
@@ -43,6 +44,7 @@ pub mod primitives;
 pub mod viewer_controls;
 pub mod search;
 pub mod settings;
+pub mod text;
 
 
 

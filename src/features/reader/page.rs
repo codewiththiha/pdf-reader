@@ -61,12 +61,22 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         vs.viewer.page_margin.set(if horizontal { 0.0 } else { m });
     }
 
-    // No-gap pref → runtime gap + rescale.
+    // No-gap pref → runtime gap + rescale. The vertical text strip joins
+    // the no-gap case on its own terms: it renders as one continuous
+    // column, so its page units always butt against each other — the gap is
+    // exactly the zero that makes the paragraph rhythm seamless across a
+    // page cut (see `effects::reader::text_layout`).
     {
         let v = rv.virtualizer.clone();
         Effect::new(move |_| {
             let no_gap = state.settings.with(|st| st.layout.no_gap);
-            let gap = if no_gap { 0.0 } else { PAGE_GAP };
+            let is_text = vs.document.format.get().is_text();
+            let mode = vs.viewer.mode.get();
+            let gap = if no_gap || (is_text && mode == ViewMode::ScrollVertical) {
+                0.0
+            } else {
+                PAGE_GAP
+            };
             if (vs.viewer.page_gap.get_untracked() - gap).abs() < 1e-9 {
                 return;
             }
@@ -122,6 +132,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             }
         });
     }
+
+    // The vertical text strip's size model: page units sized to the sum of
+    // their blocks, projected into the shared measurement store whenever the
+    // format, the mode or the cut moves (and reverted to A4 when any of
+    // those stop asking for it). Installed AFTER the gap effects so its
+    // relayout reads the gap they just resolved.
+    crate::effects::reader::text_layout::text_layout(state, rv.virtualizer.clone());
 
     let prev_mode = StoredValue::new(vs.viewer.mode.get_untracked());
     Effect::new(move |_| {
@@ -285,6 +302,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 h_virtualizer=rv.h_virtualizer_view.get_value()
                                 progress_visible=progress_visible
                             />
+                        </Show>
+                        // The offscreen measure column for text documents:
+                        // mounted for as long as one is open, torn down with
+                        // it. It renders every block once at scale 1 and
+                        // refines the page cut from the DOM's real heights
+                        // (see `components::text::measure`).
+                        <Show when=move || state.reader.text.doc.get().is_some()>
+                            <crate::components::text::TextMeasureColumn app=state />
                         </Show>
                         <FloatingDocumentTitle state=state />
                         // Corner page counter, gated on a ready document and

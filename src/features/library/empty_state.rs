@@ -15,14 +15,14 @@ pub(crate) fn EmptyState(state: AppState) -> impl IntoView {
     view! {
         <div class="flex h-full w-full items-center justify-center pt-12 text-muted">
             <div class="flex max-w-md flex-col items-center gap-3 text-center">
-                <p class="text-lg text-ink">"Open a PDF to start reading"</p>
+                <p class="text-lg text-ink">"Open a document to start reading"</p>
                 {has_tauri.then(|| view! {
-                    <p class="text-sm text-muted">"Or drop a PDF anywhere in the window"</p>
+                    <p class="text-sm text-muted">"Or drop a PDF, TXT or Markdown file anywhere in the window"</p>
                 })}
                 <Button
                     on_click=move |_| document::open_dialog(state)
                     variant=ButtonVariant::Primary
-                    title="Open a PDF file"
+                    title="Open a document file"
                 >
                     <span>"Open…"</span>
                 </Button>
