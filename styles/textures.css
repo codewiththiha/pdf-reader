@@ -24,6 +24,18 @@
   --texture-blend: screen;
 }
 
+/* TEXT/MD pages never paint their own texture rectangle. The reflowable
+   backdrop is ONE uniform surface (.reader-bg -> --tx-paper) — the exact
+   vertical-scroll look the reader wants in every mode. A per-page
+   ::before would stamp a page-shaped seam onto that backdrop in single,
+   two-page and horizontal modes (lighter band in dark/dim bases, because
+   the dark texture family uses screen + white). PDF keeps its per-page
+   texture: the selector is keyed off data-format. */
+:root[data-format="text"] .tx-page::before,
+:root[data-format="markdown"] .tx-page::before {
+  content: none;
+}
+
 .pdf-page::before,
 .tx-page::before {
   content: "";

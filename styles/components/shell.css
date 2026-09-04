@@ -204,3 +204,15 @@ body {
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
+/* TEXT/MD paginated modes (single, two-page): show the same paper as the
+   scroll modes. The scroller carries the `bg-surface` utility for PDF
+   (the gutter around pages is the chrome surface), but for reflowable
+   formats that opaque chrome layer hides .reader-bg's --tx-paper and
+   makes single/two-page read as a different theme. Drop it so the view
+   mode's backdrop shows through. Scoped to data-format, so PDF never
+   matches and keeps its surface gutter. */
+:root[data-format="text"] .paginated-scroller,
+:root[data-format="markdown"] .paginated-scroller {
+  background-color: transparent;
+}
+
