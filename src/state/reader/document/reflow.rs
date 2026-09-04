@@ -175,14 +175,32 @@ impl ReflowContent {
         // This is the one place the two pipelines meet, and it is what lets
         // the paged modes, the zoom ladder and the progress chrome never ask
         // which format is open.
+        //
+        // Both vectors are written only when they would actually change.
+        // `intrinsic` is an input to the virtualizers' geometry epoch, so
+        // handing them a fresh (but identical) A4 column on every re-measure
+        // rebuilt both page layouts — the second, redundant rewindow a reader
+        // saw right after a text document settled onto its measured cut. A
+        // re-cut that keeps the page count has nothing to tell them, and a
+        // zoom never reaches this function at all (the stream rescales itself,
+        // the paged modes go through `effects::reader::reflow_layout`).
         let scale = state.reader.viewer.zoom.visual_scale();
         state.reader.document.num_pages.set(n);
         let pdf = state.reader.document.content.pdf;
-        pdf.intrinsic.set(vec![
-            pdf_engine::types::PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT };
-            n as usize
-        ]);
-        pdf.css_heights.set(vec![PAGE_HEIGHT * scale; n as usize]);
+        let a4 = pdf_engine::types::PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT };
+        let sizes_current = pdf.intrinsic.with_untracked(|sizes| {
+            sizes.len() == n as usize && sizes.iter().all(|size| *size == a4)
+        });
+        if !sizes_current {
+            pdf.intrinsic.set(vec![a4; n as usize]);
+        }
+        let heights_current = pdf.css_heights.with_untracked(|store| {
+            store.len() == n as usize
+                && store.iter().all(|h| (h - PAGE_HEIGHT * scale).abs() < 0.5)
+        });
+        if !heights_current {
+            pdf.css_heights.set(vec![PAGE_HEIGHT * scale; n as usize]);
+        }
 
         new_page.clamp(1, n.max(1))
     }

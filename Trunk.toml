@@ -22,6 +22,15 @@ target = "./index.html"
 ignore = [
     "./src-tauri",
     "./styles.css",
+    # The Tailwind sources are compiled by the pre_build hook on EVERY build,
+    # so watching them only bought a second rebuild per CSS edit — one for the
+    # source change and one for the hook's own output. Worse, that rebuild
+    # swapped `styles.css` under a running app, and a stylesheet arriving after
+    # the wasm has booted is exactly the window in which an offscreen element
+    # that hides itself through the cascade paints for a frame. Ignoring the
+    # directory leaves the compiled sheet stable for the life of a session;
+    # `npm run watch:css` is the tool for iterating on CSS alone.
+    "./styles",
     "./public/pdfEngine.js",
     "./public/bake.worker.js",
     "./scripts/check-versions.js",

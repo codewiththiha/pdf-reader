@@ -28,6 +28,12 @@ use super::page::content_style;
 use crate::state::reader::TypographySignal;
 use crate::state::AppState;
 
+/// The offscreen box, written inline so the twin hides itself from its very
+/// first frame even if `styles.css` has not landed yet (see the view below).
+/// `styles/text.css` carries the same declarations on `.tx-measure` for parity.
+const HIDDEN_TWIN: &str =
+    "position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none;z-index:-1;";
+
 /// How many frames the measure pass re-checks itself before giving up on a
 /// layout the browser has not committed yet (a column that measures 0 tall,
 /// children not attached yet). Each retry re-reads the DOM; nothing is
@@ -68,6 +74,16 @@ pub fn ReflowMeasureColumn(app: AppState) -> impl IntoView {
     // measure column without it measures the browser's fallback face and
     // paginates against fiction. `visibility: hidden` keeps layout honest —
     // `display:none` would not lay out at all.
+    //
+    // The offscreen box is ALSO written inline, and that is not duplication
+    // for its own sake. `styles.css` is compiled by a Trunk `pre_build` hook,
+    // so the module can boot before (or between) stylesheet swaps; a column
+    // whose only hiding rule lives in a sheet that has not landed yet is a
+    // full-width, fully painted copy of the document stacked at the top of
+    // `<main>` — the dark ghost that shimmered behind a freshly opened text
+    // file. An inline style cannot be late, so the twin is invisible from its
+    // very first frame no matter what the cascade is doing. `text.css` keeps
+    // the same declarations for parity.
     view! {
         <div
             node_ref=container
@@ -75,7 +91,7 @@ pub fn ReflowMeasureColumn(app: AppState) -> impl IntoView {
             aria-hidden="true"
             lang="en"
             style:width=move || format!("{}px", geometry(typography.get().book_layout).content_width)
-            style=move || content_style(1.0)
+            style=move || format!("{}{}", HIDDEN_TWIN, content_style(1.0))
         >
             <For
                 each=move || {
@@ -157,7 +173,23 @@ fn measure_pass(
         // Same cut: keep the measured heights as the standing truth (the
         // next comparison should run against reality, not the estimate),
         // and leave the reader's position entirely alone.
-        app.reader.document.content.reflow.heights.set(Arc::new(heights));
+        //
+        // But only publish them when they actually moved. `heights` feeds the
+        // stream's epoch and both re-measure effects, so an unconditional
+        // `set` on every pass wakes the whole reflowable side of the reader
+        // to hand it the numbers it already had — and the settle pass after
+        // first paint runs exactly when the reader is busiest. A re-measure
+        // that changed nothing now changes nothing.
+        let same = app
+            .reader
+            .document
+            .content
+            .reflow
+            .heights
+            .with_untracked(|current| current.as_ref() == &heights);
+        if !same {
+            app.reader.document.content.reflow.heights.set(Arc::new(heights));
+        }
         return;
     }
 
