@@ -205,14 +205,28 @@ mod tests {
     #[test]
     fn block_headings_survive_a_prose_split_that_moves_the_indices() {
         // A long prose paragraph before a heading is subdivided for the page
-        // pack, which pushes the heading's index by one. Reading the headings
-        // off the FINAL blocks is what keeps the entry pointing at the right one.
-        let prose = "word ".repeat(60).trim().to_string();
-        let blocks = subdivide_prose(parse_markdown(&format!("{prose}\n{prose}\n\n## Chapter\n\ntext\n")));
+        // pack, which pushes the heading's index. Reading the headings off the
+        // FINAL blocks is what keeps the entry pointing at the right one; the
+        // raw source scan, which counts the blocks as the splitter first cut
+        // them, would land on the last chunk instead. The paragraph has to be
+        // long in LINES for this to be a test at all: `subdivide_with` only
+        // cuts a block taller than `SPLIT_MAX_LINES`, so one very long line
+        // would subdivide into nothing and the indices would not move.
+        let line = "word ".repeat(12).trim().to_string();
+        let prose = (0..8).map(|_| line.as_str()).collect::<Vec<_>>().join("\n");
+        let source = format!("{prose}\n\n## Chapter\n\ntext\n");
+        let blocks = subdivide_prose(parse_markdown(&source));
         let found = headings_of_blocks(&blocks);
+        assert_eq!(blocks.len(), 4, "{blocks:?}");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].title, "Chapter");
+        assert_eq!(found[0].block_index, 2, "the split moved the heading");
         assert_eq!(blocks[found[0].block_index].first_line(), "## Chapter");
+        assert_eq!(
+            extract_headings(&source)[0].block_index,
+            1,
+            "the stale answer the final-blocks read exists to prevent"
+        );
         // A `#` inside a fence stays out of the tree.
         let fenced = parse_markdown("# Real\n\n```\n# not a heading\n```\n");
         let found = headings_of_blocks(&fenced);

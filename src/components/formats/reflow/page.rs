@@ -17,11 +17,14 @@
 //! machinery the always-light PDF rasters need.
 //!
 //! The props mirror [`PdfPageCanvas`](crate::components::formats::pdf::PdfPageCanvas)
-//! on purpose — page, scale, host id, class, texture, spine side — so the page
-//! host can mount either without a format-specific prop in sight. Two of them
-//! have no meaning for a page of type and are simply absent: no canvas id (there
-//! is nothing for the engine to paint into) and no geometry callback (the page cut
-//! already knows how tall a page is).
+//! where they mean the same thing — page, scale, host id, class — and both read
+//! the page texture from context, so the page host can mount either without a
+//! format-specific prop in sight. Two of the raster's props have no meaning for a
+//! page of type and are simply absent: no canvas id (there is nothing for the
+//! engine to paint into) and no geometry callback (the page cut already knows how
+//! tall a page is). The `spine` side is this page's own, and not a mirror of
+//! anything: gutter padding is a stylesheet concern, while a raster's gutter is
+//! the spread's gap.
 
 use leptos::prelude::*;
 

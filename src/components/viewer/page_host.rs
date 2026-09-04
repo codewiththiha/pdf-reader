@@ -12,10 +12,11 @@
 //! Three hosts, one per shape the reader can take:
 //!
 //! * [`UniversalPageHost`] — a single page or one half of a spread. Both formats
-//!   get the same props, so both components take the same page, scale, host id,
-//!   texture and spine side; the PDF's extras (canvas id, text layer, geometry
-//!   callback) are constructed here from the slot rather than passed in by a
-//!   layout.
+//!   get the same page, scale, host id and `class`, and the same texture from
+//!   context; the PDF's extras (canvas id, text layer, geometry callback, gloss
+//!   overlay) are constructed here from the slot rather than passed in by a
+//!   layout, and the spine side goes only to the pipeline that paints padding —
+//!   a raster's gutter is the spread's gap, not its page's style.
 //! * [`UniversalStripHost`] — the virtualized strip, both axes, either format.
 //! * [`UniversalStreamHost`] — continuous reading, where the two formats genuinely
 //!   disagree about the SURFACE: a reflowable document reads as one column of
