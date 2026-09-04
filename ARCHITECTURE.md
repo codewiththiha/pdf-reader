@@ -32,8 +32,9 @@ This layer is responsible for DOM measurement flow, scroll scheduling, and keepi
 
 The app uses the adapter and keeps only app-specific policy locally:
 
-- page gap and render budget constants
-- toolbar inset and view-mode state
+- view-mode state, plus the format-agnostic view policy (page gap, render
+  budget, spread arithmetic) that lives in `crates/reader-core`'s `view` module
+- toolbar inset
 - page rendering, text/search overlays, and chrome
 - measurement storage in `css_heights`
 
@@ -113,17 +114,51 @@ The thumbnail sidebar is a separate grid virtualizer:
 
 That keeps list and grid virtualization on the same geometry stack while letting each surface keep its own rendering policy.
 
+## Formats: one host, one pipeline per family
+
+The reader has two axes that must not multiply: how a document is *viewed* (single,
+spread, two scroll modes) and what it *is* (PDF, plain text, Markdown). The UI is split
+along the first axis and the crates along the second, and exactly one file joins them.
+
+- `src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
+  hold the scroll container. A layout may not name a format; adding a view mode touches
+  this directory and `reader-core`'s `view` module, and no format crate.
+- `src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
+  touches this directory, one parser crate, and one match arm in the open flow.
+- `src/components/viewer/page_host.rs` is the seam, and the only file in the viewer layer
+  allowed to ask which format is open. `UniversalPageHost` takes a page plus a `PageSlot`
+  (single, spread left, spread right) and mounts either `PdfPageCanvas` or `ReflowPage`;
+  `UniversalStripHost` does the same for the virtualized strip; `UniversalStreamHost`
+  answers for continuous reading, the one case where the two pipelines disagree about the
+  *surface* rather than the *content*. Both page components take the same props — page,
+  scale, host id, `class` — read the page texture from context, and answer for exactly one
+  page number; the PDF's extras (canvas id, gloss overlay, geometry callback) are built from
+  the slot inside the host, so no layout ever passes a format-specific prop. The host also
+  owns the DOM identity of a page (the `sp-`/`dp-`/`hp-`/`cont-` ids), which is why the
+  floating chapter label and a selection anchor address a page of Markdown exactly as they
+  address a page of pixels.
+
+The state mirrors it: `state::reader::document` holds the document's identity (path, title,
+format, page count, outline) and, beside it, a `DocumentContent` with `pdf` and `reflow`
+halves. Both halves publish page sizes into the same `css_heights`/`intrinsic` store, so the
+virtualizers, the zoom coordinator and the progress chrome never ask who measured what.
+
 ## Text and Markdown pipeline
 
-Plain text and Markdown open through a parallel pipeline that reuses the page machinery above
-the leaf renderer. The split is deliberate: PDF pages are rasters the engine paints, text pages
+Plain text and Markdown share a pipeline that reuses the page machinery above the leaf
+renderer. The split is deliberate: PDF pages are rasters the engine paints, text pages
 are A4 hosts the reader lays out with real type — but both report the same per-page sizes into
 the same virtualized strips, so view modes, zoom, navigation and search reveal stay
 format-agnostic.
 
-- `crates/text-core` is the pure domain layer (no DOM): the typography settings schema and font
-  stacks, block parsing for text and Markdown, the A4 page geometry, the block-granular page
-  cutter, and a substring search index. Everything is unit-testable on the host.
+- `crates/reflow-core` is the shared half of that, pure (no DOM, no Leptos): the block shape
+  and its splitting rules, the A4 page geometry and its spine sides, the block-granular page
+  cutter, the height estimate, the typography resolution (schema lives in `reader-core`'s
+  `settings::typography`) and a substring search over the blocks. `crates/txt-core` and
+  `crates/md-core` sit on top of it with one parser each — normalising and paragraph-cutting
+  for text, construct classification, prose subdivision, front-matter metadata and heading
+  extraction for Markdown — so a format owns its syntax and nothing else. Everything is
+  unit-testable on the host.
 - On open, the file is parsed into blocks, oversized prose paragraphs are subdivided on line
   boundaries into continuation-flagged chunks (`subdivide`, five lines each), and an estimate cut
   is published immediately, so the reader is up the instant the bytes land. The subdivision is
@@ -142,7 +177,7 @@ format-agnostic.
   mounted pages reflow frame by frame at the live display scale — cheap, because the window is
   bounded — while the cut itself stays put.
 - Vertical reading is the one deliberate deviation from "pages everywhere": a reflowable document
-  in the vertical mode renders as the CONTINUOUS STREAM (`components::text::stream`), which
+  in the vertical mode renders as the CONTINUOUS STREAM (`components::formats::reflow::stream`), which
   virtualizes the blocks themselves — not page-cut units — on the shared scroller id, with the
   window itself painted as the paper and the blocks flowing in a reading column narrowed by the
   page margin and positioned by the column-alignment setting. The page cut still backs the paged
@@ -152,6 +187,18 @@ format-agnostic.
   search hits through its own virtualizer, and reports its rendered item heights back so a column
   narrower than the page model still lays out truthfully. Single, spread and horizontal keep real
   A4 sheets.
+- A Markdown document gets the sidebar's outline panel for real: `md_core::headings_of_blocks`
+  finds the headings among the final blocks and `effects::reader::reflow_outline` projects them
+  onto the live block→page table, so the chapter tree follows every re-cut instead of going
+  stale. The tree lands in the same `document.outline` signal a PDF's `/Outlines` dictionary
+  fills, in the same `reader_core::outline::OutlineNode` shape — the panel cannot tell the two
+  apart, which is the point.
+- Format questions are asked once: `Format::is_reflowable` in `reader-core` is the predicate,
+  `ReaderState::reflowable()` is the tracked read of it, and the UI never tests an extension
+  or a document variant inline. The leaf renderer is the same deal one level down:
+  `components::formats::block_view::BlockView` dispatches a block to the text or Markdown view
+  from the document's format, so the page, the stream and the measure column share one
+  answer and none of them knows what Markdown is.
 - Text never enters blend mode and never touches the paper session: a text page is recoloured by
   its own tokens, so the backdrop's colour machine is gated off for the format (the Theme tab
   hides the Paper and Rendering sections accordingly). Body ink has its own comfort dial —

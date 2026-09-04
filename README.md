@@ -394,11 +394,14 @@ stays visible.
 +-------------------------------------------------------------+
 ```
 
-Pure logic lives in the `pdf-core`, `text-core` and `ai-core` crates with no DOM and no
-Leptos, so the zoom maths, layout maths, filename rules, colour conversion,
-search index arithmetic, text typography and pagination, settings migration and the AI
-word-card's geometry and spring are all unit-testable on the host. `virtual-list` is the generic
-windowing-math library under the viewer.
+Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`, `md-core` and
+`ai-core` — no DOM and no Leptos — so the view-mode arithmetic, the zoom ladder, filename
+rules, colour conversion, the search index, text typography and pagination, settings
+migration and the AI word-card's geometry and spring are all unit-testable on the host.
+The layering is a fan with a rule: `reader-core` knows no format at all, the format cores
+depend on it, and no core depends on another format's core — which is why adding a format is
+a new crate plus a new directory, not an edit to the ones already there. `virtual-list` is the
+generic windowing-math library under the viewer.
 
 PDFs and text documents share one page/zoom/navigation machinery above the rendering layer; only
 the leaf differs. A PDF page is a canvas the pdf.js engine paints; a text page is an A4 host the
@@ -422,10 +425,14 @@ src/
     menus/                app menu, appearance menu, reader menu
     settings/             the settings modal and its tabs (layout, theme,
                           animations, fonts)
-    document/             page canvas, page strip, the viewer and its scroll
-                          shells (continuous, single, two-page)
-    text/                 the text/Markdown page host, its strip, the block
-                          renderer and the offscreen measure column
+    viewer/               the SHAPE of reading: the mode dispatch, the four
+                          layouts (single, two-page, continuous, horizontal),
+                          the shells that own the scroll container, and
+                          page_host — the one seam that picks a format
+    formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
+                          reflow/ (A4 page host, continuous stream, strip,
+                          measure column), txt/ and md/ block views, and
+                          block_view, the renderer dispatch
     viewer_controls/      bottom bar, overlay scrollbar, page indicator,
                           page navigation
     search/               floating search bar and result list
@@ -438,7 +445,8 @@ src/
   features/
     library/              the shelf: book cards, empty state, sorting
     reader/               the reader page and its two virtualizers
-  state/                  the reactive state tree: app, reader, library, ui
+  state/                  the reactive state tree: app, reader (document,
+                          viewer, zoom, search, gloss), library, ui
   services/               the document open pipeline, the AI chunk bridge
   storage/                loads and saves over localStorage (settings,
                           library, covers, gloss marks)
@@ -448,14 +456,28 @@ crates/
                           wire types (WordInfo, AiError, the chunk envelope),
                           the gloss card's geometry + shared spring, the
                           gloss mark + MarkAnchor trait (PageAnchor is the
-                          PDF impl), the AI settings types, and the Tauri
-                          explain_word kickoff
-  pdf-core/               pure PDF domain math: the settings schema, the zoom
-                          ladder, fit, layout, filename rules, search index
-  text-core/              pure text-domain math: the typography settings and
-                          font stacks, block parsing (text + Markdown), the A4
-                          page geometry, the block-granular page cutter, and
-                          the substring search index
+                          PDF impl), the per-document gloss cache and its
+                          persistable JSON, and the Tauri explain_word
+                          kickoff (the reader settings those types feed live in
+                          reader-core, because they are the reader's)
+  reader-core/            the reader with no format in it: the format list, the
+                          view modes and spread arithmetic, the settings schema
+                          (layout, animation, typography, gloss), the colour
+                          pipeline, the presets, filename rules, zoom maths, the
+                          shared search model, the outline shape and the
+                          floating-card geometry
+  pdf-core/               pure PDF domain math: page layout constants, the
+                          outline wire entries and their clamping, the
+                          device-pixel grid the page hosts snap to, and the
+                          engine-side page-text search index
+  reflow-core/            the shared maths of reflowable text: the block shape
+                          and its splitting, the A4 geometry and spine sides,
+                          the page cutter, the height estimate, typography
+                          resolution and the substring search over blocks
+  txt-core/               plain text: normalisation, paragraph parsing and the
+                          line-bounded subdivision a tight page pack needs
+  md-core/                Markdown: construct classification, prose subdivision,
+                          front-matter metadata and the heading outline
   pdf-engine/             wasm-bindgen bridge to the imperative engine
   pdf-paper/              the blend backdrop's colour brain: the detection
                           area, dominant-colour detection (whole page or edge
