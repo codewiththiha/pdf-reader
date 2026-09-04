@@ -7,7 +7,7 @@
 //! snippet; the caller maps blocks to pages (the cut changes with
 //! typography, so that map is the layout's, not the search's).
 
-use crate::blocks::TextBlock;
+use crate::block::TextBlock;
 
 /// One occurrence of the query.
 #[derive(Debug, Clone, PartialEq)]
@@ -115,7 +115,7 @@ fn expand_right(text: &str, byte_offset: usize, radius: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blocks::BlockKind;
+    use crate::block::BlockKind;
 
     fn block(text: &str) -> TextBlock {
         TextBlock::new(BlockKind::Text, text)

@@ -1,14 +1,16 @@
-//! The text page's geometry.
+//! The reflowable page's geometry: the one fixed point of a text document.
 //!
-//! Text documents are cut into fixed-size pages — A4 at 96dpi — so the
-//! paginated modes (single, spread, horizontal strip) can reuse the
-//! reader's whole page machinery: fit, zoom, navigation, progress. The
-//! page size is the one fixed point; everything inside it (type, margins)
-//! is the typography settings' job.
+//! Reflowable documents are cut into fixed-size pages — A4 at 96dpi — so the
+//! paginated modes (single, spread, horizontal strip) reuse the reader's whole
+//! page machinery: fit, zoom, navigation, progress. The page size is the one
+//! fixed point; everything inside it (type, margins) is the typography
+//! settings' job.
 //!
 //! Book layout swaps the symmetric margins for a gutter: the facing edge
-//! carries extra air, and which side that is alternates with the page's
-//! parity, exactly like a bound book.
+//! carries extra air, and which side that is is [`SpineSide`]'s business —
+//! the parity of the page in a strip, or the half of a spread the host is
+//! standing in. Both rules live here so no component has to know the pair of
+//! paddings a spine implies.
 
 /// Page width in CSS px at scale 1: A4 at 96dpi.
 pub const PAGE_WIDTH: f64 = 794.0;
@@ -21,6 +23,24 @@ const PAD: f64 = 72.0;
 const GUTTER: f64 = 92.0;
 /// Book layout: the outer margin.
 const EDGE: f64 = 56.0;
+
+/// Where one page sits relative to the book spine while a book layout is on.
+///
+/// A gutter is geometry, not a style: it decides which paddings the page host
+/// carries, and therefore where the spine falls between two facing hosts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SpineSide {
+    /// Derive the side from the page's parity — single pages and the scroll
+    /// strip alternate recto/verso exactly like a bound book.
+    #[default]
+    Auto,
+    /// Fixed LEFT of the spine (a spread's left-hand page): the gutter faces
+    /// right, toward its neighbour.
+    Left,
+    /// Fixed RIGHT of the spine (a spread's right-hand page): the gutter faces
+    /// left.
+    Right,
+}
 
 /// One page's geometry at scale 1.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,6 +87,19 @@ impl PageGeometry {
             (GUTTER, EDGE)
         } else {
             (EDGE, GUTTER)
+        }
+    }
+}
+
+impl PageGeometry {
+    /// The inline paddings of `page` (0-based) as it sits on the spine. The
+    /// single entry point a page host needs: `Auto` alternates with parity,
+    /// a fixed side reads as that half of a spread.
+    pub fn pads(&self, book_layout: bool, page: usize, spine: SpineSide) -> (f64, f64) {
+        match spine {
+            SpineSide::Auto => self.inline_pads(book_layout, page),
+            SpineSide::Left => self.spread_pads(book_layout, false),
+            SpineSide::Right => self.spread_pads(book_layout, true),
         }
     }
 }
@@ -123,5 +156,17 @@ mod tests {
         assert!((g.content_width - (PAGE_WIDTH - GUTTER - EDGE)).abs() < 1e-9);
         // Without a book layout the pads are the stored symmetric pair.
         assert_eq!(g.inline_pads(false, 1), (g.pad_inline_left, g.pad_inline_right));
+    }
+
+    #[test]
+    fn a_fixed_spine_side_overrides_the_parity() {
+        let g = geometry(true);
+        // The spread's left host is a verso whatever page number it carries,
+        // so `pads` and `spread_pads` must never disagree.
+        for page in 0..4usize {
+            assert_eq!(g.pads(true, page, SpineSide::Left), (EDGE, GUTTER));
+            assert_eq!(g.pads(true, page, SpineSide::Right), (GUTTER, EDGE));
+            assert_eq!(g.pads(true, page, SpineSide::Auto), g.inline_pads(true, page));
+        }
     }
 }

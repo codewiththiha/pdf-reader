@@ -15,12 +15,13 @@ pub struct PageSize {
     pub height: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OutlineNode {
-    pub title: String,
-    pub page: u32,
-    pub depth: u32,
-}
+/// One flattened chapter, exactly as `pdfEngine.js` resolves it.
+///
+/// The type is `pdf-core`'s rather than the engine's: the entries cross this
+/// boundary on the wire and land in the reader's outline with one conversion in
+/// between, and a wire shape duplicated on both sides of that conversion is how
+/// a field rename becomes a silent `depth: 0` instead of a compile error.
+pub use pdf_core::outline::OutlineEntry;
 
 /// `{ok:true, numPages, title, author, outline, page1Size, pageHeights}` — engine.open().
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,7 +30,7 @@ pub struct OpenResult {
     pub num_pages: u32,
     pub title: Option<String>,
     pub author: Option<String>,
-    pub outline: Vec<OutlineNode>,
+    pub outline: Vec<OutlineEntry>,
     pub page1_size: PageSize,
     /// Intrinsic (scale-1) height of every page, in document order.
     ///

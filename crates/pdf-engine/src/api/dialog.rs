@@ -23,7 +23,7 @@ pub async fn pick_document() -> Result<String, String> {
     let filter_name = KEY_DOCUMENTS.with(|v| v.clone());
     _ = reflect_set(&filter, &KEY_NAME, &filter_name);
     let exts = js_sys::Array::new();
-    for ext in pdf_core::documents::extensions() {
+    for ext in reader_core::format::extensions() {
         exts.push(&JsValue::from_str(ext));
     }
     _ = reflect_set(&filter, &KEY_EXTENSIONS, &exts);

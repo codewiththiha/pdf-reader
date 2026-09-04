@@ -11,7 +11,7 @@
 //! Zoom never re-cuts: every length on the page scales by the same factor,
 //! so the cut computed at scale 1 is exactly the cut at any scale.
 
-use crate::blocks::{BlockKind, TextBlock};
+use crate::block::{BlockKind, TextBlock};
 
 /// The inputs of the height ESTIMATE, all at scale 1.
 #[derive(Debug, Clone, Copy)]
@@ -148,7 +148,7 @@ pub fn first_block_of_page(cuts: &[PageCut], page: u32) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blocks::BlockKind;
+    use crate::block::BlockKind;
 
     fn metrics() -> BlockMetrics {
         BlockMetrics {

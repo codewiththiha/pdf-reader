@@ -3,7 +3,7 @@
 use crate::bridge;
 use crate::types::{RenderResult, ThumbResult};
 
-use super::{guard_pdf_reader, require_pdf_reader, resolve, EngineError};
+use super::{EngineError, guard_pdf_reader, require_pdf_reader, resolve};
 
 /// Register a page's canvas with the engine (virtualized rows call this on
 /// mount). Typed end to end: the bridge takes `(page, canvas_id, host_id)`
