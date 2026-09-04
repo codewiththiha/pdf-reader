@@ -21,7 +21,6 @@ pub mod dom;
 pub mod hover_reveal;
 pub mod use_raf;
 pub mod use_resize_observer;
-pub mod use_content_size;
 pub mod use_timeout;
 pub mod use_viewport;
 pub mod use_window_event;

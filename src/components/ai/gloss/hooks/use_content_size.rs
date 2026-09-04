@@ -1,8 +1,12 @@
-//! Measure the real content height of an invisible "twin" node so a floating
-//! card can size itself to its content (no minimum: a two-line answer gets a
-//! two-line card, and content growing the twin later animates the card open a
-//! little further). The twin must be a pixel-exact replica of the card's
-//! scroll column.
+//! Measure the real content height of an invisible "twin" node so the gloss
+//! card can size itself to its content — no minimum: a two-line answer gets
+//! a two-line card, and content growing the twin later animates the card
+//! open a little further. The twin must be a pixel-exact replica of the
+//! card's scroll column.
+//!
+//! Feature-shaped measuring, so this hook lives with the gloss hooks rather
+//! than in `app-chrome` (the reusable chrome crate); the generic
+//! `ResizeObserver` it rides on stays there.
 //!
 //! Two triggers keep the measurement honest so the card can NEVER under-size
 //! itself (which is what shows up as a scroll cursor the user has to reopen
@@ -19,7 +23,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use super::use_resize_observer::use_resize_observer;
+use app_chrome::hooks::use_resize_observer::use_resize_observer;
 
 /// How much the twin's height must move before it is worth pushing to the
 /// card. A 1px change is noise (the browser sub-pixel rounding); re-flowing
