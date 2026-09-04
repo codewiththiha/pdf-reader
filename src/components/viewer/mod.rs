@@ -11,6 +11,8 @@
 //!     layouts mount a shell rather than owning any of that.
 //!   * [`page_host`] — the one place a page's format is decided, so a layout can
 //!     be shape without being conditionals.
+//!   * [`texture_surface`] — the reflowable reader's texture carrier: the
+//!     scroller class + zoom var (PDF pages carry their own, in `formats`).
 //!
 //! The reactive primitives these components read are NOT here: they live in
 //! `src/state/reader/viewer.rs` (a plain signals bundle) and in `reader-core`'s
@@ -23,7 +25,7 @@
 pub mod layouts;
 pub mod page_host;
 pub mod shells;
-pub mod texture;
+pub mod texture_surface;
 
 pub use page_host::{PageSlot, UniversalPageHost, UniversalStreamHost, UniversalStripHost};
 

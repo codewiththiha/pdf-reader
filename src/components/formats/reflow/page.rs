@@ -16,7 +16,7 @@
 //! already paints — so base mode and tint land on exactly the right colours
 //! without the `--canvas-filter` or blend-mode machinery the always-light
 //! PDF rasters need. No card, no texture rectangle: the texture rides the
-//! scroller that is the surface (see `viewer::texture`).
+//! scroller that is the surface (see `viewer::texture_surface`).
 //!
 //! The props mirror [`PdfPageCanvas`](crate::components::formats::pdf::PdfPageCanvas)
 //! where they mean the same thing — page, scale, host id, class — so the page
@@ -94,7 +94,7 @@ pub fn ReflowPage(
         use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
     let book_layout = Memo::new(move |_| typography.get().book_layout);
     // One class, always: the host is a transparent frame, never a textured
-    // card — the texture lives on the scroller (see `viewer::texture`).
+    // card — the texture lives on the scroller (see `viewer::texture_surface`).
     let host_class =
         move || if class.is_empty() { "tx-page".to_string() } else { format!("tx-page {class}") };
 

@@ -28,7 +28,7 @@ use reflow_core::geometry::PAGE_HEIGHT;
 
 use super::page::ReflowPage;
 use crate::components::viewer::page_host::host_id_for_axis;
-use crate::components::viewer::texture::{scroller_texture_class, scroller_zoom_style};
+use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use crate::state::ReaderState;
 
 #[component]
@@ -54,8 +54,8 @@ pub fn ReflowPageStrip(
     // same rule as the PDF strip).
     let strip_h = Memo::new(move |_| PAGE_HEIGHT * state.viewer.zoom.display.get());
     let vertical = axis == Axis::Vertical;
-    let texture_class = scroller_texture_class(state);
-    let tx_zoom = scroller_zoom_style(state);
+    let texture_class = texture_class(state);
+    let tx_zoom = zoom_style(state);
 
     view! {
         <div

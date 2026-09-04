@@ -52,7 +52,7 @@ use reflow_core::pager::first_block_of_page;
 
 use crate::components::formats::block_render::BlockView;
 use super::block_render;
-use crate::components::viewer::texture::{scroller_texture_class, scroller_zoom_style};
+use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use super::page::content_style;
 use crate::state::reader::TypographySignal;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
@@ -81,8 +81,8 @@ pub fn ReflowStreamLayout(
 ) -> impl IntoView {
     let typography =
         use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
-    let texture_class = scroller_texture_class(state);
-    let tx_zoom = scroller_zoom_style(state);
+    let texture_class = texture_class(state);
+    let tx_zoom = zoom_style(state);
     observe_content_size(PAGE_LIST_ID, state.viewer.container_size);
     // The stream takes the mount anchor's flag exactly like a page strip:
     // raised here for a remount, and by the open flow for a document that
