@@ -6,6 +6,13 @@
 //! the gesture pauses. Structural clicks (preset, base, texture mode, grain
 //! mode) flush or cancel a pending scrub through `flush_appearance_commit` /
 //! `cancel_appearance_commit`.
+//!
+//! Format-specific hooks live in the siblings: `pdf` owns the engine bridge
+//! (re-bake / scrub mode — only the raster pipeline needs it) and `text`
+//! recomputes the text-page tokens, which repaint from CSS alone.
+
+pub(crate) mod pdf;
+pub(crate) mod text;
 
 use std::cell::{Cell, RefCell};
 use std::time::Duration;
@@ -61,14 +68,14 @@ thread_local! {
 fn enter_scrub() {
     let was = SCRUBBING.with(|s| s.replace(true));
     if !was {
-        pdf_engine::api::set_scrub_mode(true);
+        pdf::set_scrub_mode(true);
     }
 }
 
 fn leave_scrub() {
     let was = SCRUBBING.with(|s| s.replace(false));
     if was {
-        pdf_engine::api::set_scrub_mode(false);
+        pdf::set_scrub_mode(false);
     }
 }
 
@@ -181,9 +188,11 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     paint_appearance(a);
     // The page re-colours under the drag through the live CSS pipeline.
     // refresh_theme keeps the engine's pipeline cache honest for the rebake
-    // (a no-op while scrub owns the canvases); the blend backdrop follows in
-    // the same frame on its own, being pure CSS over the same variables.
-    pdf_engine::api::refresh_theme();
+    // (a no-op while scrub owns the canvases, and a no-op for a text
+    // document — the guard lives in the engine api); the blend backdrop
+    // follows in the same frame on its own, being pure CSS over the same
+    // variables.
+    pdf::refresh_theme();
 
     let commit_gen = bump_commit_gen();
     COMMIT_PAYLOAD.with(|p| p.set(Some((settings, patch))));
