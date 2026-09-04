@@ -85,6 +85,24 @@ impl TextureMode {
         }
     }
 
+    /// The CSS class a carrier element takes for this mode — the naming
+    /// contract `styles/textures.css` keys its patterns off. `None` when the
+    /// mode is off (the element carries no texture class). One definition,
+    /// shared by the PDF page host, the reflowable scroller and the preset
+    /// swatch, so the string is never re-assembled at several call sites.
+    /// (`as_str` is the bare mode word — the `data-texture` attribute and
+    /// the CSS `&[class*="texture-"]` scan; `css_class` is the whole token.)
+    pub fn css_class(&self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Paper => Some("texture-paper"),
+            Self::Lined => Some("texture-lined"),
+            Self::Grid => Some("texture-grid"),
+            Self::Dotted => Some("texture-dotted"),
+            Self::Cross => Some("texture-cross"),
+        }
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             Self::None => "None",
@@ -217,6 +235,17 @@ impl Appearance {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn css_class_maps_every_mode_to_its_stylesheet_class() {
+        // The off mode carries no class; each pattern mode names the
+        // textures.css selector it activates.
+        assert_eq!(TextureMode::None.css_class(), None);
+        assert_eq!(TextureMode::Paper.css_class(), Some("texture-paper"));
+        assert_eq!(TextureMode::Lined.css_class(), Some("texture-lined"));
+        assert_eq!(TextureMode::Grid.css_class(), Some("texture-grid"));
+        assert_eq!(TextureMode::Dotted.css_class(), Some("texture-dotted"));
+        assert_eq!(TextureMode::Cross.css_class(), Some("texture-cross"));
+    }
     use super::*;
 
     #[test]

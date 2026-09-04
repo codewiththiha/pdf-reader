@@ -7,7 +7,7 @@
 //! filter/blend, so it has zero GPU compositing layers to lose during a
 //! slider drag.
 
-use crate::appearance::{Appearance, NoiseMode, TextureMode};
+use crate::appearance::{Appearance, NoiseMode};
 
 impl Appearance {
     /// Inline `style` for a preset thumbnail, so the swatch renders in its own
@@ -71,8 +71,9 @@ impl Appearance {
     /// Class list for a preset thumbnail's page element.
     pub fn preview_class(&self) -> String {
         let mut c = String::from("preset-page");
-        if self.texture != TextureMode::None {
-            c.push_str(&format!(" texture-{}", self.texture.as_str()));
+        if let Some(class) = self.texture.css_class() {
+            c.push(' ');
+            c.push_str(class);
         }
         match self.noise {
             NoiseMode::Off => {}

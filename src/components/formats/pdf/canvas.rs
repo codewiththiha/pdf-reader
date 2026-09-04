@@ -126,11 +126,9 @@ pub fn PdfPageCanvas(
     // off the table for the flex engine, so there is no guard tag to toggle and
     // the memo stays keyed on the one input that changes it.
     let host_class = move || {
-        let t = texture.get();
-        let base = if t == TextureMode::None {
-            "pdf-page".to_string()
-        } else {
-            format!("pdf-page texture-{}", t.as_str())
+        let base = match texture.get().css_class() {
+            Some(tex_class) => format!("pdf-page {tex_class}"),
+            None => "pdf-page".to_string(),
         };
         if class.is_empty() {
             base

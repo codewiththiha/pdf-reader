@@ -19,7 +19,6 @@
 
 use leptos::prelude::*;
 
-use reader_core::appearance::TextureMode;
 use crate::state::{ReaderState, TextureSignal};
 
 /// The `texture-*` class for a reflowable document's scroller, or `""` for a
@@ -32,11 +31,9 @@ pub fn texture_class(state: ReaderState) -> Memo<String> {
         if !state.reflowable() {
             return String::new();
         }
-        let t = texture.get();
-        if t == TextureMode::None {
-            String::new()
-        } else {
-            format!("texture-{}", t.as_str())
+        match texture.get().css_class() {
+            Some(class) => class.to_string(),
+            None => String::new(),
         }
     })
 }
