@@ -16,16 +16,11 @@
 
 .tx-page {
   position: relative;
-  overflow: hidden;
-  flex-shrink: 0;
-  contain: content;
-
-  /* NO background and NO shadow, deliberately. The page's paper is the
-     reading surface itself: for a text/Markdown document `.reader-bg`
-     paints --tx-paper (see shell.css, keyed off html[data-format]), so a
-     page host is a layout frame, not a painted card — there is no second
-     backdrop to stack over the view mode's, and no box-shadow to draw
-     around an invisible box.
+  /* Explicitly transparent: `.reader-bg` is the single source of truth
+     for the paper (it paints --tx-paper for a text/Markdown document, see
+     shell.css). The page host is a layout frame, not a painted card — no
+     background, no shadow — so nothing stacks a second backdrop over the
+     view mode's, in paginated or stream reading.
 
      NO `--canvas-filter` here either. That pipeline exists to turn the
      PDF's always-light raster into the reader's base mode and tint; a
@@ -34,6 +29,10 @@
      applying the filter would invert an already-dark page (Dark) or tint
      it twice (Light + tint). Text restyles through its tokens, which is
      exactly the reason blend mode never needs to reach it. */
+  background-color: transparent;
+  overflow: hidden;
+  flex-shrink: 0;
+  contain: content;
 
   /* Textures zoom with the page (see textures.css): the pitch derives from
      --scale-factor, and for a text page that factor is the type's own. */
@@ -260,7 +259,10 @@
    column, sized by the virtualizer (see components::formats::reflow::stream).
    --------------------------------------------------------------------- */
 .tx-stream {
-  background-color: var(--tx-paper);
+  /* Transparent, like the page host: `.reader-bg` paints the paper
+     (--tx-paper for a text document), so the stream never stacks a
+     second backdrop of its own. */
+  background-color: transparent;
 }
 
 /* The reading column inside the stream: narrower than the viewport (its

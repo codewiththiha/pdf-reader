@@ -33,7 +33,8 @@ impl Appearance {
             out.push_str(&format!("--ps-color-{token}:{value};"));
         }
         // The texture strokes key off the page's OWN paper, not the chrome
-        // base: a dim TEXT page is light-grey paper under a dark chrome.
+        // base: a dim TEXT page is medium-dark paper, so it takes the dark
+        // family like the Dark palette does.
         out.push_str(&ps_surface_tail(self, p.paper_l < 0.5));
         out
     }
@@ -65,13 +66,16 @@ mod tests {
 
     #[test]
     fn the_texture_strokes_follow_the_paper_not_the_chrome() {
-        // Dim TEXT pages sit on light-grey paper under a dark chrome base —
-        // the strokes must stay the multiply family or they vanish.
+        // Dim TEXT pages sit on medium-dark paper (L 0.40), so their
+        // strokes take the dark family, same as the Dark palette's.
         let a = tinted(BaseMode::Dim, 0, 0);
         let style = a.text_preview_style();
-        assert!(style.contains("--ps-texture-blend:multiply"), "{style}");
+        assert!(style.contains("--ps-texture-blend:screen"), "{style}");
 
         let dark = tinted(BaseMode::Dark, 0, 0);
         assert!(dark.text_preview_style().contains("--ps-texture-blend:screen"));
+
+        let light = tinted(BaseMode::Light, 0, 0);
+        assert!(light.text_preview_style().contains("--ps-texture-blend:multiply"));
     }
 }
