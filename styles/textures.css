@@ -24,12 +24,14 @@
   --texture-blend: screen;
 }
 
-/* TEXT/MD pages never paint their own texture rectangle. The reflowable
-   backdrop is ONE uniform surface (.reader-bg -> --tx-paper) — the exact
-   vertical-scroll look the reader wants in every mode. A per-page
+/* TEXT/MD pages never paint their own texture rectangle — the scroller
+   does (see TEXT/MD SCROLLER TEXTURE below). The reflowable backdrop is
+   ONE uniform surface (.reader-bg -> --tx-paper), and a per-page
    ::before would stamp a page-shaped seam onto that backdrop in single,
    two-page and horizontal modes (lighter band in dark/dim bases, because
-   the dark texture family uses screen + white). PDF keeps its per-page
+   the dark texture family uses screen + white). `.tx-page` no longer
+   receives a `texture-*` class, but the kill rule stays as a guarantee:
+   a page of type is a frame, never a card. PDF keeps its per-page
    texture: the selector is keyed off data-format. */
 :root[data-format="text"] .tx-page::before,
 :root[data-format="markdown"] .tx-page::before {
@@ -120,6 +122,85 @@
     var(--tex-unit) var(--tex-unit);
 }
 
+
+/* ---------------------------------------------------------------------
+   TEXT/MD SCROLLER TEXTURE — one surface, one texture, on the scroller
+   that IS the paper.
+
+   The reflowable formats have no page card to texture: the paper is the
+   backdrop and the scroller is transparent, so the texture rides the
+   scroller itself as a background-image with `background-attachment:
+   local`. It tiles across the whole viewport, anchors to the content
+   and scrolls with it (vertically in the stream and paginated modes,
+   horizontally in the strip), and sits behind all type by ordinary
+   stacking — the paper (--tx-paper on .reader-bg) shows through the
+   transparent scroller, the texture paints over it, the type paints
+   over the texture. No z-index, no element opacity, nothing composited.
+
+   The pitch zooms with the type: the scroller writes --tx-zoom inline
+   from the same live display scale the page hosts resolve --ts with,
+   fed into the SAME --tex-scale formula the page texture uses, so the
+   two formats stay pitch-identical at any zoom. Dark themes flip the
+   stroke tokens through the existing :root.dark --texture-* swap. The
+   user's texture-opacity dial stays a raster-page control: the
+   reflowable stroke colours are authored at their final translucency,
+   and a background layer has no element opacity to dial. */
+
+:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"],
+:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"] {
+  --scale-factor: var(--tx-zoom, 1);
+  --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
+  --tex-unit: calc(26px * var(--tex-scale));
+  --tex-line: clamp(0.5px, calc(1px * var(--tex-scale)), 2.5px);
+  background-attachment: local;
+  background-repeat: repeat;
+  background-origin: padding-box;
+}
+
+:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper,
+:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  background-color: var(--texture-paper);
+  background-blend-mode: var(--texture-blend, multiply);
+  background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
+}
+
+:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined,
+:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--texture-line) 0 var(--tex-line),
+    transparent var(--tex-line) var(--tex-unit)
+  );
+}
+
+:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid,
+:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+}
+
+:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted,
+:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted {
+  background-image: radial-gradient(
+    var(--texture-line) calc(1px * var(--tex-scale)),
+    transparent calc(1.5px * var(--tex-scale))
+  );
+  background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
+}
+
+:root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross,
+:root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross {
+  background-image:
+    repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
+    radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
+  background-size:
+    var(--tex-unit) var(--tex-unit),
+    var(--tex-unit) var(--tex-unit),
+    var(--tex-unit) var(--tex-unit);
+}
 
 /* ---------------------------------------------------------------------
    BLEND BLEED — in blend mode the backdrop carries NO texture of its own;

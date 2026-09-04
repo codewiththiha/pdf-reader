@@ -2,6 +2,7 @@ use leptos::children::ChildrenFn;
 use leptos::prelude::*;
 
 use crate::components::viewer::layouts::layout_chrome;
+use crate::components::viewer::texture::{scroller_texture_class, scroller_zoom_style};
 use app_chrome::hooks::use_resize_observer::observe_content_size;
 use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer_controls::progress_strip::ProgressStrip;
@@ -25,6 +26,8 @@ pub fn PageShell(
     children: ChildrenFn,
 ) -> impl IntoView {
     observe_content_size(scroller_id, state.viewer.container_size);
+    let texture_class = scroller_texture_class(state);
+    let tx_zoom = scroller_zoom_style(state);
     let chrome = layout_chrome(state, progress_visible);
     let fraction = Signal::derive(move || {
         let n = state.document.num_pages.get();
@@ -39,7 +42,17 @@ pub fn PageShell(
         <div class="relative h-full w-full">
             <div
                 id=scroller_id
-                class="paginated-scroller scrollbar-none flex h-full w-full overflow-auto bg-surface"
+                class=move || {
+                    let base =
+                        "paginated-scroller scrollbar-none flex h-full w-full overflow-auto bg-surface";
+                    let tex = texture_class.get();
+                    if tex.is_empty() {
+                        base.to_string()
+                    } else {
+                        format!("{base} {tex}")
+                    }
+                }
+                style=move || tx_zoom.get()
             >
                 <div
                     class="m-auto"

@@ -23,6 +23,7 @@
 pub mod layouts;
 pub mod page_host;
 pub mod shells;
+pub mod texture;
 
 pub use page_host::{PageSlot, UniversalPageHost, UniversalStreamHost, UniversalStripHost};
 

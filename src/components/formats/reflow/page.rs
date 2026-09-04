@@ -10,16 +10,19 @@
 //! while the PAGE CUT stays put: it was computed at scale 1, and uniform scaling
 //! provably preserves it, so pagination is never recomputed for a zoom.
 //!
-//! Paper treatment is the one place text is SIMPLER than PDF: a plain box painted
-//! from `--color-paper` with the type set in `--color-ink` — the very tokens the
-//! theme and tint pipelines already override — so base mode and tint land on
-//! exactly the right colours without the `--canvas-filter` or blend-mode
-//! machinery the always-light PDF rasters need.
+//! Paper treatment is the one place text is SIMPLER than PDF: the host is a
+//! TRANSPARENT frame over `.reader-bg` (which paints `--tx-paper`), and the
+//! type is set in `--tx-ink` — the very tokens the appearance pipeline
+//! already paints — so base mode and tint land on exactly the right colours
+//! without the `--canvas-filter` or blend-mode machinery the always-light
+//! PDF rasters need. No card, no texture rectangle: the texture rides the
+//! scroller that is the surface (see `viewer::texture`).
 //!
 //! The props mirror [`PdfPageCanvas`](crate::components::formats::pdf::PdfPageCanvas)
-//! where they mean the same thing — page, scale, host id, class — and both read
-//! the page texture from context, so the page host can mount either without a
-//! format-specific prop in sight. Two of the raster's props have no meaning for a
+//! where they mean the same thing — page, scale, host id, class — so the page
+//! host can mount either without a format-specific prop in sight. The PDF
+//! host's texture prop has no counterpart here: a page of type carries no
+//! texture of its own. Two of the raster's props have no meaning for a
 //! page of type and are simply absent: no canvas id (there is nothing for the
 //! engine to paint into) and no geometry callback (the page cut already knows how
 //! tall a page is). The `spine` side is this page's own, and not a mirror of
@@ -28,12 +31,11 @@
 
 use leptos::prelude::*;
 
-use reader_core::appearance::TextureMode;
 use reflow_core::geometry::{SpineSide, geometry, PAGE_HEIGHT, PAGE_WIDTH};
 
 use crate::components::formats::block_render::BlockView;
 use super::block_render;
-use crate::state::reader::{TypographySignal, TextureSignal};
+use crate::state::reader::TypographySignal;
 use crate::state::reader::ReflowContent;
 use crate::state::ReaderState;
 
@@ -90,23 +92,11 @@ pub fn ReflowPage(
 ) -> impl IntoView {
     let typography =
         use_context::<TypographySignal>().expect("TypographySignal must be provided by app bootstrap");
-    let texture = use_context::<TextureSignal>().expect("TextureSignal must be provided by app bootstrap");
-    // A Memo so only a real texture change rebuilds the host class.
-    let texture = Memo::new(move |_| texture.get());
     let book_layout = Memo::new(move |_| typography.get().book_layout);
-    let host_class = move || {
-        let t = texture.get();
-        let base = if t == TextureMode::None {
-            "tx-page".to_string()
-        } else {
-            format!("tx-page texture-{}", t.as_str())
-        };
-        if class.is_empty() {
-            base
-        } else {
-            format!("{base} {class}")
-        }
-    };
+    // One class, always: the host is a transparent frame, never a textured
+    // card — the texture lives on the scroller (see `viewer::texture`).
+    let host_class =
+        move || if class.is_empty() { "tx-page".to_string() } else { format!("tx-page {class}") };
 
     let reflow = state.document.content.reflow;
     let render = block_render(state);
