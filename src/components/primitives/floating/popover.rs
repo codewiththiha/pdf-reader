@@ -150,12 +150,12 @@ pub fn Popover(
         StoredValue::new_local(if class.is_empty() {
             format!(
                 "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg",
-                super::types::z::POPOVER
+                app_chrome::layers::POPOVER
             )
         } else {
             format!(
                 "menu-popover fixed {} rounded-lg border border-line bg-surface shadow-lg {class}",
-                super::types::z::POPOVER
+                app_chrome::layers::POPOVER
             )
         });
 

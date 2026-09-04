@@ -16,7 +16,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::floating::types::z::CONTROLS;
+use app_chrome::layers::CONTROLS;
 
 #[component]
 pub fn ProgressStrip(

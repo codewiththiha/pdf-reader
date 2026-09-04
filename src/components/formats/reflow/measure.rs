@@ -22,7 +22,7 @@ use reflow_core::geometry::geometry;
 use reflow_core::pager::paginate;
 use reflow_core::typography::TextSettings;
 
-use crate::components::formats::block_view::BlockView;
+use crate::components::formats::block_render::BlockView;
 use super::block_render;
 use super::page::content_style;
 use crate::state::reader::TypographySignal;

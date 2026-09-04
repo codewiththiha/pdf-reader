@@ -1,6 +1,8 @@
 //! Floating-system types: the geometry primitives (re-exported from the pure
-//! `reader_core::floating` so the math is host-testable), the layering tokens,
-//! and the DOM-adapter helpers that turn live elements into those primitives.
+//! `reader_core::floating` so the math is host-testable) and the DOM-adapter
+//! helpers that turn live elements into those primitives. The z-index layer
+//! tokens are read straight from `app_chrome::layers`.
+
 
 use leptos::html;
 use leptos::prelude::*;
@@ -12,11 +14,6 @@ pub use reader_core::floating::{
     PlacementOptions, PlacementSide, PlacedPanel, Point, Rect, Size,
 };
 
-/// Z-index layer tokens. The table itself is owned by `app-chrome` (the
-/// chrome surfaces are the layering's anchor) and re-exported here so every
-/// surface — floating cards, toasts, the AI selection bar — reads one
-/// table through the path it always used.
-pub use app_chrome::z;
 
 /// A viewport-space [`Rect`] from a DOM element's bounding box.
 pub fn rect_from_element(el: &web_sys::Element) -> Rect {

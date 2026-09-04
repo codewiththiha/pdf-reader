@@ -21,7 +21,7 @@ use leptos::prelude::*;
 /// A verified async switch. `P` is whatever payload the command needs
 /// alongside the boolean (the lights carry their header height).
 #[derive(Clone)]
-pub struct AsyncTruth<P>
+pub struct VerifiedSwitch<P>
 where
     P: Clone + 'static,
 {
@@ -29,7 +29,7 @@ where
     send: Rc<dyn Fn(bool, P)>,
 }
 
-impl<P> AsyncTruth<P>
+impl<P> VerifiedSwitch<P>
 where
     P: Clone + 'static,
 {
@@ -49,10 +49,10 @@ where
 /// Build a verified switch owned by the current reactive owner: `command`
 /// performs the side effect, `truth` reports what the state should be right
 /// now (untracked reads only).
-pub fn use_async_truth<P, Fut>(
+pub fn use_verified_switch<P, Fut>(
     truth: impl Fn() -> bool + 'static,
     command: impl Fn(bool, P) -> Fut + 'static,
-) -> AsyncTruth<P>
+) -> VerifiedSwitch<P>
 where
     P: Clone + 'static,
     Fut: Future<Output = ()> + 'static,
@@ -76,5 +76,5 @@ where
         });
     });
 
-    AsyncTruth { last_sent, send }
+    VerifiedSwitch { last_sent, send }
 }

@@ -50,7 +50,7 @@ use app_chrome::hooks::dom::PAGE_LIST_ID;
 use app_chrome::hooks::use_resize_observer::observe_content_size;
 use reflow_core::pager::first_block_of_page;
 
-use crate::components::formats::block_view::BlockView;
+use crate::components::formats::block_render::BlockView;
 use super::block_render;
 use super::page::content_style;
 use crate::state::reader::TypographySignal;

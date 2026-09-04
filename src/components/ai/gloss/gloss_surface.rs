@@ -226,7 +226,7 @@ pub fn GlossMeasureTwin(
             node_ref=node_ref
             class=format!(
                 "pointer-events-none invisible fixed left-0 top-0 {}",
-                crate::components::primitives::floating::types::z::CONTENT
+                app_chrome::layers::CONTENT
             )
             style=format!("width:{CARD_WIDTH}px")
             aria-hidden="true"

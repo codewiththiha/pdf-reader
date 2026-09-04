@@ -10,7 +10,7 @@
 //! jump (and the dominant-item tracker does the reverse), so dragging the
 //! thumb and stepping with the PageNavigation stay consistent for free.
 //!
-//! THE HIDE MACHINE is `app_chrome::hooks::better_hover`, the same reveal the
+//! THE HIDE MACHINE is `app_chrome::hooks::hover_reveal`, the same reveal the
 //! title bar runs, because the old shape — an enter-only strip plus a leave on
 //! the bar alone — could leave the bar up after the pointer was already gone.
 //! An exit through the window's bottom edge fires the strip's leave while the
@@ -27,7 +27,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::primitives::floating::types::z::BAR;
+use app_chrome::layers::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
 use app_chrome::hooks::dom::page_list;
 use app_chrome::hooks::{DEFAULT_HOVER_DELAY, use_drag_hold, use_hover_reveal_with};

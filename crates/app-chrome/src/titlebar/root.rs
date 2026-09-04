@@ -18,7 +18,7 @@ use leptos::children::ViewFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::z::BAR;
+use crate::layers::BAR;
 use crate::hooks::{DEFAULT_HOVER_DELAY, HoverConfig, use_hover_reveal};
 use crate::hooks::dom::{
     by_id, TOOLBAR_CENTER_TITLE_ID, TOOLBAR_LEADING_ID, TOOLBAR_ROW_ID, TOOLBAR_TRAILING_ID,

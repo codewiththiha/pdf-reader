@@ -99,7 +99,7 @@ pub fn ContextMenu<T: Clone + Send + Sync + 'static>(
 
     let base_class = format!(
         "menu-popover context-menu fixed {} min-w-[{min_width}px] surface-popover",
-        super::types::z::CONTEXT_MENU
+        app_chrome::layers::CONTEXT_MENU
     );
     let panel_class = match class {
         Some(extra) => format!("{base_class} {extra}"),

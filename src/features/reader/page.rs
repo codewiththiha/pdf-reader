@@ -341,7 +341,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         // positioned by the page; the indicator itself is
                         // reusable UI with no knowledge of AppState.
                         <Show when=move || is_ready() && show_indicator.get()>
-                            <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", crate::components::primitives::floating::types::z::CONTROLS)>
+                            <div class=format!("pointer-events-none absolute bottom-3 right-3 {}", app_chrome::layers::CONTROLS)>
                                 <PageIndicator
                                     current=Signal::derive(move || {
                                         if stream_live.get() {

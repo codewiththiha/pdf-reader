@@ -31,7 +31,7 @@ use leptos::prelude::*;
 use reader_core::appearance::TextureMode;
 use reflow_core::geometry::{SpineSide, geometry, PAGE_HEIGHT, PAGE_WIDTH};
 
-use crate::components::formats::block_view::BlockView;
+use crate::components::formats::block_render::BlockView;
 use super::block_render;
 use crate::state::reader::{TypographySignal, TextureSignal};
 use crate::state::reader::ReflowContent;

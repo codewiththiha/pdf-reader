@@ -6,7 +6,7 @@
 //! geometry is the same A4 sheet, the page cut is the same greedy pack — so the
 //! layout code is written once, and the ONE decision a format forces is which
 //! view paints a block ([`block_render`], which feeds
-//! [`BlockView`](super::block_view::BlockView)). That is the whole extent of
+//! [`BlockView`](super::block_render::BlockView)). That is the whole extent of
 //! format awareness in this module: it selects a renderer, it never selects a
 //! pipeline.
 //!
@@ -25,7 +25,7 @@ pub use page::ReflowPage;
 pub use strip::ReflowPageStrip;
 pub use stream::ReflowStreamLayout;
 
-use super::block_view::BlockRender;
+use super::block_render::BlockRender;
 use crate::state::ReaderState;
 
 /// Which block renderer the open document's blocks get.
