@@ -172,9 +172,15 @@ export async function renderPageInternal(
   const pxW = Math.max(1, Math.floor(viewport.width * out));
   const pxH = Math.max(1, Math.floor(viewport.height * out));
 
-  const pipeline = session.themeScrubActive ? null : readPipeline();
-  const needsBake = !session.themeScrubActive && pipeline ? !pipelineIsIdentity(pipeline) : false;
-  const target = needsBake ? document.createElement("canvas") : st.canvas;
+  // Where the render draws: a scratch when the pipeline in force at start is
+  // non-identity (the visible canvas keeps its baked copy until the swap),
+  // the live canvas otherwise. pdf.js needs the destination NOW, so this
+  // half is start-time; the THEME decision itself is re-made at completion
+  // (see the generation guard below) — a render that spans a pipeline
+  // change must not bake against the palette it started under.
+  const pipeline0 = session.themeScrubActive ? null : readPipeline();
+  const needsBake0 = !session.themeScrubActive && pipeline0 ? !pipelineIsIdentity(pipeline0) : false;
+  const target = needsBake0 ? document.createElement("canvas") : st.canvas;
   target.width = pxW;
   target.height = pxH;
   const ctx = target.getContext("2d", { alpha: false });
@@ -218,6 +224,19 @@ export async function renderPageInternal(
   // ≤96×96 frame for the Rust paper session to drain after the render —
   // every colour decision downstream lives in the pdf-paper crate.
   stashPaperFrame(canvasId, st.page, target);
+
+  // GENERATION GUARD: settle under the pipeline CURRENT at landing, not the
+  // one in force when the render was issued. `readPipeline()` caches by the
+  // root style token, so a Rust appearance repaint (which bumps the cache
+  // generation and re-bakes through the theme queue) or a scrub / pipeline
+  // flip can land while this raster is still in flight; page renders are
+  // NOT serialized with the theme queue, so a spread's two pages — issued a
+  // beat apart — used to be able to bake against different theme states, or
+  // land one on `canvas-raw` and its sibling baked, which is exactly the
+  // half-theme seam. The raw pixels are in `target` either way, so the
+  // decision is free to move to here.
+  const pipeline = session.themeScrubActive ? null : readPipeline();
+  const needsBake = pipeline ? !pipelineIsIdentity(pipeline) : false;
 
   if (needsBake && pipeline) {
     // Keep the unbaked `target` on the page. Slider scrub restores it and
