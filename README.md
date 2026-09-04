@@ -169,8 +169,11 @@ decorative, so it is not offered.
 
 - **Animations** (the master, in the Layout tab) collapses everything, including the
   micro-transitions that have no switch of their own: menu pops, toasts, the theme cross-fade,
-  hover fades. It is the reader's own `prefers-reduced-motion`, and while it is off the Animations
-  tab is not shown at all, because there is nothing left there for it to offer. The other
+  hover fades. One surface is exempt, because it is the exception to the sentence above: the
+  loading mark's motion is the whole message, and a frozen spinner cannot be told apart from a
+  hung app — so under either net it trades its travel for a fade and keeps going.
+  It is the reader's own `prefers-reduced-motion`, and while it is off the Animations tab is not
+  shown at all, because there is nothing left there for it to offer. The other
   switches keep their saved values through it, so turning the master back on returns exactly the
   set of motions you had chosen.
 - **Sidebar slide** — the rail tweens its width over 300ms. Off, it appears at its new width, and
@@ -312,7 +315,10 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 - `prefers-reduced-motion` is honoured: page-turn animations, the animated grain and general
   transitions are disabled or reduced to a negligible duration. Settings → Layout → Animations
   applies the same collapse on request, and Settings → Animations then narrows it per motion (see
-  [Motion](#motion)).
+  [Motion](#motion)). The one exemption is the loading mark, which keeps a motionless fade rather
+  than a still frame: an indicator that stops moving reports the wrong thing. Its animation is a
+  `transform` on three dots, which the compositor keeps running while the main thread parses a
+  document, so the mark is never frozen by the work it stands for.
 - Interactive controls carry `aria-label`, `aria-pressed`, `aria-current` and `aria-disabled`
   as appropriate, and icon-only segments carry a title so they are labelled for screen readers
   and on hover.

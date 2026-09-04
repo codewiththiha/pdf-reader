@@ -6,6 +6,21 @@
 //! carries no timing of its own beyond the loop: the caller mounts it while
 //! something is loading and unmounts it the moment that thing exists, so it
 //! is never on screen a frame longer than the wait it stands for.
+//!
+//! The three dots are three elements, not a background trick, and the split is
+//! load-bearing rather than stylistic. A mark that animates a paint property
+//! (`background-position`, one box, three gradients — what this was) needs the
+//! main thread every frame, and the main thread is precisely what is busy while
+//! a document opens; the loop keeps its last frame instead of advancing, so the
+//! indicator freezes during the wait it exists to cover. `transform` and
+//! `opacity` are what a compositor animates on its own, which is why each dot is
+//! an element that moves: the mark now reports on the load from outside it, and
+//! the only thing the loading process still controls is whether the mark is on
+//! screen at all.
+//!
+//! Same reason the reduced-motion nets do not stop it outright: they trade its
+//! hops for a fade, because a motionless spinner is indistinguishable from a
+//! hung app.
 
 use leptos::prelude::*;
 
@@ -14,6 +29,10 @@ use leptos::prelude::*;
 const DEFAULT_SIZE: u32 = 72;
 
 /// The three-dot loader. `size` is the square's edge in CSS px.
+///
+/// The dots are absolutely positioned inside the box the inline `width` gives
+/// the parent, so `size` scales the whole mark — including the distance a dot
+/// hops, which is a percentage of the dot itself.
 #[component]
 pub fn Loader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoView {
     view! {
@@ -22,7 +41,11 @@ pub fn Loader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoView {
             role="status"
             aria-label="Loading"
             style=format!("width:{size}px")
-        ></div>
+        >
+            <span class="loader-dot loader-dot-a"></span>
+            <span class="loader-dot loader-dot-b"></span>
+            <span class="loader-dot loader-dot-c"></span>
+        </div>
     }
 }
 

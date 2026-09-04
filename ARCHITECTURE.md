@@ -95,6 +95,17 @@ The app uses the adapter and keeps only app-specific policy locally:
     (a page may not be wider than the box the flex engine gave it), and landing
     in the frame the container was measured is what keeps a frozen slide to a
     single step instead of a step followed by a correction.
+13. An animation that IS the information is not decoration, so the nets do not
+    silence it. The loading mark keeps its loop under `prefers-reduced-motion`
+    and under the master switch, as a fade in place: a spinner that stopped
+    moving reports a hang, which is a different fact and a wrong one. The same
+    rule decides how it moves — `transform` or `opacity`, and nothing else,
+    because those are the two properties a compositor animates while the main
+    thread is blocked, and the frames this mark must not miss are precisely the
+    ones a document open takes. (It used to step three `background-position`
+    gradients on one box; that is painted, so it froze during the parse it was
+    on screen to cover.) Any animation that has to outlive the work it reports
+    on is written the same way.
 
 ## Continuous reader flow
 
