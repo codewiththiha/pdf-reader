@@ -297,7 +297,16 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             // so it can never leak a phantom scrollbar onto the window.
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
-                class=("blend", move || state.settings.with(|st| st.layout.blend_mode))
+                class=("blend", move || {
+                    // The blend ::after is the PDF paper pipeline (the
+                    // document's own paper through the canvas filter). A
+                    // text/Markdown page is its OWN paper — the surface
+                    // paints --tx-paper (see shell.css) — so the layer
+                    // must not run for it, or a second (filtered) backdrop
+                    // stacks under the text page.
+                    state.settings.with(|st| st.layout.blend_mode)
+                        && !state.reader.reflowable()
+                })
             >
                 <div class="relative flex min-h-0 flex-1">
                     // DOCKED: the rail is a flex sibling of `<main>`, so the

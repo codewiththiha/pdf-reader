@@ -18,9 +18,7 @@
 //!
 //! The module lives in the shared kernel because BOTH format pipelines
 //! compute in this space: the PDF tint emits OKLCH UI tokens, and the text
-//! palette derives its page colours in OKLCH. The sRGB helpers beside it
-//! exist for the text dim transform, which must evaluate the CSS filter
-//! chain — a per-channel sRGB operation — on individual colours.
+//! palette derives its page colours in OKLCH.
 
 /// sRGB gamma -> linear.
 fn srgb_to_linear(c: f64) -> f64 {
@@ -43,27 +41,6 @@ fn hex_to_linear(hex: &str) -> Option<(f64, f64, f64)> {
         srgb_to_linear(v(2)?),
         srgb_to_linear(v(4)?),
     ))
-}
-
-/// Parse `#rrggbb` into gamma-encoded sRGB in 0..=1.
-///
-/// The CSS filter pipeline (`brightness` / `contrast` / the blend modes) is
-/// defined per channel in this space, so the text dim transform — which
-/// mirrors that pipeline on individual colours — needs the encoded values,
-/// not the linear ones.
-pub(crate) fn hex_to_srgb(hex: &str) -> Option<(f64, f64, f64)> {
-    let h = hex.trim().trim_start_matches('#');
-    if h.len() != 6 {
-        return None;
-    }
-    let v = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok().map(|b| b as f64 / 255.0);
-    Some((v(0)?, v(2)?, v(4)?))
-}
-
-/// Gamma-encoded sRGB in 0..=1 back to `#rrggbb`.
-pub(crate) fn srgb_to_hex(r: f64, g: f64, b: f64) -> String {
-    let c = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("#{:02x}{:02x}{:02x}", c(r), c(g), c(b))
 }
 
 /// Lightness, chroma and hue (degrees) of an `#rrggbb` colour in OKLCH.
@@ -154,8 +131,6 @@ mod tests {
         assert!(hex_to_oklch("nonsense").is_none());
         assert!(hex_to_oklch("#gggggg").is_none());
         assert!(hex_to_oklch("").is_none());
-        assert!(hex_to_srgb("#fff").is_none());
-        assert!(hex_to_srgb("nonsense").is_none());
     }
 
     #[test]
@@ -163,12 +138,5 @@ mod tests {
         assert_eq!(oklch_css(0.5, 0.1, 138.5), "oklch(0.5000 0.1000 138.50)");
         // Out-of-range lightness must not emit an invalid colour.
         assert_eq!(oklch_css(1.7, -0.2, 10.0), "oklch(1.0000 0.0000 10.00)");
-    }
-
-    #[test]
-    fn srgb_round_trips_exactly() {
-        let hex = "#1a1c1f";
-        let (r, g, b) = hex_to_srgb(hex).unwrap();
-        assert_eq!(srgb_to_hex(r, g, b), hex);
     }
 }

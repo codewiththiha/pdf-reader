@@ -1,10 +1,10 @@
 //! The ink/paper contrast guard for the text pipeline.
 //!
 //! The tint never moves lightness, so Light/Dark tokens keep the base
-//! palettes' contrast by construction. Only dim moves it — it darkens the
-//! paper the way the raster pipeline dims the page — so the dim ink is
-//! re-derived here: pushed away from the paper until the ratio passes
-//! [`MIN_TEXT_CONTRAST`].
+//! palettes' contrast by construction. Only the dim palette moves it —
+//! the paper is a darkish grey — so the dim ink is re-derived here:
+//! pushed away from the paper until the ratio passes the floor the dim
+//! palette asks for (see `appearance_text::palette::DIM_MIN_CONTRAST`).
 //!
 //! The ratio uses the OKLCH lightness the rest of the pipeline works in
 //! rather than WCAG's sRGB luminance: an approximation that keeps this
@@ -12,12 +12,11 @@
 //! already computes. (The Light palette's own ink/paper ratio is ≈3.2 in
 //! this space — see the test below.)
 
-/// The minimum ink/paper ratio the dim re-derivation targets: the Light
-/// palette's own ink/paper ratio in the OKLCH-lightness approximation.
-/// The dimmed paper is dark, so the re-derivation converges on the 0.95
-/// ink ceiling before it can reach this; the constant binds the
-/// (hypothetically) still-light branch and any future dim that stays
-/// light.
+/// The minimum ink/paper ratio the guard defaults to: the Light palette's
+/// own ink/paper ratio in the OKLCH-lightness approximation. The dim
+/// palette passes its own tighter floor ([`crate::appearance_text::palette::DIM_MIN_CONTRAST`]);
+/// this constant binds the (hypothetically) still-light branch and any
+/// future paper that stays light.
 pub const MIN_TEXT_CONTRAST: f64 = 3.2;
 
 /// Approximate contrast ratio from two OKLCH lightnesses.

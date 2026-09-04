@@ -16,17 +16,20 @@
 
 .tx-page {
   position: relative;
-  background-color: var(--tx-paper);
   overflow: hidden;
   flex-shrink: 0;
   contain: content;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.12),
-    0 8px 24px -6px rgb(0 0 0 / 0.22);
 
-  /* NO `--canvas-filter` here, deliberately. That pipeline exists to turn
-     the PDF's always-light raster into the reader's base mode and tint;
-     a text page paints its own paper and ink from its OWN tokens
+  /* NO background and NO shadow, deliberately. The page's paper is the
+     reading surface itself: for a text/Markdown document `.reader-bg`
+     paints --tx-paper (see shell.css, keyed off html[data-format]), so a
+     page host is a layout frame, not a painted card — there is no second
+     backdrop to stack over the view mode's, and no box-shadow to draw
+     around an invisible box.
+
+     NO `--canvas-filter` here either. That pipeline exists to turn the
+     PDF's always-light raster into the reader's base mode and tint; a
+     text page paints its own paper and ink from its OWN tokens
      (`--tx-*`, derived directly by the appearance_text module), so
      applying the filter would invert an already-dark page (Dark) or tint
      it twice (Light + tint). Text restyles through its tokens, which is
@@ -35,10 +38,6 @@
   /* Textures zoom with the page (see textures.css): the pitch derives from
      --scale-factor, and for a text page that factor is the type's own. */
   --scale-factor: var(--ts, 1);
-}
-
-.no-page-shadow .tx-page {
-  box-shadow: none;
 }
 
 /* The vertical strip's invisible pages were retired with the continuous

@@ -61,58 +61,10 @@ impl Appearance {
             out.push_str(&format!("{ps_name}:{v};"));
         }
 
-        // 4. Texture and noise scale/opacity. No --ps-filter / --ps-blend
-        //    are emitted — the .preset-canvas no longer uses CSS filter or
-        //    mix-blend-mode (those caused GPU compositor bugs on Dark/Dim/
-        //    Sepia/Green themes without Noise during slider drags). Instead,
-        //    the swatch uses solid colours: --ps-color-paper for the page
-        //    backdrop and --ps-color-ink for the "text" bars. This makes the
-        //    swatch immune to compositor layer-loss bugs because it has no
-        //    GPU compositing layers to lose.
-        out.push_str(&format!(
-            "--ps-tex-opacity:{:.3};",
-            self.texture_opacity as f64 / 100.0
-        ));
-        // Thumbnails are ~1/12 of a page; at the true pitch a 26px rule grid
-        // would be a solid block. Scale the pitch down with the swatch so the
-        // PATTERN is recognisable, which is what the thumbnail is for.
-        out.push_str(&format!(
-            "--ps-tex-scale:{:.3};",
-            (self.texture_scale as f64 / 100.0) * 0.34
-        ));
-        out.push_str(&format!(
-            "--ps-noise-opacity:{:.3};",
-            self.noise_intensity as f64 / 100.0
-        ));
-        // The swatch carries its own base palette, so it must carry the
-        // matching grain blend too — inheriting the live one would render a
-        // dark preset's grain with the light rule (and vice versa), i.e.
-        // invisibly. Same family split as the textures.
-        out.push_str(&format!(
-            "--ps-noise-blend:{};",
-            if self.base.is_dark() { "screen" } else { "multiply" }
-        ));
-
-        // 5. Texture stroke colours and blend direction in --ps-* namespace.
-        //    These are keyed off `:root.dark` in input.css (inherited from
-        //    <html>); without the .dark class on the swatch itself, they would
-        //    inherit the LIVE theme's values. When the live theme and the
-        //    preset's base disagree (e.g. reader on dark live theme, browsing
-        //    a LIGHT preset swatch), the light preset's texture strokes would
-        //    inherit the DARK values (white strokes, screen blend) — and on a
-        //    light canvas those are near-invisible, making the "text" bars
-        //    disappear under the texture overlay.
-        if self.base.is_dark() {
-            out.push_str("--ps-texture-line:rgba(255,255,255,0.22);");
-            out.push_str("--ps-texture-strong:rgba(255,255,255,0.36);");
-            out.push_str("--ps-texture-paper:rgba(255,255,255,0.08);");
-            out.push_str("--ps-texture-blend:screen;");
-        } else {
-            out.push_str("--ps-texture-line:rgba(15,23,42,0.16);");
-            out.push_str("--ps-texture-strong:rgba(15,23,42,0.26);");
-            out.push_str("--ps-texture-paper:rgba(15,23,42,0.05);");
-            out.push_str("--ps-texture-blend:multiply;");
-        }
+        // 4. Texture and noise scale/opacity, the grain blend and the
+        //    stroke family — the shared swatch tail, driven by the BASE's
+        //    darkness here (the PDF preview's paper IS the base mode's).
+        out.push_str(&ps_surface_tail(self, self.base.is_dark()));
         out
     }
 
@@ -129,6 +81,59 @@ impl Appearance {
         }
         c
     }
+}
+
+/// The swatch tail every preview shares: texture and noise scale/opacity,
+/// the grain blend and the texture stroke family, all in the `--ps-*`
+/// namespace.
+///
+/// No --ps-filter / --ps-blend are emitted — the .preset-canvas does not
+/// use CSS filter or mix-blend-mode (those caused GPU compositor bugs on
+/// Dark/Dim themes without Noise during slider drags). Instead the swatch
+/// uses solid colours: --ps-color-paper for the page backdrop and
+/// --ps-color-ink for the "text" bars, so it has no GPU compositing
+/// layers to lose.
+///
+/// `dark_paper` picks the stroke family. The PDF preview keys it off the
+/// base mode (its paper IS the base mode's); the text preview keys it off
+/// the palette's own paper lightness, because a dim TEXT page sits on
+/// light-grey paper while its chrome is dark. The swatch carries its own
+/// look, so it must carry the matching grain blend and strokes too —
+/// inheriting the live theme's would render a dark preset's grain with
+/// the light rule (and vice versa), i.e. invisibly.
+pub(crate) fn ps_surface_tail(a: &Appearance, dark_paper: bool) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "--ps-tex-opacity:{:.3};",
+        a.texture_opacity as f64 / 100.0
+    ));
+    // Thumbnails are ~1/12 of a page; at the true pitch a 26px rule grid
+    // would be a solid block. Scale the pitch down with the swatch so the
+    // PATTERN is recognisable, which is what the thumbnail is for.
+    out.push_str(&format!(
+        "--ps-tex-scale:{:.3};",
+        (a.texture_scale as f64 / 100.0) * 0.34
+    ));
+    out.push_str(&format!(
+        "--ps-noise-opacity:{:.3};",
+        a.noise_intensity as f64 / 100.0
+    ));
+    out.push_str(&format!(
+        "--ps-noise-blend:{};",
+        if dark_paper { "screen" } else { "multiply" }
+    ));
+    if dark_paper {
+        out.push_str("--ps-texture-line:rgba(255,255,255,0.22);");
+        out.push_str("--ps-texture-strong:rgba(255,255,255,0.36);");
+        out.push_str("--ps-texture-paper:rgba(255,255,255,0.08);");
+        out.push_str("--ps-texture-blend:screen;");
+    } else {
+        out.push_str("--ps-texture-line:rgba(15,23,42,0.16);");
+        out.push_str("--ps-texture-strong:rgba(15,23,42,0.26);");
+        out.push_str("--ps-texture-paper:rgba(15,23,42,0.05);");
+        out.push_str("--ps-texture-blend:multiply;");
+    }
+    out
 }
 
 #[cfg(test)]

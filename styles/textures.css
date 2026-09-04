@@ -23,6 +23,17 @@
      noise into the intended subtle light grain on dark paper. */
   --texture-blend: screen;
 }
+/* Dim TEXT pages sit on the light-grey text paper (see appearance_text in
+   reader-core), not on the dark dim chrome: their strokes keep the
+   light-paper family, or the texture would vanish on the page. The dim
+   PDF page is untouched — its raster stays on the dark chrome family. */
+:root[data-base="dim"][data-format="text"] .tx-page::before,
+:root[data-base="dim"][data-format="markdown"] .tx-page::before {
+  --texture-line: rgba(15, 23, 42, 0.16);
+  --texture-strong: rgba(15, 23, 42, 0.26);
+  --texture-paper: rgba(15, 23, 42, 0.05);
+  --texture-blend: multiply;
+}
 
 .pdf-page::before,
 .tx-page::before {

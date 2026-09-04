@@ -55,10 +55,21 @@ pub(super) fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {
             >
                 // The swatch root carries the preset's whole appearance as
                 // inline custom properties, so everything inside resolves
-                // against THAT look rather than the applied one.
+                // against THAT look rather than the applied one. WHICH
+                // look depends on the open format: a text/Markdown
+                // document gets the text palette (bright light paper in
+                // Light, dark in Dark, grey in Dim), a PDF the raster
+                // pipeline — the same swap the title bar's controls
+                // trigger on the pages themselves.
                 <span
                     class="preset-swatch"
-                    style=appearance.preview_style()
+                    style=move || {
+                        if state.reader.format().is_reflowable() {
+                            appearance.text_preview_style()
+                        } else {
+                            appearance.preview_style()
+                        }
+                    }
                     aria-hidden="true"
                 >
                     <span class=appearance.preview_class()>

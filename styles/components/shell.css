@@ -168,6 +168,16 @@ body {
   z-index: 0;
   background-color: var(--color-paper); /* the blend backdrop for ::after */
 }
+/* TEXT PAPER — a reflowable document's page IS the whole surface: the
+   `.reader-bg` backdrop is the paper (`--tx-paper`) and the `.tx-page`
+   hosts are transparent frames (see text.css), so nothing stacks over
+   the view mode's backdrop. PDF keeps `--color-paper` and the blend
+   paper. `data-format` is painted by the appearance effect from the open
+   document's format. */
+:root[data-format="text"] .reader-bg,
+:root[data-format="markdown"] .reader-bg {
+  background-color: var(--tx-paper);
+}
 /* BLEND PAPER — the backdrop must equal the CANVAS background, and that is
    the PDF's own paper run through the theme pipeline, not any app colour.
    The engine publishes the document's most-used raster colour as

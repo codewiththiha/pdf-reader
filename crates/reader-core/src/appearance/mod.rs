@@ -15,7 +15,7 @@
 
 pub mod base;
 mod model;
-mod preview;
+pub(crate) mod preview;
 pub mod shared;
 
 pub use model::{Appearance, BaseMode, NoiseMode, TextureMode};

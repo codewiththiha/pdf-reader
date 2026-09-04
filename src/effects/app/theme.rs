@@ -27,14 +27,15 @@
 //! pauses. The filter STRING is unchanged, so the look is byte-identical.
 //!
 //! The scrub/commit scheduler for the sliders lives in the sibling
-//! `appearance` module; this file keeps the painting itself and the
-//! two app effects.
+//! `appearance` module; this file keeps the painting itself, the
+//! format attribute the CSS keys off, and the app effects.
 
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
 use reader_core::appearance::shared::{noise, texture};
 use reader_core::appearance::Appearance;
+use reader_core::format::Format;
 use reader_core::settings::GlossColor;
 use reader_core::settings::RenderPipeline;
 use crate::state::{AppState, AppearanceSignal};
@@ -225,6 +226,22 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
             }
         }
         let _ = style.set_property("--gloss-opacity", &format!("{:.2}", opacity));
+    });
+
+    // The reading surface resolves its paper from the OPEN FORMAT: the PDF
+    // blend backdrop paints --color-paper (see shell.css), text/Markdown
+    // pages paint the surface with --tx-paper. `data-format` is the one
+    // CSS switch, and it also gates the dim text pages' texture family —
+    // paint it here so it lands with the appearance it rides on.
+    Effect::new(move || {
+        let name = match state.reader.format() {
+            Format::Pdf => "pdf",
+            Format::Text => "text",
+            Format::Markdown => "markdown",
+        };
+        if let Some(el) = document_element() {
+            _ = el.set_attribute("data-format", name);
+        }
     });
 
     Effect::new(move || {
