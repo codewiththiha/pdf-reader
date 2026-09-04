@@ -15,7 +15,7 @@ use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::components::shell::sidebar::panels::thumbnails::geometry::{GRACE_MS, THUMB_SCALE};
 use crate::state::ReaderState;
-use crate::state::ui::SidebarMode;
+use crate::state::app::SidebarMode;
 
 use super::math::{GlideVerdict, center_target, glide_delay, glide_verdict};
 use super::AutoCenter;

@@ -11,7 +11,7 @@ use app_chrome::hooks::dom::reveal_in_scroll_parent;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 use app_chrome::hooks::use_window_event::use_window_event;
 use crate::state::ReaderState;
-use crate::state::ui::SidebarMode;
+use crate::state::app::SidebarMode;
 
 fn outline_key(index: usize, node: &OutlineNode) -> String {
     // Index is unique; page + depth keep the key readable when the list

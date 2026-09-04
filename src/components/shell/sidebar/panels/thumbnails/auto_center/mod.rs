@@ -24,7 +24,7 @@ use leptos::prelude::*;
 use virtual_list_leptos::Virtualizer;
 
 use crate::state::ReaderState;
-use crate::state::ui::SidebarMode;
+use crate::state::app::SidebarMode;
 
 /// Panel-lifetime state shared between the thumbnail panel's effects and the
 /// auto-center machinery.

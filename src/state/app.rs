@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use leptos::prelude::{Memo, RwSignal};
 
 use crate::state::library::LibraryState;
-use crate::state::ui::SidebarMode;
 use crate::state::reader::ReaderState;
 use reader_core::appearance::Appearance;
 use reader_core::settings::Settings;
@@ -41,6 +40,16 @@ impl Toast {
             message: message.into(),
         }
     }
+}
+
+/// Which sidebar panel is open. UI chrome state, not viewer state: the
+/// reader-side rendering code receives it as a plain signal when it needs
+/// to know (e.g. which panel is being shown) and never owns it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarMode {
+    None,
+    Outline,
+    Thumbs,
 }
 
 /// UI chrome state: the sidebar, the toast surface, and the window flag the

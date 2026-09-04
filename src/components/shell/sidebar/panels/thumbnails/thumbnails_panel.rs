@@ -23,7 +23,7 @@ use web_sys::Event;
 use app_chrome::hooks::use_resize_observer::use_resize_observer;
 use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::ReaderState;
-use crate::state::ui::SidebarMode;
+use crate::state::app::SidebarMode;
 
 use super::auto_center::AutoCenter;
 use super::geometry::{CELL_W, GAP_CROSS, MIN_VIEWPORT_H, PAD, ROW_BUFFER, row_height};

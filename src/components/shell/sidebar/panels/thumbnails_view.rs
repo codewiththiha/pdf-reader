@@ -5,7 +5,7 @@ use leptos::prelude::*;
 
 use crate::components::shell::sidebar::panels::thumbnails::ThumbnailsPanel;
 use crate::state::ReaderState;
-use crate::state::ui::SidebarMode;
+use crate::state::app::SidebarMode;
 use leptos::prelude::RwSignal;
 
 #[component]
