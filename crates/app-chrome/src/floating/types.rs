@@ -1,7 +1,7 @@
 //! Floating-system types: the geometry primitives (re-exported from the pure
 //! `reader_core::floating` so the math is host-testable) and the DOM-adapter
 //! helpers that turn live elements into those primitives. The z-index layer
-//! tokens are read straight from `app_chrome::layers`.
+//! tokens are read straight from `crate::layers`.
 
 
 use leptos::html;

@@ -60,7 +60,7 @@ pub fn SettingsModal(
                 // the modal owns this press: its own handler peels it,
                 // and closing the modal underneath it in the same
                 // keydown would take both layers down at once.
-                if crate::components::primitives::floating::dismiss::has_open_dismissable() {
+                if app_chrome::floating::dismiss::has_open_dismissable() {
                     return;
                 }
                 open.set(false);

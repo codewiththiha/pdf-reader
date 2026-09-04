@@ -14,8 +14,10 @@
 //!   - [`titlebar`] — the generic hover/pin titlebar shell + its context
 //!   - [`icon`], [`icon_button`], [`tooltip`] — the shared controls
 //!   - [`hooks`] — the generic DOM/timer hooks those surfaces use
+//!   - [`floating`] — placement glue + dismissal mechanics for anchored surfaces
 //!   - [`layers`] — the z-index layer tokens (re-exported by the app)
 
+pub mod floating;
 pub mod hooks;
 pub mod icon;
 pub mod icon_button;

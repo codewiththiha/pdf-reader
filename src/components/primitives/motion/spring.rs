@@ -1,5 +1,5 @@
 //! The spring, as a Leptos effect, generic over any 5-field [`SpringValue`]
-//! (the floating box, first and foremost: [`crate::components::primitives::floating::types::FloatBox`]).
+//! (the floating box, first and foremost: [`app_chrome::floating::types::FloatBox`]).
 //! Springs `value` toward `target`; while `snap` is true (dragging / a forced
 //! beat / reduced-motion) it jumps instead of wobbling.
 //!
@@ -19,7 +19,7 @@ use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
-use crate::components::primitives::floating::types::FloatBox;
+use app_chrome::floating::types::FloatBox;
 
 fn cancel_raf(id: Option<i32>) {
     if let Some(id) = id

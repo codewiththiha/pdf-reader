@@ -20,7 +20,7 @@ use leptos::prelude::*;
 
 use app_chrome::titlebar::root::TitleBarCtx;
 use crate::components::primitives::floating::popover::Popover;
-use crate::components::primitives::floating::types::PlacementSide;
+use app_chrome::floating::types::PlacementSide;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 
 #[component]

@@ -12,7 +12,7 @@ use leptos::task::spawn_local;
 use virtual_list_leptos::Virtualizer;
 
 use super::result_list::ResultList;
-use crate::components::primitives::floating::dismiss::{
+use app_chrome::floating::dismiss::{
     DismissPolicy, DismissTrigger, use_dismiss,
 };
 use app_chrome::layers::{BAR, POPOVER};

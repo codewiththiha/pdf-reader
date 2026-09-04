@@ -28,7 +28,7 @@ use reader_core::zoom_math::smoothstep;
 
 use crate::components::ai::types::{AiError, AiPhase, GlossPhase, WordInfo};
 use crate::components::primitives::floating::floating_card::FloatingCard;
-use crate::components::primitives::floating::types::FloatBox;
+use app_chrome::floating::types::FloatBox;
 
 use super::placement::CARD_WIDTH;
 use super::word_info::WordInfoSections;

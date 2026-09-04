@@ -6,7 +6,7 @@ use ai_core::gloss::{GlossBox, place_card};
 use leptos::prelude::*;
 
 use crate::components::ai::types::GlossPhase;
-use crate::components::primitives::floating::types::{Point, Size, clamp_point_to_viewport};
+use app_chrome::floating::types::{Point, Size, clamp_point_to_viewport};
 
 /// Preferred card width before viewport clamping.
 pub const CARD_WIDTH: f64 = 360.0;

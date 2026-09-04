@@ -7,8 +7,9 @@
 //! `styles.css`.
 //!
 //! Owned here because the chrome surfaces (the bar, the caption cluster) are
-//! the layering's anchor; the app re-exports them from
-//! `primitives::floating::types` so every surface reads one table.
+//! the layering's anchor; every floating surface, toast and overlay in the
+//! app reads the table from `app_chrome::layers`, so layering is one
+//! decision instead of ten scattered numbers.
 
 pub const CONTENT: &str = "z-0";
 pub const CONTROLS: &str = "z-[var(--z-controls)]";

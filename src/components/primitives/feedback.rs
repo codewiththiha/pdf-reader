@@ -46,7 +46,6 @@ pub fn CenteredLoader(#[prop(default = DEFAULT_SIZE)] size: u32) -> impl IntoVie
 // ---------------------------------------------------------------------------
 
 
-use leptos::prelude::*;
 
 /// Placeholder shimmer lines shown while content is loading.
 #[component]
