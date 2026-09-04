@@ -4,13 +4,28 @@
 //!
 //! The pure data type lives in `ai_core::gloss::PageAnchor` so state can hold
 //! it without depending on the component layer.
+//!
+//! # Formats
+//!
+//! A page-space rect is the PDF's honest answer to "where is this word", and
+//! it is only half an answer for a document that re-lays itself out: a
+//! reflowable mark's durable identity is a block and a character range
+//! ([`ReflowSpot`]), and its pixels have to be asked of the DOM again every
+//! time anything moves. Rather than fork the watchers per format, this module
+//! defines the two questions a format has to answer —
+//! [`FormatAnchorBridge::screen_box`] and [`FormatAnchorBridge::capture`] —
+//! and hands them down as one [`MarkResolver`] callback. The card, the pill,
+//! the stroke layer, the spring and the persistence are all format-blind; a
+//! new format adds a bridge and a mark-layer mount, and nothing else.
 
-use ai_core::gloss::{GlossBox, GlossMark};
+use ai_core::gloss::{GlossBox, GlossMark, ReflowSpot};
 use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
+use crate::components::ai::reflow_anchor::{union_box, HOST_ATTR, HOST_PDF};
+use crate::state::ReaderState;
 use app_chrome::hooks::dom::by_id;
 use app_chrome::hooks::use_viewport::viewport_size;
 use app_chrome::hooks::use_raf::raf_coalesce;
@@ -18,6 +33,262 @@ use app_chrome::hooks::use_window_event::{add_window_capture_listener, use_windo
 
 // Single public binding — do not also `use` PageAnchor above or rustc E0252s.
 pub use ai_core::gloss::PageAnchor;
+
+/// How an anchor's pixels are found right now. Returns the box in VIEWPORT CSS
+/// px, or `None` when the anchor's host is not mounted (virtualized away) —
+/// which every consumer already reads as "the anchor left the page".
+///
+/// The `f64` is the display scale. The PDF multiplies its stored page-space
+/// rect by it; a reflowable format ignores it, because its type is scaled
+/// through CSS custom properties and `getBoundingClientRect` already reports
+/// the scaled result.
+pub type MarkResolver = Callback<(PageAnchor, f64), Option<GlossBox>>;
+
+/// The two questions a document format answers for the AI feature.
+///
+/// Both are about live layout, which is why the trait lives in the app and not
+/// in `ai-core`: the crate keeps the serializable identity (a page and a rect,
+/// a block and a character range) and stays free of the DOM and of Leptos.
+pub trait FormatAnchorBridge {
+    /// The screen-space box of an anchor right now; `None` if its host is
+    /// unmounted.
+    fn screen_box(&self, anchor: &PageAnchor, scale: f64) -> Option<GlossBox>;
+    /// Capture the current DOM selection as an anchor for this format.
+    ///
+    /// A format whose identity needs information the DOM alone cannot give
+    /// (a reflowable mark needs the block index and the character offsets,
+    /// which the engine's selection tracker walks out of the range) answers
+    /// `None` here and is captured through its own path instead.
+    fn capture(&self, scale: f64) -> Option<PageAnchor>;
+}
+
+/// The PDF's bridge: a page host's rect plus the mark's page-space rect, times
+/// the display scale.
+#[derive(Clone, Copy)]
+pub struct PdfAnchorBridge {
+    /// The view mode, which decides which host element carries the page.
+    pub mode: ViewMode,
+}
+
+impl FormatAnchorBridge for PdfAnchorBridge {
+    fn screen_box(&self, anchor: &PageAnchor, scale: f64) -> Option<GlossBox> {
+        screen_box(anchor, scale, self.mode)
+    }
+
+    fn capture(&self, scale: f64) -> Option<PageAnchor> {
+        capture_selection(scale)
+    }
+}
+
+/// The reflowable bridge (plain text and Markdown share it — they differ in
+/// how a block is painted, never in where one lives).
+///
+/// The block-and-character identity rides in [`GlossMark::context`] as a
+/// tagged envelope, so this bridge is reached with the mark in hand rather
+/// than with a bare anchor: see [`crate::components::ai::reflow_anchor`].
+#[derive(Clone, Copy)]
+pub struct ReflowAnchorBridge {
+    pub state: ReaderState,
+    /// The spot to project. `None` for a mark captured before the tracker could
+    /// walk its offsets (a legacy mark, or a selection whose block could not be
+    /// identified), which then has nothing to project and says so.
+    pub spot: Option<ReflowSpot>,
+    /// The view mode, which says which host element carries the page.
+    pub mode: ViewMode,
+}
+
+impl FormatAnchorBridge for ReflowAnchorBridge {
+    fn screen_box(&self, _anchor: &PageAnchor, _scale: f64) -> Option<GlossBox> {
+        // The spot IS the anchor for a document made of type. The box a mark was
+        // captured with is a viewport snapshot: it is stale after one scroll, and
+        // re-using it would move the card and the Info pill onto whatever words
+        // happen to be there now. So a spot that cannot be resolved — a block
+        // virtualized away, one a re-parse orphaned, or an envelope from a
+        // version this build cannot read — answers `None`, which is the same
+        // thing a PDF says about an unmounted page, and the watchers already
+        // treat it as "the origin left the viewport".
+        let spot = self.spot?;
+        super::reflow_anchor::spot_screen_box_in(self.state, &spot, self.mode)
+    }
+
+    fn capture(&self, _scale: f64) -> Option<PageAnchor> {
+        // The engine's selection tracker normally hands the spot over with the
+        // event, so this is the second path: the same walk, app-side, for a
+        // selection that arrived without one. A reflowable bridge with a spot
+        // already in hand has nothing to capture and says so.
+        if self.spot.is_some() {
+            return None;
+        }
+        super::reflow_anchor::capture_selection(self.state).map(|(_, anchor)| anchor)
+    }
+}
+
+/// The screen box of one anchor, whichever format is open — the resolver the
+/// card and the Info pill watch through.
+///
+/// `spot` is the reflowable identity carried beside the anchor (a mark's
+/// envelope, or the selection event's); it is ignored for a PDF, whose anchor
+/// already is its identity. The view mode is read untracked: the watchers
+/// subscribe to it themselves, so a mode flip already re-derives the box.
+pub fn anchor_screen_box(
+    state: ReaderState,
+    anchor: &PageAnchor,
+    spot: Option<ReflowSpot>,
+    scale: f64,
+) -> Option<GlossBox> {
+    let mode = state.viewer.mode.get_untracked();
+    if state.reflowable_untracked() {
+        let bridge = ReflowAnchorBridge { state, spot, mode };
+        return bridge.screen_box(anchor, scale);
+    }
+    let bridge = PdfAnchorBridge { mode };
+    bridge.screen_box(anchor, scale)
+}
+
+/// Build the resolver a watcher should use: the format dispatch, decided per
+/// call rather than per mount, because the document can change under a
+/// component that outlives it. `spot_of` reads the reflowable identity of
+/// whichever anchor is current (a mark's envelope, a selection's event detail).
+pub fn anchor_resolver(state: ReaderState, spot: Signal<Option<ReflowSpot>>) -> MarkResolver {
+    Callback::new(move |(anchor, scale): (PageAnchor, f64)| {
+        // Read untracked: the watcher subscribes to the mark itself, and a
+        // second subscription here would only re-derive the same box twice.
+        let spot = spot.get_untracked();
+        anchor_screen_box(state, &anchor, spot, scale)
+    })
+}
+
+/// Build the resolver a stroke layer paints with: the same format dispatch as
+/// [`anchor_resolver`], but answered in the LAYER's coordinates rather than the
+/// viewport's, because a layer mounted inside a page host positions its strokes
+/// against that host.
+///
+/// `page` is the host's own page, and the filter that keeps a page from
+/// painting another page's marks; `None` is the continuous stream's
+/// viewport-level layer, which has no page of its own and lets the resolver
+/// decide what is on screen. `host_id` names the element those coordinates are
+/// relative to (`None` for the viewport-level layer), and is resolved per call
+/// rather than captured: the host may not be in the DOM yet when the layer is
+/// constructed, and a remount replaces it.
+pub fn stroke_resolver(
+    state: ReaderState,
+    page: Option<u32>,
+    host_id: Option<String>,
+) -> Callback<(GlossMark, f64), Option<GlossBox>> {
+    Callback::new(move |(mark, scale): (GlossMark, f64)| {
+        if state.reflowable_untracked() {
+            let mode = state.viewer.mode.get_untracked();
+            let host = host_id.as_deref().and_then(by_id);
+            // A reflowable mark belongs to whichever page its block sits on
+            // NOW, which a re-cut can move; the stored page number is the one
+            // it was captured under.
+            let spot = super::reflow_anchor::parse_spot(&mark.context);
+            if let Some(page) = page {
+                let current = spot
+                    .and_then(|s| {
+                        super::reflow_anchor::page_of_block(
+                            state.document.content.reflow,
+                            s.block,
+                        )
+                    })
+                    .unwrap_or(mark.page);
+                if current != page {
+                    return None;
+                }
+            }
+            return super::reflow_anchor::stroke_box(
+                state,
+                spot,
+                mode,
+                host.as_ref(),
+                Some(mark.rect),
+            );
+        }
+        if page.is_some_and(|page| mark.page != page) {
+            return None;
+        }
+        // A PDF's rect is already host-local at scale 1, so its stroke is the
+        // stored rect times the display scale — no DOM read, and no
+        // round-trip through the viewport that would only subtract the host's
+        // origin back off again.
+        let rect = mark.rect;
+        Some(GlossBox {
+            x: rect.x * scale,
+            y: rect.y * scale,
+            w: rect.w * scale,
+            h: rect.h * scale,
+            r: rect.r,
+        })
+    })
+}
+
+/// What a stroke layer re-derives on.
+///
+/// A PDF's strokes are host-local at a fixed scale, so scale is the only thing
+/// that moves them. A reflowable document's blocks are laid out by the browser:
+/// the page cut, the typography and the scroll position all move a stroke, so
+/// all three are in the fingerprint. It is a `u64` rather than the values
+/// themselves so an unchanged re-measure notifies nothing.
+pub fn layer_refresh(state: ReaderState) -> Signal<u64> {
+    Signal::derive(move || {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        state.viewer.zoom.display.get().to_bits().hash(&mut hasher);
+        if state.reflowable() {
+            state.viewer.scroll_top.get().to_bits().hash(&mut hasher);
+            state.viewer.container_size.get().0.to_bits().hash(&mut hasher);
+            let _ = reflow_invalidation(state).get();
+        }
+        hasher.finish()
+    })
+}
+
+/// An `invalidate` input for a watcher that has nothing beyond scroll, zoom and
+/// the page number to react to — which is every PDF, since a page is fixed
+/// pixels and cannot move under a mark.
+pub fn no_invalidation() -> Signal<u64> {
+    Signal::derive(|| 0u64)
+}
+
+/// The `invalidate` input a reflowable document needs: the page cut, the
+/// geometry it was cut with, and the stream's extent.
+///
+/// A re-cut moves blocks between pages, so a mark's page and its pixels both
+/// change without anything scrolling or zooming. This is the signal that makes
+/// the card and the Info pill notice.
+///
+/// The typography is deliberately NOT read here. Every knob that moves type
+/// moves the cut (the measure column re-publishes it), so `cuts` and `geometry`
+/// already cover it — and a knob that does not move them (the ink dial, the
+/// column's alignment) cannot move a mark either. Reading settings instead
+/// would re-derive every stroke on a colour change for nothing.
+///
+/// It is a FINGERPRINT rather than the vectors themselves: `Signal<u64>`
+/// notifies only when the value differs, so a re-measure that re-cut nothing
+/// costs one hash and wakes nobody.
+pub fn reflow_invalidation(state: ReaderState) -> Signal<u64> {
+    Signal::derive(move || {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        // `ViewMode` is `Eq` but not `Hash`, and its discriminant is all a
+        // fingerprint needs.
+        (state.viewer.mode.get() as u8).hash(&mut hasher);
+        state.document.content.reflow.cuts.with(|cuts| {
+            cuts.len().hash(&mut hasher);
+            for cut in cuts.iter() {
+                cut.start.hash(&mut hasher);
+            }
+        });
+        let geo = state.document.content.reflow.geometry.get();
+        geo.content_width.to_bits().hash(&mut hasher);
+        geo.content_height.to_bits().hash(&mut hasher);
+        // The stream re-lays its blocks when the reading column's width moves
+        // (a window resize, a page-margin change) without the page cut moving.
+        state.document.content.reflow.stream_total.get().to_bits().hash(&mut hasher);
+        state.viewer.container_size.get().0.to_bits().hash(&mut hasher);
+        hasher.finish()
+    })
+}
 
 /// The selection "Info" pill lives until its origin fully leaves the viewport.
 ///
@@ -98,13 +369,23 @@ pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64, exit_frac: f64) ->
     }
 }
 
-/// Capture the current DOM selection as a page-space anchor.
+/// Capture the current DOM selection as a page-space anchor, for a format whose
+/// identity IS a page-space rect (the PDF).
 ///
-/// The page number comes from the actual `.pdf-page` host under the selection,
-/// not from the reader's current-page signal. In the virtualized continuous
-/// reader those can temporarily diverge, and anchoring to the signal can point
-/// at an unmounted page host — which makes the floating Info pill vanish even
-/// though the selection itself is valid and visible.
+/// The page number comes from the host under the selection, not from the
+/// reader's current-page signal. In the virtualized continuous reader those can
+/// temporarily diverge, and anchoring to the signal can point at an unmounted
+/// page host — which makes the floating Info pill vanish even though the
+/// selection itself is valid and visible.
+///
+/// The host is found through the `data-reader-host` attribute rather than a
+/// `.pdf-page` class, so a format joins this path by tagging its host (see
+/// [`crate::components::ai::reflow_anchor`]) and no selector here has to grow a
+/// second class. A reflowable document is NOT captured by this function: its
+/// anchor needs the block and character offsets the engine's selection tracker
+/// reports with the event, so it goes through
+/// [`crate::components::ai::reflow_anchor::anchor_of`] instead — which is what
+/// `crate::effects::reader::text_selection` decides between.
 pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
     if scale <= 0.0 {
         return None;
@@ -118,45 +399,41 @@ pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
     let el = node
         .parent_element()
         .or_else(|| node.dyn_into::<web_sys::Element>().ok())?;
-    let host = el.closest(".pdf-page").ok().flatten()?;
+    let host = el
+        .closest(&format!("[{HOST_ATTR}]"))
+        .ok()
+        .flatten()?;
+    if host.get_attribute(HOST_ATTR).as_deref() != Some(HOST_PDF) {
+        // Another format's host: its anchor is not a page-space rect, and
+        // guessing one here would persist a mark that cannot be projected.
+        return None;
+    }
     let page = page_from_host_id(&host.id())?;
     let hr = host.get_bounding_client_rect();
     let rects = range.get_client_rects()?;
-    let (mut l, mut t, mut r, mut b) = (
-        f64::INFINITY,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::NEG_INFINITY,
-    );
-    let mut found = false;
+    let mut fragments = Vec::with_capacity(rects.length() as usize);
     for i in 0..rects.length() {
-        let Some(rc) = rects.get(i) else {
-            continue;
-        };
-        if rc.width() <= 0.0 || rc.height() <= 0.0 {
-            continue;
+        if let Some(rc) = rects.get(i) {
+            fragments.push((rc.left(), rc.top(), rc.right(), rc.bottom()));
         }
-        found = true;
-        l = l.min(rc.left());
-        t = t.min(rc.top());
-        r = r.max(rc.right());
-        b = b.max(rc.bottom());
     }
-    if !found {
-        return None;
-    }
+    // One union rule for every format, so a stroke can never be a different
+    // shape than the card that springs from it.
+    let union = union_box(&fragments)?;
     Some(PageAnchor {
         page,
         rect: GlossBox {
-            x: (l - hr.left()) / scale,
-            y: (t - hr.top()) / scale,
-            w: ((r - l) / scale).max(1.0),
-            h: ((b - t) / scale).max(1.0),
+            x: (union.x - hr.left()) / scale,
+            y: (union.y - hr.top()) / scale,
+            w: (union.w / scale).max(1.0),
+            h: (union.h / scale).max(1.0),
             r: 0.0,
         },
     })
 }
 
+/// The same capture, as a whole mark — the Info pill's fallback when the
+/// anchor it captured with its selection is gone.
 pub fn capture_selection_mark(scale: f64, word: String, context: String) -> Option<GlossMark> {
     let a = capture_selection(scale)?;
     Some(GlossMark {
@@ -186,12 +463,21 @@ pub struct AnchorWatch {
 /// scroller is caught, and window resize). `exit_frac` is the fraction of the
 /// viewport height the origin may reach before `exited` flips: `1.0` means
 /// "fully out of the viewport", `0.8` means "past 80% of the height".
+///
+/// `resolve` is the format's answer to "where is this anchor in the viewport
+/// right now" — [`anchor_resolver`] builds the right one for whichever document
+/// is open. `invalidate` is the format's answer to "something moved that scroll
+/// and zoom do not cover": a reflowable document re-cuts its pages when the
+/// typography or the column width changes, and a mark that stayed put through
+/// that would be pointing at the wrong words. A PDF has nothing to add, so it
+/// passes [`no_invalidation`].
 pub fn watch_page_anchor(
     anchor: Signal<Option<PageAnchor>>,
+    resolve: MarkResolver,
     scale: Signal<f64>,
-    mode: Signal<ViewMode>,
     scroll_top: Signal<f64>,
     page: Signal<u32>,
+    invalidate: Signal<u64>,
     exit_frac: f64,
 ) -> AnchorWatch {
     let screen = RwSignal::new(None::<GlossBox>);
@@ -199,11 +485,9 @@ pub fn watch_page_anchor(
     let tick = RwSignal::new(0u32);
 
     let refresh = Callback::new(move |_| {
-        let a = anchor.get_untracked();
-        let s = scale.get_untracked();
-        let b = a
-            .as_ref()
-            .and_then(|a| screen_box(a, s, mode.get_untracked()));
+        let b = anchor
+            .get_untracked()
+            .and_then(|a| resolve.run((a, scale.get_untracked())));
         if screen.get_untracked() != b {
             screen.set(b);
         }
@@ -217,9 +501,9 @@ pub fn watch_page_anchor(
     Effect::new(move |_| {
         let _ = anchor.get();
         let _ = scale.get();
-        let _ = mode.get();
         let _ = scroll_top.get();
         let _ = page.get();
+        let _ = invalidate.get();
         let _ = tick.get();
         refresh.run(());
     });

@@ -53,6 +53,16 @@ pub fn BlockView(
     block: TextBlock,
     /// Which format's view paints inside the wrapper.
     render: BlockRender,
+    /// The block's index in the document, published as `data-block-index`.
+    ///
+    /// This is the one handle a gloss mark has on the DOM: a reflowable mark
+    /// remembers a block and a character range rather than a rect, and
+    /// projecting it back to pixels means finding the element that renders
+    /// that block (see `crate::components::ai::reflow_anchor`). Absent for the
+    /// measure column, which renders every block a second time and must never
+    /// answer for one.
+    #[prop(optional)]
+    index: Option<usize>,
 ) -> impl IntoView {
     let content = match render {
         BlockRender::Plain => view! { <TxtBlockView block=block.clone() /> }.into_any(),
@@ -62,5 +72,9 @@ pub fn BlockView(
     // `reflow_core::block::subdivide_with`); the class does exactly that, for
     // both formats, from here.
     let class = if block.continuation { "tx-block tx-cont" } else { "tx-block" };
-    view! { <div class=class>{content}</div> }
+    view! {
+        <div class=class data-block-index=index>
+            {content}
+        </div>
+    }
 }

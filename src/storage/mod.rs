@@ -23,10 +23,16 @@ const LIBRARY_KEY: &str = "pdfreader.library.v1";
 const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// Gloss highlights, keyed by document path.
 ///
-/// Versioned like the rest: the rects are page-space CSS px, so they are
-/// stable across zoom and sessions but NOT across a change in how a page is
+/// Versioned like the rest: a PDF's mark is a page-space rect in CSS px, which
+/// is stable across zoom and sessions but NOT across a change in how a page is
 /// laid out. If page rendering metrics ever change, bump this to `v2` rather
 /// than letting old marks drift onto the wrong words.
+///
+/// A reflowable mark carries its identity in `context` instead — a tagged
+/// envelope holding a block index and a character range (see
+/// `components::ai::reflow_anchor`) — because its pages are re-cut whenever the
+/// typography or the column width moves. The envelope is versioned by its own
+/// tag, so a change there does not need a new storage key.
 const GLOSS_KEY: &str = "pdfreader.gloss.v1";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization

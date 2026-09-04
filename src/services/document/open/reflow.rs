@@ -195,6 +195,18 @@ fn ready(
     // PDF shares. The other format's pages are released at the same moment.
     state.reader.document.content.reflow.reset();
     state.reader.gloss.reset();
+    // The document's gloss highlights, loaded exactly where the PDF open loads
+    // them: before anything mounts, so the first page (or the first stream
+    // window) already paints them. A reflowable mark is a block and a
+    // character range rather than a rect, so it is the `apply_heights` below —
+    // which publishes the block→page map — that makes it projectable; loading
+    // first and paginating second is what puts it on the right page at first
+    // paint instead of a frame later.
+    state.reader.gloss.marks.set(
+        crate::storage::load_gloss()
+            .remove(&path)
+            .unwrap_or_default(),
+    );
     let metrics = estimate_metrics(&settings.text, &geo);
     let heights = estimate_heights(&blocks, &metrics);
     state.reader.document.content.reflow.blocks.set(Arc::new(blocks));

@@ -351,6 +351,7 @@ pub fn ReflowStreamLayout(
             <div
                 id=PAGE_LIST_ID
                 node_ref=list_ref
+                data-reader-host=crate::components::ai::reflow_anchor::HOST_REFLOW
                 class=move || {
                     let base =
                         "tx-stream scrollbar-none h-full w-full overflow-y-auto outline-none";
@@ -384,6 +385,23 @@ pub fn ReflowStreamLayout(
                                     <div
                                         class="tx-content"
                                         lang="en"
+                                        // The row IS the block here: one text
+                                        // node tree, one virtual item. Both
+                                        // attributes are what the AI feature
+                                        // finds a reflowable mark by — the
+                                        // index for its words, the page for the
+                                        // selection tracker's page range (which
+                                        // in this mode is bookkeeping, since
+                                        // nothing here is paginated).
+                                        data-block-index=index
+                                        data-host-page=move || {
+                                            state
+                                                .document
+                                                .content
+                                                .reflow
+                                                .block_page
+                                                .with(|map| map.get(index).map_or(1, |p| p + 1))
+                                        }
                                         style=move || format!(
                                             "{}position:absolute;top:{}px;left:0;right:0;",
                                             content_style(scale.get()),
@@ -410,6 +428,18 @@ pub fn ReflowStreamLayout(
                     </div>
                 </div>
             </div>
+            // ONE stroke layer for the whole reading surface, not one per
+            // block: the stream's blocks are virtualized individually and are
+            // not pages, so a per-page layer would have nothing to attach to
+            // and a per-block layer would drop every mark whose block scrolled
+            // out of the window. It is positioned against the scroller, so its
+            // strokes live in the reader's box and are clipped by it. A mark
+            // whose text is not mounted hides until it is — the same semantic
+            // the PDF's virtualized pages already have.
+            <crate::components::formats::reflow::ReflowGlossLayer
+                state=state
+                host_id=PAGE_LIST_ID
+            />
             <OverlayScrollbar scroller_id=PAGE_LIST_ID horizontal=false />
             <Show when=move || progress_visible.get()>
                 <ProgressStrip fraction=Signal::derive(progress) />

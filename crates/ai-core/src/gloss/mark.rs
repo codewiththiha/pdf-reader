@@ -96,6 +96,76 @@ impl PageAnchor {
     }
 }
 
+/// The reflowable formats' *durable* identity for a spot: a block index plus a
+/// character range inside that block.
+///
+/// A page number and a rect are the right answer for a PDF, whose pages are
+/// fixed pixels. They are the wrong answer for a document that re-lays itself
+/// out: a font-size change, a window resize or the measure column settling all
+/// re-cut the pages, and a page-space rect then points at whatever text happens
+/// to have moved under it. What survives every re-flow is the block the words
+/// live in and how far into it they start — so that is what a reflowable mark
+/// remembers.
+///
+/// Offsets are in the RENDERED text of the block (what the DOM shows, so for
+/// Markdown the source syntax is not part of them), counted in CHARACTERS —
+/// Unicode code points, not the UTF-16 units a DOM `Range` speaks. One
+/// character is one character on both sides of the wire, and the conversion to
+/// code units happens once, at the projection's `set_start`/`set_end` boundary.
+///
+/// Pixels are never stored: they are re-derived from the live DOM at watch time
+/// by the format's own projection (the app's `components::ai::reflow_anchor`),
+/// which is also what lets one mark follow its words onto another page.
+///
+/// This type is the payload only. It travels inside the generic
+/// [`GlossMark::context`] as a tagged envelope rather than as a second anchor
+/// type on the wire, so the persisted schema — and every consumer of it — stays
+/// the one [`PageAnchor`] shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ReflowSpot {
+    /// Index of the block the spot lives in, in document order.
+    pub block: usize,
+    /// First character of the spot inside that block's rendered text.
+    pub start: usize,
+    /// One past the last character of the spot.
+    pub end: usize,
+}
+
+impl ReflowSpot {
+    /// The spot covering `text` at the start of `block` — the shape a capture
+    /// builds before it knows any better, and the one the tests use.
+    pub fn new(block: usize, start: usize, end: usize) -> Self {
+        Self { block, start, end: end.max(start) }
+    }
+
+    /// The spot's length in characters.
+    pub fn len(&self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+
+    /// Whether the spot covers no characters at all (a collapsed or clamped
+    /// range), which makes it unprojectable and worth dropping.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The same spot clamped to a block that now holds `chars` characters.
+    /// A re-parse can shorten a document under an old mark; clamping keeps the
+    /// mark on its sentence instead of off the end of the block.
+    pub fn clamped_to(self, chars: usize) -> Self {
+        let start = self.start.min(chars);
+        Self { block: self.block, start, end: self.end.clamp(start, chars) }
+    }
+}
+
+impl MarkAnchor for ReflowSpot {
+    /// Character identity is exact: there is no sub-pixel drift to tolerate
+    /// when nothing was ever measured in pixels.
+    fn same_spot(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,6 +254,46 @@ mod tests {
         fn same_spot(&self, other: &Self) -> bool {
             self.block == other.block && self.offset == other.offset
         }
+    }
+
+    #[test]
+    fn a_reflow_spot_is_its_characters_and_clamps_into_a_shorter_block() {
+        let spot = ReflowSpot::new(7, 12, 24);
+        assert_eq!(spot.len(), 12);
+        assert!(!spot.is_empty());
+        // A block that shrank under the mark: the range stays inside it.
+        assert_eq!(spot.clamped_to(20), ReflowSpot::new(7, 12, 20));
+        assert_eq!(spot.clamped_to(5), ReflowSpot::new(7, 5, 5));
+        assert!(spot.clamped_to(5).is_empty());
+        // An end before the start is a collapsed range, not a backwards one.
+        assert!(ReflowSpot::new(1, 9, 3).is_empty());
+    }
+
+    #[test]
+    fn a_reflow_spot_is_the_same_spot_only_at_the_same_characters() {
+        let spot = ReflowSpot::new(3, 4, 9);
+        assert!(spot.same_spot(&ReflowSpot::new(3, 4, 9)));
+        // No pixel tolerance to inherit: one character over is another word.
+        assert!(!spot.same_spot(&ReflowSpot::new(3, 5, 9)));
+        assert!(!spot.same_spot(&ReflowSpot::new(4, 4, 9)));
+    }
+
+    #[test]
+    fn a_reflow_spot_survives_json_and_ignores_an_absent_field() {
+        // The envelope the app writes into `GlossMark.context`: it must come
+        // back byte-identical, and a payload without it must still parse so a
+        // PDF-era mark is simply a mark with no spot.
+        let spot = ReflowSpot::new(11, 2, 8);
+        let json = serde_json::to_string(&spot).expect("serialize");
+        assert_eq!(serde_json::from_str::<ReflowSpot>(&json).expect("round trip"), spot);
+
+        #[derive(Deserialize)]
+        struct Holder {
+            #[serde(default)]
+            spot: Option<ReflowSpot>,
+        }
+        let empty: Holder = serde_json::from_str("{}").expect("absent field");
+        assert!(empty.spot.is_none());
     }
 
     #[test]

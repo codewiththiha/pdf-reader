@@ -15,11 +15,13 @@
 //! numbers/zoom/navigation the reflowable formats share with the PDF (the
 //! reader's own `viewer` state).
 
+mod gloss;
 mod measure;
 mod page;
 mod strip;
 mod stream;
 
+pub use gloss::ReflowGlossLayer;
 pub use measure::ReflowMeasureColumn;
 pub use page::ReflowPage;
 pub use strip::ReflowPageStrip;

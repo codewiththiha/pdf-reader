@@ -13,7 +13,11 @@ use ai_core::gloss::GlossBox;
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::ai::anchor::{AnchorWatch, CARD_EXIT_FRAC, PageAnchor, watch_page_anchor};
+use crate::components::ai::anchor::{
+    anchor_resolver, no_invalidation, reflow_invalidation, watch_page_anchor, AnchorWatch,
+    CARD_EXIT_FRAC, PageAnchor,
+};
+use crate::components::ai::reflow_anchor::parse_spot;
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::hooks::use_content_measure::use_content_measure;
 use crate::components::ai::gloss::placement::{expanded_target, spring_target};
@@ -53,12 +57,29 @@ pub fn use_card_targeting(state: AppState, ctrl: GlossController) -> CardTargeti
     // ONE shared, page-aware anchor: follows scroll/zoom/mode/page, and
     // flags `exited` once the origin passes CARD_EXIT_FRAC of the viewport
     // height (or leaves the top, or its page unmounts).
+    // The card's spot rides in the open mark's own context envelope, so the
+    // resolver reads it from whichever mark is current — one closure, and no
+    // second copy of the mark to keep in step.
+    let spot = Signal::derive(move || {
+        ctrl.open.mark.get().and_then(|m| parse_spot(&m.context))
+    });
+    let resolve = anchor_resolver(state.reader, spot);
+    // A reflowable document re-cuts its pages when the typography or the column
+    // width moves: the mark keeps its words, but the words are somewhere else,
+    // and nothing scrolled. A PDF's pages are fixed pixels and have nothing to
+    // add beyond the scroll, zoom, mode and page the watcher already tracks.
+    let invalidate = if state.reader.reflowable_untracked() {
+        reflow_invalidation(state.reader)
+    } else {
+        no_invalidation()
+    };
     let watch = watch_page_anchor(
         Signal::derive(move || ctrl.open.mark.get().map(|m| PageAnchor::from_mark(&m))),
+        resolve,
         state.reader.viewer.zoom.display.into(),
-        state.reader.viewer.mode.into(),
         state.reader.viewer.scroll_top.into(),
         state.reader.viewer.page.into(),
+        invalidate,
         CARD_EXIT_FRAC,
     );
     let anchor = watch.screen;

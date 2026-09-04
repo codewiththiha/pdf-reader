@@ -38,11 +38,16 @@ use reader_core::appearance::TextureMode;
 use leptos::prelude::Signal;
 
 /// The gloss overlay inputs a page host renders when the document carries
-/// highlights: the persisted marks, the id of the mark currently waiting on
-/// the model (so its stroke can wear the processing animation), and the
-/// shared multi-select state. Passed as ONE optional prop so the four inputs
-/// cannot arrive half-configured.
+/// highlights: the reader's state (which the host turns into the stroke
+/// layer's resolver, since only the host knows its own page and id), the
+/// persisted marks, the id of the mark currently waiting on the model so its
+/// stroke can wear the processing animation, and the shared multi-select
+/// state. ONE optional prop, so the inputs cannot arrive half-configured.
 pub struct GlossOverlayProps {
+    /// The reader's state: what the stroke layer's resolver and refresh
+    /// fingerprint are built from, here rather than at the call site because
+    /// the resolver needs this host's page number and element id.
+    pub state: crate::state::ReaderState,
     /// The document's persisted gloss marks.
     pub marks: Signal<Vec<ai_core::gloss::GlossMark>>,
     /// Id of the gloss mark currently waiting on the model.
@@ -55,14 +60,33 @@ pub struct GlossOverlayProps {
 
 impl GlossOverlayProps {
     /// The reader's shared gloss state as a page host's overlay inputs —
-    /// the only construction the reader's two page views need.
-    pub fn from_gloss(gloss: crate::state::reader::GlossState) -> Self {
+    /// the only construction the reader's page views need.
+    pub fn from_gloss(state: crate::state::ReaderState) -> Self {
         Self {
-            marks: gloss.marks.read_only().into(),
-            processing: gloss.processing_id.read_only().into(),
-            selecting: gloss.selection_active,
-            selected: gloss.selected_marks,
+            state,
+            marks: state.gloss.marks.read_only().into(),
+            processing: state.gloss.processing_id.read_only().into(),
+            selecting: state.gloss.selection_active,
+            selected: state.gloss.selected_marks,
         }
+    }
+
+    /// Where this host's marks sit right now, in the host's own coordinates.
+    pub fn resolver(
+        &self,
+        page: u32,
+        host_id: &str,
+    ) -> Callback<(ai_core::gloss::GlossMark, f64), Option<ai_core::gloss::GlossBox>> {
+        crate::components::ai::anchor::stroke_resolver(
+            self.state,
+            Some(page),
+            Some(host_id.to_string()),
+        )
+    }
+
+    /// What makes this host's stroke layer look again.
+    pub fn refresh(&self) -> Signal<u64> {
+        crate::components::ai::anchor::layer_refresh(self.state)
     }
 }
 
@@ -155,6 +179,7 @@ pub fn PdfPageCanvas(
 
     // Register after this view is flushed to the DOM. The render effect can
     // otherwise call register_page before getElementById sees the canvas.
+    let gloss_host_id = host_id.clone();
     let cid_boot = canvas_id.clone();
     let hid_boot = host_id.clone();
     let registered_boot = registered.clone();
@@ -420,7 +445,12 @@ pub fn PdfPageCanvas(
     });
 
     view! {
-        <div id=host_id class=host_class>
+        <div
+            id=host_id
+            class=host_class
+            data-reader-host=crate::components::ai::reflow_anchor::HOST_PDF
+            data-host-page=page
+        >
             <canvas id=canvas_id />
             // Placeholder text layer. The engine REPLACES this node on each
             // text render: it builds the spans in a detached `.textLayer` and
@@ -436,10 +466,14 @@ pub fn PdfPageCanvas(
             // reason a mark survives scrolling, zooming and reopening the book.
             {gloss_overlay
                 .map(|gloss| {
+                    let resolve = gloss.resolver(page, &gloss_host_id);
+                    let refresh = gloss.refresh();
                     view! {
                         <crate::components::ai::gloss::mark_layer::GlossMarkLayer
-                            page=page
+                            page=Some(page)
                             marks=gloss.marks
+                            resolve=resolve
+                            refresh=refresh
                             scale=scale
                             processing=gloss.processing
                             selecting=gloss.selecting

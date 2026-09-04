@@ -218,3 +218,87 @@ format-agnostic.
   document is its own index), mapping hits through the current page cut. Progress persistence
   saves the fractional stream position alongside the page, so a continuous read resumes where it
   stopped, not at a page top.
+
+## How the AI layer finds a word: the host protocol and the spot
+
+Selection, the Info pill, the gloss card and the persisted highlights all have to
+answer one question — *where in the document are these words?* — and the answer
+used to be a PDF's: a page number and a rect in page space, measured against a
+`.pdf-page`. Nothing else about the feature is PDF-specific, so the question was
+generalised instead of the feature being forked per format.
+
+- **The hosts declare themselves.** Every page host carries `data-reader-host`
+  (the format family that painted it: `pdf` or `reflow`) and `data-host-page`
+  (the 1-based page it shows), and every rendered block carries
+  `data-block-index`. The engine's selection tracker and the app's capture find
+  their host by asking for those attributes rather than for a class, so a format
+  joins the AI feature by publishing two attributes and no selector anywhere
+  grows a second name. The surrounding sentence a selection reports is cut out of
+  the same protocol — a PDF's text layer, or a reflowable document's block row,
+  whichever the selection is inside — and a row is the better sentence anyway: a
+  page of type is thousands of characters, and a word is disambiguated by its
+  clause.
+- **The event grew two optional fields.** `pdfreader:selection-detail` now
+  carries `{ text, context, rect, host, spot }`. `host` says which family painted
+  the selection, so the app decides the pipeline from the event rather than from
+  the open document and a selection that outlives a document switch cannot be
+  projected through the wrong format's maths; `spot` is a reflowable selection's
+  durable identity. Both are `#[serde(default)]`, so a PDF's event — which
+  carries neither — deserializes unchanged.
+- **A reflowable mark remembers characters, not pixels.** Plain text and Markdown
+  have no fixed page grid: the measure pass, a font-size change, a window resize
+  and a column-alignment flip all re-cut the pages, and a page-space rect then
+  points at whatever text moved under it. The identity that survives all of it is
+  the block and the character range inside its rendered text
+  (`ai_core::gloss::ReflowSpot`), persisted as a versioned envelope in
+  `GlossMark.context` — `rf1:{"spot":{block,start,end},"text":"…"}`. The envelope
+  keeps the stored schema the one `PageAnchor` shape, and it carries the sentence
+  beside the spot because `context` is also what the model is handed when a mark
+  is re-explained from storage, long after its selection is gone
+  (`reflow_anchor::explain_context` reads the prose back out; a PDF's bare
+  sentence passes through untouched).
+- **Offsets are Unicode code points**, counted over the block's text nodes in
+  document order with the stroke layer and the measure column skipped (a mark's
+  button carries the glossed word as its accessible name, and counting that would
+  shift every offset after it). The conversion to the UTF-16 units a DOM `Range`
+  speaks happens once, at `set_start`/`set_end`, so an emoji or a mathematical
+  alphanumeric is one character on both sides of the wire — in the engine's
+  TypeScript (`[…str].length`, `Range.toString`) and in the app's Rust
+  (`.chars().count()`). For Markdown the offsets count the RENDERED text, which is
+  why a heading's stroke survives its `#`s not being on screen.
+- **Two resolvers, one dispatch.** `anchor::anchor_resolver` answers in viewport
+  space for the Info pill and the gloss card; `anchor::stroke_resolver` answers in
+  a stroke layer's own coordinates, relative to the element it measured. Neither
+  knows a format: both build a `FormatAnchorBridge` per call, decided from the
+  document that is open, and read the spot from the mark or the selection itself.
+  A page number on a reflowable mark is a filter hint for its stroke layer, never
+  an identity — `block_page` is what says where the words are now, and a re-cut
+  moves a mark onto another page without touching the mark.
+- **Unresolvable means hidden.** A spot whose block is virtualized away, orphaned
+  by a re-parse, or written by an envelope version this build cannot read resolves
+  to `None`, which the watchers already treat as "the origin left the viewport"
+  and the stroke layer paints as nothing. Painting a stale capture-time box
+  instead would highlight whatever words happen to be there now.
+- **What makes a stroke look again.** Scale, for a PDF. For type: scale, scroll,
+  container size, and `anchor::reflow_invalidation` — a fingerprint of the cut's
+  block starts, the geometry it was cut with, the stream's extent and the view
+  mode. It is a `u64` rather than the vectors so a re-measure that re-cut nothing
+  costs one hash and wakes nobody, and the typography is deliberately not read:
+  every knob that moves type moves the cut, and one that does not (the ink dial,
+  the column's alignment) cannot move a mark.
+- **Three mounts.** A stroke layer is mounted by a PDF page, by a text page
+  (`.tx-page`), and once for the whole reading column by the continuous stream —
+  whose blocks are virtualized individually rather than paginated, so a per-page
+  layer would have nothing to attach to and a per-block layer would drop every
+  mark whose block scrolled out of the window. All three are the same
+  `position:absolute; inset:0` box inside the element their resolver measured,
+  which is why `styles/components/gloss.css` defines `.glossLayer` once rather
+  than under `.pdf-page`: nothing in it is about a raster. `mix-blend-mode:
+  multiply` reads the same over ink on paper as over ink on a canvas, and the
+  dark-theme `screen` swap is about the backdrop being dark, not about it being a
+  bitmap.
+- **Order on open.** A reflowable document's marks are loaded from storage before
+  `apply_heights` publishes the block→page map, so the first page — or the first
+  stream window — already paints them instead of gaining them a frame later. Dedup
+  compares spots rather than pixels (`same_glossed_spot`), which is what stops a
+  re-gloss after a scroll from stacking a second stroke on the same word.

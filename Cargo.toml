@@ -46,6 +46,9 @@ web-sys = { version = "0.3", features = [
   "DomRectList",
   "Selection",
   "Range",
+  # The reflowable gloss anchor walks a block's text nodes to turn a character
+  # range back into a DOM Range (and reads each node's `data` to count them).
+  "Text",
   "PointerEvent",
   "EventTarget",
   "AddEventListenerOptions",

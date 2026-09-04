@@ -1,8 +1,12 @@
-use ai_core::gloss::{GlossMark, is_glossable, is_hintable};
+use ai_core::gloss::{is_glossable, is_hintable, GlossMark};
 use leptos::prelude::*;
 
-use crate::components::ai::anchor::{MENU_EXIT_FRAC, capture_selection_mark, watch_page_anchor};
+use crate::components::ai::anchor::{
+    anchor_resolver, capture_selection_mark, no_invalidation, reflow_invalidation,
+    watch_page_anchor, FormatAnchorBridge, ReflowAnchorBridge, MENU_EXIT_FRAC,
+};
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
+use crate::components::ai::reflow_anchor::spot_envelope;
 use app_chrome::icon::{Icon, IconName};
 use crate::state::AppState;
 
@@ -35,12 +39,33 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
     let detail = state.reader.ai_selection.detail;
     let popover_open = state.reader.ai_selection.popover_open;
 
+    // The pill follows the selection, so it resolves through whichever format
+    // the selection is in — and, for a reflowable one, through the spot the
+    // tracker walked out of the range, which is the only identity that survives
+    // a re-pagination.
+    let spot = Signal::derive(move || {
+        state
+            .reader
+            .ai_selection
+            .detail
+            .get()
+            .and_then(|d| d.spot)
+    });
+    let resolve = anchor_resolver(state.reader, spot);
+    // A reflowable document re-cuts its pages when the typography or the column
+    // width moves, which relocates a selection without anything scrolling.
+    let invalidate = if state.reader.reflowable_untracked() {
+        reflow_invalidation(state.reader)
+    } else {
+        no_invalidation()
+    };
     let watch = watch_page_anchor(
         Signal::derive(move || state.reader.ai_selection.anchor.get()),
+        resolve,
         state.reader.viewer.zoom.display.into(),
-        state.reader.viewer.mode.into(),
         state.reader.viewer.scroll_top.into(),
         state.reader.viewer.page.into(),
+        invalidate,
         MENU_EXIT_FRAC,
     );
 
@@ -108,14 +133,12 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                         let Some(sel) = detail.get_untracked() else {
                             return;
                         };
-                        let scale = state.reader.viewer.zoom.visual_scale();
-                        // Prefer the page-space anchor captured with the
-                        // selection; fall back to a live DOM capture.
-                        let mark = state
-                            .reader
-                            .ai_selection
-                            .anchor
-                            .get_untracked()
+                        // Prefer the anchor captured with the selection; fall
+                        // back to a live DOM capture through the format that
+                        // owns this selection.
+                        let captured = state.reader.ai_selection.anchor.get_untracked();
+                        let reflow = sel.is_reflow();
+                        let mark = captured
                             .map(|pa| GlossMark {
                                 id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
                                 // Only a single word passes the `is_glossable`
@@ -124,11 +147,58 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                                 // header and the persisted mark never carry a
                                 // stray surrounding space.
                                 word: sel.text.trim().to_string(),
-                                context: sel.context.trim().to_string(),
+                                // A reflowable mark's context is an envelope:
+                                // the spot, so the stroke can find these exact
+                                // words again after a re-pagination, a font
+                                // change or a restart, plus this sentence, which
+                                // is what the model is handed when the mark is
+                                // re-explained from storage. A PDF's mark keeps
+                                // the bare sentence — its rect already is its
+                                // identity.
+                                context: match sel.spot {
+                                    Some(spot) if reflow => {
+                                        spot_envelope(&spot, &sel.context)
+                                    }
+                                    _ => sel.context.trim().to_string(),
+                                },
                                 anchor: pa,
                             })
                             .or_else(|| {
-                                capture_selection_mark(scale, sel.text.clone(), sel.context.clone())
+                                if reflow {
+                                    // The selection arrived without a usable
+                                    // anchor (its block was not mounted yet, or
+                                    // the tracker could not walk its offsets), so
+                                    // walk the live range here. A reflowable mark
+                                    // is built from the spot it gets back plus
+                                    // the sentence the tracker did report: the
+                                    // envelope has to carry both, because the
+                                    // stroke needs the first and the model the
+                                    // second.
+                                    ReflowAnchorBridge {
+                                        state: state.reader,
+                                        spot: None,
+                                        mode: state.reader.viewer.mode.get_untracked(),
+                                    }
+                                    .capture(state.reader.viewer.zoom.visual_scale())
+                                    .and_then(|pa| {
+                                        crate::components::ai::reflow_anchor::capture_selection(
+                                            state.reader,
+                                        )
+                                        .map(|(spot, _)| (spot, pa))
+                                    })
+                                    .map(|(spot, pa)| GlossMark {
+                                        id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
+                                        word: sel.text.trim().to_string(),
+                                        context: spot_envelope(&spot, &sel.context),
+                                        anchor: pa,
+                                    })
+                                } else {
+                                    capture_selection_mark(
+                                        state.reader.viewer.zoom.visual_scale(),
+                                        sel.text.clone(),
+                                        sel.context.clone(),
+                                    )
+                                }
                             });
                         if let Some(m) = mark {
                             // Self-contained open: bumps open_req with the

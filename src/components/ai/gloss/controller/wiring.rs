@@ -165,7 +165,11 @@ fn begin_fetch(
 
     if tauri_bridge::has_tauri() {
         let run = ctrl.open.begin_run(&mark.id);
-        invoke_explain_word(mark.word, mark.context, run);
+        // The sentence, not the envelope: a reflowable mark's
+            // `context` carries its spot alongside the prose, and the model
+            // wants only the prose.
+            let explain = crate::components::ai::reflow_anchor::explain_context(&mark);
+            invoke_explain_word(mark.word, explain, run);
     } else {
         // The environment cannot change mid-session: this is a terminal,
         // non-retryable state, shown as an expanded error card.

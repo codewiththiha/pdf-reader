@@ -27,23 +27,92 @@ let clickClearTimer: ReturnType<typeof setTimeout> | null = null;
 // rather than cleared on mouseup: the debounced clear runs after mouseup.
 let pointerDownInAiUi = false;
 
-function findPageNumber(node: Node | null): number | null {
+// Every reader page host advertises itself with `data-reader-host` (the
+// format family that painted it) and `data-host-page` (the 1-based page it is
+// showing). Asking for those two instead of for `.pdf-page` is what lets a
+// selection inside a page of type be a selection like any other: no selector
+// here grows a second class when a format arrives.
+const HOST_SELECTOR = "[data-reader-host]";
+
+function hostOf(node: Node | null): Element | null {
   if (!node) return null;
   const el = node.nodeType === Node.TEXT_NODE
     ? node.parentElement
-    : (node as HTMLElement | null);
-  if (!el) return null;
-  const pageEl = el.closest(".pdf-page");
-  if (pageEl && pageEl.id) {
-    const m = /^cont-(\d+)-pg$/.exec(pageEl.id);
+    : (node as Element | null);
+  return el ? el.closest(HOST_SELECTOR) : null;
+}
+
+function findPageNumber(node: Node | null): number | null {
+  const host = hostOf(node);
+  if (!host) return null;
+  const declared = host.getAttribute("data-host-page");
+  if (declared) {
+    const page = parseInt(declared, 10);
+    if (Number.isFinite(page) && page > 0) return page;
+  }
+  // The continuous PDF strip's hosts carry their index in the id, and so do
+  // the wrappers around them (a selection in the gap between two pages lands
+  // on a wrapper). Kept as the fallback it has always been.
+  if (host.id) {
+    const m = /^cont-(\d+)-pg$/.exec(host.id);
     if (m && m[1]) return parseInt(m[1], 10) + 1;
   }
-  const wrapEl = el.closest("[id^='cont-'][id$='-wrap']");
+  const el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element));
+  const wrapEl = el ? el.closest("[id^='cont-'][id$='-wrap']") : null;
   if (wrapEl && wrapEl.id) {
     const m = /^cont-(\d+)-wrap$/.exec(wrapEl.id);
     if (m && m[1]) return parseInt(m[1], 10) + 1;
   }
   return null;
+}
+
+// A reflowable document has no fixed page grid, so a page-space rect cannot be
+// what a gloss mark remembers there: a font-size change, a window resize or the
+// measure pass settling all re-cut the pages and the rect drifts onto other
+// words. What survives every re-flow is the BLOCK the words sit in and how far
+// into that block's rendered text they start, so that is what this reports and
+// what the app persists (see `components/ai/reflow_anchor.rs`).
+type ReflowSpot = { block: number; start: number; end: number };
+
+function findReflowSpot(range: Range): ReflowSpot | null {
+  const startEl = range.startContainer.nodeType === Node.TEXT_NODE
+    ? range.startContainer.parentElement
+    : (range.startContainer as Element | null);
+  if (!startEl) return null;
+  const row = startEl.closest("[data-block-index]");
+  if (!row) return null;
+  const rawBlock = row.getAttribute("data-block-index");
+  if (!rawBlock) return null;
+  const block = parseInt(rawBlock, 10);
+  if (!Number.isFinite(block) || block < 0) return null;
+
+  // Offsets count CHARACTERS (Unicode code points) of the block's rendered
+  // text, in the text nodes under the row in document order — the same
+  // coordinate system the app walks when it projects the spot back to pixels
+  // (`components/ai/reflow_anchor.rs`). Counting code points rather than UTF-16
+  // units is what keeps an emoji or a mathematical alphanumeric ONE character
+  // on both sides of the wire.
+  //
+  // `Range.toString()` is defined as the concatenation of the Text nodes the
+  // range partially contains, in tree order, with no filtering — so a range
+  // from the row's start to the selection's start counts exactly the characters
+  // before it, for an element container as readily as for a text one.
+  const full = row.textContent ?? "";
+  if (!full) return null;
+  const before = range.cloneRange();
+  before.selectNodeContents(row);
+  try {
+    before.setEnd(range.startContainer, range.startOffset);
+  } catch {
+    // A start the row does not contain (a selection re-anchored mid-flight):
+    // no honest spot to report, and the app falls back to its own capture.
+    return null;
+  }
+  const start = [...before.toString()].length;
+  const end = start + [...range.toString()].length;
+  const total = [...full].length;
+  if (end <= start || start >= total) return null;
+  return { block, start, end: Math.min(end, total) };
 }
 
 function dispatchSelectionPages(): void {
@@ -82,13 +151,31 @@ function dispatchSelectionPages(): void {
   );
 }
 
-// ~120 chars of surrounding text from the same text layer, giving the model
-// enough context to disambiguate the selected word.
+// ~120 chars of surrounding text from the same layer of the document, giving
+// the model enough context to disambiguate the selected word. The layer is a
+// PDF's text layer or a reflowable block's content column — whichever the
+// selection is actually in, so the context is the reader's own words and not
+// the whole page.
+// The text a sentence of context is cut out of, for whichever format painted
+// the selection. Nothing here names a format's classes: a PDF's text layer and
+// a reflowable document's BLOCK ROW are both "the element this selection is
+// inside", found by the attributes the hosts publish.
+//
+// Scoping a reflowable selection to its block row rather than to the page is
+// also the better sentence: a page of type is thousands of characters, and the
+// model disambiguates a word from the clause around it, not from the chapter.
+// A selection that starts in one block and ends in another still gets its
+// start's row, which is the row its spot counts characters in.
+function contextLayer(node: Node | null): Element | null {
+  const el = node && (node.nodeType === Node.TEXT_NODE
+    ? node.parentElement
+    : (node as Element | null));
+  if (!el) return null;
+  return el.closest("[data-block-index]") ?? el.closest(".textLayer");
+}
+
 function extractContext(range: Range, selectedText: string): string {
-  const startEl = range.startContainer.nodeType === Node.TEXT_NODE
-    ? range.startContainer.parentElement
-    : (range.startContainer as HTMLElement | null);
-  const layer = startEl ? startEl.closest(".textLayer") : null;
+  const layer = contextLayer(range.startContainer);
   if (!layer) return selectedText;
   const fullText = layer.textContent ?? "";
   const idx = fullText.indexOf(selectedText);
@@ -130,6 +217,12 @@ function dispatchSelectionDetail(): void {
   if (key === lastDetailKey) return;
   lastDetailKey = key;
 
+  const host = hostOf(range.startContainer);
+  const kind = host ? host.getAttribute("data-reader-host") : null;
+  // The spot is only meaningful — and only computed — for a reflowable
+  // document; a PDF's anchor is the page-space rect the app derives itself.
+  const spot = kind === "reflow" ? findReflowSpot(range) : null;
+
   globalThis.dispatchEvent(
     new CustomEvent("pdfreader:selection-detail", {
       detail: {
@@ -141,6 +234,11 @@ function dispatchSelectionDetail(): void {
           width: rect.width,
           height: rect.height,
         },
+        // Which format family the selection is in. Absent (null) when it is in
+        // neither — chrome, the library — and the app then treats it as the
+        // PDF path it has always been.
+        host: kind,
+        spot,
       },
     })
   );
@@ -149,7 +247,11 @@ function dispatchSelectionDetail(): void {
 export function installSelectionTracker(): void {
   document.addEventListener("mousedown", (e) => {
     const t = e.target as HTMLElement | null;
-    if (t && t.closest && t.closest(".textLayer")) {
+    // A drag inside any reader host (a PDF's text layer, a page of type, the
+    // continuous stream) coalesces the detail pass onto mouseup: per-move
+    // `getClientRects()` is a layout read, and a paragraph of text is worth
+    // exactly as much protection as a page of pixels.
+    if (t && t.closest && t.closest(HOST_SELECTOR)) {
       selDragging = true;
     }
     pointerDownInAiUi = !!(t && t.closest && t.closest("[data-ai-popover]"));

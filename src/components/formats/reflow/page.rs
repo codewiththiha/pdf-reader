@@ -33,6 +33,7 @@ use leptos::prelude::*;
 
 use reflow_core::geometry::{SpineSide, geometry, PAGE_HEIGHT, PAGE_WIDTH};
 
+use crate::components::ai::reflow_anchor::HOST_REFLOW;
 use crate::components::formats::block_render::BlockView;
 use super::block_render;
 use crate::state::reader::TypographySignal;
@@ -100,15 +101,26 @@ pub fn ReflowPage(
 
     let reflow = state.document.content.reflow;
     let render = block_render(state);
+    // The host id is the element's, the gloss resolver's and the coordinate
+    // origin its strokes are positioned against; each consumer needs its own.
+    let gloss_host_id = host_id.clone();
+    let gloss_layer_host = host_id.clone();
     // The block range is read TRACKED: a re-cut publishes a new range for the
     // same page number, and the host must re-render it.
     let range = move || page_range(reflow, page);
 
     view! {
         <div
-            id=host_id
+            id=gloss_host_id
             class=host_class
             style=move || page_style(page, scale.get(), book_layout.get(), spine)
+            // The two facts the AI feature reads off a host instead of asking
+            // which pipeline painted it: what family this is, and which page.
+            // The selection tracker finds its host through the first, and the
+            // anchor resolvers address pages through the second (see
+            // `crate::components::ai::reflow_anchor`).
+            data-reader-host=HOST_REFLOW
+            data-host-page=page
         >
             <div class="tx-content" lang="en" style=move || content_style(scale.get())>
                 <For
@@ -121,7 +133,8 @@ pub fn ReflowPage(
                     children=move |(_, index): (usize, usize)| {
                         match reflow.block_at(index) {
                             Some(block) => {
-                                view! { <BlockView block=block render=render /> }.into_any()
+                                view! { <BlockView block=block render=render index=index /> }
+                                    .into_any()
                             }
                             // A re-cut can briefly hold a window from the
                             // outgoing pagination; an out-of-range index renders
@@ -131,6 +144,17 @@ pub fn ReflowPage(
                     }
                 />
             </div>
+            // Persisted gloss highlights, in the same place a PDF page keeps
+            // them: inside the host, so a remount repaints them and a mark
+            // survives the virtualizer, a zoom and a view-mode flip. The
+            // resolver is what makes them land on the right words — a
+            // reflowable mark is a block and a character range, re-projected
+            // onto whatever the browser just laid out.
+            <crate::components::formats::reflow::ReflowGlossLayer
+                state=state
+                page=page
+                host_id=gloss_layer_host
+            />
         </div>
     }
 }

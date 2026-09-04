@@ -1,7 +1,7 @@
 //! The AI text-selection slice: what the reader highlighted, where it sits on
 //! the page, and whether the explanation popover is open.
 
-use ai_core::gloss::PageAnchor;
+use ai_core::gloss::{PageAnchor, ReflowSpot};
 use leptos::prelude::*;
 use serde::Deserialize;
 
@@ -17,15 +17,38 @@ pub struct SelectionRect {
 
 /// Everything the AI feature needs about the current text selection, as
 /// dispatched by the engine's `pdfreader:selection-detail` event.
+///
+/// The two optional fields are the format half of the protocol, and both
+/// default so a PDF's event — which carries neither — deserializes unchanged.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SelectionDetail {
     /// The exact text the user highlighted.
     pub text: String,
-    /// Surrounding sentence (~120 chars from the same text layer) so the
-    /// model can disambiguate the word.
+    /// Surrounding sentence (~120 chars from the same layer of the document) so
+    /// the model can disambiguate the word.
     pub context: String,
     /// Tight bounding box around the selection (the "warp window").
     pub rect: SelectionRect,
+    /// Which format family painted the host the selection is in
+    /// (`"pdf"` / `"reflow"`), or `None` when it is in neither.
+    #[serde(default)]
+    pub host: Option<String>,
+    /// The selection's durable identity in a reflowable document: the block and
+    /// the character range inside it. `None` for a PDF, whose page-space rect
+    /// already is its identity, and for a reflowable selection whose block the
+    /// tracker could not identify — which then falls back to the rect.
+    #[serde(default)]
+    pub spot: Option<ReflowSpot>,
+}
+
+impl SelectionDetail {
+    /// Whether the selection is in a reflowable document (plain text,
+    /// Markdown). Decided by the host the tracker found rather than by the open
+    /// document's format, so a selection that outlives a document switch cannot
+    /// be anchored through the wrong pipeline.
+    pub fn is_reflow(&self) -> bool {
+        self.host.as_deref() == Some(crate::components::ai::reflow_anchor::HOST_REFLOW)
+    }
 }
 
 /// Reactive state for the AI text-selection feature: what is selected and

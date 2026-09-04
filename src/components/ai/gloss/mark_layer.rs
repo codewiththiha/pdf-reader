@@ -1,11 +1,20 @@
 //! The persistent gloss highlighter stroke layer.
 //!
-//! One of these is rendered by every `.pdf-page` host, alongside the canvas
-//! and the text layer. Because Leptos owns it, it is re-created whenever the
-//! page mounts — which is what makes a mark survive the virtualizer's
-//! unmounting, a zoom's textLayer rebuild, a view-mode flip and (through
-//! localStorage) the session itself. Marks are page-space rects, so the only
-//! thing that changes on zoom is the multiplication by `scale`.
+//! One of these is rendered by every page host, alongside the canvas and the
+//! text layer (or, for a reflowable document, alongside its type). Because
+//! Leptos owns it, it is re-created whenever the page mounts — which is what
+//! makes a mark survive the virtualizer's unmounting, a zoom's textLayer
+//! rebuild, a view-mode flip and (through localStorage) the session itself.
+//!
+//! The layer knows nothing about formats. It paints whatever its `resolve`
+//! callback can place, in the layer's own coordinate space, and hides what comes
+//! back `None` — which is how a page that is not mounted, a block that has
+//! scrolled out of the stream's window, and a mark a re-parse orphaned all get
+//! the same honest treatment. [`crate::components::ai::anchor::stroke_resolver`]
+//! builds that callback for either pipeline, and the three hosts that mount a
+//! layer (a PDF page, a text page, the continuous stream's one surface for the
+//! whole reading column) differ only in which element their strokes are
+//! measured against.
 //!
 //! This stroke is the reader's ONLY highlight for a glossed word: the native
 //! `::selection` tint is cleared when the gloss takes over, and the morphing
@@ -57,10 +66,24 @@ pub const MARK_RADIUS: f64 = 3.0;
 #[component]
 pub fn GlossMarkLayer(
     /// 1-based page this host renders; the layer paints only its own marks.
-    page: u32,
+    /// `None` for a layer that covers a whole surface rather than one page (the
+    /// continuous text stream), where which marks are on screen is exactly what
+    /// the resolver answers — a reflowable mark's page moves when the document
+    /// re-cuts, so a stored page number cannot be the filter.
+    #[prop(default = None)]
+    page: Option<u32>,
     /// Every mark of the open document.
     marks: Signal<Vec<GlossMark>>,
-    /// The display scale, so the rects follow a zoom for free.
+    /// Where a mark sits right now, in THIS layer's coordinates, or `None`
+    /// when it cannot be placed (its page or block is not mounted).
+    resolve: Callback<(GlossMark, f64), Option<GlossBox>>,
+    /// What makes the layer re-derive: the display scale for a PDF, and the
+    /// scroll position, the page cut and the typography for a document that
+    /// re-lays itself out. See
+    /// [`crate::components::ai::anchor::layer_refresh`].
+    #[prop(into)]
+    refresh: Signal<u64>,
+    /// The display scale, handed to `resolve`.
     scale: ReadSignal<f64>,
     /// Id of the mark currently waiting on the model, if any.
     processing: Signal<Option<String>>,
@@ -77,13 +100,37 @@ pub fn GlossMarkLayer(
         >
             <For
                 each=move || {
-                    marks.get().into_iter().filter(|m| m.page == page).collect::<Vec<_>>()
+                    let all = marks.get();
+                    match page {
+                        Some(page) => all.into_iter().filter(|m| m.page == page).collect::<Vec<_>>(),
+                        // A viewport-level layer cannot pre-filter by page:
+                        // which marks are on screen is exactly what its
+                        // resolver answers, and a reflowable mark's page moves
+                        // when the document re-cuts.
+                        None => all,
+                    }
                 }
                 key=|m: &GlossMark| m.id.clone()
                 children=move |m: GlossMark| {
-                    let rect = m.rect;
-                    // Exact-fit stroke: the stored union rect itself, no padding.
-                    let style = move || stroke_pos_style(rect, scale.get());
+                    // Exact-fit stroke: the resolved box itself, no padding.
+                    // Re-derived whenever the layer's inputs move, so a stroke
+                    // follows a zoom, a scroll and (for type) a re-pagination.
+                    let placed = {
+                        let mark = m.clone();
+                        Signal::derive(move || {
+                            let _ = refresh.get();
+                            resolve.run((mark.clone(), scale.get()))
+                        })
+                    };
+                    // One memo, shared by the stroke and its pulse overlay:
+                    // two closures would resolve the same box twice (and, for
+                    // type, walk the DOM twice) and could disagree by a frame.
+                    let style = Signal::derive(move || {
+                        placed
+                            .get()
+                            .map(stroke_pos_style)
+                            .unwrap_or_else(|| "display:none".to_string())
+                    });
                     let is_processing = {
                         let id = m.id.clone();
                         Signal::derive(move || {
@@ -188,7 +235,7 @@ pub fn GlossMarkLayer(
                                     <span
                                         class="gloss-mark-pulse"
                                         aria-hidden="true"
-                                        style=move || stroke_pos_style(rect, scale.get())
+                                        style=style
                                     />
                                 }
                             })
@@ -208,15 +255,16 @@ pub fn request_gloss_open(mark: &GlossMark) {
     dispatch_typed_event(GLOSS_OPEN_EVENT, mark);
 }
 
-/// Screen-space position of a stroke at the current display scale. Shared
-/// verbatim by the stroke button and the processing pulse overlay so the
-/// animated ring can never drift from the stroke it emphasises.
-fn stroke_pos_style(rect: GlossBox, s: f64) -> String {
+/// Position of a stroke inside its layer. Shared verbatim by the stroke button
+/// and the processing pulse overlay so the animated ring can never drift from
+/// the stroke it emphasises.
+///
+/// The box arrives already resolved into this layer's coordinates and at the
+/// live scale — the resolver is what knows whether that means "page-space rect
+/// times the zoom" or "where the browser put these words".
+fn stroke_pos_style(box_: GlossBox) -> String {
     format!(
         "left:{}px;top:{}px;width:{}px;height:{}px",
-        rect.x * s,
-        rect.y * s,
-        rect.w * s,
-        rect.h * s,
+        box_.x, box_.y, box_.w, box_.h,
     )
 }
