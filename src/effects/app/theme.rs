@@ -125,8 +125,10 @@ fn paint_shared(a: &Appearance) {
 
 /// Write every appearance CSS custom property / class from `a`. Synchronous.
 /// The filter string is the same one `Appearance::canvas_filter` already
-/// produces — this does not invent a second pipeline.
-pub fn paint_appearance_now(a: Appearance) {
+/// produces — this does not invent a second pipeline. `ink_contrast` is
+/// the reflowable formats' ink dial (0..=100), resolved into the flat
+/// `--tx-ink` here rather than in a live stylesheet mix.
+pub fn paint_appearance_now(a: Appearance, ink_contrast: f64) {
     paint_shared(&a);
 
     let Some(style) = html_style() else { return };
@@ -142,7 +144,7 @@ pub fn paint_appearance_now(a: Appearance) {
     // The text token set, always written alongside: the namespaces are
     // disjoint, so both formats find their own tokens waiting and a format
     // swap needs no extra wiring.
-    for (name, value) in text::token_vars(&a) {
+    for (name, value) in text::token_vars(&a, ink_contrast) {
         _ = style.set_property(name, &value);
     }
 }
@@ -166,9 +168,22 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     // over the canvas, so they repaint without touching a single bitmap.
     let baked = StoredValue::new_local(None::<(String, String, String)>);
 
+    // The reflowable formats' ink dial: resolved in Rust (into a flat
+    // --tx-ink), so the appearance paint needs it alongside the look. Its
+    // own memo keeps a dial nudge from subscribing the paint to the whole
+    // settings blob — and the engine rebake signature below ignores it, so
+    // an ink nudge never re-bakes a single raster.
+    let ink_contrast: Memo<f64> = Memo::new(move |_| state.settings.with(|s| s.text.ink_contrast));
+
+    // Warm the style pipeline once after the first paint: the first slider
+    // drag on a text document used to pay the cold-start cost of resolving
+    // every custom property (and every colour mix) on the mounted blocks.
+    // One forced layout read moves that cost to boot.
+    let warmed = StoredValue::new_local(false);
+
     Effect::new(move || {
         let a = appearance.get();
-        paint_appearance_now(a);
+        paint_appearance_now(a, ink_contrast.get());
         // The engine bakes the theme into its rasters (pages + thumbnails);
         // re-bake them at the freshly painted variables. A no-op while a
         // scrub is in flight (scrub mode owns the canvases then) and before
@@ -187,6 +202,11 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         if baked.try_get_value().flatten().as_ref() != Some(&signature) {
             baked.set_value(Some(signature));
             pdf::refresh_theme();
+        }
+
+        if !warmed.get_value() {
+            warmed.set_value(true);
+            let _ = body_el().map(|b| b.offset_height());
         }
     });
 

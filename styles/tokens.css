@@ -131,7 +131,8 @@
    3b. Text-page tokens — the reflowable formats' own paper/ink pipeline.
    The PDF filter pipeline never touches these; the appearance_text module
    writes them (crates/reader-core/src/appearance_text). The defaults
-   alias the global tokens so nothing breaks before the first paint.
+   alias the global tokens so nothing breaks before the first paint, and
+   the precomposed ink tints fall back to the full ink.
    --------------------------------------------------------------------- */
 :root {
   --tx-paper: var(--color-paper);
@@ -141,5 +142,15 @@
   --tx-line: var(--color-line);
   --tx-accent: var(--color-accent);
   --tx-accent-soft: var(--color-accent-soft);
+  /* Precomposed ink tints (markdown rules). Flat fallbacks: the real
+     values are painted by appearance_text before any document renders. */
+  --tx-ink-soft: var(--tx-ink);
+  --tx-ink-border: var(--tx-ink);
+  --tx-ink-code-bg: var(--tx-ink);
+  --tx-ink-pre-bg: var(--tx-ink);
+  --tx-ink-pre-border: var(--tx-ink);
+  --tx-ink-table-border: var(--tx-ink);
+  --tx-ink-table-head: var(--tx-ink);
+  --tx-ink-hr: var(--tx-ink);
 }
 

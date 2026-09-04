@@ -319,11 +319,17 @@ pub fn ReflowStreamLayout(
     let column_style = move || {
         let s = scale.get();
         let geo = reflow_core::geometry::geometry(typography.get().book_layout);
-        let m = margin.get();
+        let m = margin.get().round();
+        // The width is the reading column alone; the page margin is an
+        // INSET (--tx-col-inset, consumed by the .tx-align-* classes),
+        // so Left/Right honour the margin exactly like Center and a zero
+        // margin still reaches the true window edge. The min() engages
+        // only as a narrow-window clamp.
         format!(
-            "width: min(calc(100% - {}px), {}px);",
+            "width: min({}px, calc(100% - {}px));--tx-col-inset:{}px;",
+            (geo.content_width * s).round(),
             (m * 2.0).round(),
-            (geo.content_width * s).round()
+            m
         )
     };
     let progress = move || {

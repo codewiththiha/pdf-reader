@@ -109,13 +109,14 @@ pub fn body_char_width(settings: &TextSettings) -> f64 {
 /// The page-side contract: `--tx-font-size`, `--tx-line-height`,
 /// `--tx-para-margin`, `--tx-word-spacing`, `--tx-letter-spacing`,
 /// `--tx-text-indent`, `--tx-text-align`, `--tx-hyphens`, `--tx-font-body`,
-/// `--tx-font-sans`, `--tx-font-mono`, `--tx-ink-contrast`.
+/// `--tx-font-sans`, `--tx-font-mono`.
 ///
-/// The ink dial travels as a NUMBER (not a percentage): the stylesheet
-/// multiplies it by 1% inside a `color-mix()`, mixing the theme's ink
-/// toward the theme's paper. Column alignment is deliberately NOT here —
-/// it positions a container (a class on the stream column), not a value
-/// any rule of the type itself resolves through.
+/// The ink dial is deliberately NOT here: it is resolved in Rust by the
+/// appearance pipeline (reader-core's `appearance_text`), which mixes the
+/// palette ink toward the paper itself and paints a flat `--tx-ink` — the
+/// stylesheet never mixes live. Column alignment is also NOT here — it
+/// positions a container (a class on the stream column), not a value any
+/// rule of the type itself resolves through.
 pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
     vec![
         ("--tx-font-size", format!("{}px", format_px(settings.font_size))),
@@ -136,10 +137,6 @@ pub fn css_variables(settings: &TextSettings) -> Vec<(&'static str, String)> {
         ("--tx-font-body", body_stack(settings)),
         ("--tx-font-sans", family_stack(settings, TextFamily::SansSerif)),
         ("--tx-font-mono", family_stack(settings, TextFamily::Monospace)),
-        (
-            "--tx-ink-contrast",
-            format_scaled(settings.ink_contrast, 1),
-        ),
     ]
 }
 
@@ -207,7 +204,9 @@ mod tests {
         assert!(joined.contains("--tx-font-body:"), "{joined}");
         assert!(joined.contains("--tx-font-sans:"), "{joined}");
         assert!(joined.contains("--tx-font-mono:"), "{joined}");
-        assert!(joined.contains("--tx-ink-contrast:100"), "{joined}");
+        // The ink dial is NOT part of this contract: it resolves in Rust
+        // (appearance_text) and paints as a flat --tx-ink.
+        assert!(!joined.contains("--tx-ink-contrast"), "{joined}");
     }
 
     #[test]

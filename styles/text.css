@@ -62,17 +62,12 @@
   text-align: var(--tx-text-align, start);
   hyphens: var(--tx-hyphens, none);
 
-  /* The ink dial. Text is native DOM — no canvas filter, no blend mode —
-     so intensity is just arithmetic: the theme's ink mixed toward the
-     theme's paper by the setting's percentage (100 keeps the ink pure).
-     The mix follows the base mode on its own: dark ink dims toward the
-     dark paper, light ink toward the light one, and a tinted paper tints
-     the soft end of the dial with it. */
-  color: color-mix(
-    in oklab,
-    var(--tx-ink) calc(var(--tx-ink-contrast, 100) * 1%),
-    var(--tx-paper)
-  );
+  /* The ink dial is resolved in RUST, not here: --tx-ink is already the
+     palette ink mixed toward the paper by the setting's percentage
+     (100 keeps the ink pure). One flat property write, no live mix —
+     a slider drag repaints text with final colours instead of
+     re-evaluating a color-mix across every mounted block. */
+  color: var(--tx-ink);
 }
 
 /* One layout atom. Spacing under a block rides `padding-bottom` (never a
@@ -143,6 +138,11 @@
 .tx-md h5 { font-size: 1em; }
 .tx-md h6 { font-size: 0.92em; color: var(--tx-muted); }
 
+/* The markdown ink tints below are precomposed in Rust (appearance_text)
+   and painted as flat custom properties — no live color-mix() here, so
+   an appearance write during a slider drag does not re-evaluate a chain
+   of mixes across every mounted block. */
+
 .tx-md ul,
 .tx-md ol {
   margin: 0 0 0.5em;
@@ -161,8 +161,8 @@
 .tx-md blockquote {
   margin: 0 0 0.5em;
   padding: 0.1em 0 0.1em 1em;
-  border-left: 3px solid color-mix(in srgb, var(--tx-ink) 25%, transparent);
-  color: color-mix(in srgb, var(--tx-ink) 78%, transparent);
+  border-left: 3px solid var(--tx-ink-border);
+  color: var(--tx-ink-soft);
 }
 .tx-md blockquote p { text-indent: 0; }
 
@@ -175,7 +175,7 @@
 .tx-md code {
   font-family: var(--tx-font-mono, monospace);
   font-size: 0.88em;
-  background: color-mix(in srgb, var(--tx-ink) 7%, transparent);
+  background: var(--tx-ink-code-bg);
   padding: 0.12em 0.35em;
   border-radius: 4px;
 }
@@ -183,8 +183,8 @@
 .tx-md pre {
   margin: 0 0 0.5em;
   padding: 0.9em 1.1em;
-  background: color-mix(in srgb, var(--tx-ink) 5%, transparent);
-  border: 1px solid color-mix(in srgb, var(--tx-ink) 12%, transparent);
+  background: var(--tx-ink-pre-bg);
+  border: 1px solid var(--tx-ink-pre-border);
   border-radius: 8px;
   overflow-x: auto;
   line-height: 1.55;
@@ -200,7 +200,7 @@
 .tx-md hr {
   margin: 0.25em 0;
   border: none;
-  border-top: 1px solid color-mix(in srgb, var(--tx-ink) 20%, transparent);
+  border-top: 1px solid var(--tx-ink-hr);
 }
 
 .tx-md img {
@@ -215,12 +215,12 @@
 }
 .tx-md th,
 .tx-md td {
-  border: 1px solid color-mix(in srgb, var(--tx-ink) 18%, transparent);
+  border: 1px solid var(--tx-ink-table-border);
   padding: 0.35em 0.7em;
   text-align: start;
 }
 .tx-md th {
-  background: color-mix(in srgb, var(--tx-ink) 6%, transparent);
+  background: var(--tx-ink-table-head);
   font-weight: 600;
 }
 
@@ -273,8 +273,13 @@
   position: relative;
 }
 
+/* Column alignment for the continuous stream. The page margin is an
+   INSET (--tx-col-inset, written by the stream's inline style), so
+   Left/Right honour it exactly like Center — and a zero margin still
+   lets Left/Right reach the true window edge. PDF never mounts
+   .tx-stream-col, so this is text/Markdown-only by construction. */
 .tx-align-left {
-  margin-left: 0;
+  margin-left: var(--tx-col-inset, 0px);
   margin-right: auto;
 }
 
@@ -285,5 +290,5 @@
 
 .tx-align-right {
   margin-left: auto;
-  margin-right: 0;
+  margin-right: var(--tx-col-inset, 0px);
 }

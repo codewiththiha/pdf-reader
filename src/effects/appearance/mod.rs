@@ -80,7 +80,7 @@ fn leave_scrub() {
 }
 
 thread_local! {
-    static PAINT_PENDING: Cell<Option<Appearance>> = const { Cell::new(None) };
+    static PAINT_PENDING: Cell<Option<(Appearance, f64)>> = const { Cell::new(None) };
     static PAINT_SCHEDULED: Cell<bool> = const { Cell::new(false) };
     static COMMIT_GEN: Cell<u64> = const { Cell::new(0) };
     static COMMIT_TIMER: RefCell<Option<TimeoutHandle>> = const { RefCell::new(None) };
@@ -91,16 +91,18 @@ thread_local! {
 /// Coalesce paints onto the next animation frame. A 60Hz slider would
 /// otherwise rewrite `--canvas-filter` more than once per composite, and
 /// each rewrite is a new WKWebView filter intermediate per visible page.
-fn paint_appearance(a: Appearance) {
-    PAINT_PENDING.with(|p| p.set(Some(a)));
+/// The ink dial rides along so the text tokens repaint from the same
+/// snapshot the scrub is dialling.
+fn paint_appearance(a: Appearance, ink_contrast: f64) {
+    PAINT_PENDING.with(|p| p.set(Some((a, ink_contrast))));
     if PAINT_SCHEDULED.with(|s| s.get()) {
         return;
     }
     PAINT_SCHEDULED.with(|s| s.set(true));
     request_animation_frame(move || {
         PAINT_SCHEDULED.with(|s| s.set(false));
-        if let Some(a) = PAINT_PENDING.with(|p| p.take()) {
-            paint_appearance_now(a);
+        if let Some((a, ic)) = PAINT_PENDING.with(|p| p.take()) {
+            paint_appearance_now(a, ic);
         }
     });
 }
@@ -184,8 +186,9 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     }
 
     let mut a = settings.get_untracked().appearance;
+    let ink_contrast = settings.get_untracked().text.ink_contrast;
     apply_scrub(&mut a, patch);
-    paint_appearance(a);
+    paint_appearance(a, ink_contrast);
     // The page re-colours under the drag through the live CSS pipeline.
     // refresh_theme keeps the engine's pipeline cache honest for the rebake
     // (a no-op while scrub owns the canvases, and a no-op for a text

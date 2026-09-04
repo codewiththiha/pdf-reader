@@ -11,8 +11,9 @@
 //!     and the ink stays mostly black (L 0.15) so it reads on it.
 //!   * Dark: the paper is a DARKISH GREY (L 0.24) — never pitch black —
 //!     and the ink mostly white (L 0.92).
-//!   * Dim: the paper is a MEDIUM-DARK grey (L 0.40) with dark/black ink
-//!     (L 0.12).
+//!   * Dim: the paper sits in the PDF's dim family (L 0.22 — the same
+//!     depth as the dim chrome, which the raster pipeline dims but never
+//!     re-lights) with dark/black ink (L 0.12).
 //!   * The ink always picks up a whisper of the paper's hue, so the pair
 //!     reads as one look instead of black-on-coloured.
 //!
@@ -23,11 +24,11 @@
 //!   2. The slider hue is an sRGB angle (that is what the picker paints);
 //!      it is mapped into OKLCH before emission, so the paper lands on
 //!      the colour the swatch actually shows.
-//!   3. The neighbours (surface / line / muted) derive TOWARD the ink, so
-//!      the ladder follows the ink's own direction in every mode: Light
-//!      and Dim (dark ink) deepen from the paper, Dark (light ink)
-//!      lightens from it. Dim therefore reads like a grey Light page, not
-//!      a washed-out Dark one.
+//!   3. Light and Dark derive the neighbours (surface / line / muted)
+//!      TOWARD the ink, so the ladder follows the ink's own direction.
+//!      Dim derives them as small lifts off the dark paper instead — the
+//!      ink stays the darkest thing on the page, matching the PDF's
+//!      quiet dim look.
 //!   4. The accent keeps the base family untinted (links stay the
 //!      reader's accent), then walks onto the slider's colour as the tint
 //!      comes up.
@@ -73,15 +74,33 @@ impl TextPalette {
             BaseMode::Light => (0.98, 0.15, 0.08, 0.03),
             // Darkish grey paper — NOT pitch black — mostly-white ink.
             BaseMode::Dark => (0.24, 0.92, 0.10, 0.04),
-            // Medium-dark paper, dark/black ink.
-            BaseMode::Dim => (0.40, 0.12, 0.08, 0.03),
+            // The PDF's dim family: the same depth as the dim chrome
+            // (#1a1c1f), never re-lit — the raster pipeline only dims the
+            // page, and the text page matches it instead of reading a
+            // stop brighter. The ink stays dark/black on it.
+            BaseMode::Dim => (0.22, 0.12, 0.08, 0.03),
+        };
+
+        let (surface_l, line_l, muted_l) = match a.base {
+            // Light and Dark derive the ladder toward the ink, so it
+            // follows the ink's own direction.
+            BaseMode::Light | BaseMode::Dark => (
+                lerp(paper_l, ink_l, 0.06),
+                lerp(paper_l, ink_l, 0.18),
+                lerp(paper_l, ink_l, 0.45),
+            ),
+            // Dim: everything is a small lift OFF the dark paper —
+            // surface and line just above it, muted a soft grey — while
+            // the ink stays the darkest thing on the page. The PDF's
+            // quiet dim look.
+            BaseMode::Dim => (paper_l + 0.05, paper_l + 0.10, paper_l + 0.25),
         };
 
         let paper = oklch_css(paper_l, paper_c_max * t, target_h);
         let ink = oklch_css(ink_l, ink_c_max * t, target_h);
-        let muted = oklch_css(lerp(paper_l, ink_l, 0.45), ink_c_max * 0.6 * t, target_h);
-        let surface = oklch_css(lerp(paper_l, ink_l, 0.06), paper_c_max * 0.8 * t, target_h);
-        let line = oklch_css(lerp(paper_l, ink_l, 0.18), paper_c_max * 0.5 * t, target_h);
+        let muted = oklch_css(muted_l, ink_c_max * 0.6 * t, target_h);
+        let surface = oklch_css(surface_l, paper_c_max * 0.8 * t, target_h);
+        let line = oklch_css(line_l, paper_c_max * 0.5 * t, target_h);
 
         // The accent: the base family untinted, the slider's colour once a
         // tint is up — its hue walks from the base accent's (so a 5% tint
@@ -127,6 +146,46 @@ impl TextPalette {
 
 fn lerp(from: f64, to: f64, t: f64) -> f64 {
     from + (to - from) * t
+}
+
+/// Mix `color` toward `paper` by `1 - keep`: `keep` is the fraction of
+/// the colour retained (1.0 = the colour itself, 0.0 = the paper).
+///
+/// This replaces the live `color-mix()` rules the text stylesheet used
+/// to evaluate at paint time (code chips, blockquote rules, table
+/// borders — every one recomputed on every token write during a slider
+/// drag). The mixes are now precomposed in Rust and painted as flat
+/// colours, so a drag writes N plain custom properties.
+///
+/// Both inputs may be `#rrggbb` or `oklch(...)` literals — untinted
+/// palettes emit hex, tinted ones emit oklch. Lightness and chroma lerp
+/// in OKLCH; the colour's own hue is kept, so a tinted ink keeps its
+/// tint as it softens toward the paper.
+pub fn mix_toward_paper(color: &str, paper: &str, keep: f64) -> String {
+    let keep = keep.clamp(0.0, 1.0);
+    if keep >= 1.0 {
+        // Full strength: the colour itself, byte for byte — an untinted
+        // palette keeps emitting its hex token instead of re-rounding
+        // through oklch.
+        return color.to_string();
+    }
+    let Some((l, c, h)) = parse_color(color) else {
+        return color.to_string();
+    };
+    let Some((pl, pc, _)) = parse_color(paper) else {
+        return color.to_string();
+    };
+    oklch_css(l + (pl - l) * (1.0 - keep), c + (pc - c) * (1.0 - keep), h)
+}
+
+/// (L, C, H) out of a hex literal or an `oklch(...)` literal.
+fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
+    let v = value.trim();
+    if let Some(inner) = v.strip_prefix("oklch(").and_then(|s| s.strip_suffix(')')) {
+        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().ok());
+        return Some((it.next().flatten()?, it.next().flatten()?, it.next().flatten()?));
+    }
+    hex_to_oklch(v)
 }
 
 #[cfg(test)]
@@ -181,18 +240,21 @@ mod tests {
     }
 
     #[test]
-    fn dim_is_medium_dark_paper_with_dark_ink() {
+    fn dim_is_the_pdf_dim_depth_with_dark_ink() {
         let p = TextPalette::compute(&tinted(BaseMode::Dim, 0, 0));
         let (pl, pc, _) = lch(&p.paper);
-        assert!((pl - 0.40).abs() < 1e-9, "paper L {pl}");
+        assert!((pl - 0.22).abs() < 1e-9, "paper L {pl}");
         assert_eq!(pc, 0.0, "untinted dim paper is neutral");
         let (il, _, _) = lch(&p.ink);
         assert!((il - 0.12).abs() < 1e-9, "dim ink stays dark/black, got L={il}");
         assert!(il < pl, "the ink must be darker than the dim paper");
-        // Dark ink on the medium-dark paper must stay readable.
-        assert!((pl + 0.05) / (il + 0.05) >= 2.5);
-        // Medium-dark: between the dark and the light paper.
-        assert!(pl > 0.24 && pl < 0.98, "grey {pl} must sit between the modes");
+        // Same depth family as the dim chrome (#1a1c1f), darker than the
+        // Dark page's paper, never the old middle grey.
+        let chrome_l = hex_to_oklch(base_tokens(BaseMode::Dim).paper).unwrap().0;
+        let dark_paper_l = hex_to_oklch(base_tokens(BaseMode::Dark).paper).unwrap().0;
+        assert!((pl - chrome_l).abs() < 0.15, "paper {pl} should sit near the dim chrome {chrome_l}");
+        assert!(pl > dark_paper_l, "paper {pl} must stay above the dark paper {dark_paper_l}");
+        assert!(pl < 0.3, "dim paper must not re-light the page, got {pl}");
         assert_eq!(p.accent, base_tokens(BaseMode::Dim).accent);
     }
 
@@ -214,8 +276,8 @@ mod tests {
 
     #[test]
     fn the_ladder_holds_in_every_mode() {
-        // Light and Dim follow the dark-ink direction: paper is the
-        // brightest, borders sit between, ink is the darkest.
+        // Light follows the dark-ink direction: paper is the brightest,
+        // borders sit between, ink is the darkest.
         let p = TextPalette::compute(&tinted(BaseMode::Light, 104, 100));
         let (paper, _, _) = lch(&p.paper);
         let (surface, _, _) = lch(&p.surface);
@@ -227,16 +289,19 @@ mod tests {
         assert!(line > muted + 0.01, "line {line} vs muted {muted}");
         assert!(muted > ink + 0.01, "muted {muted} vs ink {ink}");
 
+        // Dim: everything is a small lift off the dark paper — surface,
+        // line, then the soft muted grey — and the ink stays the darkest
+        // thing on the page.
         let m = TextPalette::compute(&tinted(BaseMode::Dim, 104, 100));
         let (mpaper, _, _) = lch(&m.paper);
         let (msurface, _, _) = lch(&m.surface);
         let (mline, _, _) = lch(&m.line);
         let (mmuted, _, _) = lch(&m.muted);
         let (mink, _, _) = lch(&m.ink);
-        assert!(mpaper > msurface, "dim paper {mpaper} vs surface {msurface}");
-        assert!(msurface > mline, "dim surface {msurface} vs line {mline}");
-        assert!(mline > mmuted, "dim line {mline} vs muted {mmuted}");
-        assert!(mmuted > mink, "dim muted {mmuted} vs ink {mink}");
+        assert!(mpaper < msurface, "dim paper {mpaper} vs surface {msurface}");
+        assert!(msurface < mline, "dim surface {msurface} vs line {mline}");
+        assert!(mline < mmuted, "dim line {mline} vs muted {mmuted}");
+        assert!(mink < mpaper, "dim ink {mink} must stay darker than the paper {mpaper}");
 
         // Dark inverts: the paper is the darkest, the ink the brightest.
         let d = TextPalette::compute(&tinted(BaseMode::Dark, 104, 100));
@@ -281,7 +346,45 @@ mod tests {
         assert!((d.paper_l - 0.24).abs() < 1e-9);
         assert!((d.ink_l - 0.92).abs() < 1e-9);
         let m = TextPalette::compute(&tinted(BaseMode::Dim, 0, 0));
-        assert!((m.paper_l - 0.40).abs() < 1e-9);
+        assert!((m.paper_l - 0.22).abs() < 1e-9);
         assert!((m.ink_l - 0.12).abs() < 1e-9);
+    }
+
+    #[test]
+    fn mixing_toward_the_paper_is_a_clamped_lerp() {
+        let ink = "#1f2937";
+        let paper = "#ffffff";
+        let (il, ic, ih) = hex_to_oklch(ink).unwrap();
+        // keep = 1 returns the colour itself, byte for byte.
+        assert_eq!(mix_toward_paper(ink, paper, 1.0), ink);
+        // keep = 0 lands on the paper's L and C.
+        let papered = mix_toward_paper(ink, paper, 0.0);
+        let (l, c, _) = lch(&papered);
+        assert!((l - 1.0).abs() < 0.001, "L {l}");
+        assert!(c < 0.001, "C {c}");
+        // A soft mix sits between the two endpoints.
+        let soft = mix_toward_paper(ink, paper, 0.25);
+        let (l, _, _) = lch(&soft);
+        assert!(l > il && l < 1.0, "soft mix L {l}");
+        // Out-of-range keep clamps rather than overshooting.
+        let over = mix_toward_paper(ink, paper, 1.5);
+        assert_eq!(over, ink);
+        // Sanity on the endpoints used above.
+        assert!(il < 0.3 && ic < 0.05 && ih > 0.0);
+    }
+
+    #[test]
+    fn mixing_parses_oklch_literals_from_tinted_palettes() {
+        let a = tinted(BaseMode::Light, 104, 50);
+        let p = TextPalette::compute(&a);
+        let soft = mix_toward_paper(&p.ink, &p.paper, 0.78);
+        let (l, _, h) = lch(&soft);
+        let (pl, _, _) = lch(&p.paper);
+        let (il, _, ih) = lch(&p.ink);
+        assert!(l > il && l < pl, "soft ink L {l} between {il} and {pl}");
+        assert_eq!(h, ih, "the tinted hue survives the mix");
+        // A malformed colour is passed through untouched.
+        assert_eq!(mix_toward_paper("nonsense", &p.paper, 0.5), "nonsense");
+        assert_eq!(mix_toward_paper(&p.ink, "nonsense", 0.5), p.ink);
     }
 }
