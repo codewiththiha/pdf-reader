@@ -158,12 +158,27 @@
    fed into the SAME --tex-scale formula the page texture uses, so the
    two formats stay pitch-identical at any zoom. Dark themes flip the
    stroke tokens through the existing :root.dark --texture-* swap. The
-   user's texture-opacity dial stays a raster-page control: the
-   reflowable stroke colours are authored at their final translucency,
-   and a background layer has no element opacity to dial. */
+   user's texture-opacity dial feeds THIS pattern too (see --tx-matte
+   below): a paper-coloured film at alpha (1 - p) over the pattern
+   reproduces the PDF ::before's `opacity: p` exactly — a background
+   layer has no element opacity to dial, so the dial is emulated. */
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"],
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip)[class*="texture-"] {
+  /* The opacity dial. A PDF page's texture layer reads it as an element
+     opacity (`.pdf-page::before { opacity: var(--texture-opacity) }`); a
+     scroller background is painted by the element itself, so it cannot fade
+     that way. Instead every pattern below layers a matte of THE SAME paper
+     colour at alpha (1 - p) OVER the pattern: over the reader-bg's
+     --tx-paper the composite is mathematically identical to
+     `opacity: p` — visible_strength × p — and because --tx-paper is the
+     live tinted paper token of the current theme, the matte stays invisible
+     in exactly the places the pattern is not. */
+  --tx-opacity: var(--texture-opacity, 0.9);
+  --tx-matte: linear-gradient(
+    color-mix(in srgb, var(--tx-paper) calc((1 - var(--tx-opacity)) * 100%), transparent),
+    color-mix(in srgb, var(--tx-paper) calc((1 - var(--tx-opacity)) * 100%), transparent)
+  );
   --scale-factor: var(--tx-zoom, 1);
   --tex-scale: calc(var(--scale-factor, 1) * var(--texture-scale-user, 1));
   --tex-unit: calc(26px * var(--tex-scale));
@@ -175,57 +190,63 @@
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-paper {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
+  background-image: var(--tx-matte), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.055'/%3E%3C/svg%3E");
   background-color: var(--texture-paper);
-  background-blend-mode: var(--texture-blend, multiply);
-  background-size: calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
+  /* normal: the matte over the grain; the grain keeps its own tint blend
+     with the background-color. */
+  background-blend-mode: normal, var(--texture-blend, multiply);
+  background-size: 100% 100%, calc(180px * var(--tex-scale)) calc(180px * var(--tex-scale));
 }
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-lined {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    var(--texture-line) 0 var(--tex-line),
-    transparent var(--tex-line) var(--tex-unit)
-  );
+  background-image: var(--tx-matte),
+    repeating-linear-gradient(
+      to bottom,
+      var(--texture-line) 0 var(--tex-line),
+      transparent var(--tex-line) var(--tex-unit)
+    );
   /* One-period tile, set explicitly: under `background-attachment: local`
      the background positioning area is the whole scrollable extent, and an
      AUTO-sized repeating `to bottom` gradient fails to paint along that
      tall axis in WebKit (lined rendered nothing; in grid only its `to
      right` layer survived, leaving vertical lines only). A tile exactly
      one period tall/seamless is what cross, dotted and paper already do. */
-  background-size: var(--tex-unit) var(--tex-unit);
+  background-size: 100% 100%, var(--tex-unit) var(--tex-unit);
 }
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid {
-  background-image:
+  background-image: var(--tx-matte),
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
   /* Same one-period tiles as cross: an auto-sized gradient box spans the
      whole scrollable extent under `local`, where the `to bottom` layer
      collapses — leaving a grid of vertical lines only. */
   background-size:
+    100% 100%,
     var(--tex-unit) var(--tex-unit),
     var(--tex-unit) var(--tex-unit);
 }
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted {
-  background-image: radial-gradient(
-    var(--texture-line) calc(1px * var(--tex-scale)),
-    transparent calc(1.5px * var(--tex-scale))
-  );
-  background-size: calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
+  background-image: var(--tx-matte),
+    radial-gradient(
+      var(--texture-line) calc(1px * var(--tex-scale)),
+      transparent calc(1.5px * var(--tex-scale))
+    );
+  background-size: 100% 100%, calc(8px * var(--tex-scale)) calc(8px * var(--tex-scale));
 }
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross,
 :root[data-format="markdown"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-cross {
-  background-image:
+  background-image: var(--tx-matte),
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     radial-gradient(var(--texture-line) calc(1.5px * var(--tex-scale)), transparent calc(2px * var(--tex-scale)));
   background-size:
+    100% 100%,
     var(--tex-unit) var(--tex-unit),
     var(--tex-unit) var(--tex-unit),
     var(--tex-unit) var(--tex-unit);
