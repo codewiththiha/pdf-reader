@@ -48,9 +48,9 @@
    The content column — every typography knob resolves here.
    --------------------------------------------------------------------- */
 .tx-content {
-  /* Above the texture layer (the shared `::before` sits at z-index 1):
-     grain sits UNDER the type on a text page exactly as under the raster
-     on a PDF page. */
+  /* Above the texture: a text page's pattern is the scroller's background
+     (see textures.css, REFLOWABLE SCROLLER TEXTURE), so the type simply
+     stacks over it; no pseudo layer exists inside the host. */
   position: relative;
   z-index: 2;
   font-family: var(--tx-font-body, serif);

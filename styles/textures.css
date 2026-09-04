@@ -1,7 +1,15 @@
 /* ---------------------------------------------------------------------
-   5. Texture modes — layered ::before BEHIND the canvas. The canvas uses
-   mix-blend-mode (multiply in light themes) so light areas let the texture
-   show through while dark text stays dark and legible.
+   5. Texture modes.
+   Parts, in reading order:
+     tokens    — the stroke/paper/blend variables, flipped by :root.dark
+     per-page  — .pdf-page::before: a PDF page owns its texture, layered
+                 BEHIND the canvas (the canvas uses mix-blend-mode, so
+                 light areas let the pattern show while dark text stays
+                 legible) and composited over its raster
+     scroller  — text/Markdown: the page is transparent, so the scroller
+                 that IS the surface carries one background pattern
+     bleed     — blend mode: the per-page texture overhangs the page box
+                 and paints the gutter itself
    --------------------------------------------------------------------- */
 /* The stroke colors live behind these vars so the three DARK themes (which get
    the `.dark` class on <html>, see effects/theme.rs) can flip them to LIGHT
@@ -24,20 +32,13 @@
   --texture-blend: screen;
 }
 
-/* TEXT/MD pages never paint their own texture rectangle — the scroller
-   does (see TEXT/MD SCROLLER TEXTURE below). The reflowable backdrop is
-   ONE uniform surface (.reader-bg -> --tx-paper), and a per-page
-   ::before would stamp a page-shaped seam onto that backdrop in single,
-   two-page and horizontal modes (lighter band in dark/dim bases, because
-   the dark texture family uses screen + white). `.tx-page` no longer
-   receives a `texture-*` class, but the kill rule stays as a guarantee:
-   a page of type is a frame, never a card. PDF keeps its per-page
-   texture: the selector is keyed off data-format. */
-:root[data-format="text"] .tx-page::before,
-:root[data-format="markdown"] .tx-page::before {
-  content: none;
-}
-
+/* ---------------------------------------------------------------------
+   PER-PAGE TEXTURE (PDF) — .pdf-page carries its own pattern, layered
+   BEHIND the canvas and composited over the page's pixels. The
+   `.tx-page` arms are vestigial: the kill rule in the reflowable
+   section below suppresses them, and a page of type carries no pattern
+   class anyway — the scroller section is its texture system.
+   --------------------------------------------------------------------- */
 .pdf-page::before,
 .tx-page::before {
   content: "";
@@ -123,9 +124,23 @@
 }
 
 
+/* TEXT/MD pages never paint their own texture rectangle — the scroller
+   does (see below). The reflowable backdrop is ONE uniform surface
+   (.reader-bg -> --tx-paper), and a per-page ::before would stamp a
+   page-shaped seam onto that backdrop in single, two-page and horizontal
+   modes (lighter band in dark/dim bases, because the dark texture family
+   uses screen + white). `.tx-page` no longer receives a `texture-*`
+   class, but the kill rule stays as a guarantee: a page of type is a
+   frame, never a card. PDF keeps its per-page texture above; this
+   selector is keyed off data-format, so PDF never matches. */
+:root[data-format="text"] .tx-page::before,
+:root[data-format="markdown"] .tx-page::before {
+  content: none;
+}
+
 /* ---------------------------------------------------------------------
-   TEXT/MD SCROLLER TEXTURE — one surface, one texture, on the scroller
-   that IS the paper.
+   REFLOWABLE SCROLLER TEXTURE (text/Markdown) — one surface, one
+   texture, on the scroller that IS the paper.
 
    The reflowable formats have no page card to texture: the paper is the
    backdrop and the scroller is transparent, so the texture rides the
@@ -138,7 +153,8 @@
    over the texture. No z-index, no element opacity, nothing composited.
 
    The pitch zooms with the type: the scroller writes --tx-zoom inline
-   from the same live display scale the page hosts resolve --ts with,
+   (src/components/viewer/texture_surface.rs) from the same live display
+   scale the page hosts resolve --ts with,
    fed into the SAME --tex-scale formula the page texture uses, so the
    two formats stay pitch-identical at any zoom. Dark themes flip the
    stroke tokens through the existing :root.dark --texture-* swap. The
@@ -216,7 +232,8 @@
 }
 
 /* ---------------------------------------------------------------------
-   BLEND BLEED — in blend mode the backdrop carries NO texture of its own;
+   BLEND BLEED (PDF) — in blend mode the backdrop carries NO texture of
+   its own;
    each page's texture layer overhangs the page box and paints the surround
    itself. Same layer ⇒ same pitch and phase on every page, at every zoom
    and scroll position. The overhang is one viewport per side (more than
