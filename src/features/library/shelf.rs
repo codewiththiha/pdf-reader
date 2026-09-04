@@ -38,25 +38,16 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
 
     let has_tauri = tauri_bridge::has_tauri();
     let open_state = state;
-    let cancel_state = state;
 
     view! {
         <div class="flex h-full w-full flex-col">
-            // Opening stays on the library route, so cancellation has to live
-            // here rather than in the reader toolbar (which is unmounted).
+            // The wait is the mark and nothing else. An open cannot be aborted
+            // from here any more, and does not need to be: the title bar's Open
+            // (and Cmd/Ctrl+O) stays live while this shows, and picking another
+            // file claims a new session stamp, which is what makes the in-flight
+            // attempt drop its own tail (see `services::document::session`).
             <Show when=is_opening fallback=|| ()>
-                <div class="relative h-full w-full">
-                    <CenteredLoader />
-                    <div class="absolute inset-x-0 top-1/2 flex justify-center pt-20">
-                        <Button
-                            on_click=move |_| document::close_document(cancel_state)
-                            variant=ButtonVariant::Toolbar
-                            title="Cancel opening this PDF"
-                        >
-                            <span>"Cancel opening"</span>
-                        </Button>
-                    </div>
-                </div>
+                <CenteredLoader />
             </Show>
             // Error: centered message.
             <Show when=is_error fallback=|| ()>
