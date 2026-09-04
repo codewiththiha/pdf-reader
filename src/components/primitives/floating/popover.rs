@@ -2,7 +2,7 @@
 //! floating internals:
 //!
 //! * placement + viewport clamping + upward flip + transform origin come from
-//!   [`super::position`] (pure math in `pdf_core::floating`);
+//!   [`super::position`] (pure math in `reader_core::floating`);
 //! * Escape / outside-press dismissal comes from [`super::dismiss`];
 //! * the open/close transition is reported through `on_open_change` rather
 //!   than the popover reaching into app chrome itself (the app-shell
@@ -18,9 +18,9 @@ use leptos::children::ChildrenFn;
 use leptos::html;
 use leptos::prelude::*;
 
-use super::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
+use super::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use super::position::{place_at_anchor, placement_options};
-use super::types::{node_within_any, PlacementSide, Size};
+use super::types::{PlacementSide, Size, node_within_any};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 #[component]

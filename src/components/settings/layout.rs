@@ -5,9 +5,9 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-use pdf_core::math::FitMode;
-use pdf_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::FitMode;
+use reader_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use app_chrome::icon::IconName;
@@ -33,7 +33,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
     // selector stands disabled rather than offering a choice that is not
     // being honoured. (The stream has no inter-page gap to remove either,
     // so No Gap joins it.)
-    let stream_live = Signal::derive(move || state.reader.text_streaming());
+    let stream_live = Signal::derive(move || state.reader.reflow_streaming());
     view! {
         <SectionLabel text="Reader chrome" />
         <div class="divide-y divide-line rounded-xl border border-line">

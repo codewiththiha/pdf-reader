@@ -1,12 +1,13 @@
 //! Floating-system types: the geometry primitives (re-exported from the pure
-//! `pdf_core::floating` so the math is host-testable), the layering tokens,
+//! `reader_core::floating` so the math is host-testable), the layering tokens,
 //! and the DOM-adapter helpers that turn live elements into those primitives.
 
-use leptos::{html, prelude::*};
+use leptos::html;
+use leptos::prelude::*;
 
 use wasm_bindgen::JsCast;
 
-pub use pdf_core::floating::{
+pub use reader_core::floating::{
     clamp_point_to_viewport, place_context_menu, place_panel_from_anchor, FloatBox,
     PlacementOptions, PlacementSide, PlacedPanel, Point, Rect, Size,
 };

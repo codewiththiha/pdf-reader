@@ -6,13 +6,13 @@
 //! two-step gloss semantics (first Escape collapses, second gives up) stay
 //! here.
 
-use ai_core::gloss::{boxes_close, GlossBox};
+use ai_core::gloss::{GlossBox, boxes_close};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::components::ai::anchor::{origin_outside_band, AnchorWatch, MENU_EXIT_FRAC};
+use crate::components::ai::anchor::{AnchorWatch, MENU_EXIT_FRAC, origin_outside_band};
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::primitives::floating::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
+use crate::components::primitives::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::ai::types::GlossPhase;
 use crate::state::AppState;

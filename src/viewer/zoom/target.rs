@@ -13,12 +13,12 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-use pdf_core::math::{clamp_scale, fit_scale, nearest_zoom, FitMode};
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::{FitMode, clamp_scale, fit_scale, nearest_zoom};
 
-use crate::state::reader::{ZoomCommand, ReaderState};
+use crate::state::reader::{ReaderState, ZoomCommand};
 
-use super::config::{profile_for, SETTLED_EPSILON, ZoomProfile};
+use super::config::{SETTLED_EPSILON, ZoomProfile, profile_for};
 
 /// Resolve a command to the scale it wants, or `None` when it must stand
 /// down (nothing to re-resolve, an unmeasured container, an unmeasured
@@ -136,11 +136,11 @@ impl FitDims {
     /// placeholder would slam the page to the minimum scale.
     pub(crate) fn of(state: &ReaderState) -> Option<Self> {
         let page = state.viewer.page.get_untracked().max(1);
-        let p1 = state.document.page1_size.get_untracked()?;
+        let p1 = state.document.content.pdf.page1_size.get_untracked()?;
 
         // The page under the reader's eyes, not page 1: a landscape plate in
         // an otherwise-portrait book must fit on its own terms.
-        let (pw, ph) = state.document.metrics.intrinsic.with_untracked(|sizes| {
+        let (pw, ph) = state.document.content.pdf.intrinsic.with_untracked(|sizes| {
             match sizes.get((page - 1) as usize) {
                 Some(s) if s.width > 0.0 && s.height > 0.0 => (s.width, s.height),
                 _ => (p1.width, p1.height),
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(d.ch_eff, 800.0);
     }
 
-    use pdf_core::math::{MAX_SCALE, MIN_SCALE};
+    use reader_core::zoom_math::{MAX_SCALE, MIN_SCALE};
 
     #[test]
     fn a_manual_zoom_is_never_capped_at_fit_width() {

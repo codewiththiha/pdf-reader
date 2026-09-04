@@ -15,7 +15,7 @@
 use leptos::prelude::*;
 
 use crate::components::shell::controller::ShellController;
-use crate::components::shell::sidebar::container::{request_reveal_active, SidebarShell};
+use crate::components::shell::sidebar::container::{SidebarShell, request_reveal_active};
 use crate::components::shell::sidebar::document_info::BookInfo;
 use crate::components::shell::sidebar::header::SidebarHeader;
 use crate::components::shell::sidebar::panels::outline_view::SidebarOutline;
@@ -38,13 +38,13 @@ pub(crate) fn ReaderRail(
     // the Outline panel (which degrades gracefully to its empty state) so
     // the reader never faces a panel that cannot show anything.
     Effect::new(move |_| {
-        if state.reader.document.format.get().is_text()
+        if state.reader.reflowable()
             && sidebar.get_untracked() == SidebarMode::Thumbs
         {
             sidebar.set(SidebarMode::Outline);
         }
     });
-    let thumbs_visible = Signal::derive(move || !vs.document.format.get().is_text());
+    let thumbs_visible = Signal::derive(move || !vs.reflowable());
 
     view! {
         <SidebarShell

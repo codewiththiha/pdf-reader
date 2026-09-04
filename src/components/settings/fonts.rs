@@ -13,7 +13,7 @@
 
 use leptos::prelude::*;
 
-use text_core::typography::{FontChoice, SystemFont, TextColumnAlign, TextSettings};
+use reflow_core::typography::{FontChoice, SystemFont, TextColumnAlign, TextSettings};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use app_chrome::icon::IconName;
@@ -29,7 +29,7 @@ use crate::state::AppState;
 pub(crate) fn update_text(state: AppState, apply: impl Fn(&mut TextSettings) + 'static) {
     state.settings.update(move |st| {
         apply(&mut st.text);
-        text_core::typography::sanitize(&mut st.text);
+        reflow_core::typography::sanitize(&mut st.text);
     });
 }
 

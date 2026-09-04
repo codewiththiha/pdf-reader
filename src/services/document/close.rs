@@ -8,8 +8,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
-use crate::state::SidebarMode;
-use crate::state::AppState;
+use crate::state::{AppState, SidebarMode};
 use crate::storage::save_library;
 
 /// Close the current document and return to the library shelf.
@@ -58,8 +57,11 @@ pub fn close_document(state: AppState) {
         _ = engine::destroy().await;
     });
 
+    // One call sheds everything the open flow wrote — the identity, the outline
+    // and BOTH formats' pages — because `DocumentState::reset` owns that list
+    // (including the reflowable half it delegates to). Resetting anything here
+    // as well would be a second place to remember.
     state.reader.document.reset();
-    state.reader.text.reset();
     state.reader.viewer.reset_position();
     state.reader.search.reset();
     // The marks stay on disk under this path; only the in-memory copy goes,

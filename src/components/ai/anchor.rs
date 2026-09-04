@@ -7,7 +7,7 @@
 
 use ai_core::gloss::{GlossBox, GlossMark};
 use leptos::prelude::*;
-use pdf_core::layout::ViewMode;
+use reader_core::view::ViewMode;
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
@@ -30,14 +30,13 @@ pub const MENU_EXIT_FRAC: f64 = 1.0;
 /// fraction of the viewport height (or leaves the top edge).
 pub const CARD_EXIT_FRAC: f64 = 0.8;
 
-pub fn host_id_for_mode(page: u32, mode: ViewMode) -> String {
-    match mode {
-        ViewMode::Single => format!("sp-{page}-pg"),
-        ViewMode::Spread => format!("dp-{page}-pg"),
-        ViewMode::ScrollHorizontal => format!("hp-{page}-pg"),
-        ViewMode::ScrollVertical => format!("cont-{}-pg", page.saturating_sub(1)),
-    }
-}
+/// The host element a page lives in — the reader's page identity in the DOM.
+///
+/// Defined by the page host that paints it, and re-exported here because both
+/// sides need the same string: the ids are one scheme shared by rasters and type,
+/// which is what lets a selection anchor find a page of Markdown as readily as a
+/// page of pixels.
+pub use crate::components::viewer::page_host::host_id_for_mode;
 
 fn page_from_host_id(id: &str) -> Option<u32> {
     if let Some(page) = id
@@ -74,7 +73,7 @@ pub fn screen_box(anchor: &PageAnchor, scale: f64, mode: ViewMode) -> Option<Glo
     if scale <= 0.0 {
         return None;
     }
-    let hr = by_id(&host_id_for_mode(anchor.page, mode))?.get_bounding_client_rect();
+    let hr = by_id(&host_id_for_mode(mode, anchor.page))?.get_bounding_client_rect();
     let h = anchor.rect.h * scale;
     Some(GlossBox {
         x: hr.left() + anchor.rect.x * scale,
@@ -245,7 +244,7 @@ pub fn watch_page_anchor(
 
 #[cfg(test)]
 mod tests {
-    use super::{origin_outside_band, page_from_host_id, GlossBox, CARD_EXIT_FRAC, MENU_EXIT_FRAC};
+    use super::{CARD_EXIT_FRAC, GlossBox, MENU_EXIT_FRAC, origin_outside_band, page_from_host_id};
 
     fn origin(y: f64, h: f64) -> Option<GlossBox> {
         Some(GlossBox {

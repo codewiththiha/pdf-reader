@@ -38,7 +38,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::components::text::TypographySignal;
+use crate::state::reader::TypographySignal;
 use crate::effects::app::motion::publish_motion;
 use crate::effects::app::theme::apply_theme;
 use crate::effects::app::typography::apply_typography;
@@ -46,7 +46,7 @@ use crate::effects::reader::blend_backdrop::paper_settings;
 use crate::effects::reader::link_navigation::link_navigation;
 use crate::effects::reader::page_selection::page_selection;
 use crate::effects::reader::text_selection::text_selection;
-use crate::state::{AppearanceSignal, AppState};
+use crate::state::{AppState, AppearanceSignal};
 
 /// Whether the app-root effects are already installed. Relaxed ordering: the
 /// webview is single-threaded, so this only has to be a flag, never a fence.

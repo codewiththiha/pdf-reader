@@ -29,10 +29,10 @@
 use leptos::prelude::*;
 use web_sys::wasm_bindgen::JsCast;
 
-use ai_core::settings::GlossColor;
-use pdf_core::appearance::Appearance;
-use pdf_core::settings::RenderPipeline;
-use crate::state::{AppearanceSignal, AppState};
+use reader_core::settings::GlossColor;
+use reader_core::appearance::Appearance;
+use reader_core::settings::RenderPipeline;
+use crate::state::{AppState, AppearanceSignal};
 
 use crate::effects::appearance::schedule_save;
 
@@ -136,7 +136,7 @@ pub fn paint_appearance_now(a: Appearance) {
     } else {
         _ = class.remove_1("noise-enabled");
     }
-    if matches!(a.noise, pdf_core::appearance::NoiseMode::Animated) {
+    if matches!(a.noise, reader_core::appearance::NoiseMode::Animated) {
         _ = class.add_1("noise-animated");
     } else {
         _ = class.remove_1("noise-animated");

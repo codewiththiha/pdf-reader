@@ -17,7 +17,7 @@ use crate::components::shell::sidebar::panels::thumbnails::geometry::{GRACE_MS, 
 use crate::state::ReaderState;
 use crate::state::ui::SidebarMode;
 
-use super::math::{center_target, glide_delay, glide_verdict, GlideVerdict};
+use super::math::{GlideVerdict, center_target, glide_delay, glide_verdict};
 use super::AutoCenter;
 
 /// Warm the thumbnail cache around the page the glide just centered on: the

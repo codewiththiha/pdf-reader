@@ -11,7 +11,7 @@ use crate::components::primitives::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
-use pdf_core::presets::{make_preset_id, Preset};
+use reader_core::presets::{Preset, make_preset_id};
 
 #[component]
 pub(super) fn PresetEditor(

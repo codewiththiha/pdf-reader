@@ -2,7 +2,7 @@
 
 use leptos::prelude::*;
 
-use crate::state::library::{self, RecentBook};
+use crate::state::library::{RecentBook, self};
 use crate::state::AppState;
 use crate::storage::{save_covers, save_library};
 

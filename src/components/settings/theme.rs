@@ -6,8 +6,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use ai_core::settings::{GlossColor, GlossDensity};
-use pdf_core::settings::{PaperArea, RenderPipeline};
+use reader_core::settings::{GlossColor, GlossDensity, PaperArea, RenderPipeline};
 
 use crate::components::settings::common::{Row, StyleSelect};
 use crate::components::primitives::form::slider::Slider;
@@ -27,7 +26,7 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
     // always-light bitmaps. A reflowable document paints its paper and ink
     // straight from the theme tokens, so the sections are not merely inert
     // while one is open — they describe machinery that does not run.
-    let is_text = Signal::derive(move || state.reader.document.format.get().is_text());
+    let reflowable = Signal::derive(move || state.reader.reflowable());
     let s = state.settings;
     let custom_open = RwSignal::new(false);
     let custom_anchor: NodeRef<html::Div> = NodeRef::new();
@@ -161,7 +160,7 @@ pub(crate) fn ThemeTab(state: AppState) -> impl IntoView {
                 </Row>
             </div>
         </div>
-        <Show when=move || !is_text.get()>
+        <Show when=move || !reflowable.get()>
         <div class="mt-5"><Separator vertical=false /></div>
         <SectionLabel text="Paper" />
         <div class="divide-y divide-line rounded-xl border border-line">

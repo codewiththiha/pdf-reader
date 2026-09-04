@@ -27,7 +27,7 @@ pub(crate) fn SidebarThumbs(
             // The engine owns thumbnails; a text document never reaches it,
             // so the panel mounts nothing for one (the rail's redirect keeps
             // it un-shown besides).
-            <Show when=move || !state.document.format.get().is_text()>
+            <Show when=move || !state.reflowable()>
                 <ThumbnailsPanel state=state live=live sidebar=sidebar />
             </Show>
         </div>

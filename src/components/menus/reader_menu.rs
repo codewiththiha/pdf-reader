@@ -3,8 +3,8 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use pdf_core::layout::ViewMode;
-use pdf_core::math::FitMode;
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::FitMode;
 
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};

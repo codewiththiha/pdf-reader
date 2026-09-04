@@ -40,10 +40,9 @@ use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::reader::{ReaderState, ZoomTransition};
 use crate::viewer::engine::ViewerEngine;
 
-use super::animation::{land, Tween};
+use super::animation::{Tween, land};
 use super::command::holds_commit;
-use super::config;
-use super::target;
+use super::{config, target};
 
 /// The one zoom authority. `Clone` so it can be handed out by value; it
 /// holds nothing but the engine reference.

@@ -4,8 +4,8 @@
 //! tuned independently later without scattering mode checks through the
 //! pipeline.
 
-use pdf_core::layout::ViewMode;
-use pdf_core::math::{MAX_SCALE, MIN_SCALE};
+use reader_core::view::ViewMode;
+use reader_core::zoom_math::{MAX_SCALE, MIN_SCALE};
 
 /// Duration of the zoom tween, in milliseconds. Linear, not eased — see
 /// `animation.rs` for why the commit seam must not decelerate. 120ms keeps

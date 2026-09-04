@@ -15,8 +15,9 @@ use std::sync::Arc;
 use ai_core::gloss::GlossMark;
 use wasm_bindgen::JsValue;
 
-use crate::state::library::{sanitize as sanitize_library, CoverImage, CoverMap, RecentBook};
-use pdf_core::settings::{sanitize, Settings, SETTINGS_KEY};
+use crate::state::library::sanitize as sanitize_library;
+use crate::state::library::{CoverImage, CoverMap, RecentBook};
+use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
 
 const LIBRARY_KEY: &str = "pdfreader.library.v1";
 const COVERS_KEY: &str = "pdfreader.covers.v1";

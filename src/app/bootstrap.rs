@@ -4,10 +4,8 @@
 
 use leptos::prelude::*;
 
-use crate::components::text::TypographySignal;
-use crate::state::AppState;
-use crate::state::TextureSignal;
-use crate::state::AppearanceSignal;
+use crate::state::reader::TypographySignal;
+use crate::state::{AppState, AppearanceSignal, TextureSignal};
 use crate::storage::{load_covers, load_library, load_settings};
 
 /// App state seeded from the persisted settings/library/covers.

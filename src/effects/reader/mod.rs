@@ -4,7 +4,8 @@
 
 pub mod auto_scroll;
 pub mod blend_backdrop;
-pub mod text_layout;
+pub mod reflow_layout;
+pub mod reflow_outline;
 pub mod zoom_watchers;
 pub mod link_navigation;
 pub mod navigation_sync;

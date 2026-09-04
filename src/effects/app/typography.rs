@@ -1,7 +1,7 @@
 //! Paints the reflowable formats' typography onto `<html>` whenever it
 //! changes — the text counterpart of `apply_theme`.
 //!
-//! The contract comes from `text_core::typography::css_variables`: every
+//! The contract comes from `reflow_core::typography::css_variables`: every
 //! knob the settings own is written as a SCALE-1 custom property
 //! (`--tx-font-size`, `--tx-line-height`, …). The page hosts never read the
 //! settings for type — they set their own `--ts` multiplier and let the
@@ -11,7 +11,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::text::TypographySignal;
+use crate::state::reader::TypographySignal;
 use crate::effects::app::theme::html_style;
 use crate::state::AppState;
 
@@ -24,7 +24,7 @@ pub fn apply_typography(_state: AppState, typography: TypographySignal) {
         let Some(style) = html_style() else {
             return;
         };
-        for (name, value) in text_core::typography::css_variables(&t) {
+        for (name, value) in reflow_core::typography::css_variables(&t) {
             let _ = style.set_property(name, &value);
         }
     });

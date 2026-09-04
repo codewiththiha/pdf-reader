@@ -18,7 +18,7 @@ use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::overlay::lanes::{use_overlay_lane, OverlayPolicy};
+use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 use crate::state::AppState;
 
 #[component]
@@ -42,7 +42,7 @@ pub fn SettingsModal(
     // PDF carries none of the type it controls — and follows the same
     // fallback rule as the Animations tab: selected while a PDF opens over
     // it, the strip shows Layout, and the selection survives the return.
-    let fonts_on = Signal::derive(move || state.reader.document.format.get().is_text());
+    let fonts_on = Signal::derive(move || state.reader.reflowable());
     let shown = Signal::derive(move || match tab.get() {
         Tab::Animations if !animations_on.get() => Tab::Layout,
         Tab::Fonts if !fonts_on.get() => Tab::Layout,

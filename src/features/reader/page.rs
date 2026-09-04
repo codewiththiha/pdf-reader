@@ -32,9 +32,9 @@ use crate::features::reader::use_reader_virtualizers;
 use crate::services::document::close_document;
 use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
-use pdf_core::layout::{PAGE_GAP, ViewMode};
-use pdf_core::math::FitMode;
-use pdf_core::settings::PageIndicatorStyle;
+use reader_core::view::{PAGE_GAP, ViewMode};
+use reader_core::zoom_math::FitMode;
+use reader_core::settings::PageIndicatorStyle;
 use pdf_engine::types::DocStatus;
 
 #[component]
@@ -75,7 +75,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 return;
             }
             vs.viewer.page_gap.set(gap);
-            let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
+            let heights = vs.document.content.pdf.css_heights.with_untracked(|h| h.clone());
             v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
         });
     }
@@ -100,10 +100,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             vs.viewer.page_margin.set(m);
             let scale = vs.viewer.zoom.visual_scale();
             let gap = vs.viewer.page_gap.get_untracked();
-            let heights = vs.document.metrics.css_heights.with_untracked(|h| h.clone());
+            let heights = vs.document.content.pdf.css_heights.with_untracked(|h| h.clone());
             let widths = vs
                 .document
-                .metrics
+                .content.pdf
                 .intrinsic
                 .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
             // Vertical: margin is cross-axis; sizes unchanged aside from gap.
@@ -132,7 +132,10 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // format, the mode or the cut moves (and reverted to A4 when any of
     // those stop asking for it). Installed AFTER the gap effects so its
     // relayout reads the gap they just resolved.
-    crate::effects::reader::text_layout::text_layout(state, rv.virtualizer.clone());
+    crate::effects::reader::reflow_layout::reflow_layout(state, rv.virtualizer.clone());
+    // The Markdown outline follows the same page cut, so it is installed beside
+    // it: one re-cut republishes the pages AND moves the chapters.
+    crate::effects::reader::reflow_outline::reflow_outline(state);
 
     let prev_mode = StoredValue::new(vs.viewer.mode.get_untracked());
     Effect::new(move |_| {
@@ -157,7 +160,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         // setting. The paged modes re-resolve their own fit on entry (the
         // branch below), so nothing needs restoring on the way out.
         if mode == ViewMode::ScrollVertical
-            && vs.text_streaming()
+            && vs.reflow_streaming()
             && !vs.viewer.zooming().get_untracked()
         {
             vs.viewer.fit.set(FitMode::None);
@@ -227,7 +230,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // stream is live the badge is a percentage of the document whatever the
     // indicator style says (the style selector stands disabled for exactly
     // as long, so it cannot show a choice that is not being honoured).
-    let stream_live = Signal::derive(move || vs.text_streaming());
+    let stream_live = Signal::derive(move || vs.reflow_streaming());
     let stream_percent = Signal::derive(move || vs.stream_percent());
 
     // Left: sidebar toggle + Library. Title is centered; right is the 3-dash
@@ -309,7 +312,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         class=("no-page-shadow", move || !state.settings.with(|st| st.layout.page_shadow))
                     >
                         <Show when=is_ready>
-                            <crate::components::document::Viewer
+                            <crate::components::viewer::Viewer
                                 state=vs
                                 virtualizer=rv.virtualizer_view.get_value()
                                 h_virtualizer=rv.h_virtualizer_view.get_value()
@@ -320,9 +323,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                         // mounted for as long as one is open, torn down with
                         // it. It renders every block once at scale 1 and
                         // refines the page cut from the DOM's real heights
-                        // (see `components::text::measure`).
-                        <Show when=move || state.reader.text.doc.get().is_some()>
-                            <crate::components::text::TextMeasureColumn app=state />
+                        // (see `components::formats::reflow::measure`).
+                        <Show when=move || state.reader.reflowable()>
+                            <crate::components::formats::reflow::ReflowMeasureColumn app=state />
                         </Show>
                         <FloatingDocumentTitle state=state />
                         // Corner page counter, gated on a ready document and

@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_core::appearance::Appearance;
-use pdf_core::settings::Settings;
+use reader_core::appearance::Appearance;
+use reader_core::settings::Settings;
 use crate::storage::save_settings;
 
 use crate::effects::app::theme::paint_appearance_now;

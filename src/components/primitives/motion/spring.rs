@@ -77,7 +77,7 @@ impl SpringValue for FloatBox {
 }
 
 /// The domain gloss box rides the same spring. `ai_core::gloss` owns the
-/// math (and `FloatBox` delegates to the same `ai_core::spring` integrator);
+/// math (and `FloatBox` delegates to the same `reader_core::spring` integrator);
 /// this adapter is the only seam between the generic spring and the gloss
 /// domain type.
 impl SpringValue for GlossBox {

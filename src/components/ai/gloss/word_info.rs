@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use ai_core::settings::GlossDensity;
+use reader_core::settings::GlossDensity;
 use leptos::prelude::*;
 
 use crate::components::ai::types::WordInfo;

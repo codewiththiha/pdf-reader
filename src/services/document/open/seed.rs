@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use leptos::prelude::*;
 
-use pdf_core::documents::Format;
-use pdf_core::filename::display_name;
+use reader_core::format::Format;
+use reader_core::filename::display_name;
 use pdf_engine::types::{OpenResult, PageSize};
 
 use crate::state::AppState;
@@ -35,8 +35,8 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // Fonts tab) the same way the text open claims them.
     state.reader.document.format.set(Format::Pdf);
     // A text document's model must not survive the PDF that opens over it
-    // (the measure column mounts while `text.doc` is a document).
-    state.reader.text.reset();
+    // (the measure column mounts while `text.blocks` is a document).
+    state.reader.document.content.reflow.reset();
     state.reader.document.num_pages.set(num_pages);
     // The paper session resets for the new book — synchronously, while the
     // status is still `Opening` and nothing is mounted, so the previous
@@ -45,7 +45,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     state
         .reader
         .document
-        .metrics
+        .content.pdf
         .intrinsic
         .set(intrinsic_sizes(&open.page_widths, &open.page_heights, &page1, num_pages));
     state.reader.document.title.set(open.title);
@@ -56,7 +56,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // `super::outline`.
     state.reader.document.outline.set(Arc::new(Vec::new()));
     state.reader.document.outline_pending.set(true);
-    state.reader.document.page1_size.set(Some(page1.clone()));
+    state.reader.document.content.pdf.page1_size.set(Some(page1.clone()));
     state.reader.document.path.set(Some(path.to_string()));
 
     // Gloss highlights for THIS document. Loaded here rather than lazily by
@@ -99,7 +99,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // have the zoom coordinator anchor against a stale column on the first
     // gesture. ReaderPage re-seeds them from the intrinsic page sizes at the
     // current scale.
-    state.reader.document.metrics.css_heights.set(Vec::new());
+    state.reader.document.content.pdf.css_heights.set(Vec::new());
     // The seed scale is resolved by the same geometry the first live refit
     // will use, so the first frame already sits where the fit will land.
     let scale = FitDims::from_geometry(

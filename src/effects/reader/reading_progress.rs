@@ -43,7 +43,7 @@ pub fn reading_progress(state: AppState) {
         // read. Only the stream writes one — anything else clears a stale
         // fraction an earlier streamed session left behind. The scroll
         // mirror is the tracked input that moves it.
-        let streaming = state.reader.text_streaming();
+        let streaming = state.reader.reflow_streaming();
         let _scroll = if streaming {
             state.reader.viewer.scroll_top.get()
         } else {

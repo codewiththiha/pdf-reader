@@ -54,7 +54,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_core::math::FitMode;
+use reader_core::zoom_math::FitMode;
 
 use app_chrome::hooks::use_timeout::use_debounce;
 use app_chrome::hooks::use_viewport::use_viewport;

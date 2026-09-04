@@ -13,7 +13,7 @@
 //! Two rules every tab keeps:
 //!
 //! * A control binds to exactly one field of `Settings` and writes it through
-//!   `state.settings`. There is no local copy to drift: `pdf_core::settings`'
+//!   `state.settings`. There is no local copy to drift: `reader_core::settings`'
 //!   field names ARE the persisted schema, so a row that works also saves.
 //! * A control another switch disables takes `disabled=` a derived signal, so
 //!   the row stays visible and explains itself instead of vanishing.

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use pdf_engine::types::OutlineNode;
+use reader_core::outline::{active_entry, OutlineNode};
 use app_chrome::hooks::dom::reveal_in_scroll_parent;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 use app_chrome::hooks::use_window_event::use_window_event;
@@ -17,34 +17,6 @@ fn outline_key(index: usize, node: &OutlineNode) -> String {
     // Index is unique; page + depth keep the key readable when the list
     // rebuilds. Title is left out so a long heading doesn't remount the row.
     format!("{}-{}-{}", index, node.page, node.depth)
-}
-
-/// Index of the outline entry the reader is currently inside, if any.
-///
-/// A TOC entry owns every page from its own up to (but not including) the
-/// next entry that starts a later page, so the active entry is the LAST one
-/// whose page is at or before the current page.
-///
-/// Ties matter: several entries can share a page (a chapter and its first
-/// section both start on the same page). The later — i.e. deeper — one wins,
-/// because that is the more specific description of where the reader is.
-///
-/// `None` before the first entry's page: a cover or preface belongs to no
-/// section, and highlighting chapter 1 there would be a lie.
-///
-/// Entries arrive flattened in document order, i.e. sorted by page
-/// (`loader.ts:flattenOutline`), so one binary search finds the answer:
-/// the last index satisfying the predicate is, by construction, the last
-/// tie-winner too. A malformed PDF can produce an unsorted tree; the linear
-/// fallback keeps the answer correct there, and the debug build asserts the
-/// contract so a regression is visible, not silent.
-fn active_outline_index(outline: &[OutlineNode], page: u32) -> Option<usize> {
-    if !outline.is_sorted_by_key(|node| node.page) {
-        return outline.iter().rposition(|node| node.page <= page);
-    }
-    // `checked_sub` so a page before the first entry yields `None` instead
-    // of underflowing the index.
-    outline.partition_point(|node| node.page <= page).checked_sub(1)
 }
 
 /// Selector for a rendered outline row button by its data attribute. Both the
@@ -121,8 +93,7 @@ fn reveal_attempt(
 
 #[cfg(test)]
 mod tests {
-    use super::{active_outline_index, indent_px};
-    use pdf_engine::types::OutlineNode;
+    use super::indent_px;
 
     /// The panel is `w-72` = 288px; `px-3` costs 12px on the right.
     const PANEL_W: u32 = 288;
@@ -132,54 +103,8 @@ mod tests {
 
     /// Indent grows with depth, is capped, and — the regression — never eats
     /// so much of the row that the title has no room left (at depth 12+ the
-    /// old formula left <= 0px).
-    /// The highlight tracks the section the reader is inside: the last entry
-    /// at or before the current page, with deeper entries winning ties, and
-    /// nothing highlighted before the first entry begins.
-    #[test]
-    fn active_entry_is_the_section_the_reader_is_in() {
-        let node = |page: u32, depth: u32, title: &str| OutlineNode {
-            title: title.to_string(),
-            page,
-            depth,
-        };
-        let outline = [
-            node(3, 0, "Chapter 1"),
-            node(3, 1, "1.1 Intro"),   // same page as its parent
-            node(9, 1, "1.2 Details"),
-            node(20, 0, "Chapter 2"),
-        ];
-        // Front matter, before the outline starts: nothing is active.
-        assert_eq!(active_outline_index(&outline, 1), None);
-        assert_eq!(active_outline_index(&outline, 2), None);
-        // A tie on page 3 resolves to the deeper (more specific) entry.
-        assert_eq!(active_outline_index(&outline, 3), Some(1));
-        // Inside a section, before the next one starts.
-        assert_eq!(active_outline_index(&outline, 8), Some(1));
-        assert_eq!(active_outline_index(&outline, 9), Some(2));
-        assert_eq!(active_outline_index(&outline, 19), Some(2));
-        // The last entry owns everything to the end of the document.
-        assert_eq!(active_outline_index(&outline, 20), Some(3));
-        assert_eq!(active_outline_index(&outline, 999), Some(3));
-        // No outline at all.
-        assert_eq!(active_outline_index(&[], 5), None);
-    }
-
-    #[test]
-    fn an_unsorted_outline_falls_back_to_the_linear_answer() {
-        // A malformed PDF can flatten out of document order; the binary path
-        // is skipped and the answer stays the last entry at-or-before.
-        let node = |page: u32, depth: u32, title: &str| OutlineNode {
-            title: title.to_string(),
-            page,
-            depth,
-        };
-        let outline = [node(9, 0, "B"), node(3, 1, "A"), node(20, 0, "C")];
-        assert_eq!(active_outline_index(&outline, 5), Some(1));
-        assert_eq!(active_outline_index(&outline, 2), None);
-        assert_eq!(active_outline_index(&outline, 25), Some(2));
-    }
-
+    /// old formula left <= 0px). The outline math itself (which entry is
+    /// active, how deep the indent may go) is `reader-core`'s and tested there.
     #[test]
     fn indent_grows_but_always_leaves_room_for_the_title() {
         assert_eq!(indent_px(0), 8);
@@ -207,7 +132,7 @@ pub fn OutlinePanel(
     // value instead of each computing it.
     let active = Memo::new(move |_| {
         let outline = state.document.outline.get();
-        active_outline_index(&outline, state.viewer.page.get())
+        active_entry(&outline, state.viewer.page.get())
     });
 
     // Keep the active entry on screen.

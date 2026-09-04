@@ -13,7 +13,7 @@ use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;
 use crate::state::ReaderState;
-use pdf_core::layout::{ViewMode, last_spread_start, spread_start, spread_step_next, spread_step_prev};
+use reader_core::view::{ViewMode, last_spread_start, spread_start, spread_step_next, spread_step_prev};
 
 /// One screenful step through the continuous text stream, with the
 /// percentage standing where the page readout sits in the paged modes.

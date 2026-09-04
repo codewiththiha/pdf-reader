@@ -17,7 +17,7 @@ pub(crate) fn BookCard(state: AppState, book: RecentBook) -> impl IntoView {
     // renders many closures that outlive this function's frame).
     let path = book.path.clone();
     let title = book.title.clone().unwrap_or_else(|| {
-        pdf_core::filename::file_stem_from_path(&path).unwrap_or_else(|| path.clone())
+        reader_core::filename::file_stem_from_path(&path).unwrap_or_else(|| path.clone())
     });
     let page = book.page;
     let num = book.num_pages;

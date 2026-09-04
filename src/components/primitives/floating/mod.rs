@@ -1,7 +1,7 @@
 //! The floating system: placement math + dismissal + the anchored surfaces
 //! that compose them (popover, context menu, floating card).
 //!
-//! Position math is pure and lives in `pdf_core::floating` (host-testable);
+//! Position math is pure and lives in `reader_core::floating` (host-testable);
 //! `position.rs` adapts it to the DOM. `dismiss.rs` owns the shared
 //! Escape/outside-press contract. `popover.rs` is the classic anchored menu,
 //! `context_menu.rs` the cursor-point menu, `floating_card.rs` the advanced

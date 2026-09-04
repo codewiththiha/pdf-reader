@@ -72,7 +72,7 @@ use leptos::prelude::*;
 
 use app_chrome::hooks::use_timeout::use_debounce_for;
 use crate::state::{AppState, SidebarMode};
-use pdf_core::settings::Settings;
+use reader_core::settings::Settings;
 
 /// How the rail relates to the page it serves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

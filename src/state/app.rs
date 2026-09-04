@@ -9,8 +9,8 @@ use leptos::prelude::{Memo, RwSignal};
 use crate::state::library::LibraryState;
 use crate::state::ui::SidebarMode;
 use crate::state::reader::ReaderState;
-use pdf_core::appearance::Appearance;
-use pdf_core::settings::Settings;
+use reader_core::appearance::Appearance;
+use reader_core::settings::Settings;
 
 /// The appearance slice of the settings, as its own tracked value.
 ///

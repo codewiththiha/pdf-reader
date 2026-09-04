@@ -36,7 +36,7 @@ pub(crate) fn BookInfo(
                         None => {
                             // No rendered cover: PDFs get the open-book glyph,
                             // the reflowable formats their type glyph.
-                            let icon = if reader.document.format.get().is_text() {
+                            let icon = if reader.reflowable() {
                                 IconName::Type
                             } else {
                                 IconName::Open

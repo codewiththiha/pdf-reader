@@ -12,7 +12,7 @@ mod cover;
 mod outline;
 mod seed;
 mod shelf;
-mod text;
+mod reflow;
 mod warmup;
 
 use leptos::prelude::*;
@@ -24,12 +24,11 @@ use leptos::prelude::*;
 // wasm-bindgen executor runs the future to completion regardless of owner.
 use wasm_bindgen_futures::spawn_local;
 
-use pdf_core::documents::{format_of, Format};
+use reader_core::format::{Format, format_of};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
-use crate::state::library;
-use crate::state::{AppState, Toast};
+use crate::state::{AppState, Toast, library};
 
 use super::session;
 
@@ -98,7 +97,7 @@ pub fn open_dialog(state: AppState) {
 /// recent-books library. Drag-drop calls this directly.
 ///
 /// The pipeline fork happens here and only here: PDFs go to the pdf.js
-/// engine, the reflowable formats go to the text pipeline ([`text`]). Both
+/// engine, the reflowable formats go to the reflow pipeline ([`reflow`]). Both
 /// tails converge on the same state contract, so everything downstream —
 /// the viewer, navigation, the shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
@@ -121,7 +120,7 @@ pub fn open_path(state: AppState, path: String) {
 
     match format_of(&path) {
         Format::Pdf => open_pdf(state, path, saved_page, stamp),
-        fmt => text::open_text(state, path, fmt, saved_page, saved_fraction, stamp),
+        fmt => reflow::open_reflowable(state, path, fmt, saved_page, saved_fraction, stamp),
     }
 }
 

@@ -34,7 +34,7 @@
 //! and scroll have to move in the same tick.
 
 use leptos::prelude::*;
-use pdf_core::layout::{anchored_position, ViewMode};
+use reader_core::view::{ViewMode, anchored_position};
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::state::reader::ReaderState;
@@ -83,7 +83,7 @@ impl ViewerEngine {
         // signal read per page. The virtualizer's own rescale anchor holds the
         // cross-axis position.
         let margin = state.viewer.page_margin.get_untracked();
-        let widths = state.document.metrics.intrinsic.with_untracked(|sizes| {
+        let widths = state.document.content.pdf.intrinsic.with_untracked(|sizes| {
             sizes.iter().map(|s| s.width).collect::<Vec<f64>>()
         });
         let new_scale = state.viewer.zoom.visual_scale() * factor;
@@ -128,7 +128,7 @@ impl ViewerEngine {
         // `gap` is 0), so `offset_of(index)` is the extent of the pages above
         // WITH their gaps; subtracting `index * gap` recovers their heights
         // alone — the part that scales.
-        let anchored = state.document.metrics.css_heights.with_untracked(|heights| {
+        let anchored = state.document.content.pdf.css_heights.with_untracked(|heights| {
             if heights.is_empty() {
                 return None;
             }
@@ -153,12 +153,12 @@ impl ViewerEngine {
         // Scale the shared measurement store, then rebuild the strip's layout
         // from it. The rebuild reads the now-scaled store, so the column is
         // not copied a second time.
-        state.document.metrics.css_heights.update(|store| {
+        state.document.content.pdf.css_heights.update(|store| {
             for height in store.iter_mut() {
                 *height *= factor;
             }
         });
-        let css_heights = state.document.metrics.css_heights;
+        let css_heights = state.document.content.pdf.css_heights;
         self.vertical.rescale(factor, move |index| {
             css_heights.with_untracked(|heights| heights.get(index).copied().unwrap_or(0.0)) + gap
         });

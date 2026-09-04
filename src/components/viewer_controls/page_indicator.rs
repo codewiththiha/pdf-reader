@@ -12,7 +12,7 @@
 
 use leptos::prelude::*;
 
-use pdf_core::settings::PageIndicatorStyle;
+use reader_core::settings::PageIndicatorStyle;
 
 #[component]
 pub fn PageIndicator(

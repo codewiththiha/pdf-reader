@@ -4,9 +4,9 @@
 
 use leptos::prelude::*;
 
-use pdf_core::layout::{PAGE_GAP, ViewMode};
-use pdf_core::math::FitMode;
-use pdf_core::settings::AnimationSettings;
+use reader_core::view::{PAGE_GAP, ViewMode};
+use reader_core::zoom_math::FitMode;
+use reader_core::settings::AnimationSettings;
 
 use super::zoom::ZoomState;
 

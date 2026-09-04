@@ -16,8 +16,9 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use app_chrome::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
-use pdf_core::layout::{TOOLBAR_H, ViewMode};
-use pdf_core::search::{SearchMatch, scroll_to_reveal};
+use pdf_core::layout::TOOLBAR_H;
+use reader_core::view::ViewMode;
+use reader_core::search::{SearchMatch, scroll_to_reveal};
 use pdf_engine::api as engine;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs
@@ -32,8 +33,8 @@ const REVEAL_MARGIN: f64 = 24.0;
 
 /// Run the query and store the flat match list.
 pub async fn run_search(state: ReaderState) {
-    if state.document.format.get_untracked().is_text() {
-        run_text_search(state);
+    if state.reflowable_untracked() {
+        run_reflow_search(state);
         return;
     }
     if !state.search.index_built.get_untracked() {
@@ -68,21 +69,19 @@ pub async fn run_search(state: ReaderState) {
     }
 }
 
-/// The text tail of the pipeline: scan the open document's blocks, map each
+/// The reflowable tail of the pipeline: scan the open document's blocks, map each
 /// hit through the current page cut, and publish the same flat match list
 /// the engine tail produces. No index to build — the document IS the index
 /// — and no engine round-trip at all.
-fn run_text_search(state: ReaderState) {
+fn run_reflow_search(state: ReaderState) {
     let query = state.search.query.get_untracked();
     if query.trim().is_empty() {
         clear_search(state);
         return;
     }
-    let Some(doc) = state.text.doc.get_untracked() else {
-        return;
-    };
-    let hits = text_core::search::find_matches(&doc.blocks, &query);
-    let block_page = state.text.block_page.get_untracked();
+    let blocks = state.document.content.reflow.blocks.get_untracked();
+    let hits = reflow_core::search::find_matches(&blocks, &query);
+    let block_page = state.document.content.reflow.block_page.get_untracked();
     // The per-page occurrence ordinal the PDF side gets from the engine;
     // here it is bookkeeping the results list keeps for parity.
     let mut ordinal: HashMap<u32, u32> = HashMap::new();
@@ -113,7 +112,7 @@ pub fn clear_search(state: ReaderState) {
     // Text documents paint no highlight boxes, so there is nothing to clear
     // on the engine side — and the call must not reach an engine that has
     // no document.
-    if !state.document.format.get_untracked().is_text() {
+    if !state.reflowable_untracked() {
         engine::clear_highlights();
     }
     state.search.total.set(0);
@@ -133,7 +132,7 @@ pub fn resume_search(state: ReaderState) {
 pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
     // The engine's active-match marker drives the highlight box it paints;
     // text documents have no boxes, only the page the match sits on.
-    if !state.document.format.get_untracked().is_text() {
+    if !state.reflowable_untracked() {
         engine::set_active_match(m.page, m.index as i32);
     }
 
@@ -150,7 +149,7 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
             return;
         };
         let scale = state.viewer.zoom.visual_scale();
-        let before: f64 = state.document.metrics.intrinsic.with_untracked(|sizes| {
+        let before: f64 = state.document.content.pdf.intrinsic.with_untracked(|sizes| {
             sizes
                 .iter()
                 .take((m.page - 1) as usize)
@@ -181,14 +180,16 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
     // rendering.) Reveal precision is the page's first block: a text hit
     // carries no rect, and the cut packs tightly enough that the match
     // sits within a screen of it.
-    if state.document.format.get_untracked().is_text() {
-        let Some(stream) = state.text.stream_handle() else {
+    if state.reflowable_untracked() {
+        let Some(stream) = state.document.content.reflow.stream_handle() else {
             return;
         };
         let block = state
-            .text
+            .document
+            .content
+            .reflow
             .cuts
-            .with_untracked(|cuts| text_core::pager::first_block_of_page(cuts, m.page));
+            .with_untracked(|cuts| reflow_core::pager::first_block_of_page(cuts, m.page));
         stream.scroll_to_index(block, Align::Start, ScrollMode::Auto);
         return;
     }
@@ -234,7 +235,7 @@ pub fn activate_match(state: ReaderState, virtualizer: &Virtualizer, index: usiz
 pub fn search_navigate(state: ReaderState, virtualizer: &Virtualizer, dir: i32) {
     let len = state.search.matches.with_untracked(Vec::len);
     let Some(next) =
-        pdf_core::search::next_search_index(len, state.search.active.get_untracked(), dir)
+        reader_core::search::next_search_index(len, state.search.active.get_untracked(), dir)
     else {
         return;
     };

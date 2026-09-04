@@ -24,7 +24,7 @@ use crate::components::primitives::separator::Separator;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
-use pdf_core::settings::Settings;
+use reader_core::settings::Settings;
 
 /// A structural appearance change (base mode, texture mode, grain mode):
 /// flush any slider scrub still pending so the values the reader was just

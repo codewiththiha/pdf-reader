@@ -11,9 +11,15 @@
 //!   * `settings`   — the reader settings modal: one module per tab
 //!   * `overlays`   — transient UI (toast, drag feedback)
 //!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
-//!   * `document`   — UI whose purpose is displaying PDF documents
-//!   * `text`       — UI that renders the reflowable formats (TXT, Markdown)
+//!   * `viewer`     — the viewing machinery: which layout, which shell
+//!   * `formats`    — one module per format, plus the page host that picks
+//!     between them
 //!   * `search`     — search presentation shared by reader surfaces
+//!
+//! `viewer` and `formats` point in one direction only: a viewer layout may ask
+//! the page host for a page, and never a format module directly. That is what
+//! keeps the two growth axes (shapes of viewing, kinds of document) from being
+//! multiplied into each other.
 //!
 //! Import discipline: callers import from the owning group
 //! (`use crate::components::primitives::button::Button`), which keeps each
@@ -36,15 +42,12 @@
 //!   Guard writes that run in a loop or animation frame.
 
 pub mod ai;
-pub mod document;
+pub mod formats;
 pub mod menus;
 pub mod overlays;
-pub mod shell;
 pub mod primitives;
-pub mod viewer_controls;
 pub mod search;
 pub mod settings;
-pub mod text;
-
-
-
+pub mod shell;
+pub mod viewer;
+pub mod viewer_controls;

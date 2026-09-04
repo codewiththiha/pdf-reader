@@ -30,7 +30,7 @@ use leptos::prelude::*;
 use crate::components::primitives::floating::types::z::BAR;
 use crate::components::primitives::form::range_input::RangeInput;
 use app_chrome::hooks::dom::page_list;
-use app_chrome::hooks::{use_drag_hold, use_hover_reveal_with, DEFAULT_HOVER_DELAY};
+use app_chrome::hooks::{DEFAULT_HOVER_DELAY, use_drag_hold, use_hover_reveal_with};
 use crate::components::viewer_controls::page_navigation::{PageNavigation, StreamPageNav};
 use crate::state::ReaderState;
 
@@ -88,7 +88,7 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
             // screenful stepper takes their seat and the scrubber stops
             // being a page index. Same bar, same reveal; different unit.
             {move || {
-                if reader.text_streaming() {
+                if reader.reflow_streaming() {
                     view! { <StreamPageNav state=reader /> }.into_any()
                 } else {
                     view! { <PageNavigation state=reader /> }.into_any()
@@ -96,15 +96,15 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
             }}
             <RangeInput
                 value=Signal::derive(move || {
-                    if reader.text_streaming() {
+                    if reader.reflow_streaming() {
                         f64::from(reader.stream_percent())
                     } else {
                         reader.viewer.page.get() as f64
                     }
                 })
-                min=Signal::derive(move || if reader.text_streaming() { 0.0 } else { 1.0 })
+                min=Signal::derive(move || if reader.reflow_streaming() { 0.0 } else { 1.0 })
                 max=Signal::derive(move || {
-                    if reader.text_streaming() {
+                    if reader.reflow_streaming() {
                         100.0
                     } else {
                         (reader.document.num_pages.get() as f64).max(1.0)
@@ -112,7 +112,7 @@ pub fn ReaderBottomBar(reader: ReaderState) -> impl IntoView {
                 })
                 step=Signal::derive(|| 1.0)
                 on_input=move |position| {
-                    if reader.text_streaming() {
+                    if reader.reflow_streaming() {
                         // A percentage of the document: resolve it against
                         // the scroller's real extent, where the stream's
                         // every measured height already lives.

@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use crate::effects::appearance::cancel_appearance_commit;
 use crate::state::AppState;
-use pdf_core::presets::{is_builtin, Preset};
+use reader_core::presets::{Preset, is_builtin};
 
 #[component]
 pub(super) fn PresetSwatch(preset: Preset, state: AppState) -> impl IntoView {

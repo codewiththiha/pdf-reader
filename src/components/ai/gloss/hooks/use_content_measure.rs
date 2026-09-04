@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use leptos::{html, prelude::*};
+use leptos::html;
+use leptos::prelude::*;
 
 use crate::components::ai::types::WordInfo;
 use app_chrome::hooks::use_content_size::use_content_size;

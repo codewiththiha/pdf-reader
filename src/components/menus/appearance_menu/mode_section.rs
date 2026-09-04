@@ -12,11 +12,11 @@ use leptos::prelude::*;
 use crate::components::menus::appearance_menu::hue_picker::HuePicker;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::form::slider::Slider;
-use pdf_core::appearance::BaseMode;
+use reader_core::appearance::BaseMode;
 use crate::components::primitives::option_button::OptionButton;
 use crate::components::settings::fonts::update_text;
 use crate::state::AppState;
-use crate::effects::appearance::{preview_appearance, AppearanceScrub};
+use crate::effects::appearance::{AppearanceScrub, preview_appearance};
 
 fn base_icon(b: BaseMode) -> IconName {
     match b {
@@ -121,7 +121,7 @@ pub fn BaseSection(state: AppState) -> impl IntoView {
         // pipeline must never touch DOM text (it would invert or double-tint
         // it), so the row exists only while a text document is open. Text
         // needs exactly one number, and the stylesheet does the rest.
-        <Show when=move || state.reader.document.format.get().is_text()>
+        <Show when=move || state.reader.reflowable()>
             <div class="mt-3">
                 <TextInkSlider state=state />
             </div>

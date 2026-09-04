@@ -11,12 +11,13 @@
 //! </ContextMenu>
 //! ```
 
-use leptos::{html, prelude::*};
+use leptos::html;
+use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 
-use super::dismiss::{use_dismiss, DismissPolicy, DismissTrigger};
-use super::types::{place_context_menu, Point};
+use super::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
+use super::types::{Point, place_context_menu};
 use app_chrome::hooks::use_window_event::use_window_event;
 
 /// A right-click menu for a generic target payload.

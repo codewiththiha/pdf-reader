@@ -9,7 +9,7 @@ use leptos::prelude::*;
 use virtual_list::Viewport;
 use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 
-use pdf_core::layout::RENDER_BUDGET;
+use reader_core::view::RENDER_BUDGET;
 
 use crate::state::ReaderState;
 use crate::viewer::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
@@ -29,7 +29,7 @@ pub(crate) struct ReaderVirtualizers {
 fn fallback_height(state: ReaderState) -> f64 {
     state
         .document
-        .page1_size
+        .content.pdf.page1_size
         .get_untracked()
         .map_or(0.0, |size| size.height)
 }
@@ -46,15 +46,15 @@ fn fallback_height(state: ReaderState) -> f64 {
 fn seed_css_heights(state: ReaderState) {
     Effect::new(move || {
         let count = state.document.num_pages.get() as usize;
-        let filled = state.document.metrics.css_heights.with(|heights| !heights.is_empty());
+        let filled = state.document.content.pdf.css_heights.with(|heights| !heights.is_empty());
         let scale = state.viewer.zoom.display.get();
         if filled || count == 0 || scale <= 0.0 {
             return;
         }
         // Tracked reads: the store is only worth filling once the sizes are
         // there, and they arrive in the same open that emptied it.
-        let fallback = state.document.page1_size.get().map_or(0.0, |size| size.height);
-        let seeded: Vec<f64> = state.document.metrics.intrinsic.with(|sizes| {
+        let fallback = state.document.content.pdf.page1_size.get().map_or(0.0, |size| size.height);
+        let seeded: Vec<f64> = state.document.content.pdf.intrinsic.with(|sizes| {
             (0..count)
                 .map(|index| {
                     sizes
@@ -69,7 +69,7 @@ fn seed_css_heights(state: ReaderState) {
         if seeded.iter().all(|height| *height <= 0.0) {
             return; // nothing measured yet; keep the store empty for the next run
         }
-        state.document.metrics.css_heights.set(seeded);
+        state.document.content.pdf.css_heights.set(seeded);
     });
 }
 
@@ -79,7 +79,7 @@ fn geometry_epoch(state: ReaderState) -> Signal<u64> {
     Signal::derive(move || {
         let mut hasher = DefaultHasher::new();
         state.document.num_pages.get().hash(&mut hasher);
-        state.document.metrics.intrinsic.with(|sizes| {
+        state.document.content.pdf.intrinsic.with(|sizes| {
             sizes.len().hash(&mut hasher);
             for size in sizes {
                 size.width.to_bits().hash(&mut hasher);
@@ -98,7 +98,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         let gap = state.viewer.page_gap.get_untracked();
         let measured = state
             .document
-            .metrics
+            .content.pdf
             .css_heights
             .with_untracked(|heights| heights.get(index).copied())
             .filter(|height| *height > 0.0);
@@ -107,7 +107,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
         }
         let intrinsic = state
             .document
-            .metrics
+            .content.pdf
             .intrinsic
             .with_untracked(|sizes| sizes.get(index).map(|size| size.height))
             .filter(|height| *height > 0.0);
@@ -141,7 +141,7 @@ pub(crate) fn use_reader_virtualizers(state: ReaderState) -> ReaderVirtualizers 
     // layout is relaid out to as a zoom runs — so the two axes can never
     // disagree about how big a page is.
     let h_estimate = move |index: usize| {
-        state.document.metrics.intrinsic.with_untracked(|sizes| {
+        state.document.content.pdf.intrinsic.with_untracked(|sizes| {
             sizes.get(index).map(|s| s.width).unwrap_or(0.0)
         }) * state.viewer.zoom.visual_scale()
             + 2.0 * state.viewer.page_margin.get_untracked()

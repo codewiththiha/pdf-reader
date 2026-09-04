@@ -44,7 +44,7 @@ use leptos::prelude::*;
 use crate::components::ai::gloss::selection_mode::{
     dispatch_gloss_context, toggle_selected, LONG_PRESS_MS, LONG_PRESS_SLOP_PX,
 };
-use crate::components::primitives::interactions::long_press::{use_long_press, LongPressOptions};
+use crate::components::primitives::interactions::long_press::{LongPressOptions, use_long_press};
 
 pub use crate::events::GLOSS_OPEN_EVENT;
 use crate::events::dispatch_typed_event;
