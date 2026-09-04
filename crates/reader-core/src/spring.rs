@@ -2,9 +2,10 @@
 //!
 //! Stiffness 210 / damping 26 is mildly underdamped (critical ≈ 29 at mass
 //! 1): a confident pop with one small settle. Both the gloss card
-//! ([`crate::gloss::geometry::step_spring`]) and the floating panels
-//! (`pdf_core::floating::FloatBox`) step this same integrator, so the feel
-//! of the two cannot drift apart.
+//! (`ai_core::gloss::geometry::step_spring`) and the floating panels
+//! ([`crate::floating::FloatBox`]) step this same integrator, so the feel of the
+//! two cannot drift apart — which is the whole reason the physics sits in the
+//! reader's own core rather than in whichever feature got it first.
 
 /// Spring stiffness for animated boxes.
 pub const SPRING_STIFFNESS: f64 = 210.0;

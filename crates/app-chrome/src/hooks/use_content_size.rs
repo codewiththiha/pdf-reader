@@ -16,7 +16,8 @@
 //!   This is what covers the very first appearance, where the twin is read
 //!   before content is present and the deferred reactive read is missed.
 
-use leptos::{html, prelude::*};
+use leptos::html;
+use leptos::prelude::*;
 
 use super::use_resize_observer::use_resize_observer;
 

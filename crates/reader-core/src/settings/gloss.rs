@@ -1,6 +1,6 @@
 //! The AI word card's user-facing settings types.
 //!
-//! These ride on the persisted `Settings` struct (in `pdf_core::settings`)
+//! These ride on the persisted `Settings` struct (in `reader_core::settings`)
 //! as FLAT `gloss_*` fields — the field names are the serde schema saved to
 //! localStorage, so they stay flat and are not nested behind a new `ai`
 //! block (that would silently drop every install's saved values on load).

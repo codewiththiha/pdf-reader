@@ -3,11 +3,21 @@
 //!
 //! The card is one rectangle whose `left/top/width/height` and corner
 //! `radius` are all driven by a single damped spring
-//! ([`crate::spring`]), so the chip's pill radius morphs into the card
+//! ([`reader_core::spring`]), so the chip's pill radius morphs into the card
 //! radius in the same motion that grows the box. Named `GlossBox` to avoid
 //! colliding with `std::boxed::Box`.
 
-use crate::spring::spring_axis;
+use reader_core::spring::spring_axis;
+
+/// The floating motion layer's box is field-identical to this one, and the card
+/// rides it: the conversion belongs here rather than in `reader-core`'s
+/// `floating` module because the reader's general geometry may not name a
+/// feature crate's type — the feature knows both, so the feature writes it.
+impl From<GlossBox> for reader_core::floating::FloatBox {
+    fn from(b: GlossBox) -> Self {
+        reader_core::floating::FloatBox { x: b.x, y: b.y, w: b.w, h: b.h, r: b.r }
+    }
+}
 
 /// A positioned, sized, rounded rectangle — the five fields the spring drives.
 ///
@@ -238,5 +248,15 @@ mod tests {
             assert!(cur.x.is_finite() && cur.w.is_finite(), "blew up: {cur:?}");
         }
         assert!(boxes_close(cur, target, 0.5), "did not settle on long frames: {cur:?}");
+    }
+
+    /// The five fields must land in the floating box in the same order they are
+    /// read out: a swapped pair here is an invisible card that jitters, not a
+    /// compile error.
+    #[test]
+    fn the_floating_conversion_keeps_the_fields_in_order() {
+        let box_ = GlossBox { x: 1.0, y: 2.0, w: 3.0, h: 4.0, r: 5.0 };
+        let float: reader_core::floating::FloatBox = box_.into();
+        assert_eq!((float.x, float.y, float.w, float.h, float.r), (1.0, 2.0, 3.0, 4.0, 5.0));
     }
 }

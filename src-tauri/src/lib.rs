@@ -36,7 +36,7 @@ mod macos;
 /// Every extension the reader opens (lower-case, dot included). The shell's
 /// filesystem gates accept exactly these and nothing else, so the webview's
 /// `read_file_*` commands are not a general file-read primitive. Keep in
-/// sync with the frontend's `pdf_core::documents` registry.
+/// sync with the frontend's `reader_core::format` registry.
 const DOCUMENT_EXTENSIONS: &[&str] = &[".pdf", ".txt", ".text", ".md", ".markdown", ".mdown"];
 
 /// The OS-opened document path the frontend has not collected yet.
