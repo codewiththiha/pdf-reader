@@ -172,6 +172,13 @@
     var(--texture-line) 0 var(--tex-line),
     transparent var(--tex-line) var(--tex-unit)
   );
+  /* One-period tile, set explicitly: under `background-attachment: local`
+     the background positioning area is the whole scrollable extent, and an
+     AUTO-sized repeating `to bottom` gradient fails to paint along that
+     tall axis in WebKit (lined rendered nothing; in grid only its `to
+     right` layer survived, leaving vertical lines only). A tile exactly
+     one period tall/seamless is what cross, dotted and paper already do. */
+  background-size: var(--tex-unit) var(--tex-unit);
 }
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-grid,
@@ -179,6 +186,12 @@
   background-image:
     repeating-linear-gradient(to bottom, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit)),
     repeating-linear-gradient(to right, var(--texture-line) 0 var(--tex-line), transparent var(--tex-line) var(--tex-unit));
+  /* Same one-period tiles as cross: an auto-sized gradient box spans the
+     whole scrollable extent under `local`, where the `to bottom` layer
+     collapses — leaving a grid of vertical lines only. */
+  background-size:
+    var(--tex-unit) var(--tex-unit),
+    var(--tex-unit) var(--tex-unit);
 }
 
 :root[data-format="text"] :is(.paginated-scroller, .tx-stream, .tx-strip).texture-dotted,
