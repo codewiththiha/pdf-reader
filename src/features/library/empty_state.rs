@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::services::document;
 use crate::state::AppState;
 

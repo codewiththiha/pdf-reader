@@ -17,10 +17,10 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::section_label::SectionLabel;
-use crate::components::primitives::separator::Separator;
+use crate::components::primitives::menu::section_label::SectionLabel;
+use crate::components::primitives::menu::separator::Separator;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;

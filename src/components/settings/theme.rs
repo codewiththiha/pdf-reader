@@ -13,9 +13,9 @@ use crate::components::primitives::form::slider::Slider;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
-use crate::components::primitives::section_label::SectionLabel;
-use crate::components::primitives::separator::Separator;
-use crate::components::primitives::switch::Switch;
+use crate::components::primitives::menu::section_label::SectionLabel;
+use crate::components::primitives::menu::separator::Separator;
+use crate::components::primitives::controls::switch::Switch;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::state::AppState;
 

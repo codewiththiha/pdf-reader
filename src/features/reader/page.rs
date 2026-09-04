@@ -19,7 +19,7 @@ use crate::components::shell::titlebar::floating_document_title::FloatingDocumen
 use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::menus::reader_menu::ReaderMenu;
 use crate::components::settings::modal::SettingsModal;
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use app_chrome::hooks::dom::{TOOLBAR_LEADING_ID, VIEWER_SLOT_ID};
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::tooltip::Tooltip;

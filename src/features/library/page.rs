@@ -7,7 +7,7 @@
 use leptos::prelude::*;
 
 use app_chrome::hooks::dom::TOOLBAR_LEADING_ID;
-use crate::components::primitives::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use app_chrome::tooltip::Tooltip;

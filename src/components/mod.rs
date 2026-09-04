@@ -22,7 +22,7 @@
 //! multiplied into each other.
 //!
 //! Import discipline: callers import from the owning group
-//! (`use crate::components::primitives::button::Button`), which keeps each
+//! (`use crate::components::primitives::controls::button::Button`), which keeps each
 //! component's origin visible. `primitives` must not reach upward into
 //! `state`/`services`/`effects`/`pdf_engine`.
 //!

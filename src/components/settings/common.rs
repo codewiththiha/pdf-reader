@@ -12,7 +12,7 @@ use leptos::prelude::*;
 
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
-use crate::components::primitives::menu_item::MenuItem;
+use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
 
 #[derive(Clone, Copy, PartialEq, Eq)]

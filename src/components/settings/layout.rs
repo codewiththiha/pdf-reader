@@ -12,8 +12,8 @@ use reader_core::settings::{FloatingLabelStyle, PageIndicatorStyle};
 use crate::components::settings::common::{Row, StyleSelect};
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use crate::components::primitives::section_label::SectionLabel;
-use crate::components::primitives::switch::Switch;
+use crate::components::primitives::menu::section_label::SectionLabel;
+use crate::components::primitives::controls::switch::Switch;
 use crate::state::AppState;
 
 #[component]

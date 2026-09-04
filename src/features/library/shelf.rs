@@ -12,8 +12,8 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::button::{Button, ButtonVariant};
-use crate::components::primitives::feedback::loader::CenteredLoader;
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::components::primitives::feedback::CenteredLoader;
 use app_chrome::icon::{Icon, IconName};
 use pdf_engine::types::DocStatus;
 use crate::services::document;
