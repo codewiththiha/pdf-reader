@@ -1,5 +1,6 @@
 //! The spring, as a Leptos effect, generic over any 5-field [`SpringValue`]
 //! (the floating box, first and foremost: [`app_chrome::floating::types::FloatBox`]).
+//!
 //! Springs `value` toward `target`; while `snap` is true (dragging / a forced
 //! beat / reduced-motion) it jumps instead of wobbling.
 //!
@@ -10,11 +11,17 @@
 //! `vel` and `last_ms` live outside the Effect so velocity survives a
 //! retarget, keeping the morph continuous — unless a caller hard-resets via
 //! [`SpringBox::reset_to`] when a *new* anchor opens.
+//!
+//! This module implements [`SpringValue`] for the floating box and for nothing
+//! else. A domain type that wants to ride the spring brings its own adapter —
+//! the gloss box's is `crate::components::ai::gloss::spring` — because a
+//! primitive that imported a feature crate's type would be breakable by that
+//! crate, and would make every other consumer of the primitive depend on the
+//! feature too.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use ai_core::gloss::GlossBox;
 use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
@@ -73,29 +80,6 @@ impl SpringValue for FloatBox {
     }
     fn all_small(&self, epsilon: f64) -> bool {
         self.all_small(epsilon)
-    }
-}
-
-/// The domain gloss box rides the same spring. `ai_core::gloss` owns the
-/// math (and `FloatBox` delegates to the same `reader_core::spring` integrator);
-/// this adapter is the only seam between the generic spring and the gloss
-/// domain type.
-impl SpringValue for GlossBox {
-    fn zero() -> Self {
-        GlossBox::default()
-    }
-    fn close(&self, other: &Self, epsilon: f64) -> bool {
-        ai_core::gloss::boxes_close(*self, *other, epsilon)
-    }
-    fn step(&self, vel: &Self, target: &Self, dt: f64) -> (Self, Self) {
-        ai_core::gloss::step_spring(*self, *vel, *target, dt)
-    }
-    fn all_small(&self, epsilon: f64) -> bool {
-        self.w.abs() < epsilon
-            && self.x.abs() < epsilon
-            && self.y.abs() < epsilon
-            && self.h.abs() < epsilon
-            && self.r.abs() < epsilon
     }
 }
 
@@ -224,27 +208,6 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn gloss(x: f64, y: f64, w: f64, h: f64, r: f64) -> GlossBox {
-        GlossBox { x, y, w, h, r }
-    }
-
-    #[test]
-    fn gloss_all_small_covers_every_field() {
-        // Each field above epsilon on its own must break "all small": the
-        // check is hand-rolled for GlossBox, and a dropped field would let
-        // a still-moving spring tear its rAF loop down early.
-        for above in [
-            gloss(1.0, 0.0, 0.0, 0.0, 0.0),
-            gloss(0.0, 1.0, 0.0, 0.0, 0.0),
-            gloss(0.0, 0.0, 1.0, 0.0, 0.0),
-            gloss(0.0, 0.0, 0.0, 1.0, 0.0),
-            gloss(0.0, 0.0, 0.0, 0.0, 1.0),
-        ] {
-            assert!(!above.all_small(0.6), "{above:?} read as small");
-        }
-        assert!(gloss(0.0, 0.0, 0.0, 0.0, 0.0).all_small(0.6));
-    }
 
     #[test]
     fn float_step_through_the_trait_settles_on_the_target() {
