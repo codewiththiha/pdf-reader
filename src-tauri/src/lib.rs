@@ -22,7 +22,7 @@
 //!
 //!     The frontend collects the slot through the `take_pending_file`
 //!     command (the authoritative handoff — an event emitted before the
-//!     webview mounted would otherwise be lost) and `pdf-open-file` is only
+//!     webview mounted would otherwise be lost) and `document-open-file` is only
 //!     the wake-up ping for files that arrive while it is already mounted.
 
 use std::sync::Mutex;
@@ -56,7 +56,7 @@ fn is_document_path(raw: &str) -> bool {
 }
 
 /// Hand a document path to the frontend: queue it for `take_pending_file`
-/// and ping the `pdf-open-file` event in case the webview is already
+/// and ping the `document-open-file` event in case the webview is already
 /// listening. (The event name is historical; it carries every format now.)
 fn queue_pending(app: &tauri::AppHandle, path: String) {
     let path = path.trim().trim_matches('"').to_string();
@@ -67,11 +67,11 @@ fn queue_pending(app: &tauri::AppHandle, path: String) {
         && let Ok(mut guard) = state.0.lock() {
             *guard = Some(path.clone());
         }
-    let _ = app.emit("pdf-open-file", path);
+    let _ = app.emit("document-open-file", path);
 }
 
 /// Returns the pending OS-opened document path (if any) and clears it. The
-/// frontend pulls this once on mount and again whenever `pdf-open-file`
+/// frontend pulls this once on mount and again whenever `document-open-file`
 /// pings, so a file opened at launch survives the webview not being ready
 /// and one opened mid-run never opens twice.
 #[tauri::command]

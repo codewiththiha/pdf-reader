@@ -46,7 +46,7 @@ use super::session;
 ///     backend before the webview finished mounting (initial-launch argv on
 ///     Windows/Linux, the macOS open-file event at launch). An event emitted
 ///     before mount would be lost, so the command is the source of truth.
-///   * PUSH — the backend emits `pdf-open-file` for files opened while the
+///   * PUSH — the backend emits `document-open-file` for files opened while the
 ///     app is already running (single-instance forward on Windows/Linux,
 ///     LaunchServices on macOS). The listener just re-runs the pull: the
 ///     command clears itself, so an event + a stray second pull can never
@@ -66,7 +66,7 @@ pub fn init_open_file_handling(state: AppState) {
     // PUSH — the listener just re-runs the pull (the command clears itself,
     // so an event + a stray second pull can never open the same file twice).
     let cb_state = state;
-    crate::services::tauri_listen("pdf-open-file", move |_ev: web_sys::Event| {
+    crate::services::tauri_listen("document-open-file", move |_ev: web_sys::Event| {
         let st = cb_state;
         spawn_local(async move {
             if let Some(path) = engine::take_pending_file().await {
