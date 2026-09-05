@@ -2,7 +2,7 @@ use ai_core::gloss::{is_glossable, is_hintable, GlossMark};
 use leptos::prelude::*;
 
 use crate::components::ai::anchor::{
-    anchor_resolver, capture_selection_mark, no_invalidation, reflow_invalidation,
+    anchor_resolver, captured_mark, capture_selection_mark, no_invalidation, reflow_invalidation,
     watch_page_anchor, FormatAnchorBridge, ReflowAnchorBridge, MENU_EXIT_FRAC,
 };
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
@@ -138,15 +138,14 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                         // owns this selection.
                         let captured = state.reader.ai_selection.anchor.get_untracked();
                         let reflow = sel.is_reflow();
-                        let mark = captured
-                            .map(|pa| GlossMark {
-                                id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
+                        let mark: Option<GlossMark> = captured
+                            .map(|pa| {
                                 // Only a single word passes the `is_glossable`
                                 // gate this click is behind, so trimming the
                                 // edges yields the canonical token — the card
                                 // header and the persisted mark never carry a
                                 // stray surrounding space.
-                                word: sel.text.trim().to_string(),
+                                let word = sel.text.trim();
                                 // A reflowable mark's context is an envelope:
                                 // the spot, so the stroke can find these exact
                                 // words again after a re-pagination, a font
@@ -155,13 +154,11 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                                 // re-explained from storage. A PDF's mark keeps
                                 // the bare sentence — its rect already is its
                                 // identity.
-                                context: match sel.spot {
-                                    Some(spot) if reflow => {
-                                        spot_envelope(&spot, &sel.context)
-                                    }
+                                let context = match sel.spot {
+                                    Some(spot) if reflow => spot_envelope(&spot, &sel.context),
                                     _ => sel.context.trim().to_string(),
-                                },
-                                anchor: pa,
+                                };
+                                captured_mark(word, context, pa)
                             })
                             .or_else(|| {
                                 if reflow {
@@ -186,11 +183,12 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
                                         )
                                         .map(|(spot, _)| (spot, pa))
                                     })
-                                    .map(|(spot, pa)| GlossMark {
-                                        id: format!("g{}-{}", pa.page, js_sys::Date::now() as u64),
-                                        word: sel.text.trim().to_string(),
-                                        context: spot_envelope(&spot, &sel.context),
-                                        anchor: pa,
+                                    .map(|(spot, pa)| {
+                                        captured_mark(
+                                            sel.text.trim(),
+                                            spot_envelope(&spot, &sel.context),
+                                            pa,
+                                        )
                                     })
                                 } else {
                                     capture_selection_mark(

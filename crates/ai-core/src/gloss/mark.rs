@@ -48,6 +48,24 @@ impl<A> std::ops::Deref for GlossMark<A> {
     }
 }
 
+/// The id of a mark captured on `page` at `stamp_ms`.
+///
+/// The scheme lives here rather than at the capture sites because an id is
+/// load-bearing twice over: it is the key a mark is persisted under
+/// (`pdfreader.gloss.v1`) and the key a re-click on its stroke toggles by.
+/// Three call sites used to format it identically, which is three chances for
+/// one of them to drift and for a mark to become unreachable by the code that
+/// saved it.
+///
+/// The page is in the id for a human reading storage; the stamp is what keeps
+/// two marks captured on one page apart. The clock itself is NOT read here —
+/// this crate's gloss half is pure and host-tested, so the caller supplies the
+/// stamp (the app's `components::ai::anchor::captured_mark` is the one place
+/// that takes it).
+pub fn mark_id(page: u32, stamp_ms: u64) -> String {
+    format!("g{page}-{stamp_ms}")
+}
+
 /// Where a gloss mark sits in the document — format-specific.
 ///
 /// The trait owns the *identity* of a spot: given two anchors, is this the
@@ -179,6 +197,15 @@ impl MarkAnchor for ReflowSpot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mark_id_is_its_page_and_its_stamp() {
+        // Pinned because it is a storage key: marks already saved under this
+        // scheme are addressed by it, so a change here is a migration, not a
+        // formatting preference.
+        assert_eq!(mark_id(12, 1_700_000_000_123), "g12-1700000000123");
+        assert_eq!(mark_id(1, 0), "g1-0");
+    }
 
     #[test]
     fn same_spot_tolerates_sub_pixel_drift_but_not_a_new_word() {

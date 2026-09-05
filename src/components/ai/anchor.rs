@@ -18,7 +18,7 @@
 //! the stroke layer, the spring and the persistence are all format-blind; a
 //! new format adds a bridge and a mark-layer mount, and nothing else.
 
-use ai_core::gloss::{GlossBox, GlossMark, ReflowSpot};
+use ai_core::gloss::{mark_id, GlossBox, GlossMark, ReflowSpot};
 use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use wasm_bindgen::JsCast;
@@ -437,16 +437,33 @@ pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
     })
 }
 
+/// The one place a capture becomes a persisted mark.
+///
+/// The id scheme is `ai_core::gloss::mark_id`'s, and this is the only caller
+/// that supplies it with a clock: the crate's gloss half is pure, so reading
+/// the millisecond stamp belongs to the app side of the seam. Every capture
+/// path goes through here — the Info pill's click with an anchor in hand, its
+/// fallback that walks the live range, and the reflowable one that has a spot
+/// envelope to carry — so a mark cannot end up with an id no reader can
+/// address, which is what three separately formatted `g{page}-{now}` literals
+/// were one refactor away from.
+pub fn captured_mark(
+    word: impl Into<String>,
+    context: impl Into<String>,
+    anchor: PageAnchor,
+) -> GlossMark {
+    GlossMark {
+        id: mark_id(anchor.page, js_sys::Date::now() as u64),
+        word: word.into(),
+        context: context.into(),
+        anchor,
+    }
+}
+
 /// The same capture, as a whole mark — the Info pill's fallback when the
 /// anchor it captured with its selection is gone.
 pub fn capture_selection_mark(scale: f64, word: String, context: String) -> Option<GlossMark> {
-    let a = capture_selection(scale)?;
-    Some(GlossMark {
-        id: format!("g{}-{}", a.page, js_sys::Date::now() as u64),
-        word,
-        context,
-        anchor: a,
-    })
+    Some(captured_mark(word, context, capture_selection(scale)?))
 }
 
 #[derive(Clone, Copy)]
