@@ -58,7 +58,6 @@
      still the default, so an untouched install looks identical. */
   opacity: var(--texture-opacity, 0.9);
 
-  /* css-comment-stripped */
   /* The user's pitch multiplier COMPOSES with the page scale rather than
      replacing it. The texture is part of the page (appendix 7): it must still
      zoom with the document, so the slider stretches the NATURAL pitch and the
