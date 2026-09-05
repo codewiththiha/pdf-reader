@@ -523,7 +523,10 @@ public/
 src-tauri/                native shell, AI providers, capabilities, icons
 styles/
   input.css               Tailwind v4 entry point assembling the design system
-  components/             shell, title bar, animations, ai, gloss, appearance
+  page_host.css           the .pdf-page host, its canvas and the zoom snapshot
+  text.css                the reflowable page host and its measure column
+  components/             shell, title bar, animations, ai, gloss, appearance,
+                          thumbnails, pdf.js's text layer
 scripts/                  engine bundling, engine smoke test, and the
                           consistency checks CI runs (versions, formats,
                           doc paths, event names, the DOM contract)
