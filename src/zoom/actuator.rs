@@ -167,10 +167,7 @@ impl ZoomActuator {
                 *height *= factor;
             }
         });
-        let css_heights = state.document.content.metrics.css_heights;
-        self.vertical.rescale(factor, move |index| {
-            css_heights.with_untracked(|heights| heights.get(index).copied().unwrap_or(0.0)) + gap
-        });
+        self.vertical.rescale(factor, state.document.content.metrics.strip_sizes(gap));
 
         // Scroll so the anchored point is back under the middle of the window.
         // The ceiling is the virtualizer's own (`total − viewport`):

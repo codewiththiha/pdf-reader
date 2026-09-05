@@ -45,4 +45,26 @@ impl PageMetrics {
         self.intrinsic.set(Vec::new());
         self.css_heights.set(Vec::new());
     }
+
+    /// The vertical strip's size model: a page's laid-out CSS height, plus the
+    /// gap after it.
+    ///
+    /// One definition because four moments read it and must agree — the no-gap
+    /// pref, the page-margin pref, a reflowable re-cut and a zoom rescale. A
+    /// strip that sized its pages one way and then re-sized them another on the
+    /// next rescale would walk the reader's position by a gap per page, which is
+    /// the kind of drift no single call site can see.
+    ///
+    /// The heights are read live per item rather than snapshotted into the
+    /// closure: the store is what a rescale has just written, and copying a
+    /// whole book's heights only to hand them straight back is the allocation
+    /// the zoom path was written to avoid. The horizontal strip has its own
+    /// model (intrinsic widths times scale, plus margin on the scroll axis) and
+    /// deliberately does not share this one.
+    pub fn strip_sizes(&self, gap: f64) -> impl Fn(usize) -> f64 {
+        let heights = self.css_heights;
+        move |index: usize| {
+            heights.with_untracked(|store| store.get(index).copied().unwrap_or(0.0)) + gap
+        }
+    }
 }

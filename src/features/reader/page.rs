@@ -75,8 +75,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                 return;
             }
             vs.viewer.page_gap.set(gap);
-            let heights = vs.document.content.metrics.css_heights.with_untracked(|h| h.clone());
-            v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
+            v.rescale(1.0, vs.document.content.metrics.strip_sizes(gap));
         });
     }
 
@@ -100,14 +99,13 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             vs.viewer.page_margin.set(m);
             let scale = vs.viewer.zoom.visual_scale();
             let gap = vs.viewer.page_gap.get_untracked();
-            let heights = vs.document.content.metrics.css_heights.with_untracked(|h| h.clone());
             let widths = vs
                 .document
                 .content.metrics
                 .intrinsic
                 .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
             // Vertical: margin is cross-axis; sizes unchanged aside from gap.
-            v.rescale(1.0, move |i| heights.get(i).copied().unwrap_or(0.0) + gap);
+            v.rescale(1.0, vs.document.content.metrics.strip_sizes(gap));
             // Horizontal: margin is main-axis — which the exempt mode simply
             // never has (m resolves to 0 there).
             hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);

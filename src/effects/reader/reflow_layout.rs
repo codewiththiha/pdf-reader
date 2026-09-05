@@ -51,8 +51,9 @@ pub fn reflow_layout(state: AppState, vertical: Virtualizer) {
         if same {
             return;
         }
-        state.reader.document.content.metrics.css_heights.set(sizes.clone());
+        let metrics = state.reader.document.content.metrics;
+        metrics.css_heights.set(sizes);
         let gap = state.reader.viewer.page_gap.get_untracked();
-        vertical.rescale(1.0, move |index| sizes.get(index).copied().unwrap_or(0.0) + gap);
+        vertical.rescale(1.0, metrics.strip_sizes(gap));
     });
 }
