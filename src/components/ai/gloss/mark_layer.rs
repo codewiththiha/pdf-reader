@@ -58,7 +58,7 @@ use crate::components::primitives::interactions::long_press::{LongPressOptions, 
 pub use crate::events::GLOSS_OPEN_EVENT;
 use crate::events::dispatch_typed_event;
 
-/// Exact-fit stroke radius. Shared with `ai::anchor::screen_box` so the
+/// Exact-fit stroke radius. Shared with `ai::anchor::pdf::screen_box` so the
 /// morphing surface settles onto EXACTLY the box the stroke occupies — one
 /// geometry. No hug-padding: the stroke is the stored union rect itself.
 pub const MARK_RADIUS: f64 = 3.0;

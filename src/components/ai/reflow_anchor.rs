@@ -385,7 +385,7 @@ fn range_for_span(el: &web_sys::Element, start: usize, end: usize) -> Option<web
 /// The client rects of `range`, as the pure tuples [`union_box`] takes.
 ///
 /// Both capture paths walk a selection's fragments through here — this module's
-/// spot projection and [`super::anchor::capture_selection`] — so a multi-line
+/// spot projection and [`super::anchor::pdf::capture_selection`] — so a multi-line
 /// selection is measured the same way whichever format it is in. An empty list
 /// (a range the browser will not give rects for) unions to `None`, which every
 /// caller already reads as "nothing to anchor to".
