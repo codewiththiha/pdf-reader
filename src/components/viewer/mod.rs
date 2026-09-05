@@ -9,6 +9,9 @@
 //!   * [`shells`] — the parts that actually have to hold DOM: the scroll policy,
 //!     the container binding, the overlay scrollbar, the progress strip. The
 //!     layouts mount a shell rather than owning any of that.
+//!   * [`controls`] — the reader's chrome: the bottom bar, the page indicator,
+//!     the overlay scrollbar and the progress strip. The shells mount them; the
+//!     reader page mounts the bar.
 //!   * [`page_host`] — the one place a page's format is decided, so a layout can
 //!     be shape without being conditionals.
 //!   * [`texture_surface`] — the reflowable reader's texture carrier: the
@@ -20,8 +23,10 @@
 //!
 //! [`layouts`]: layouts
 //! [`shells`]: shells
+//! [`controls`]: controls
 //! [`page_host`]: page_host
 
+pub mod controls;
 pub mod layouts;
 pub mod page_host;
 pub mod shells;

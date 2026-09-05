@@ -52,12 +52,12 @@ use reflow_core::pager::first_block_of_page;
 
 use crate::components::formats::block_render::BlockView;
 use super::block_render;
+use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
+use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::page_host::block_row_id;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use super::page::content_style;
 use crate::state::reader::TypographySignal;
-use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
-use crate::components::viewer_controls::progress_strip::ProgressStrip;
 use crate::state::ReaderState;
 
 /// How many frames the mount anchor re-asserts the resume position before it

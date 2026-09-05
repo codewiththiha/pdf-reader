@@ -10,8 +10,8 @@
 //!   * `menus`           — menu features (appearance_menu, reader_menu)
 //!   * `settings`        — the reader settings modal: one module per tab
 //!   * `app_overlays`    — transient UI (toast, drag feedback)
-//!   * `viewer_controls` — reader-only controls (zoom, page indicator, …)
-//!   * `viewer`          — the viewing machinery: which layout, which shell
+//!   * `viewer`          — the viewing machinery: which layout, which shell,
+//!     and the reader-only controls (`viewer::controls`) around them
 //!   * `formats`         — one module per format, plus the page host that picks
 //!     between them
 //!   * `search`          — search presentation shared by reader surfaces
@@ -50,4 +50,3 @@ pub mod search;
 pub mod settings;
 pub mod shell;
 pub mod viewer;
-pub mod viewer_controls;

@@ -1,11 +1,11 @@
 use leptos::children::ChildrenFn;
 use leptos::prelude::*;
 
+use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
+use crate::components::viewer::controls::progress_strip::ProgressStrip;
 use crate::components::viewer::layouts::layout_chrome;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use app_chrome::hooks::use_resize_observer::observe_content_size;
-use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
-use crate::components::viewer_controls::progress_strip::ProgressStrip;
 use crate::state::ReaderState;
 
 /// Shared shell for Single & Spread. The child is centered with `margin:auto`
