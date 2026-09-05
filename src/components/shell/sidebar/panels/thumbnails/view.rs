@@ -1,12 +1,11 @@
 //! Thumbnails panel host: the absolutely-stacked panel wrapper with its
-//! paint/outro toggles, around the reusable `ThumbnailsPanel`.
+//! paint/outro toggles, around the reusable [`ThumbnailsPanel`].
 
 use leptos::prelude::*;
 
-use crate::components::shell::sidebar::panels::thumbnails::ThumbnailsPanel;
+use super::ThumbnailsPanel;
 use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
-use leptos::prelude::RwSignal;
 
 #[component]
 pub(crate) fn SidebarThumbs(

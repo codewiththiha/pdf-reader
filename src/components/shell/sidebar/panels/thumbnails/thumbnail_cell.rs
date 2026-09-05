@@ -1,6 +1,6 @@
 //! A single thumbnail cell.
 //!
-//! Split out of `thumbnails_panel.rs`: the cell owns its own render lifecycle
+//! Split out of `panel.rs`: the cell owns its own render lifecycle
 //! (engine registration, the cached-blit fast path, the skeleton crossfade and
 //! cancellation on unmount) and is the only place that talks to the engine's
 //! thumbnail lane. The panel above it only decides WHICH cells exist.

@@ -1,12 +1,11 @@
 //! Outline panel host: the absolutely-stacked panel wrapper with its
-//! paint/outro toggles, around the reusable `OutlinePanel`.
+//! paint/outro toggles, around the reusable [`OutlinePanel`].
 
 use leptos::prelude::*;
 
-use crate::components::shell::sidebar::panels::outline_panel::OutlinePanel;
+use super::OutlinePanel;
 use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
-use leptos::prelude::RwSignal;
 
 #[component]
 pub(crate) fn SidebarOutline(

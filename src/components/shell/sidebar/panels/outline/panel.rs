@@ -22,7 +22,7 @@ fn outline_key(index: usize, node: &OutlineNode) -> String {
 /// Selector for a rendered outline row button by its data attribute. Both the
 /// reveal effect and the center-on-tab gesture find their row this way; one
 /// definition keeps the attribute name and format from drifting out of sync
-/// with the row markup in `outline_view`.
+/// with the row markup below.
 fn outline_row_selector(idx: usize) -> String {
     format!(r#"button[data-outline-index="{idx}"]"#)
 }

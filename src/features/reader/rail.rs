@@ -18,8 +18,8 @@ use crate::components::shell::controller::ShellController;
 use crate::components::shell::sidebar::container::{SidebarShell, request_reveal_active};
 use crate::components::shell::sidebar::document_info::BookInfo;
 use crate::components::shell::sidebar::header::SidebarHeader;
-use crate::components::shell::sidebar::panels::outline_view::SidebarOutline;
-use crate::components::shell::sidebar::panels::thumbnails_view::SidebarThumbs;
+use crate::components::shell::sidebar::panels::outline::view::SidebarOutline;
+use crate::components::shell::sidebar::panels::thumbnails::view::SidebarThumbs;
 use crate::components::shell::sidebar::switcher::PanelSwitcher;
 use crate::state::{AppState, SidebarMode};
 
