@@ -21,6 +21,8 @@
 //!   context-menu listener, the undo pipeline.
 //! * [`spring`]         — the gloss box's adapter to the generic spring
 //!   primitive (the dependency points this way, never into `primitives`).
+//! * [`phase`]          — the card's two orthogonal phase machines: its box
+//!   ([`phase::GlossPhase`]) and its data ([`phase::AiPhase`]).
 //! * [`mark_layer`]     — the persistent highlighter stroke layer per page
 //!   (incl. the long-press gesture + contextmenu).
 //! * [`selection_bar`]  — the bottom-right selection action bar.
@@ -44,6 +46,7 @@ pub mod gloss_surface;
 pub mod hooks;
 pub mod interactions;
 pub mod mark_layer;
+pub mod phase;
 pub mod placement;
 pub mod selection_bar;
 pub mod selection_mode;

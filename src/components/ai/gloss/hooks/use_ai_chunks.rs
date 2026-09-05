@@ -13,7 +13,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use crate::components::ai::gloss::controller::GlossController;
-use crate::components::ai::types::{AiPhase, GlossPhase};
+use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
 use crate::services::ai::{AI_CHUNK_EVENT, AiChunk, AiChunkEvent};
 use crate::state::AppState;
 

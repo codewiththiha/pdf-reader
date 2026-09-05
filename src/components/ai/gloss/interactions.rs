@@ -14,7 +14,7 @@ use crate::components::ai::anchor::{AnchorWatch, MENU_EXIT_FRAC, origin_outside_
 use crate::components::ai::gloss::controller::GlossController;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_viewport::viewport_size;
-use crate::components::ai::types::GlossPhase;
+use crate::components::ai::gloss::phase::GlossPhase;
 use crate::state::AppState;
 
 /// Escape collapses the expanded card; a second Escape on the bare chip gives

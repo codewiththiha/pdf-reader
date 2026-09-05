@@ -21,7 +21,7 @@ use crate::components::ai::reflow_anchor::parse_spot;
 use crate::components::ai::gloss::controller::GlossController;
 use crate::components::ai::gloss::hooks::use_content_measure::use_content_measure;
 use crate::components::ai::gloss::placement::{expanded_target, spring_target};
-use crate::components::ai::types::GlossPhase;
+use crate::components::ai::gloss::phase::GlossPhase;
 use app_chrome::hooks::use_viewport::use_viewport;
 use crate::components::primitives::motion::reduced_motion::reduced_motion_signal;
 use crate::components::primitives::motion::spring::{SpringBox, use_spring_box};

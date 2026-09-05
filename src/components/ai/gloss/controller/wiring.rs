@@ -13,11 +13,12 @@
 use std::sync::Arc;
 
 use ai_core::gloss::{GlossBox, GlossMark};
+use ai_core::types::{AiError, AiErrorKind, WordInfo};
 use leptos::prelude::*;
 
 use crate::components::ai::anchor::AnchorWatch;
 use crate::components::ai::gloss::mark_layer::GLOSS_OPEN_EVENT;
-use crate::components::ai::types::{AiError, AiErrorKind, AiPhase, GlossPhase, WordInfo};
+use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
 use app_chrome::hooks::use_viewport::viewport_size;
 use crate::components::primitives::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;

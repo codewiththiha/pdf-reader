@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
+use ai_core::types::WordInfo;
 use reader_core::settings::GlossDensity;
 use leptos::prelude::*;
 
-use crate::components::ai::types::WordInfo;
 use crate::components::primitives::feedback::LoadingShimmer;
 
 /// The body's density-dependent class sets: the gap between sections, the

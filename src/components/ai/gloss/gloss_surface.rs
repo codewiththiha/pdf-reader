@@ -21,12 +21,13 @@
 use std::sync::Arc;
 
 use ai_core::gloss::GlossBox;
+use ai_core::types::{AiError, WordInfo};
 use reader_core::settings::GlossDensity;
 use leptos::html;
 use leptos::prelude::*;
 use reader_core::zoom_math::smoothstep;
 
-use crate::components::ai::types::{AiError, AiPhase, GlossPhase, WordInfo};
+use crate::components::ai::gloss::phase::{AiPhase, GlossPhase};
 use crate::components::primitives::floating::floating_card::FloatingCard;
 use app_chrome::floating::types::FloatBox;
 

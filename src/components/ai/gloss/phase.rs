@@ -1,11 +1,19 @@
-//! The AI feature's phase types: what the card's *box* is doing
-//! ([`GlossPhase`]) and what the explanation *data* is doing ([`AiPhase`]).
+//! The two phase machines of the word card: what its BOX is doing
+//! ([`GlossPhase`]) and what its DATA is doing ([`AiPhase`]).
 //!
-//! The wire types (WordInfo, AiError, the chunk envelope, ...) are
-//! format-agnostic and now live in `ai_core::types`; the data types are
-//! re-exported here so the existing `crate::components::ai::types` import
-//! paths keep resolving, and the chunk types ride in through
-//! `crate::services::ai`.
+//! They lived in `components/ai/types.rs`, a file whose own doc had to explain
+//! that the wire types were no longer in it and were only re-exported "so the
+//! existing import paths keep resolving". Both enums are read exclusively by
+//! this module — the card's geometry, its content, the chunk hook and the
+//! surface that composes them — and neither is a wire type, so they belong here
+//! with their only consumers, and the wire types are imported from
+//! `ai_core::types` directly. That is what deleted the shim: nothing was left
+//! in it that was not either someone else's type or these two.
+//!
+//! The two are deliberately orthogonal. A card can be streaming text while its
+//! box is still sprung open, or folded back onto the stroke while the answer it
+//! shows is complete; conflating them is what would make the morph and the
+//! stream fight over one state.
 
 /// Geometry of the word card. Orthogonal to [`AiPhase`] (the AI data status):
 /// `AiPhase` says what the *data* is doing, `GlossPhase` says what the
@@ -44,5 +52,3 @@ pub enum AiPhase {
     /// Something went wrong.
     Error,
 }
-
-pub use ai_core::types::{AiError, AiErrorKind, WordInfo};

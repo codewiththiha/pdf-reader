@@ -5,4 +5,3 @@ pub mod anchor;
 pub mod gloss;
 pub mod reflow_anchor;
 pub mod selection_menu;
-pub mod types;

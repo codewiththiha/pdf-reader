@@ -4,7 +4,7 @@
 use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
 
-use crate::components::ai::types::GlossPhase;
+use crate::components::ai::gloss::phase::GlossPhase;
 use crate::state::AppState;
 
 use super::cache::GlossCache;
