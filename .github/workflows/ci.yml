@@ -145,6 +145,14 @@ jobs:
       - name: Verify the DOM contract agrees
         run: node scripts/check-dom-contract.js
 
+      # Three constants live in two places across a language boundary (the base
+      # palettes in base.rs and tokens.css, the toolbar height in pdf-core and
+      # the bar's Tailwind class, the thumbnail scale in the rail and in the
+      # open-flow warm-up). Nothing links the copies at build time, so nothing
+      # warns when one half moves.
+      - name: Verify the mirrored constants agree
+        run: node scripts/check-constants.js
+
   # The Linux job above cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
   # feature set that feeds it) would otherwise first surface when a release

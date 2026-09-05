@@ -1,10 +1,11 @@
 // The repo-reading prelude the check tools share.
 //
-// Five tools under `tools/` answer questions about this repository's own
+// Six tools under `tools/` answer questions about this repository's own
 // text: versions that have to agree, formats declared in three places, event
 // names spelled in two languages, DOM names spelled in two, module paths named
-// in comments. Each of them began the same way — resolve the repo root, read a
-// file, walk the tree past the directories that are not source — and each
+// in comments, constants mirrored across a language boundary. Each of them
+// began the same way — resolve the repo root, read a file, walk the tree past
+// the directories that are not source — and each
 // carried its own byte-identical copy of those four things. Identical copies
 // stay in step right up to the day a new build directory appears and one script
 // starts scanning it while the others do not. This is the single copy.
