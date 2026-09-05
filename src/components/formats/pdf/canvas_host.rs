@@ -38,8 +38,11 @@ pub(super) fn stretch_host(
     new_scale: f64,
     mask: bool,
 ) {
-    let doc = web_sys::window().and_then(|w| w.document());
-    let Some(host_el) = doc.as_ref().and_then(|d| d.get_element_by_id(host_id)) else {
+    // Every element this function looks up goes through the shared dom hook;
+    // the only thing that still needs the document itself is the snapshot it
+    // CREATES below, which is fetched there rather than here so the two early
+    // returns do not pay for it.
+    let Some(host_el) = app_chrome::hooks::dom::by_id(host_id) else {
         return;
     };
     let _ = host_el.set_attribute(
@@ -67,9 +70,7 @@ pub(super) fn stretch_host(
             return;
         }
     }
-    let Some(src) = doc
-        .as_ref()
-        .and_then(|d| d.get_element_by_id(canvas_id))
+    let Some(src) = app_chrome::hooks::dom::by_id(canvas_id)
         .and_then(|el| el.dyn_ref::<web_sys::HtmlCanvasElement>().cloned())
     else {
         return;
@@ -88,6 +89,7 @@ pub(super) fn stretch_host(
     if has_snapshot {
         return;
     }
+    let doc = web_sys::window().and_then(|w| w.document());
     let Some(snap) = doc.as_ref().and_then(|d| d.create_element("canvas").ok()) else {
         return;
     };

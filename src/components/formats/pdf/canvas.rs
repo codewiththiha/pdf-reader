@@ -185,10 +185,7 @@ pub fn PdfPageCanvas(
     let registered_boot = registered.clone();
     queue_microtask(move || {
         debug_assert!(
-            web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.get_element_by_id(&cid_boot))
-                .is_some(),
+            app_chrome::hooks::dom::by_id(&cid_boot).is_some(),
             "PdfPageCanvas canvas must be in the DOM before register_page"
         );
         if !registered_boot.get() {
@@ -390,10 +387,7 @@ pub fn PdfPageCanvas(
                     // it to the paper session — every colour decision it
                     // feeds lives in the pdf-paper crate.
                     pdf_engine::paper::live_frame(&cid);
-                    if let Some(host) = web_sys::window()
-                        .and_then(|w| w.document())
-                        .and_then(|d| d.get_element_by_id(&hid))
-                    {
+                    if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
                         // Note: cannot use host.style() (tachys ElementExt::style shadows
                         // web_sys' inherent method); set the inline style attribute directly.
                         // The engine also sets `--scale-factor` inline on the host during
@@ -430,10 +424,7 @@ pub fn PdfPageCanvas(
                     // Mark the canvas as NOT painted so the no-op fast path
                     // does not skip the re-render (Fix C).
                     painted_async.set(false);
-                    if let Some(host) = web_sys::window()
-                        .and_then(|w| w.document())
-                        .and_then(|d| d.get_element_by_id(&hid))
-                    {
+                    if let Some(host) = app_chrome::hooks::dom::by_id(&hid) {
                         remove_snapshots(&host);
                     }
                     web_sys::console::warn_1(
