@@ -269,8 +269,10 @@ rather than claiming an unmodified preset is in effect.
 - OS file associations for the same formats, so double-clicking or "Open with" hands the file
   to the reader.
 - The last opened document is remembered and restored on the next launch.
-- Six sample PDFs ship in `public/samples`, covering deep outlines, internal links and awkward
-  title metadata.
+- Five sample PDFs ship in `public/samples`, covering deep outlines, internal links and awkward
+  title metadata. Nothing in the app lists them: they are opened by path (`samples/Outlined
+  Book.pdf`, which the engine's loader resolves as a served URL) when a bug needs a specific
+  document shape to reproduce against.
 
 **Filename display.** A PDF's `/Title` metadata is free-form and frequently contains junk written
 decades ago by the producing tool, such as `file:///F|/Mis%20docum` from dvips or
@@ -506,7 +508,8 @@ public/
   pdfEngine.ts            the imperative engine wrapper (bundled to .js)
   engine/                 the engine modules the wrapper imports
   vendor/pdfjs/           vendored pdf.js build, worker, viewer CSS, cmaps
-  samples/                sample documents used by the README and the smoke test
+  samples/                five fixture PDFs for manual testing (the smoke test
+                          runs against stubs, not these)
 src-tauri/                native shell, AI providers, capabilities, icons
 styles/
   input.css               Tailwind v4 entry point assembling the design system
