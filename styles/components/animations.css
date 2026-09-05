@@ -6,7 +6,7 @@
    entrance animations. Page turns, popovers, the floating search and
    toasts appear instantly; layout chrome (the sidebar width, overlays)
    may keep short STRUCTURAL CSS transitions, and zooms scale one
-   continuous surface linearly (see src/viewer/zoom).
+   continuous surface linearly (see src/zoom).
 
    What remains here is the global reduced-motion safety net, the identical
    collapse the reader's own master switch asks for, and the two transitions
