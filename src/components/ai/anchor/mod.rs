@@ -39,12 +39,14 @@ use app_chrome::hooks::dom::by_id;
 use crate::state::ReaderState;
 
 pub mod pdf;
-pub mod refresh;
 pub mod reflow;
 pub mod watch;
 
 pub use pdf::{capture_selection_mark, PdfAnchorBridge};
-pub use refresh::{layer_refresh, no_invalidation, reflow_invalidation};
+// The invalidation fingerprints are a viewer concern — what makes type move —
+// and live there now; re-exported here because every watcher and stroke layer
+// in this feature reaches for them through this module.
+pub use crate::components::viewer::refresh::{layer_refresh, no_invalidation, reflow_invalidation};
 pub use reflow::ReflowAnchorBridge;
 pub use watch::{
     origin_outside_band, watch_page_anchor, AnchorWatch, CARD_EXIT_FRAC, PILL_EXIT_FRAC,

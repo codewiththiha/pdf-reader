@@ -112,7 +112,7 @@ pub fn ReflowMeasureColumn(app: AppState) -> impl IntoView {
                     (*doc_id, *index)
                 }
                 children=move |(_, _, block): (usize, usize, reflow_core::block::TextBlock)| {
-                    view! { <BlockView block=block render=block_render(app.reader) /> }
+                    view! { <BlockView block=block render=block_render(app.reader) state=app.reader /> }
                 }
             />
         </div>

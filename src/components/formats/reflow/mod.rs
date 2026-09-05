@@ -1,8 +1,11 @@
 //! The reflowable formats' shared machinery: page host, continuous stream,
-//! virtualized strip, and the column that measures the real heights.
+//! virtualized strip, the column that measures the real heights, the walk that
+//! finds a block's characters in the DOM ([`spot`]), and what gets painted over
+//! them — a block's gloss strokes ([`gloss`]) and its search hits
+//! ([`highlight`]).
 //!
-//! Four components, and not one of them knows whether the document it is laying
-//! out came from `txt-core` or `md-core`. The blocks are the same shape, the
+//! Not one of these components knows whether the document it is laying out came
+//! from `txt-core` or `md-core`. The blocks are the same shape, the
 //! geometry is the same A4 sheet, the page cut is the same greedy pack — so the
 //! layout code is written once, and the ONE decision a format forces is which
 //! view paints a block ([`block_render`], which feeds
@@ -16,12 +19,15 @@
 //! reader's own `viewer` state).
 
 mod gloss;
+mod highlight;
 mod measure;
 mod page;
+pub(crate) mod spot;
 mod strip;
 mod stream;
 
 pub use gloss::ReflowGlossLayer;
+pub use highlight::BlockSearchHits;
 pub use measure::ReflowMeasureColumn;
 pub use page::ReflowPage;
 pub use strip::ReflowPageStrip;

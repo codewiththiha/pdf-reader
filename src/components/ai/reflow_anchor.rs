@@ -26,10 +26,12 @@
 //! changes by being replaced, and it is re-read on every one of those frames,
 //! so its parse is memoized ([`parse_spot`]) against the string it came from.
 //!
-//! The arithmetic is kept pure and separate from the DOM walk so it is
-//! unit-testable on the host: [`index_of_text_node`] (character offsets → a
-//! text node and an offset inside it), [`clamp_span`] (a span against the text
-//! that is actually there) and [`union_box`] (client rects → one box).
+//! The walk itself — a block's text nodes, the character offsets that address
+//! them, and the `Range` a span becomes — is shared with everything else that
+//! paints over a reflowable document's type, and lives in
+//! [`crate::components::formats::reflow::spot`]. What stays here is the mark's
+//! own arithmetic: [`union_box`] (client rects → one stroke box) and the
+//! envelope above it.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -38,10 +40,10 @@ use ai_core::gloss::{GlossBox, PageAnchor, ReflowSpot};
 use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
 
 use super::anchor::host_id_for_mode;
 use super::gloss::mark_layer::MARK_RADIUS;
+use crate::components::formats::reflow::spot::{clamp_span, range_for_span, range_rects};
 use crate::components::viewer::page_host::block_row_id;
 use crate::dom_contract::BLOCK_INDEX_ATTR;
 use crate::state::reader::ReflowContent;
@@ -220,95 +222,6 @@ fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sy
     app_chrome::hooks::dom::by_id(&id)
 }
 
-/// The block's text nodes, in document order.
-///
-/// The walk is a plain `childNodes` recursion rather than a `TreeWalker`: it
-/// needs no extra `web-sys` feature, and one block is a handful of nodes.
-/// Nodes inside the block's own stroke layer are skipped — a mark's button
-/// carries the glossed word as its accessible name, and counting that text
-/// would shift every offset after the first mark.
-fn text_nodes_of(el: &web_sys::Element) -> Vec<web_sys::Node> {
-    let mut nodes = Vec::new();
-    collect_text_nodes(el, &mut nodes);
-    nodes
-}
-
-fn collect_text_nodes(node: &web_sys::Node, out: &mut Vec<web_sys::Node>) {
-    match node.node_type() {
-        web_sys::Node::TEXT_NODE => out.push(node.clone()),
-        web_sys::Node::ELEMENT_NODE => {
-            if let Some(el) = node.dyn_ref::<web_sys::Element>() {
-                let classes = el.class_list();
-                // The stroke layer's own text is not document text (a mark's
-                // button carries the glossed word as its accessible name), and
-                // counting it would shift every offset after the first mark.
-                //
-                // The measure column is the same case, guarded rather than
-                // excluded by construction: it renders every block a second
-                // time, but it is mounted as a SIBLING of the page hosts
-                // (`features/reader/page.rs`), so this walk — which starts at a
-                // host — never reaches it. The class check is what keeps the
-                // offsets honest if it is ever moved inside one; it costs one
-                // `DOMTokenList::contains` per element.
-                if classes.contains("gloss-layer") || classes.contains("tx-measure") {
-                    return;
-                }
-            }
-            let children = node.child_nodes();
-            for index in 0..children.length() {
-                if let Some(child) = children.item(index) {
-                    collect_text_nodes(&child, out);
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Convert an offset counted in CHARACTERS (what a [`ReflowSpot`] stores, and
-/// what the engine's tracker reports) into the UTF-16 code-unit offset a DOM
-/// `Range` wants, within one text node's content.
-///
-/// The two units agree for everything in the Basic Multilingual Plane and
-/// differ only for supplementary characters — emoji, mathematical
-/// alphanumerics — where one character is two code units. Converting at this
-/// one boundary is what lets the stored identity be honest characters on both
-/// sides of the wire while the DOM still gets what it asked for.
-fn utf16_offset_for_char(content: &str, char_offset: usize) -> u32 {
-    content
-        .chars()
-        .take(char_offset)
-        .map(|ch| ch.len_utf16() as u32)
-        .sum()
-}
-
-/// Which text node holds character `offset`, and how far into it that is.
-///
-/// Pure: `lengths` is a block's text nodes in order. An offset at or past the
-/// end lands on the last node's end (or on `(0, 0)` for a block with no text),
-/// so a mark whose document was edited shorter still projects onto something
-/// sane instead of failing.
-pub fn index_of_text_node(lengths: &[u32], offset: usize) -> (usize, u32) {
-    let mut remaining = offset;
-    for (index, &length) in lengths.iter().enumerate() {
-        if remaining < length as usize {
-            return (index, remaining as u32);
-        }
-        remaining -= length as usize;
-    }
-    match lengths.last() {
-        Some(&last) => (lengths.len() - 1, last),
-        None => (0, 0),
-    }
-}
-
-/// A `[start, end)` span clamped into a block that now holds `chars`
-/// characters. Ordered, so a clamped span can never come back backwards.
-pub fn clamp_span(start: usize, end: usize, chars: usize) -> (usize, usize) {
-    let start = start.min(chars);
-    (start, end.clamp(start, chars))
-}
-
 /// The viewport box a set of client rects covers, as the five fields a mark's
 /// stroke is painted with.
 ///
@@ -343,63 +256,6 @@ pub fn union_box(rects: &[(f64, f64, f64, f64)]) -> Option<GlossBox> {
         h,
         r: MARK_RADIUS.min(h / 2.0),
     })
-}
-
-/// A DOM `Range` over `[start, end)` of `el`'s text, clamped to what is
-/// actually there. `None` when the block holds no text at all.
-fn range_for_span(el: &web_sys::Element, start: usize, end: usize) -> Option<web_sys::Range> {
-    let document = web_sys::window()?.document()?;
-    let nodes = text_nodes_of(el);
-    let texts: Vec<web_sys::Text> = nodes
-        .iter()
-        .filter_map(|node| node.dyn_ref::<web_sys::Text>())
-        .cloned()
-        .collect();
-    // Character counts, because that is the unit a spot counts in; the DOM is
-    // handed a code-unit offset only at the `set_start`/`set_end` boundary.
-    let contents: Vec<String> = texts.iter().map(|text| text.data()).collect();
-    let lengths: Vec<u32> = contents.iter().map(|c| c.chars().count() as u32).collect();
-    let total: usize = lengths.iter().map(|&length| length as usize).sum();
-    if total == 0 {
-        return None;
-    }
-    let (start, end) = clamp_span(start, end, total);
-    let (start_node, start_offset) = index_of_text_node(&lengths, start);
-    let (end_node, end_offset) = index_of_text_node(&lengths, end);
-    let range = document.create_range().ok()?;
-    range
-        .set_start(
-            nodes.get(start_node)?,
-            utf16_offset_for_char(contents.get(start_node)?, start_offset as usize),
-        )
-        .ok()?;
-    range
-        .set_end(
-            nodes.get(end_node)?,
-            utf16_offset_for_char(contents.get(end_node)?, end_offset as usize),
-        )
-        .ok()?;
-    Some(range)
-}
-
-/// The client rects of `range`, as the pure tuples [`union_box`] takes.
-///
-/// Both capture paths walk a selection's fragments through here — this module's
-/// spot projection and [`super::anchor::pdf::capture_selection`] — so a multi-line
-/// selection is measured the same way whichever format it is in. An empty list
-/// (a range the browser will not give rects for) unions to `None`, which every
-/// caller already reads as "nothing to anchor to".
-pub(super) fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
-    let Some(rects) = range.get_client_rects() else {
-        return Vec::new();
-    };
-    let mut out = Vec::with_capacity(rects.length() as usize);
-    for index in 0..rects.length() {
-        if let Some(rect) = rects.get(index) {
-            out.push((rect.left(), rect.top(), rect.right(), rect.bottom()));
-        }
-    }
-    out
 }
 
 /// The viewport box a spot covers right now, in the reader's current view mode.
@@ -605,65 +461,6 @@ mod tests {
         let legacy = mark("rf1:{\"spot\":{\"block\":1,\"start\":0,\"end\":2}}");
         assert_eq!(parse_spot(&legacy.context), Some(ReflowSpot::new(1, 0, 2)));
         assert_eq!(explain_context(&legacy), "");
-    }
-
-    #[test]
-    fn offsets_land_inside_their_own_text_node() {
-        // Three text nodes: 5, 0 and 7 characters.
-        let lengths = [5u32, 0, 7];
-        assert_eq!(index_of_text_node(&lengths, 0), (0, 0));
-        assert_eq!(index_of_text_node(&lengths, 4), (0, 4));
-        // A zero-length node holds no characters, so nothing lands inside it:
-        // the offset that would have is the next node's start.
-        assert_eq!(index_of_text_node(&lengths, 5), (2, 0));
-        assert_eq!(index_of_text_node(&lengths, 6), (2, 1));
-        assert_eq!(index_of_text_node(&lengths, 11), (2, 6));
-        // Past the end: the last node's end, not a panic and not a wrap.
-        assert_eq!(index_of_text_node(&lengths, 12), (2, 7));
-        assert_eq!(index_of_text_node(&lengths, 999), (2, 7));
-    }
-
-    #[test]
-    fn an_empty_block_has_nowhere_to_put_an_offset() {
-        assert_eq!(index_of_text_node(&[], 0), (0, 0));
-        assert_eq!(index_of_text_node(&[], 40), (0, 0));
-    }
-
-    #[test]
-    fn a_single_text_node_counts_from_its_own_start() {
-        let lengths = [11u32];
-        assert_eq!(index_of_text_node(&lengths, 0), (0, 0));
-        assert_eq!(index_of_text_node(&lengths, 7), (0, 7));
-        assert_eq!(index_of_text_node(&lengths, 11), (0, 11));
-        assert_eq!(index_of_text_node(&lengths, 12), (0, 11));
-    }
-
-    #[test]
-    fn character_offsets_convert_to_the_code_units_a_dom_range_wants() {
-        // Plain ASCII: the two units agree, so nothing moves.
-        assert_eq!(utf16_offset_for_char("palimpsest", 0), 0);
-        assert_eq!(utf16_offset_for_char("palimpsest", 4), 4);
-        // A supplementary character is ONE character and TWO code units, so
-        // every offset after it shifts by one — the whole reason the spot is
-        // stored in characters and converted here, at the DOM's boundary.
-        let with_emoji = "ab\u{1F600}cd";
-        assert_eq!(utf16_offset_for_char(with_emoji, 2), 2);
-        assert_eq!(utf16_offset_for_char(with_emoji, 3), 4);
-        assert_eq!(utf16_offset_for_char(with_emoji, 5), 6);
-        // Past the end is the node's whole length: a clamped spot still
-        // resolves to a real offset rather than throwing at `set_end`.
-        assert_eq!(utf16_offset_for_char(with_emoji, 99), 6);
-        assert_eq!(utf16_offset_for_char("", 3), 0);
-    }
-
-    #[test]
-    fn spans_clamp_into_the_text_that_is_there() {
-        assert_eq!(clamp_span(2, 8, 20), (2, 8));
-        assert_eq!(clamp_span(2, 80, 20), (2, 20));
-        assert_eq!(clamp_span(30, 80, 20), (20, 20));
-        // A backwards span collapses; it never inverts.
-        assert_eq!(clamp_span(9, 3, 20), (9, 9));
-        assert_eq!(clamp_span(0, 0, 0), (0, 0));
     }
 
     #[test]

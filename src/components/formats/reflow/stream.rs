@@ -51,6 +51,7 @@ use app_chrome::hooks::use_resize_observer::observe_content_size;
 use reflow_core::pager::first_block_of_page;
 
 use crate::components::formats::block_render::BlockView;
+use crate::components::formats::reflow::BlockSearchHits;
 use super::block_render;
 use crate::components::viewer::controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer::controls::progress_strip::ProgressStrip;
@@ -415,7 +416,8 @@ pub fn ReflowStreamLayout(
                                         {match block {
                                             Some(block) => {
                                                 view! {
-                                                    <BlockView block=block render=block_render(state) />
+                                                    <BlockView state=state block=block render=block_render(state) />
+                                                    <BlockSearchHits state=state block=index />
                                                 }
                                                     .into_any()
                                             }

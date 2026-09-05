@@ -16,6 +16,8 @@
 //!     be shape without being conditionals.
 //!   * [`texture_surface`] — the reflowable reader's texture carrier: the
 //!     scroller class + zoom var (PDF pages carry their own, in `formats`).
+//!   * [`refresh`] — the invalidation fingerprints: what makes a page's type, and
+//!     so anything painted over it, move without the scroller moving.
 //!
 //! The reactive primitives these components read are NOT here: they live in
 //! `src/state/reader/viewer.rs` (a plain signals bundle) and in `reader-core`'s
@@ -25,10 +27,12 @@
 //! [`shells`]: shells
 //! [`controls`]: controls
 //! [`page_host`]: page_host
+//! [`refresh`]: refresh
 
 pub mod controls;
 pub mod layouts;
 pub mod page_host;
+pub mod refresh;
 pub mod shells;
 pub mod texture_surface;
 

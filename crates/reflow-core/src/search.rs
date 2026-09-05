@@ -14,6 +14,15 @@ use crate::block::TextBlock;
 pub struct TextHit {
     /// The block containing the match.
     pub block: usize,
+    /// Which occurrence of the query this is inside its own block, counting
+    /// from zero.
+    ///
+    /// The highlight that covers a block's row re-finds the query in the row's
+    /// RENDERED text and numbers what it finds the same way, so this ordinal —
+    /// not a rectangle — is what names one box on screen. It travels out as
+    /// `reader_core::search::BlockHit`, the reflowable half of a match's
+    /// "where" (a fixed-grid format answers with a rect instead).
+    pub occurrence: usize,
     /// Byte offset of the match inside the block's text.
     pub byte_offset: usize,
     /// The match's own length in bytes.
@@ -41,9 +50,12 @@ pub fn find_matches(blocks: &[TextBlock], query: &str) -> Vec<TextHit> {
     let mut hits = Vec::new();
     for (index, block) in blocks.iter().enumerate() {
         let haystack = block.text.to_lowercase();
-        for (offset, _) in haystack.match_indices(needle) {
+        // `match_indices` yields a block's occurrences in reading order, which
+        // is the order the row that renders the block will find them in.
+        for (occurrence, (offset, _)) in haystack.match_indices(needle).enumerate() {
             hits.push(TextHit {
                 block: index,
+                occurrence,
                 byte_offset: offset,
                 byte_len: needle.len(),
                 snippet: snippet_of(&block.text, offset, needle.len()),
@@ -129,6 +141,17 @@ mod tests {
         assert_eq!(hits[0].block, 0);
         assert_eq!(hits[1].block, 0);
         assert_eq!(hits[2].block, 2);
+    }
+
+    /// The ordinal a highlight painter pairs its own occurrences with: it counts
+    /// within a block and starts over at the next one, in reading order.
+    #[test]
+    fn occurrences_are_numbered_within_their_own_block() {
+        let blocks = [block("dune dune dune"), block("nothing"), block("dune")];
+        let hits = find_matches(&blocks, "dune");
+        let numbered: Vec<(usize, usize)> =
+            hits.iter().map(|hit| (hit.block, hit.occurrence)).collect();
+        assert_eq!(numbered, vec![(0, 0), (0, 1), (0, 2), (2, 0)]);
     }
 
     #[test]

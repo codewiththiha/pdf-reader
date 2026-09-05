@@ -10,9 +10,10 @@
 //! [`BlockRender`] read off the document's format, and only this file names the
 //! two formats.
 //!
-//! What is shared stays here — the block wrapper and its continuation rule — so
-//! the two views differ only in what they put INSIDE the box, and a page and a
-//! measure column can never disagree about spacing.
+//! What is shared stays here — the block wrapper, its continuation rule, and the
+//! search-hit layer an addressable row carries — so the two views differ only in
+//! what they put INSIDE the box, and a page and a measure column can never
+//! disagree about spacing or about what is painted over it.
 
 use leptos::prelude::*;
 
@@ -20,7 +21,9 @@ use reader_core::format::Format;
 use reflow_core::block::TextBlock;
 
 use super::md::MdBlockView;
+use super::reflow::BlockSearchHits;
 use super::txt::TxtBlockView;
+use crate::state::ReaderState;
 
 /// Which format's renderer a block gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +52,14 @@ impl BlockRender {
 
 #[component]
 pub fn BlockView(
+    /// Reader state, for the search-hit layer an addressable row carries.
+    ///
+    /// Only such a row uses it: the measure column renders every block a second
+    /// time, publishes no index, and so paints no hits — which is what keeps a
+    /// query from doubling the boxes a document shows and, more importantly,
+    /// from putting absolutely positioned children inside the element whose
+    /// height is being measured.
+    state: ReaderState,
     /// The block to paint.
     block: TextBlock,
     /// Which format's view paints inside the wrapper.
@@ -68,6 +79,14 @@ pub fn BlockView(
         BlockRender::Plain => view! { <TxtBlockView block=block.clone() /> }.into_any(),
         BlockRender::Markdown => view! { <MdBlockView block=block.clone() /> }.into_any(),
     };
+    // A row that can be looked up is a row a search hit can be painted over:
+    // the layer positions itself against the row's own box, so it belongs
+    // inside it, and it walks the row's text — which the measure column's twin
+    // must never do.
+    let hits = match index {
+        Some(row) => view! { <BlockSearchHits state=state block=row /> }.into_any(),
+        None => ().into_any(),
+    };
     // The tail of a split paragraph drops its paragraph space (see
     // `reflow_core::block::subdivide_with`); the class does exactly that, for
     // both formats, from here.
@@ -82,6 +101,7 @@ pub fn BlockView(
     view! {
         <div class=class id=id data-block-index=index>
             {content}
+            {hits}
         </div>
     }
 }

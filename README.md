@@ -121,8 +121,10 @@ as real text in the DOM.
   fonts — and re-cuts again whenever a typography knob moves, keeping your place on the block you
   were reading. Zoom never re-paginates: pages scale uniformly, which provably preserves the cut.
 - **Search and theming carry over.** Full-text search scans the document in-process (no engine
-  round-trip), and base mode, tint, textures and grain apply to text pages exactly as they do to
-  PDF pages. Blend mode stays a PDF feature — a text page is recoloured by its tokens directly.
+  round-trip) and paints its hits over the type with the same boxes a PDF gets — one per line
+  fragment, the current match in the same amber, stepping to a result scrolling to the block it
+  sits in. Base mode, tint, textures and grain apply to text pages exactly as they do to PDF
+  pages. Blend mode stays a PDF feature — a text page is recoloured by its tokens directly.
 
 ### Zoom and fit
 
@@ -448,12 +450,15 @@ src/
     viewer/               the SHAPE of reading: the mode dispatch, the four
                           layouts (single, two-page, continuous, horizontal),
                           the shells that own the scroll container,
-                          page_host — the one seam that picks a format — and
-                          controls/ (bottom bar, overlay scrollbar, page
+                          page_host — the one seam that picks a format —
+                          refresh, the fingerprints an overlay repaints on,
+                          and controls/ (bottom bar, overlay scrollbar, page
                           indicator, page navigation)
     formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
                           reflow/ (A4 page host, continuous stream, strip,
-                          measure column), txt/ and md/ block views, and
+                          measure column, the spot walk that finds a block's
+                          characters in the DOM, and the search-hit layer that
+                          paints over them), txt/ and md/ block views, and
                           block_render, the renderer dispatch
     search/               floating search bar and result list
     ai/                   selection pill, word card, gloss popover, the anchor
@@ -546,7 +551,8 @@ styles/
   textures.css, noise.css texture modes, and the grain overlay + its crawl
   library.css             the bookshelf and its drag overlay
   components/             shell, title bar, animations, ai, gloss, appearance,
-                          thumbnails, pdf.js's text layer
+                          thumbnails, pdf.js's text layer, and the search-hit
+                          box both format families share
 scripts/                  engine bundling, engine smoke test, and the
                           consistency checks CI runs (versions, formats,
                           doc paths, event names, the DOM contract)

@@ -5,9 +5,16 @@
 //! The pipeline forks by format at [`run_search`] and nowhere else: PDF
 //! indexes through the engine, text documents scan their own blocks in
 //! Rust. Both tails converge on the same flat `SearchMatch` list, so the
-//! results UI and the match-stepping maths below serve either. A text match
-//! carries no rect (its page is the unit of reveal), which the reveal path
-//! already tolerates — a zero rect reveals the page's top.
+//! results UI and the match-stepping maths below serve either.
+//!
+//! The two tails answer "where is this hit" differently, and each `SearchMatch`
+//! carries the half its format has: a PDF a rect in page space, which the engine
+//! multiplies by the scale and paints into the text layer; a reflowable document
+//! a block and an occurrence ordinal (`block_hit`), which the row that renders
+//! the block turns into boxes over its own rendered text
+//! ([`crate::components::formats::reflow::highlight`]). A text match therefore
+//! carries no rect, which the reveal path tolerates — a zero rect reveals the
+//! page's top.
 
 use std::collections::HashMap;
 
@@ -18,7 +25,7 @@ use app_chrome::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
 use pdf_core::layout::TOOLBAR_H;
 use reader_core::view::ViewMode;
-use reader_core::search::{SearchMatch, scroll_to_reveal};
+use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
 use pdf_engine::api as engine;
 
 /// Height of the floating search bar plus its gap, in CSS px. The bar hangs
@@ -93,10 +100,17 @@ fn run_reflow_search(state: ReaderState) {
             page,
             index: *index,
             text: hit.snippet.into(),
+            // No rect: a reflowable page is re-cut by every typography knob, so
+            // the durable answer is the block and the occurrence inside it, and
+            // the row that renders the block finds the pixels.
             x: 0.0,
             y: 0.0,
             w: 0.0,
             h: 0.0,
+            block_hit: Some(BlockHit {
+                block: hit.block as u32,
+                occurrence: hit.occurrence as u32,
+            }),
         });
     }
     let total = matches.len() as u32;
@@ -109,9 +123,9 @@ fn run_reflow_search(state: ReaderState) {
 }
 
 pub fn clear_search(state: ReaderState) {
-    // Text documents paint no highlight boxes, so there is nothing to clear
-    // on the engine side — and the call must not reach an engine that has
-    // no document.
+    // A reflowable document's boxes are painted by the rows themselves, off the
+    // query and the match list below, so there is nothing to clear on the engine
+    // side — and the call must not reach an engine that has no document.
     if !state.reflowable_untracked() {
         engine::clear_highlights();
     }
@@ -130,8 +144,9 @@ pub fn resume_search(state: ReaderState) {
 }
 
 pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMatch) {
-    // The engine's active-match marker drives the highlight box it paints;
-    // text documents have no boxes, only the page the match sits on.
+    // Only the engine has to be TOLD which match is current: it owns the boxes
+    // it paints into the page's text layer. A reflowable document's rows read
+    // `search.active` themselves and re-class the box that answers to it.
     if !state.reflowable_untracked() {
         engine::set_active_match(m.page, m.index as i32);
     }
@@ -173,23 +188,28 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
     }
 
     // The text tail of the vertical branch: the stream scrolls BLOCKS, so
-    // the match reveals through the stream's own virtualizer — the page
-    // names the block its cut starts at, and the stream knows where that
-    // block lies. (The page-cut virtualizer this function was handed has
-    // no container in this mode; its offsets describe a layout nothing is
-    // rendering.) Reveal precision is the page's first block: a text hit
-    // carries no rect, and the cut packs tightly enough that the match
-    // sits within a screen of it.
+    // the match reveals through the stream's own virtualizer. (The page-cut
+    // virtualizer this function was handed has no container in this mode;
+    // its offsets describe a layout nothing is rendering.)
+    //
+    // A text hit carries no rect, so this is as precise as a reflowable
+    // document gets: the block the match is in, at the top of the viewport.
+    // That block is the one the match itself names; the page's first block is
+    // the fallback for a match whose cut has since been repacked by a
+    // typography change, where the stored block may no longer be the one on
+    // screen.
     if state.reflowable_untracked() {
         let Some(stream) = state.document.content.reflow.stream_handle() else {
             return;
         };
-        let block = state
-            .document
-            .content
-            .reflow
-            .cuts
-            .with_untracked(|cuts| reflow_core::pager::first_block_of_page(cuts, m.page));
+        let block = m.block_hit.map_or_else(
+            || {
+                state.document.content.reflow.cuts.with_untracked(|cuts| {
+                    reflow_core::pager::first_block_of_page(cuts, m.page)
+                })
+            },
+            |hit| hit.block as usize,
+        );
         stream.scroll_to_index(block, Align::Start, ScrollMode::Auto);
         return;
     }

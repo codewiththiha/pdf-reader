@@ -212,6 +212,17 @@ format-agnostic.
   stale. The tree lands in the same `document.outline` signal a PDF's `/Outlines` dictionary
   fills, in the same `reader_core::outline::OutlineNode` shape — the panel cannot tell the two
   apart, which is the point.
+- Search hits are painted by the row that renders the block
+  (`components::formats::reflow::highlight`), one layer per row, because in the continuous stream
+  the row is the unit that mounts and unmounts — a page-level layer would have nothing to attach
+  to, the same problem the stream's gloss layer solves by covering the whole column. The painter
+  re-finds the query in the row's rendered text and covers each occurrence, so the boxes a text
+  document shows are the boxes a PDF shows: one rule set styles both subtrees
+  (`styles/components/search.css`), both cap what they paint at the same number, and both name the
+  match the reader is on the same way — the engine pairs a page with a per-page ordinal, a
+  reflowable match pairs a block with an occurrence (`reader_core::search::BlockHit`). The walk it
+  measures with is the gloss projection's (`formats::reflow::spot`), so a hit and a stroke cannot
+  disagree about where a character is.
 - Format questions are asked once: `Format::is_reflowable` in `reader-core` is the predicate,
   `ReaderState::reflowable()` is the tracked read of it, and the UI never tests an extension
   or a document variant inline. The leaf renderer is the same deal one level down:
@@ -223,7 +234,8 @@ format-agnostic.
   hides the Paper and Rendering sections accordingly). Body ink has its own comfort dial —
   `ink_contrast`, a `color-mix` of the theme's ink toward its paper, exposed as the "Text ink
   intensity" slider while a text document is open. Search scans the blocks in-process (the
-  document is its own index), mapping hits through the current page cut. Progress persistence
+  document is its own index), mapping hits through the current page cut, and a reveal scrolls to
+  the block the match names. Progress persistence
   saves the fractional stream position alongside the page, so a continuous read resumes where it
   stopped, not at a page top.
 
@@ -277,7 +289,14 @@ generalised instead of the feature being forked per format.
   alphanumeric is one character on both sides of the wire — in the engine's
   TypeScript (`[…str].length`, `Range.toString`) and in the app's Rust
   (`.chars().count()`). For Markdown the offsets count the RENDERED text, which is
-  why a heading's stroke survives its `#`s not being on screen.
+  why a heading's stroke survives its `#`s not being on screen — and why a search hit found in
+  syntax the renderer drops has nothing to cover: the results list still counts it, and no box is
+  painted for it.
+- **The walk is shared.** `formats::reflow::spot` is the one module that answers "where is this
+  character, in pixels": the text-node walk, the character→code-unit conversion, the `Range` over
+  a span and that range's client rects. The gloss projection and the search-hit layer both call it,
+  and the layers a walk must skip — a stroke's button, a hit's box, the measure column's twins —
+  are one list in it rather than one per caller.
 - **Two resolvers, one dispatch.** `anchor::anchor_resolver` answers in viewport
   space for the Explain pill and the gloss card; `anchor::stroke_resolver` answers in
   a stroke layer's own coordinates, relative to the element it measured. Neither
@@ -292,12 +311,14 @@ generalised instead of the feature being forked per format.
   and the stroke layer paints as nothing. Painting a stale capture-time box
   instead would highlight whatever words happen to be there now.
 - **What makes a stroke look again.** Scale, for a PDF. For type: scale, scroll,
-  container size, and `anchor::reflow_invalidation` — a fingerprint of the cut's
+  container size, and `viewer::refresh::reflow_invalidation` — a fingerprint of the cut's
   block starts, the geometry it was cut with, the stream's extent and the view
   mode. It is a `u64` rather than the vectors so a re-measure that re-cut nothing
   costs one hash and wakes nobody, and the typography is deliberately not read:
   every knob that moves type moves the cut, and one that does not (the ink dial,
-  the column's alignment) cannot move a mark.
+  the column's alignment) cannot move a mark. The search-hit layer reads the same
+  fingerprint and the committed scale, but not scroll: its boxes live inside the row they cover,
+  so a scroll carries them along rather than leaving them behind.
 - **Three mounts.** A stroke layer is mounted by a PDF page, by a text page
   (`.tx-page`), and once for the whole reading column by the continuous stream —
   whose blocks are virtualized individually rather than paginated, so a per-page

@@ -133,7 +133,7 @@ pub fn ReflowPage(
                     children=move |(_, index): (usize, usize)| {
                         match reflow.block_at(index) {
                             Some(block) => {
-                                view! { <BlockView block=block render=render index=index /> }
+                                view! { <BlockView state=state block=block render=render index=index /> }
                                     .into_any()
                             }
                             // A re-cut can briefly hold a window from the

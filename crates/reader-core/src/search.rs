@@ -15,6 +15,29 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+/// Which occurrence of the query, in which block, of a document with no fixed
+/// page grid.
+///
+/// The two halves of a [`SearchMatch`] answer "where is this hit" for the two
+/// kinds of document the reader opens. A page of pixels has a fixed grid, so a
+/// box in page space IS an identity, and `x`/`y`/`w`/`h` carry it. A document the
+/// reader lays out itself has no such grid — every typography knob re-cuts its
+/// pages, and a stored box would point at whatever moved underneath — so its
+/// answer is the block and the occurrence inside it, which is the same identity
+/// its gloss marks keep.
+///
+/// The painter that covers a block's row re-finds the query in that row's
+/// rendered text and numbers the occurrences in reading order, so this pair
+/// names one box on screen without any geometry being exchanged — exactly the
+/// deal the engine's text-layer painter makes with `page` + `index`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BlockHit {
+    /// Index of the block the hit sits in, in document order.
+    pub block: u32,
+    /// Which occurrence of the query inside that block, counting from zero.
+    pub occurrence: u32,
+}
+
 /// One occurrence of the query.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SearchMatch {
@@ -32,6 +55,11 @@ pub struct SearchMatch {
     pub y: f64,
     pub w: f64,
     pub h: f64,
+    /// Where the hit sits in a document the reader lays out itself; `None` for a
+    /// fixed-grid one, whose rect above is the whole answer. `#[serde(default)]`
+    /// because the engine's response has never carried it and never will.
+    #[serde(default)]
+    pub block_hit: Option<BlockHit>,
 }
 
 /// `{ok:true, query, total, matches:[…]}` — engine.search().
@@ -187,6 +215,24 @@ mod tests {
         assert!(scroll_to_reveal(1300.0, 1360.0, 600.0, 800.0, 48.0, 56.0, 24.0).is_some());
         // And this one is clipped by the top chrome.
         assert!(scroll_to_reveal(650.0, 690.0, 600.0, 800.0, 48.0, 56.0, 24.0).is_some());
+    }
+
+    /// The engine's JSON has no `block_hit` in it, and a search response that
+    /// failed to deserialize would take the whole feature down — so the field is
+    /// optional on the wire and reads as `None` for a PDF.
+    #[test]
+    fn a_match_from_the_engine_deserializes_without_a_block_hit() {
+        let json = r#"{"query":"dune","total":1,"matches":[
+            {"page":4,"index":0,"text":"…the dune sea…","x":12.0,"y":80.5,"w":30.0,"h":9.0}
+        ]}"#;
+        let response: SearchResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].block_hit, None);
+
+        // And a reflowable match round-trips the half a PDF never sends.
+        let hit = BlockHit { block: 17, occurrence: 2 };
+        let json = serde_json::to_string(&hit).unwrap();
+        assert_eq!(serde_json::from_str::<BlockHit>(&json).unwrap(), hit);
     }
 
     /// Degenerate geometry must still produce a usable offset rather than

@@ -1,15 +1,16 @@
-//! What a stroke layer re-derives on.
+//! What an overlay painted over a document re-derives on.
 //!
-//! A watcher re-derives its box on scroll, zoom and page change; a stroke layer
-//! has to re-derive on everything that can move a block without moving the
-//! scroller. These are the fingerprints for that, as `Signal<u64>` so an
-//! unchanged re-measure notifies nobody.
+//! A watcher re-derives its box on scroll, zoom and page change; a layer that
+//! paints over the type — a gloss stroke, a search hit — has to re-derive on
+//! everything that can move a block without moving the scroller. These are the
+//! fingerprints for that, as `Signal<u64>` so an unchanged re-measure notifies
+//! nobody.
 
 use leptos::prelude::*;
 
 use crate::state::ReaderState;
 
-/// What a stroke layer re-derives on.
+/// What a layer painted over a page re-derives on.
 ///
 /// A PDF's strokes are host-local at a fixed scale, so scale is the only thing
 /// that moves them. A reflowable document's blocks are laid out by the browser:

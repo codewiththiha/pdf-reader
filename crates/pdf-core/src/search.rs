@@ -172,6 +172,9 @@ impl SearchIndex {
                         y: item.y,
                         w: (item.w * qlen as f64 / len as f64).max(1.0),
                         h: item.h,
+                        // A page of pixels answers with the rect above; the
+                        // block half is a reflowable document's.
+                        block_hit: None,
                     });
                     ord += 1;
                 }

@@ -72,9 +72,28 @@
 
 /* One layout atom. Spacing under a block rides `padding-bottom` (never a
    margin) so the measure column's offsetHeight and the page's flow always
-   agree — margins would collapse, padding cannot. */
+   agree — margins would collapse, padding cannot.
+
+   `position: relative` makes the row the containing block for the search-hit
+   boxes painted over its type: they are measured against the row's own box and
+   positioned inside it (components/search.css). It changes nothing about how
+   the row lays out or measures — a relatively positioned element keeps its
+   place in flow — and the continuous stream's rows are already absolutely
+   positioned, so this is for the paginated modes. */
 .tx-block {
+  position: relative;
   padding-bottom: var(--tx-para-margin, 1em);
+}
+
+/* The hit layer: covers its row, never intercepts a click, and paints above the
+   type without becoming a stacking context. A z-index here would isolate the
+   boxes, and `mix-blend-mode` on them needs to reach the glyphs underneath —
+   the same reason the gloss strokes' layer sits above this one in the host
+   rather than inside a block. */
+.tx-hits {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 /* The tail of a paragraph the block splitter cut: no paragraph space of
