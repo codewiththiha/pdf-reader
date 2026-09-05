@@ -136,11 +136,11 @@ impl FitDims {
     /// placeholder would slam the page to the minimum scale.
     pub(crate) fn of(state: &ReaderState) -> Option<Self> {
         let page = state.viewer.page.get_untracked().max(1);
-        let p1 = state.document.content.pdf.page1_size.get_untracked()?;
+        let p1 = state.document.content.metrics.page1_size.get_untracked()?;
 
         // The page under the reader's eyes, not page 1: a landscape plate in
         // an otherwise-portrait book must fit on its own terms.
-        let (pw, ph) = state.document.content.pdf.intrinsic.with_untracked(|sizes| {
+        let (pw, ph) = state.document.content.metrics.intrinsic.with_untracked(|sizes| {
             match sizes.get((page - 1) as usize) {
                 Some(s) if s.width > 0.0 && s.height > 0.0 => (s.width, s.height),
                 _ => (p1.width, p1.height),

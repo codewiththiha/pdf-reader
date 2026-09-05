@@ -7,24 +7,28 @@
 //!
 //! * the identity — path, title, author, the format, the load status;
 //! * the outline — the chapter tree, whatever produced it;
-//! * the content — [`pdf::PdfContent`] and [`reflow::ReflowContent`], side by
-//!   side, one of them live at a time.
+//! * the content — [`page_metrics::PageMetrics`] (the page sizes BOTH pipelines
+//!   publish) and [`reflow::ReflowContent`] (the blocks, heights and page cut
+//!   that only a reflowable document has).
 //!
 //! The content used to be split asymmetrically: the PDF's geometry was inlined
 //! into this struct (`page1_size`, `metrics`) while a text document lived in a
 //! parallel `ReflowContent` on `ReaderState`, so every consumer that cared about
 //! a page had to know which of the two it was reading. Grouping them as
-//! siblings fixed the naming — and each leaf stayed its own signal on purpose,
-//! rather than folding into one payload enum inside one signal, because every
-//! geometry write would then notify every reader of the document, including the
-//! ones that only wanted its title. The format is already the tag that says
-//! which half is live; a second one in the state would only be able to disagree
-//! with it.
+//! siblings fixed that — and the sibling that holds page sizes is named for
+//! what it measures rather than for the format that used to own it, because a
+//! reflowable document publishes A4 into exactly the same fields (see
+//! `reflow::ReflowContent::apply_heights`). Each leaf stayed its own signal on
+//! purpose, rather than folding into one payload enum inside one signal, because
+//! every geometry write would then notify every reader of the document,
+//! including the ones that only wanted its title. The format is already the tag
+//! that says which half is live; a second one in the state would only be able to
+//! disagree with it.
 //!
 //! A field added here is reset by [`DocumentState::reset`] and by nothing else,
 //! which is the invariant that keeps a close from leaking the last book.
 
-pub mod pdf;
+pub mod page_metrics;
 pub mod reflow;
 
 use std::sync::Arc;
@@ -36,7 +40,7 @@ use pdf_engine::types::{DocStatus, PageSize};
 use reader_core::format::Format;
 use reader_core::outline::OutlineNode;
 
-pub use pdf::PdfContent;
+pub use page_metrics::PageMetrics;
 pub use reflow::ReflowContent;
 
 #[derive(Clone, Copy)]
@@ -76,7 +80,7 @@ pub struct DocumentState {
     pub content: DocumentContent,
 }
 
-/// The format-specific half of the open document.
+/// The pages of the open document.
 ///
 /// Two grouped signals, not one enum: nothing in the reader needs a tag telling
 /// it which half is live (the format is already that tag, and `Format` carries
@@ -85,8 +89,9 @@ pub struct DocumentState {
 /// document, including the ones that only wanted its title.
 #[derive(Clone, Copy, Default)]
 pub struct DocumentContent {
-    /// The PDF pipeline's pages: sizes at scale 1, and as laid out.
-    pub pdf: PdfContent,
+    /// Page sizes at scale 1 and as laid out. Shared: a PDF fills these from
+    /// the file, a reflowable document from its page cut.
+    pub metrics: PageMetrics,
     /// The reflowable pipeline's blocks, heights and current page cut.
     pub reflow: ReflowContent,
 }
@@ -96,10 +101,9 @@ impl DocumentContent {
     /// released whenever the OTHER format takes the reader over, which is why
     /// the two halves reset together rather than at their own open.
     pub fn reset(&self) {
-        self.pdf.reset();
+        self.metrics.reset();
         self.reflow.reset();
     }
-
 }
 
 /// A hand-written default, not a derive: `DocStatus` has no `Default` (its
@@ -145,13 +149,13 @@ impl DocumentState {
     /// auto-center target — goes through here, so the fallback policy lives in
     /// exactly one place.
     pub fn page1_aspect(&self) -> f64 {
-        page_aspect(self.content.pdf.page1_size.get())
+        page_aspect(self.content.metrics.page1_size.get())
     }
 
     /// Same, read untracked — for rAF/scroll callbacks that must not
     /// subscribe to geometry.
     pub fn page1_aspect_untracked(&self) -> f64 {
-        page_aspect(self.content.pdf.page1_size.get_untracked())
+        page_aspect(self.content.metrics.page1_size.get_untracked())
     }
 
     /// The document's human-facing name (tracked read: subscribes the caller
@@ -222,13 +226,13 @@ mod tests {
         // a close cannot leave the previous book's page sizes behind while the
         // next document's pages are already being measured.
         let state = DocumentState::default();
-        state.content.pdf.css_heights.set(vec![792.0]);
+        state.content.metrics.css_heights.set(vec![792.0]);
         state.content.reflow.heights.set(Arc::new(vec![40.0]));
         state.num_pages.set(3);
         state.reset();
-        assert!(state.content.pdf.css_heights.get_untracked().is_empty());
+        assert!(state.content.metrics.css_heights.get_untracked().is_empty());
         assert!(state.content.reflow.heights.get_untracked().is_empty());
         assert_eq!(state.num_pages.get_untracked(), 0);
-        assert!(state.content.pdf.page1_size.get_untracked().is_none());
+        assert!(state.content.metrics.page1_size.get_untracked().is_none());
     }
 }

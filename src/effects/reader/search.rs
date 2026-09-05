@@ -149,7 +149,7 @@ pub fn reveal_match(state: ReaderState, virtualizer: &Virtualizer, m: &SearchMat
             return;
         };
         let scale = state.viewer.zoom.visual_scale();
-        let before: f64 = state.document.content.pdf.intrinsic.with_untracked(|sizes| {
+        let before: f64 = state.document.content.metrics.intrinsic.with_untracked(|sizes| {
             sizes
                 .iter()
                 .take((m.page - 1) as usize)

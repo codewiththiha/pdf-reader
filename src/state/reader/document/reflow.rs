@@ -191,20 +191,20 @@ impl ReflowContent {
         // the paged modes go through `effects::reader::reflow_layout`).
         let scale = state.reader.viewer.zoom.visual_scale();
         state.reader.document.num_pages.set(n);
-        let pdf = state.reader.document.content.pdf;
+        let metrics = state.reader.document.content.metrics;
         let a4 = pdf_engine::types::PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT };
-        let sizes_current = pdf.intrinsic.with_untracked(|sizes| {
+        let sizes_current = metrics.intrinsic.with_untracked(|sizes| {
             sizes.len() == n as usize && sizes.iter().all(|size| *size == a4)
         });
         if !sizes_current {
-            pdf.intrinsic.set(vec![a4; n as usize]);
+            metrics.intrinsic.set(vec![a4; n as usize]);
         }
-        let heights_current = pdf.css_heights.with_untracked(|store| {
+        let heights_current = metrics.css_heights.with_untracked(|store| {
             store.len() == n as usize
                 && store.iter().all(|h| (h - PAGE_HEIGHT * scale).abs() < 0.5)
         });
         if !heights_current {
-            pdf.css_heights.set(vec![PAGE_HEIGHT * scale; n as usize]);
+            metrics.css_heights.set(vec![PAGE_HEIGHT * scale; n as usize]);
         }
 
         new_page.clamp(1, n.max(1))

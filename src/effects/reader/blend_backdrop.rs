@@ -79,7 +79,7 @@ fn publish(layout: LayoutSettings) {
 pub fn blend_backdrop(state: AppState) {
     let settings = state.settings;
     let viewer = state.reader.viewer;
-    let heights = state.reader.document.content.pdf.css_heights;
+    let heights = state.reader.document.content.metrics.css_heights;
 
     // The viewport's weighted position along the page ladder. Per scroll
     // tick, and only while blend mode is actually driving a backdrop — the

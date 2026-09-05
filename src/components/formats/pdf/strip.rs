@@ -74,7 +74,7 @@ pub fn PdfPageStrip(
         let scale = state.viewer.zoom.display.get();
         let tallest = state
             .document
-            .content.pdf
+            .content.metrics
             .intrinsic
             .with(|pages| pages.iter().map(|p| p.height).fold(0.0, f64::max));
         tallest * scale
@@ -107,7 +107,7 @@ pub fn PdfPageStrip(
                     return;
                 }
                 let index = page.saturating_sub(1) as usize;
-                state.document.content.pdf.css_heights.update(|heights| {
+                state.document.content.metrics.css_heights.update(|heights| {
                     while heights.len() <= index {
                         heights.push(0.0);
                     }

@@ -44,14 +44,14 @@ pub fn reflow_layout(state: AppState, vertical: Virtualizer) {
         // Skip the write (and the relayout) when the model already agrees —
         // a zoom tick rescales the store in place, and this effect must not
         // fight the engine back to the settled scale mid-tween.
-        let same = state.reader.document.content.pdf.css_heights.with_untracked(|store| {
+        let same = state.reader.document.content.metrics.css_heights.with_untracked(|store| {
             store.len() == sizes.len()
                 && store.iter().zip(&sizes).all(|(a, b)| (a - b).abs() < 0.5)
         });
         if same {
             return;
         }
-        state.reader.document.content.pdf.css_heights.set(sizes.clone());
+        state.reader.document.content.metrics.css_heights.set(sizes.clone());
         let gap = state.reader.viewer.page_gap.get_untracked();
         vertical.rescale(1.0, move |index| sizes.get(index).copied().unwrap_or(0.0) + gap);
     });

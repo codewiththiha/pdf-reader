@@ -45,7 +45,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     state
         .reader
         .document
-        .content.pdf
+        .content.metrics
         .intrinsic
         .set(intrinsic_sizes(&open.page_widths, &open.page_heights, &page1, num_pages));
     state.reader.document.title.set(open.title);
@@ -56,7 +56,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // `super::outline`.
     state.reader.document.outline.set(Arc::new(Vec::new()));
     state.reader.document.outline_pending.set(true);
-    state.reader.document.content.pdf.page1_size.set(Some(page1.clone()));
+    state.reader.document.content.metrics.page1_size.set(Some(page1.clone()));
     state.reader.document.path.set(Some(path.to_string()));
 
     // Gloss highlights for THIS document. Loaded here rather than lazily by
@@ -99,7 +99,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // have the zoom coordinator anchor against a stale column on the first
     // gesture. ReaderPage re-seeds them from the intrinsic page sizes at the
     // current scale.
-    state.reader.document.content.pdf.css_heights.set(Vec::new());
+    state.reader.document.content.metrics.css_heights.set(Vec::new());
     // The seed scale is resolved by the same geometry the first live refit
     // will use, so the first frame already sits where the fit will land.
     let scale = FitDims::from_geometry(

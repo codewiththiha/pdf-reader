@@ -50,7 +50,7 @@ pub fn ThumbnailsPanel(
     sidebar: RwSignal<SidebarMode>,
 ) -> impl IntoView {
     let num_pages = state.document.num_pages;
-    let page1_size = state.document.content.pdf.page1_size;
+    let page1_size = state.document.content.metrics.page1_size;
 
     let count = Signal::derive(move || num_pages.get() as usize);
     let layout_epoch = RwSignal::new(0u64);
