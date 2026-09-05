@@ -1,5 +1,12 @@
 {
   "compilerOptions": {
+    // Sources live in tools/, emitted JavaScript lands in scripts/ — a
+    // directory that holds NOTHING but generated output, so both git and the
+    // Trunk watcher can ignore it wholesale instead of maintaining a list of
+    // individual files (a list that silently breaks `trunk serve` with a
+    // rebuild loop the day someone adds a tool).
+    "rootDir": "tools",
+    "outDir": "scripts",
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "Bundler",
@@ -22,5 +29,5 @@
     "removeComments": false,
     "useDefineForClassFields": true
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["tools/**/*.ts"]
 }

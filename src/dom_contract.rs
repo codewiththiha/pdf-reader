@@ -33,7 +33,7 @@
 //! in Rust as well.
 //!
 //! The engine's half of the table is `public/engine/dom-contract.ts`, and
-//! `scripts/check-dom-contract.ts` fails CI when the two halves disagree. It
+//! `tools/check-dom-contract.ts` fails CI when the two halves disagree. It
 //! reads the id shapes out of the builders' `format!` strings rather than
 //! trusting a second copy of them, so a rename in either language is caught by
 //! the other.

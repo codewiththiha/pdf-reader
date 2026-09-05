@@ -6,7 +6,7 @@
 //!
 //! Two declarations outside this crate are derived from that row and cannot see
 //! it: the Tauri shell's filesystem gate (`DOCUMENT_EXTENSIONS`) and the
-//! bundle's file associations (`tauri.conf.json`). `scripts/check-formats.ts`
+//! bundle's file associations (`tauri.conf.json`). `tools/check-formats.ts`
 //! reads all three and fails CI when they disagree, so the row here is the only
 //! one that needs thinking about — but it does still need adding there.
 

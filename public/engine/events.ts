@@ -11,7 +11,7 @@
 // The app's full table is `src/events.rs`, which also holds the events the app
 // dispatches to itself (`pdfreader:gloss-open`, `pdfreader:ai-chunk`, ...).
 // Only these three cross the boundary in this direction, so only these three
-// are declared here. `scripts/check-events.ts` fails CI when the two tables
+// are declared here. `tools/check-events.ts` fails CI when the two tables
 // disagree, or when a raw `pdfreader:` literal appears anywhere but the tables.
 
 /** Internal link jump: the engine's link layer asks the app to turn to a page. */

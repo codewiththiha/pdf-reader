@@ -1,6 +1,6 @@
-// The repo-reading prelude the check scripts share.
+// The repo-reading prelude the check tools share.
 //
-// Five scripts under `scripts/` answer questions about this repository's own
+// Five tools under `tools/` answer questions about this repository's own
 // text: versions that have to agree, formats declared in three places, event
 // names spelled in two languages, DOM names spelled in two, module paths named
 // in comments. Each of them began the same way — resolve the repo root, read a
@@ -9,7 +9,10 @@
 // stay in step right up to the day a new build directory appears and one script
 // starts scanning it while the others do not. This is the single copy.
 //
-// Nothing here knows what any check is FOR; the parsing stays with the scripts.
+// Nothing here knows what any check is FOR; the parsing stays with the tools.
+//
+// Emitted to `scripts/repo.js` like everything else in this directory: `tools/`
+// is source, `scripts/` is generated output (see tsconfig.tools.json).
 
 import fs from "node:fs";
 import path from "node:path";

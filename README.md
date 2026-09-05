@@ -554,10 +554,13 @@ styles/
   components/             shell, title bar, animations, ai, gloss, appearance,
                           thumbnails, pdf.js's text layer, and the search-hit
                           box both format families share
-scripts/                  engine bundling, engine smoke test, the repo-reading
-                          prelude the checks share, and the consistency checks
-                          CI runs (versions, formats, doc paths, event names,
-                          the DOM contract)
+tools/                    engine bundling, the engine smoke test, the
+                          repo-reading prelude the checks share, and the
+                          consistency checks CI runs (versions, formats, doc
+                          paths, event names, the DOM contract)
+scripts/                  generated only: the compiled tools above. Gitignored,
+                          and ignored wholesale by Trunk's watcher, so the hook
+                          rewriting them on every build cannot retrigger one
 tests/                    source-level tests (e.g. the conditional-class lint)
 release-notes/            one file per version; the release workflow publishes
                           the one matching the tag as the release body
@@ -690,10 +693,13 @@ every component name the two documents put in backticks, and every method in the
 engine table), `check-events.ts` (the window-event names
 the engine dispatches match the app's table) and `check-dom-contract.ts` (the attribute,
 class and element-id names the app writes match the ones the engine reads, and appear
-nowhere as a raw literal). Each is TypeScript compiled by the same Trunk pre-build hook, and
-each fails CI rather than warning. They share one prelude, `repo.ts` — the repo root, `read`,
-`isFile`, and the tree walk with its list of directories that are not source — because five
-copies of a skip list is five chances for one script to start scanning `node_modules`.
+nowhere as a raw literal). Each is TypeScript in `tools/`, compiled by the same Trunk pre-build
+hook into `scripts/`, and each fails CI rather than warning. They share one prelude, `repo.ts` —
+the repo root, `read`, `isFile`, and the tree walk with its list of directories that are not
+source — because five copies of a skip list is five chances for one tool to start scanning
+`node_modules`. `scripts/` holds nothing but their compiled output, which is why git ignores the
+directory and Trunk's watcher does too: the hook rewrites those files on every build, and a
+watcher that notices would rebuild forever.
 
 ---
 

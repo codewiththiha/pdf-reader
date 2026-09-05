@@ -38,7 +38,7 @@ mod macos;
 /// `read_file_*` commands are not a general file-read primitive.
 ///
 /// Derived from the frontend's `reader_core::format` registry, which is the
-/// source of truth — `scripts/check-formats.ts` fails CI when the two drift, as
+/// source of truth — `tools/check-formats.ts` fails CI when the two drift, as
 /// it does for the bundle's file associations in `tauri.conf.json`.
 const DOCUMENT_EXTENSIONS: &[&str] = &[".pdf", ".txt", ".text", ".md", ".markdown", ".mdown"];
 

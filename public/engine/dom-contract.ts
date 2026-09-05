@@ -14,7 +14,7 @@
 // only its value from an expression, so the hosts write them as literals; the
 // check below reads those literals out of the Rust source instead.
 //
-// `scripts/check-dom-contract.ts` fails CI when the halves disagree. It also
+// `tools/check-dom-contract.ts` fails CI when the halves disagree. It also
 // reads the id shapes out of the Rust builders' `format!` strings rather than
 // trusting a copy of them, so a rename on either side is caught by the other.
 // Nothing outside this file should spell any of these names.

@@ -7,7 +7,7 @@
 //! are also a protocol with the imperative engine under `public/engine/`,
 //! which dispatches `pdfreader:navigate`, `pdfreader:selection-pages` and
 //! `pdfreader:selection-detail` from plain JS. The engine declares those three
-//! in `public/engine/events.ts`, and `scripts/check-events.ts` fails CI when
+//! in `public/engine/events.ts`, and `tools/check-events.ts` fails CI when
 //! the two tables disagree or when a name is written as a literal somewhere
 //! else — a mismatch is not a compile error on either side, only a dispatch
 //! into a window nobody is listening on.

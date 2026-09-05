@@ -44,7 +44,7 @@ jobs:
         run: npm ci
 
       # Type-check the TypeScript sources (public/pdfEngine.ts and
-      # scripts/*.ts). The actual .js emission happens in the Trunk pre-build
+      # tools/*.ts). The actual .js emission happens in the Trunk pre-build
       # hook and the `build:ts` npm script; this gate catches type errors
       # that the smoke test would otherwise only fail on at runtime.
       - name: Type-check TypeScript
