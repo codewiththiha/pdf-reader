@@ -5,6 +5,7 @@ use std::cell::Cell;
 use leptos::prelude::*;
 
 use app_chrome::hooks::dom::{h_page_list, page_list};
+use crate::components::primitives::motion::frame::{MAX_SCROLL_FRAME_S, frame_delta};
 use crate::state::ReaderState;
 
 const AUTO_SCROLL_PX_PER_SEC: f64 = 72.0;
@@ -40,11 +41,9 @@ fn tick(state: ReaderState) {
         return;
     }
     let now = js_sys::Date::now();
-    let mut last = AS_LAST.with(|t| t.get());
-    if last.is_nan() {
-        last = now;
-    }
-    let dt = ((now - last) / 1000.0).clamp(0.0, 0.05);
+    // A frame after the tab was backgrounded reports seconds of gap; clamped,
+    // so returning to the window resumes the drift instead of leaping.
+    let dt = frame_delta(AS_LAST.with(|t| t.get()), now, MAX_SCROLL_FRAME_S);
     AS_LAST.with(|t| t.set(now));
     let delta = AUTO_SCROLL_PX_PER_SEC * dt;
 
