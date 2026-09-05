@@ -231,9 +231,9 @@ generalised instead of the feature being forked per format.
   (the format family that painted it: `pdf` or `reflow`) and `data-host-page`
   (the 1-based page it shows), and every rendered block carries
   `data-block-index` plus the matching element id (`tx-block-<index>`, from
-  `viewer::page_host::block_row_id`). The engine's selection tracker and the
-  app's capture find their host by asking for those attributes rather than for a
-  class, so a format joins the AI feature by publishing two attributes and no
+  `viewer::page_host::block_row_id`). The selection tracker (which lives in the
+  reader bundle, not the engine's) and the app's capture find their host by
+  asking for those attributes rather than for a class, so a format joins the AI feature by publishing two attributes and no
   selector anywhere grows a second name; the id is the lookup half of the same
   deal, because the gloss projection resolves a mark's block once per mark per
   scroll frame and an id read is the cheapest question the DOM answers. The surrounding sentence a selection reports is cut out of

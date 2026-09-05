@@ -395,6 +395,9 @@ stays visible.
 |  Typed bridge (wasm-bindgen)                                 |
 |  pdf-engine: snake_case Rust mapped to camelCase engine      |
 +-------------------------------------------------------------+
+|  reader bundle (JavaScript, public/readerEngine.js)          |
+|  selection tracking for every format; needs no pdf.js        |
++-------------------------------------------------------------+
 |  window.PDFReader engine (JavaScript, public/pdfEngine.js)   |
 |  render queue, thumbnail cache, text layer, search index     |
 +-------------------------------------------------------------+
@@ -515,6 +518,9 @@ crates/
                           and the shared UI primitives + hooks those surfaces
                           render with
 public/
+  readerEngine.ts         the format-agnostic bundle (the selection tracker),
+                          loaded first and needing no pdf.js
+  reader/                 its modules
   pdfEngine.ts            the imperative engine wrapper (bundled to .js)
   engine/                 the engine modules the wrapper imports
   vendor/pdfjs/           vendored pdf.js build, worker, viewer CSS, cmaps

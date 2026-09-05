@@ -17,6 +17,20 @@ await esbuild.build({
   logLevel: "info",
 });
 
+// The reader bundle: the format-agnostic browser side (the selection
+// tracker). Separate from the engine so that a document which never touches
+// pdf.js is not carrying the engine's bundle, and so the boundary stays
+// honest — nothing in here may import the pdf.js-facing modules.
+await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: ["public/readerEngine.ts"],
+  bundle: true,
+  format: "iife",
+  outfile: "public/readerEngine.js",
+  target: "es2022",
+  logLevel: "info",
+});
+
 // The theme bake worker: a separate classic worker file so the per-pixel
 // filter loop runs off the main thread. It shares the filter kernel module
 // with the main bundle, so worker and fallback cannot drift. Emitted to the

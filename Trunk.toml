@@ -32,6 +32,7 @@ ignore = [
     # `npm run watch:css` is the tool for iterating on CSS alone.
     "./styles",
     "./public/pdfEngine.js",
+    "./public/readerEngine.js",
     "./public/bake.worker.js",
     "./scripts/check-versions.js",
     "./scripts/check-formats.js",

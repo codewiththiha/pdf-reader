@@ -1,8 +1,14 @@
 // Selection page-range tracking for virtualization pinning, plus the rich
 // selection detail (text / context / bounding rect) the AI explain feature
-// anchors its floating menu to.
+// anchors its floating pill to.
 // See the original pdfEngine.ts commentary: no clamp mid-drag, preserve
 // last-known pages across inter-page gaps.
+//
+// Lives outside `public/engine/` because nothing here is the PDF engine's:
+// it reads the host protocol from `../engine/dom-contract` and answers for
+// every format that tags a page host. Bundled on its own (see
+// `public/readerEngine.ts`) so the reader layer is not carried in by the
+// bundle that also drags pdf.js along.
 
 import {
   AI_POPOVER_SELECTOR,
@@ -16,8 +22,8 @@ import {
   pageFromWrapId,
   STREAM_WRAP_SELECTOR,
   TEXT_LAYER_SELECTOR,
-} from "./dom-contract";
-import { SELECTION_DETAIL_EVENT, SELECTION_PAGES_EVENT } from "./events";
+} from "../engine/dom-contract";
+import { SELECTION_DETAIL_EVENT, SELECTION_PAGES_EVENT } from "../engine/events";
 
 let selDragging = false;
 let lastKnownAnchorPage: number | null = null;
