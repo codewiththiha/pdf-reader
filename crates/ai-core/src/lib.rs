@@ -2,16 +2,18 @@
 //!
 //! Everything here is independent of any document format: the wire types of
 //! the word-explanation backend ([`types`]), the gloss card's geometry and
-//! spring ([`gloss`], whose `geometry::step_spring` steps
-//! `reader_core::spring`), and the Tauri `explain_word` kickoff ([`bridge`]).
+//! spring ([`gloss`], whose `geometry::step_spring` steps `ui_geom::spring`),
+//! and the Tauri `explain_word` kickoff ([`bridge`]).
 //!
-//! What this crate DOES depend on is `reader-core`, and only for things the
+//! What this crate DOES depend on is `reader-core`, and only for what the
 //! reader owns rather than the AI: the word card's *settings* are flat `gloss_*`
 //! fields of the persisted `Settings` blob (`reader_core::settings`, so
 //! `GlossColor` and `GlossDensity` live there — a crate whose types the schema
-//! names cannot also own part of the schema), and the card's spring is
-//! `reader_core::spring`, which the floating panels step too. Both directions
-//! point the same way: features may lean on the reader, never the reverse.
+//! names cannot also own part of the schema). The card's spring comes from
+//! `ui-geom`, the dependency-free leaf the floating panels step too, which is
+//! what keeps the two surfaces feeling identical without this crate and the
+//! chrome crate depending on each other. Both directions point the same way:
+//! features may lean on the general crates, never the reverse.
 //!
 //! The dependency rule is one-way: format crates (pdf-core, the app) depend
 //! on this crate, never the reverse — so a new format reuses the wire protocol,

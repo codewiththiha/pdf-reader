@@ -1,13 +1,13 @@
 //! Floating UI geometry: generic placement / clamping math for anchored
 //! panels, context menus, toasts and floating cards. Pure — no DOM, no
 //! leptos — so it is unit-testable on the host via
-//! `cargo test -p reader-core floating`.
+//! `cargo test -p ui-geom floating`.
 //!
-//! This is the "mechanism" half of the floating system that lives in
-//! `src/components/primitives/floating`: placement *policy* (which side a
-//! panel prefers, what it contains) is decided by the callers; the math here
-//! only answers "given this anchor and this panel, where does it go, and is
-//! it inside the viewport?"
+//! This is the "mechanism" half of the floating system whose views live in
+//! the app (`src/components/primitives/floating`) and whose DOM adapters live
+//! in `app-chrome`: placement *policy* (which side a panel prefers, what it
+//! contains) is decided by the callers; the math here only answers "given this
+//! anchor and this panel, where does it go, and is it inside the viewport?"
 //!
 //! The spring itself (stiffness / damping / the Euler step) lives in
 //! [`crate::spring`]: the gloss card steps the same integrator, and one
@@ -76,7 +76,11 @@ impl Rect {
 /// Named to avoid colliding with `std::boxed::Box`; the gloss domain's
 /// `ai_core::gloss::GlossBox` is field-identical and converts into this type
 /// at the domain boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+///
+/// Not serializable, deliberately: this is a frame-to-frame value, and the box
+/// that gets persisted is the domain's own. Keeping serde out is what lets this
+/// crate have no dependencies at all.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FloatBox {
     pub x: f64,
     pub y: f64,

@@ -2,7 +2,7 @@
 //! floating internals:
 //!
 //! * placement + viewport clamping + upward flip + transform origin come from
-//!   [`position`](app_chrome::floating::position) (pure math in `reader_core::floating`);
+//!   [`position`](app_chrome::floating::position) (pure math in `ui_geom::floating`);
 //! * Escape / outside-press dismissal comes from [`dismiss`](app_chrome::floating::dismiss);
 //! * the open/close transition is reported through `on_open_change` rather
 //!   than the popover reaching into app chrome itself (the app-shell

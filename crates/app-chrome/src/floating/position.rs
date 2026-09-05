@@ -1,4 +1,4 @@
-//! Positioning glue: the pure placement math lives in `reader_core::floating`
+//! Positioning glue: the pure placement math lives in `ui_geom::floating`
 //! (host-testable); this module adapts it to living DOM nodes and viewport
 //! reads, plus the coordinate-space compensation that WebKit's
 //! `backdrop-filter` containing blocks force on us.

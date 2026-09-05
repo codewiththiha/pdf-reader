@@ -4,7 +4,7 @@
 //! [`SpringValue`] and knows nothing about what the fields mean. This is the
 //! seam that tells it what a gloss box is: `ai_core::gloss` owns the maths (and
 //! `FloatBox`, the primitive's other rider, delegates to the same
-//! `reader_core::spring` integrator), so the adapter is three forwards and a
+//! `ui_geom::spring` integrator), so the adapter is three forwards and a
 //! magnitude test.
 //!
 //! It lives here rather than beside the primitive because the dependency has to

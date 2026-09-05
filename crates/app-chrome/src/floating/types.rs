@@ -1,5 +1,5 @@
 //! Floating-system types: the geometry primitives (re-exported from the pure
-//! `reader_core::floating` so the math is host-testable) and the DOM-adapter
+//! `ui_geom::floating` so the math is host-testable) and the DOM-adapter
 //! helpers that turn live elements into those primitives. The z-index layer
 //! tokens are read straight from `crate::layers`.
 
@@ -9,7 +9,7 @@ use leptos::prelude::*;
 
 use wasm_bindgen::JsCast;
 
-pub use reader_core::floating::{
+pub use ui_geom::floating::{
     clamp_point_to_viewport, place_context_menu, place_panel_from_anchor, FloatBox,
     PlacementOptions, PlacementSide, PlacedPanel, Point, Rect, Size,
 };

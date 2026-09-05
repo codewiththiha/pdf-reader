@@ -402,14 +402,17 @@ stays visible.
 +-------------------------------------------------------------+
 ```
 
-Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`, `md-core` and
-`ai-core` — no DOM and no Leptos — so the view-mode arithmetic, the zoom ladder, filename
-rules, colour conversion, the search index, text typography and pagination, settings
-migration and the AI word-card's geometry and spring are all unit-testable on the host.
+Pure logic lives in `reader-core`, `pdf-core`, `reflow-core`, `txt-core`, `md-core`,
+`ui-geom` and `ai-core` — no DOM and no Leptos — so the view-mode arithmetic, the zoom
+ladder, filename rules, colour conversion, the search index, text typography and pagination,
+settings migration, the floating-panel placement and the AI word-card's geometry and spring
+are all unit-testable on the host.
 The layering is a fan with a rule: `reader-core` knows no format at all, the format cores
 depend on it, and no core depends on another format's core — which is why adding a format is
 a new crate plus a new directory, not an edit to the ones already there. `virtual-list` is the
-generic windowing-math library under the viewer.
+generic windowing-math library under the viewer, and `ui-geom` the geometry every floating
+surface places itself with — a leaf with no dependencies, so the window chrome and the AI
+card can share one placement rule and one spring without either depending on the other.
 
 PDFs and text documents share one page/zoom/navigation machinery above the rendering layer; only
 the leaf differs. A PDF page is a canvas the pdf.js engine paints; a text page is an A4 host the
@@ -465,18 +468,18 @@ src/
 crates/
   ai-core/                the format-agnostic AI core: the word-explanation
                           wire types (WordInfo, AiError, the chunk envelope),
-                          the gloss card's geometry + shared spring, the
-                          gloss mark + MarkAnchor trait (PageAnchor is the
-                          PDF impl), the per-document gloss cache and its
-                          persistable JSON, and the Tauri explain_word
-                          kickoff (the reader settings those types feed live in
-                          reader-core, because they are the reader's)
+                          the gloss card's geometry (stepping `ui-geom`'s
+                          spring), the gloss mark + MarkAnchor trait
+                          (PageAnchor is the PDF impl), the per-document gloss
+                          cache and its persistable JSON, and the Tauri
+                          explain_word kickoff (the reader settings those types
+                          feed live in reader-core, because they are the
+                          reader's)
   reader-core/            the reader with no format in it: the format list, the
                           view modes and spread arithmetic, the settings schema
                           (layout, animation, typography, gloss), the colour
                           pipeline, the presets, filename rules, zoom maths, the
-                          shared search model, the outline shape and the
-                          floating-card geometry
+                          shared search model and the outline shape
   pdf-core/               pure PDF domain math: page layout constants, the
                           outline wire entries and their clamping, the
                           device-pixel grid the page hosts snap to, and the
@@ -496,14 +499,19 @@ crates/
   virtual-list/           generic windowing math: the prefix-sum strip,
                           windows, budgets, anchor correction
   virtual-list-leptos/    the Leptos adapter: virtualizer, rows, retention
+  ui-geom/                pure geometry for the surfaces that float: panel
+                          placement and viewport clamping, plus the damped
+                          spring the floating panels and the gloss card ride
   tauri-bridge/           the raw window.__TAURI__ externs (invoke, event
                           listen, window handle, dialog) + the has_tauri
                           probe, declared once for every frontend crate
   app-chrome/             format-agnostic window chrome: the platform probe,
                           the window commands, the caption cluster (Windows
                           squares, GNOME circles), the native macOS traffic
-                          lights, the generic titlebar shell, and the shared
-                          UI primitives + hooks those surfaces render with
+                          lights, the generic titlebar shell, the floating
+                          surface adapters (placement glue, shared dismissal),
+                          and the shared UI primitives + hooks those surfaces
+                          render with
 public/
   pdfEngine.ts            the imperative engine wrapper (bundled to .js)
   engine/                 the engine modules the wrapper imports

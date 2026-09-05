@@ -3,7 +3,7 @@
 //!
 //! This is the crate that used to be the miscellaneous half of `pdf-core`.
 //! The settings model, the appearance model and its two pipelines, the theme
-//! presets, the zoom ladder, the floating-box geometry, the filename policy,
+//! presets, the zoom ladder, the filename policy,
 //! the format registry, the view-mode/spread maths, the search result model
 //! and the chapter-node type are all the reader's, not PDF's — a plain-text
 //! document is tinted, zoomed, spread and searched through exactly the same
@@ -36,22 +36,21 @@
 //! the host test suite can hold every number they produce to account. The
 //! engine bridge that APPLIES the raster pipeline stays in the app crate.
 //!
-//! The spring in [`spring`] is here rather than with the AI features that also
-//! use it because the floating panels and the gloss card must ride ONE
-//! integrator, and a shared feel cannot be built on a dependency that points
-//! from the general code into a feature.
+//! The floating-box geometry and the spring those boxes ride are deliberately
+//! NOT here: they live in `ui-geom`, a dependency-free leaf. The chrome crate
+//! places popovers with that math and the AI feature steps its gloss card on
+//! that spring, and neither should have to reach into the reader's domain — or
+//! into a feature — to do it.
 
 pub mod appearance;
 pub mod appearance_raster;
 pub mod appearance_reflowable;
 pub mod filename;
-pub mod floating;
 pub mod format;
 pub mod outline;
 pub mod presets;
 pub mod search;
 pub mod settings;
-pub mod spring;
 pub mod view;
 pub mod zoom_math;
 
