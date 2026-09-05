@@ -66,10 +66,6 @@ impl SpringValue for FloatBox {
     }
 }
 
-fn velocity_small<T: SpringValue>(v: T, eps: f64) -> bool {
-    v.all_small(eps)
-}
-
 /// Handle returned by [`use_spring_box`]: the live sprung value plus a way to
 /// hard-jump onto a new anchor so the next morph starts from there.
 #[derive(Clone, Copy)]
@@ -157,7 +153,7 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
             vel.set_value(next_vel);
 
             // Settled: park exactly on the target and stop scheduling.
-            if next.close(&dest, SETTLE_EPS) && velocity_small(next_vel, SETTLE_EPS) {
+            if next.close(&dest, SETTLE_EPS) && next_vel.all_small(SETTLE_EPS) {
                 value.set(Some(dest));
                 vel.set_value(T::zero());
                 return false;
