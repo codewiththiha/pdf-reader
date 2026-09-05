@@ -1,14 +1,22 @@
 //! The frame delta every animation-frame loop needs.
 //!
-//! Three loops in this app scroll or integrate once per frame — the
-//! continuous auto-scroll ticker, the held-arrow repeat behind a navigation
-//! shortcut, and the spring that drives the floating surfaces — and each one
-//! needs the same reading of the clock: how many seconds passed since the
-//! previous frame, with a ceiling on that answer. They were each hand-rolled,
-//! with the "no previous frame yet" case spelled differently in every one (a
-//! `NAN` sentinel compared at the use site, a `mut` rebinding, a pair of
-//! stamps written at arm time), which is how a loop ends up taking one bogus
-//! step the first time it runs.
+//! Four loops in this app run once per frame: the three that read the clock
+//! through here — the continuous auto-scroll ticker, the held-arrow repeat
+//! behind a navigation shortcut, and the spring that drives the floating
+//! surfaces — plus the zoom tween, which interpolates against its own start
+//! stamp rather than a delta. Each of the three needs the same reading of the
+//! clock: how many seconds passed since the previous frame, with a ceiling on
+//! that answer. They were each hand-rolled, with the "no previous frame yet"
+//! case spelled differently in every one (a `NAN` sentinel compared at the use
+//! site, a `mut` rebinding, a pair of stamps written at arm time), which is how
+//! a loop ends up taking one bogus step the first time it runs.
+//!
+//! The LOOP around that reading is one answer as well:
+//! `app_chrome::hooks::use_raf::FrameLoop` owns the re-arming, the stop flag and
+//! the owner cleanup for the auto-scroll ticker, the spring and the zoom tween.
+//! The held-arrow repeat is the exception and keeps its own cells — it is driven
+//! by window-level key events, so there is no reactive owner to be cleaned up
+//! by, and it reads no signals while it runs.
 //!
 //! The ceiling is the part that matters at runtime. A tab that was backgrounded
 //! stops receiving frames but keeps its clock, so the first frame back can
