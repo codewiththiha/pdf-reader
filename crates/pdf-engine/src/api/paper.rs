@@ -1,5 +1,5 @@
 //! The paper pipeline's engine plumbing: frames in, colours and switches out.
-//! The colour DECISIONS live in `crate::paper` (the session state machine);
+//! The colour DECISIONS live in `crate::paper_session` (the session state machine);
 //! this module only shuttles pixels and CSS variables across the bridge.
 
 use wasm_bindgen::JsValue;
@@ -46,7 +46,7 @@ pub fn set_paper(hex: Option<&str>) {
 
 /// Tell the engine whether the paper session wants frames at all: while
 /// blend mode is off, the renderer skips the per-render ≤96px downscale +
-/// readback that `stashPaperFrame` exists to pay. Called by `paper::configure`
+/// readback that `stashPaperFrame` exists to pay. Called by `paper_session::configure`
 /// on every settings change — the engine-side flag is idempotent.
 pub fn set_paper_active(on: bool) {
     if guard_pdf_reader() {
