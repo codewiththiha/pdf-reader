@@ -472,7 +472,7 @@ interface OpenPayload {
   pageWidths: number[];
 }
 interface RenderPayload { width: number; height: number; scale: number }
-interface ThumbPayload { width: number; height: number; scale: number; cached: boolean }
+interface ThumbPayload { width: number; height: number; scale: number }
 interface StatsPayload { pages: number; thumbs: number; thumbLimit: number; thumbTasks: number }
 
 interface PDFReaderHandle {

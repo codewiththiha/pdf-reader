@@ -1,10 +1,18 @@
-//! The reader's search model and the maths the search UI runs on.
+//! The reader's search model, the scan both pipelines run, and the maths the
+//! search UI runs on.
 //!
 //! Both pipelines answer in this shape: the PDF side builds it from the
 //! engine's page-text index (`pdf_core::search`), a reflowable document from
 //! `reflow_core::search`, and the results list, the cycling and the scroll
 //! reveal are the same code for either. That is why it lives here rather than
 //! beside either parser.
+//!
+//! The SCAN lives here for the same reason, and a sharper one: a match carries
+//! an ordinal — which occurrence of the query this is — and the thing that
+//! paints a box over the hit counts occurrences again, independently, to find
+//! which of its boxes that ordinal names. Two scanners are two chances to
+//! disagree about what an occurrence is, so there is one ([`occurrence_spans`]),
+//! and the snippet window next to it ([`snippet`]) for the same reason.
 //!
 //! The engine returns ONE ENTRY PER OCCURRENCE in document order, not one per
 //! page: "next result" means the next match, which is usually still on the
@@ -68,6 +76,100 @@ pub struct SearchResponse {
     pub query: String,
     pub total: u32,
     pub matches: Vec<SearchMatch>,
+}
+
+/// Characters of context on each side of a hit in a results-list snippet.
+///
+/// One number for both families, because one dropdown shows both: the row clips
+/// at 80 characters anyway (`components/search/result_list.rs`), so a wider
+/// window is text the reader never sees, and two windows are two shapes of the
+/// same row.
+pub const SNIPPET_RADIUS: usize = 32;
+
+/// Every occurrence of `needle` in `haystack`, as character spans in reading
+/// order: the one scan, called by the PDF's page-text index, by a reflowable
+/// document's blocks, and by the layer that paints hits over a block's rendered
+/// text.
+///
+/// `folded` is `haystack.to_lowercase()`. It is a parameter rather than a call
+/// here because the hot caller already holds it: the PDF index folds every page's
+/// text once when it builds and rescans it on every keystroke.
+///
+/// Matching is case-insensitive and non-overlapping, advancing by the needle's
+/// length — `"aa"` in `"aaa"` is one hit, at 0 — which is what
+/// `str::match_indices` does and what the engine's painter has always done. An
+/// empty or whitespace-only needle matches nothing.
+///
+/// Case folding can change a string's LENGTH: 'İ' lowercases to two characters.
+/// A span counted in the folded copy would then not be a span of the text the
+/// reader is looking at, so when folding changed the character count the scan
+/// runs over the ORIGINAL, case-sensitively. A missed hit is a smaller lie than
+/// a box over characters nobody searched for.
+pub fn occurrence_spans(haystack: &str, folded: &str, needle: &str) -> Vec<(usize, usize)> {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    // ASCII is the common case and the cheap one: folding is one character for
+    // one, so byte offsets are character offsets and neither side is copied.
+    if haystack.is_ascii() && folded.is_ascii() && needle.is_ascii() {
+        let needle = needle.to_ascii_lowercase();
+        let mut out = Vec::new();
+        let mut at = 0;
+        while let Some(found) = folded[at..].find(&needle) {
+            let start = at + found;
+            out.push((start, start + needle.len()));
+            at = start + needle.len();
+        }
+        return out;
+    }
+    let lowered = needle.to_lowercase();
+    let (text, want) = if folded.chars().count() == haystack.chars().count() {
+        (folded, lowered.as_str())
+    } else {
+        (haystack, needle)
+    };
+    let chars: Vec<char> = text.chars().collect();
+    let want: Vec<char> = want.chars().collect();
+    if want.len() > chars.len() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at + want.len() <= chars.len() {
+        if chars[at..at + want.len()] == want[..] {
+            out.push((at, at + want.len()));
+            at += want.len();
+        } else {
+            at += 1;
+        }
+    }
+    out
+}
+
+/// The context window around a hit, for one results-list row: [`SNIPPET_RADIUS`]
+/// characters either side of `[start, end)`, elided at the edges the window does
+/// not reach, newlines folded to spaces because a row is one line.
+///
+/// The offsets are CHARACTERS — the spans [`occurrence_spans`] reports — so the
+/// window needs no byte-boundary walking and reads the same in a document of
+/// Latin prose and one of emoji. Casing is the original's: the scan runs over a
+/// folded copy, the reader reads this.
+pub fn snippet(text: &str, start: usize, end: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let from = start.saturating_sub(SNIPPET_RADIUS).min(chars.len());
+    let to = (end + SNIPPET_RADIUS).min(chars.len()).max(from);
+    let mut out: String = chars[from..to]
+        .iter()
+        .map(|&c| if c == '\n' { ' ' } else { c })
+        .collect();
+    if from > 0 {
+        out.insert(0, '…');
+    }
+    if to < chars.len() {
+        out.push('…');
+    }
+    out
 }
 
 /// Next active-result index with wrap-around. `dir > 0` forward, `dir < 0` back.
@@ -233,6 +335,66 @@ mod tests {
         let hit = BlockHit { block: 17, occurrence: 2 };
         let json = serde_json::to_string(&hit).unwrap();
         assert_eq!(serde_json::from_str::<BlockHit>(&json).unwrap(), hit);
+    }
+
+    /// The scan both pipelines and the highlight painter share: reading order,
+    /// non-overlapping, and counting CHARACTERS — an emoji is one of them, so a
+    /// hit after it starts where the reader would count, not where its bytes are.
+    #[test]
+    fn occurrences_are_numbered_in_reading_order_without_overlapping() {
+        let folded = |s: &str| s.to_lowercase();
+        let spans = |hay: &str, needle: &str| occurrence_spans(hay, &folded(hay), needle);
+
+        assert_eq!(spans("The Dune of Dune", "dune"), vec![(4, 8), (12, 16)]);
+        // One hit, not two: the first consumes the characters the second would
+        // have started on.
+        assert_eq!(spans("aaa", "aa"), vec![(0, 2)]);
+        assert_eq!(spans("ab\u{1F600}cd dune", "dune"), vec![(6, 10)]);
+        assert_eq!(spans("héllo wörld", "HÉLLO"), vec![(0, 5)]);
+        // Nothing to search for, nothing found — including a query of spaces.
+        assert!(spans("anything", "").is_empty());
+        assert!(spans("anything", "   ").is_empty());
+        // A padded query still matches, at the trimmed needle's length.
+        assert_eq!(spans("a target here", " target "), vec![(2, 8)]);
+    }
+
+    /// 'İ' folds to two characters, so the folded copy's offsets are not the
+    /// original's. The scan refuses to guess: it drops back to a case-sensitive
+    /// read of the text the reader actually sees.
+    #[test]
+    fn a_fold_that_changes_length_never_reports_a_moved_offset() {
+        let text = "İstanbul dune";
+        let folded = text.to_lowercase();
+        assert_ne!(folded.chars().count(), text.chars().count());
+        // The case-sensitive fallback still finds the exact hit, at the offset
+        // the ORIGINAL text has.
+        assert_eq!(occurrence_spans(text, &folded, "dune"), vec![(9, 13)]);
+        // And it does not pretend to a case-insensitive one it cannot place.
+        assert!(occurrence_spans(text, &folded, "DUNE").is_empty());
+    }
+
+    /// The window the results list shows: original casing, newlines folded, and
+    /// an ellipsis only on the edges it actually cut.
+    #[test]
+    fn the_snippet_window_elides_only_the_edges_it_cuts() {
+        let long = format!("{}target{}", "x".repeat(200), "y".repeat(200));
+        let (start, end) = occurrence_spans(&long, &long.to_lowercase(), "target")[0];
+        let s = snippet(&long, start, end);
+        assert!(s.starts_with('…') && s.ends_with('…'), "{s}");
+        assert_eq!(s.chars().count(), SNIPPET_RADIUS + 6 + SNIPPET_RADIUS + 2);
+
+        // A hit at the very start has no left edge to elide.
+        let head = format!("target{}", "y".repeat(200));
+        let (start, end) = occurrence_spans(&head, &head.to_lowercase(), "target")[0];
+        let s = snippet(&head, start, end);
+        assert!(!s.starts_with('…'), "{s}");
+        assert!(s.ends_with('…'));
+
+        // The whole text fits: no ellipses, casing kept, newlines folded.
+        let folded_newlines = "alpha\nbeta GAMMA delta";
+        let (start, end) =
+            occurrence_spans(folded_newlines, &folded_newlines.to_lowercase(), "gamma")[0];
+        assert_eq!(snippet(folded_newlines, start, end), "alpha beta GAMMA delta");
     }
 
     /// Degenerate geometry must still produce a usable offset rather than

@@ -10,10 +10,9 @@
 use ai_core::gloss::{GlossBox, GlossMark, PageAnchor};
 use reader_core::view::ViewMode;
 
-use app_chrome::hooks::dom::by_id;
+use app_chrome::hooks::dom::{by_id, range_rects};
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
 use crate::components::ai::reflow_anchor::union_box;
-use crate::components::formats::reflow::spot::range_rects;
 use crate::components::viewer::page_host::host_id_for_mode;
 use crate::dom_contract::{HOST_ATTR, HOST_PDF};
 

@@ -46,7 +46,6 @@ pub(crate) fn provide_app_contexts(state: AppState) -> (AppearanceSignal, Typogr
     // the measure column and the painter all subscribe to this one memo.
     let typography: TypographySignal =
         Memo::new(move |_| state.settings.with(|s| s.text.clone()));
-    provide_context(state.reader);
     provide_context(appearance);
     provide_context(texture);
     provide_context(typography);

@@ -39,12 +39,18 @@
 
 use leptos::prelude::*;
 
-use app_chrome::hooks::dom::by_id;
+use app_chrome::hooks::dom::{by_id, range_rects};
 
-use super::spot::{match_spans, range_for_span, range_rects, MAX_SPANS_PER_ROW};
+use super::spot::{match_spans, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
 use crate::components::viewer::refresh::reflow_invalidation;
 use crate::state::ReaderState;
+
+/// Boxes one row will paint, mirroring the engine's cap on the boxes it paints
+/// per page (`MAX_HIGHLIGHTS_PER_PAGE` in `public/engine/highlights.ts`). A
+/// one-character query in a long paragraph is what this bounds, and the two
+/// families keep the same number so a document reads the same either way.
+const MAX_BOXES_PER_ROW: usize = 200;
 
 /// One painted box, in its row's own CSS px.
 ///
@@ -173,18 +179,17 @@ fn paint_row(row_id: &str, needle: &str, boxes: RwSignal<Vec<HitBox>>) {
     let origin = row.get_bounding_client_rect();
     let mut painted: Vec<HitBox> = Vec::new();
     for (occurrence, (start, end)) in match_spans(&row, needle).into_iter().enumerate() {
-        // The walk already stops at the cap on OCCURRENCES; this is the cap on
-        // BOXES, which is the one the engine applies — a hit that wraps lines
-        // reports one rect per fragment, so a row of long hits could otherwise
-        // paint several times what a PDF page would.
-        if painted.len() >= MAX_SPANS_PER_ROW {
+        // The cap is on BOXES, which is what the engine caps: a hit that wraps
+        // lines reports one rect per fragment, so counting occurrences would
+        // still let a row paint several times what a PDF page would.
+        if painted.len() >= MAX_BOXES_PER_ROW {
             break;
         }
         let Some(range) = range_for_span(&row, start, end) else {
             continue;
         };
         for (left, top, right, bottom) in range_rects(&range) {
-            if painted.len() >= MAX_SPANS_PER_ROW {
+            if painted.len() >= MAX_BOXES_PER_ROW {
                 break;
             }
             let (width, height) = (right - left, bottom - top);

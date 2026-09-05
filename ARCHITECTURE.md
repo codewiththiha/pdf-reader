@@ -173,7 +173,9 @@ format-agnostic.
 - `crates/reflow-core` is the shared half of that, pure (no DOM, no Leptos): the block shape
   and its splitting rules, the A4 page geometry and its spine sides, the block-granular page
   cutter, the height estimate, the typography resolution (schema lives in `reader-core`'s
-  `settings::typography`) and a substring search over the blocks. `crates/txt-core` and
+  `settings::typography`) and the search over the blocks — which is a call into the scan
+  `reader-core` lends the PDF's page-text index too, so an occurrence ordinal means the same
+  thing in both families. `crates/txt-core` and
   `crates/md-core` sit on top of it with one parser each — normalising and paragraph-cutting
   for text, construct classification, prose subdivision, front-matter metadata and heading
   extraction for Markdown — so a format owns its syntax and nothing else. Everything is
@@ -222,7 +224,9 @@ format-agnostic.
   match the reader is on the same way — the engine pairs a page with a per-page ordinal, a
   reflowable match pairs a block with an occurrence (`reader_core::search::BlockHit`). The walk it
   measures with is the gloss projection's (`formats::reflow::spot`), so a hit and a stroke cannot
-  disagree about where a character is.
+  disagree about where a character is, and the scan that finds the occurrences is
+  `reader_core::search::occurrence_spans` — the one both search pipelines run — so the ordinal a
+  match carries and the ordinal a box counts cannot disagree either.
 - Format questions are asked once: `Format::is_reflowable` in `reader-core` is the predicate,
   `ReaderState::reflowable()` is the tracked read of it, and the UI never tests an extension
   or a document variant inline. The leaf renderer is the same deal one level down:
@@ -235,7 +239,10 @@ format-agnostic.
   `ink_contrast`, a `color-mix` of the theme's ink toward its paper, exposed as the "Text ink
   intensity" slider while a text document is open. Search scans the blocks in-process (the
   document is its own index), mapping hits through the current page cut, and a reveal scrolls to
-  the block the match names. Progress persistence
+  the block the match names. The scan and the snippet window are `reader_core::search`'s, shared
+  with the PDF index: one case-folding rule, one non-overlapping rule, one context window, and
+  therefore one meaning for "the nth occurrence".
+ Progress persistence
   saves the fractional stream position alongside the page, so a continuous read resumes where it
   stopped, not at a page top.
 

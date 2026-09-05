@@ -57,12 +57,10 @@ impl Default for HoverConfig {
 /// edges to bind on every element that belongs to the surface.
 #[derive(Clone)]
 pub struct HoverReveal {
-    /// What to render from: `pin || hovered_visible`.
+    /// What to render from: `pin || hovered_visible`. The raw hover truth stays
+    /// inside the hook: the reveal owns the writes, and a consumer that could
+    /// set it would desynchronise the timer.
     pub visible: Signal<bool>,
-    /// The raw hover truth, without the pin — the title bar publishes this
-    /// one to its descendants. Read-only on purpose: the reveal owns the
-    /// writes, and a consumer that sets it would desynchronise the timer.
-    pub hovered_visible: Signal<bool>,
     enter: Rc<dyn Fn()>,
     leave: Rc<dyn Fn()>,
 }
@@ -161,7 +159,7 @@ fn reveal(
         None => hovered_visible,
     };
 
-    HoverReveal { visible, hovered_visible, enter, leave }
+    HoverReveal { visible, enter, leave }
 }
 
 /// Whether the point still lands on the surface. Pointer capture keeps a

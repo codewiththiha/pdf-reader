@@ -43,7 +43,8 @@ use serde::{Deserialize, Serialize};
 
 use super::anchor::host_id_for_mode;
 use super::gloss::mark_layer::MARK_RADIUS;
-use crate::components::formats::reflow::spot::{clamp_span, range_for_span, range_rects};
+use app_chrome::hooks::dom::range_rects;
+use crate::components::formats::reflow::spot::{clamp_span, range_for_span};
 use crate::components::viewer::page_host::block_row_id;
 use crate::dom_contract::BLOCK_INDEX_ATTR;
 use crate::state::reader::ReflowContent;

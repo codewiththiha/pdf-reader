@@ -1,20 +1,22 @@
 //! The PDF page-text index: the engine extracts, this crate searches.
 //!
-//! pdf.js can only extract text in the browser; everything after that —
-//! lowercasing, occurrence matching, snippet building — is string work that
-//! belongs here, off the JS heap. The engine hands pages over as [`PageText`]
-//! (geometry already normalised to scale-1 CSS px), [`SearchIndex`] stores
-//! them per page, and `query` scans the stored strings per keystroke with no
-//! pdf.js round trip at all.
+//! pdf.js can only extract text in the browser; everything after that is string
+//! work that belongs here, off the JS heap. The engine hands pages over as
+//! [`PageText`] (geometry already normalised to scale-1 CSS px), [`SearchIndex`]
+//! stores them per page with a folded copy of every run, and `query` scans those
+//! strings per keystroke with no pdf.js round trip at all.
 //!
-//! The result shape ([`SearchMatch`] / [`SearchResponse`]) is format-agnostic
-//! and lives in `reader_core::search`, together with the maths the result list
-//! runs; a reflowable document searches its own blocks and answers in the same
-//! shape, so the UI never learns which pipeline produced a hit.
+//! What this crate owns is the index and the geometry: a run's rect interpolated
+//! to the characters a hit covers. The result shape ([`SearchMatch`] /
+//! [`SearchResponse`]), the scan that finds occurrences and the snippet window
+//! that quotes them are format-agnostic and live in `reader_core::search` — a
+//! reflowable document searches its own blocks with the same two functions and
+//! answers in the same shape, so the UI never learns which pipeline produced a
+//! hit, and an occurrence ordinal means the same thing in both.
 
 use std::sync::Arc;
 
-use reader_core::search::{SearchMatch, SearchResponse};
+use reader_core::search::{occurrence_spans, snippet, SearchMatch, SearchResponse};
 
 /// One extracted text run of a page, with its scale-1 rect.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,57 +64,6 @@ pub struct SearchIndex {
     pages: std::collections::BTreeMap<u32, PageText>,
 }
 
-/// One query's worth of matched positions within a single item, safe against
-/// non-UTF8-boundary slicing (ASCII is the byte==char fast path).
-fn find_occurrences(hay: &str, needle: &str) -> Vec<usize> {
-    if needle.is_empty() {
-        return Vec::new();
-    }
-    if hay.is_ascii() && needle.is_ascii() {
-        // Byte offsets are char offsets here; mirrors JS `indexOf` loop.
-        let mut out = Vec::new();
-        let mut at = 0usize;
-        while let Some(rel) = hay[at..].find(needle) {
-            let pos = at + rel;
-            out.push(pos);
-            at = pos + needle.len();
-        }
-        return out;
-    }
-    // Non-ASCII: search on chars so offsets are character offsets and every
-    // subsequent slice is a valid boundary.
-    let hay: Vec<char> = hay.chars().collect();
-    let needle: Vec<char> = needle.chars().collect();
-    let mut out = Vec::new();
-    let mut i = 0usize;
-    while i + needle.len() <= hay.len() {
-        if hay[i..i + needle.len()] == needle[..] {
-            out.push(i);
-            i += needle.len();
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// Surrounding-text snippet: up to 25 chars before and 30 after the match,
-/// with ellipses on the clipped sides — the same window the JS built.
-fn snippet(text: &str, qlen: usize, at: usize) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let start = at.saturating_sub(25);
-    let end = (at + qlen + 30).min(chars.len());
-    let mut out = String::new();
-    if start > 0 {
-        out.push('…');
-    }
-    out.extend(&chars[start..end]);
-    if end < chars.len() {
-        out.push('…');
-    }
-    out
-}
-
 impl SearchIndex {
     /// Create an empty index.
     pub fn new() -> Self {
@@ -143,10 +94,8 @@ impl SearchIndex {
     /// Run `query` against the index, returning every occurrence in document
     /// order. An empty index or empty query yields an empty response.
     pub fn query(&self, query: &str) -> SearchResponse {
-        let q = query.to_lowercase();
-        let qlen = q.chars().count();
         let mut matches = Vec::new();
-        if qlen == 0 {
+        if query.trim().is_empty() {
             return SearchResponse {
                 query: query.to_string(),
                 total: 0,
@@ -161,16 +110,22 @@ impl SearchIndex {
                 if item.w <= 0.0 {
                     continue;
                 }
-                let len = item.lower.chars().count().max(1);
-                for at in find_occurrences(&item.lower, &q) {
-                    let at_f = at as f64;
+                // The index stores one rect per extracted RUN, not per glyph, so
+                // a hit's box is the run's slice proportional to where its
+                // characters sit. The scan reports character spans and the
+                // denominator counts characters, in the original text because
+                // that is the text the spans are offsets into — which is also
+                // the text the snippet quotes.
+                let chars = item.text.chars().count().max(1) as f64;
+                for (start, end) in occurrence_spans(&item.text, &item.lower, query) {
+                    let span = (end - start).max(1) as f64;
                     matches.push(SearchMatch {
                         page: page.page,
                         index: ord,
-                        text: Arc::<str>::from(snippet(&item.text, qlen, at)),
-                        x: item.x + (item.w * at_f) / len as f64,
+                        text: Arc::<str>::from(snippet(&item.text, start, end)),
+                        x: item.x + item.w * start as f64 / chars,
                         y: item.y,
-                        w: (item.w * qlen as f64 / len as f64).max(1.0),
+                        w: (item.w * span / chars).max(1.0),
                         h: item.h,
                         // A page of pixels answers with the rect above; the
                         // block half is a reflowable document's.
@@ -191,6 +146,7 @@ impl SearchIndex {
 #[cfg(test)]
 mod index_tests {
     use super::*;
+    use reader_core::search::SNIPPET_RADIUS;
 
     fn item(text: &str, x: f64, w: f64) -> SearchItem {
         SearchItem::new(text, x, 100.0, w, 12.0)
@@ -248,9 +204,9 @@ mod index_tests {
         let s = &resp.matches[0].text;
         assert!(s.starts_with('…') && s.ends_with('…'), "snippet: {s}");
         assert_eq!(s.chars().filter(|c| *c == 'N').count(), 1);
-        // Window: ≤25 before (incl. ellipsis) and ≤30 after (incl. ellipsis).
+        // The shared window: SNIPPET_RADIUS characters either side of the hit.
         let core: String = s.chars().filter(|c| *c != '…').collect();
-        assert!(core.chars().count() <= 25 + 6 + 30, "core len {}", core.chars().count());
+        assert_eq!(core.chars().count(), SNIPPET_RADIUS * 2 + 6, "core len {}", core.chars().count());
     }
 
     #[test]
@@ -297,8 +253,9 @@ mod index_tests {
 
     #[test]
     fn overlapping_occurrences_advance_by_query_length() {
-        // "aaaa" with query "aa": JS indexOf advances by qlen → 2 matches,
-        // not 3. The port must keep that behaviour.
+        // "aaaa" with query "aa": the scan advances by the needle's length → 2
+        // matches, not 3. The engine's painter has always done the same, and a
+        // box ordinal has to line up with a result ordinal.
         let mut index = SearchIndex::new();
         index.add_page(page(1, vec![item("aaaa", 0.0, 100.0)]));
         let resp = index.query("aa");

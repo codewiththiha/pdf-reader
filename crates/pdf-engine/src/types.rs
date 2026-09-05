@@ -57,22 +57,22 @@ pub struct RenderResult {
     pub scale: f64,
 }
 
-/// `{ok:true, width, height, scale, cached}` — engine.renderThumb.
+/// `{ok:true, width, height, scale}` — engine.renderThumb.
 ///
-/// `cached` is the load-bearing field: `true` means the engine blitted an
-/// already-rendered bitmap into the canvas SYNCHRONOUSLY (before the promise
-/// ever suspended), so the thumbnail is painted on the very first frame the
-/// cell is mounted. The cell uses it to skip its loading skeleton entirely —
-/// covering an already-painted thumbnail and then crossfading the cover away
-/// is precisely the per-row flicker seen when scrolling a virtualized grid.
+/// This used to carry a `cached` flag saying the engine had blitted an
+/// already-rendered bitmap synchronously, so the cell could skip its loading
+/// skeleton. A flag that arrives with the promise is too late for that: the
+/// cell's first frame is composited before the render resolves. What actually
+/// removed the flicker is `has_thumb` — the same question, asked synchronously
+/// while the cell is still being built (`thumbnails/thumbnail_cell.rs`) — and
+/// the flag was left behind unread, still advertised as load-bearing by its own
+/// doc comment. The blit is still synchronous; only the reporting of it is gone.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThumbResult {
     pub width: f64,
     pub height: f64,
     pub scale: f64,
-    #[serde(default)]
-    pub cached: bool,
 }
 
 /// `{ok:true, dataUrl, width, height}` — engine.coverDataUrl.

@@ -136,21 +136,21 @@ async function renderThumbInternal(
       if (showRaw(canvas, thumbRaw(hit), "thumb-raw")) {
         cachePut(page, hit);
         session.thumbLive.set(canvasId, { page });
-        return { ok: true, width: hit.cssW, height: hit.cssH, scale, cached: true };
+        return { ok: true, width: hit.cssW, height: hit.cssH, scale };
       }
     } else if (hit.gen === pipelineCache.gen) {
       const size = paintCached(canvas, hit);
       if (size) {
         cachePut(page, hit);
         session.thumbLive.set(canvasId, { page });
-        return { ok: true, width: size.width, height: size.height, scale, cached: true };
+        return { ok: true, width: size.width, height: size.height, scale };
       }
     } else if (await ensureEntryCurrent(hit)) {
       const size = paintCached(canvas, hit);
       if (size) {
         cachePut(page, hit);
         session.thumbLive.set(canvasId, { page });
-        return { ok: true, width: size.width, height: size.height, scale, cached: false };
+        return { ok: true, width: size.width, height: size.height, scale };
       }
     }
   }
@@ -230,7 +230,7 @@ async function renderThumbInternal(
     }
     session.thumbCancelled.delete(canvasId);
 
-    return { ok: true, width: cssW, height: cssH, scale, cached: false };
+    return { ok: true, width: cssW, height: cssH, scale };
   } catch (e) {
     session.thumbTasks.delete(canvasId);
     const info = errorInfo(e);
@@ -252,10 +252,11 @@ export function cancelThumb(canvasId: string): void {
 }
 
 /** Render a page into the cache with no DOM canvas (idle prefetch).
- *  A cache-hit cell mounts with `cached: true` → synchronous blit → zero
- *  skeleton, zero waiting. So render the pages AROUND the reader into the
- *  cache while idle; by the time the reader flings the grid to page N,
- *  pages N±k are cache-warm and every remount is an instant synchronous blit. */
+ *  A cell whose page is cache-warm asks `hasThumb` while it is still being
+ *  built, mounts already loaded, and its first render call is a synchronous
+ *  blit → zero skeleton, zero waiting. So render the pages AROUND the reader
+ *  into the cache while idle; by the time the reader flings the grid to page
+ *  N, pages N±k answer that probe true and every remount is instant. */
 export async function prefetchThumb(page: number, scale: number): Promise<void> {
   if (!session.pdf) return;
   const hit = session.thumbCache.get(page);

@@ -500,15 +500,16 @@ crates/
                           view modes and spread arithmetic, the settings schema
                           (layout, animation, typography, gloss), the colour
                           pipeline, the presets, filename rules, zoom maths, the
-                          shared search model and the outline shape
+                          outline shape, and the shared search model — result
+                          shape, the scan both pipelines run, the snippet window
   pdf-core/               pure PDF domain math: page layout constants, the
                           outline wire entries and their clamping, the
                           device-pixel grid the page hosts snap to, and the
-                          engine-side page-text search index
+                          engine-side page-text index a query scans
   reflow-core/            the shared maths of reflowable text: the block shape
                           and its splitting, the A4 geometry and spine sides,
                           the page cutter, the height estimate, typography
-                          resolution and the substring search over blocks
+                          resolution and the search over blocks
   txt-core/               plain text: normalisation, paragraph parsing and the
                           line-bounded subdivision a tight page pack needs
   md-core/                Markdown: construct classification, prose subdivision,

@@ -19,14 +19,19 @@
 //! * [`crate::components::formats::reflow::highlight`] covers a block's row in
 //!   search hits, once per row per invalidation.
 //!
-//! Both need the same three things — the row's text nodes, a `Range` over a span
-//! of them, and that range's client rects — and both need the walk to skip the
-//! layers painted OVER the text rather than being part of it.
+//! Both need the same two things — the row's text nodes, and a `Range` over a
+//! span of them — and both need the walk to skip the layers painted OVER the
+//! text rather than being part of it. Measuring a `Range` is not this module's
+//! business: `app_chrome::hooks::dom::range_rects` answers that for any subtree,
+//! which is why a PDF's capture path uses it too.
 //!
 //! The arithmetic is pure and separate from the DOM walk so it is unit-testable
 //! on the host: [`index_of_text_node`] (character offsets → a text node and an
-//! offset inside it), [`clamp_span`] (a span against the text that is actually
-//! there) and [`occurrence_spans`] (a query → the spans it covers).
+//! offset inside it) and [`clamp_span`] (a span against the text that is
+//! actually there). Finding the query in a row's text is not here at all — that
+//! scan is `reader_core::search::occurrence_spans`, shared with both search
+//! pipelines, so the ordinals a hit box counts and the ones a match carries
+//! cannot drift apart.
 
 use wasm_bindgen::JsCast;
 
@@ -40,12 +45,6 @@ use wasm_bindgen::JsCast;
 /// (`features/reader/page.rs`) and a walk that starts at a host never reaches it.
 const OVERLAY_CLASSES: [&str; 3] = ["gloss-layer", "tx-hits", "tx-measure"];
 
-/// Occurrences one row will report, mirroring the engine's per-page cap on the
-/// boxes it paints (`MAX_HIGHLIGHTS_PER_PAGE` in `public/engine/highlights.ts`).
-/// A one-character query in a long paragraph is the case this bounds; the two
-/// pipelines keep the same number so a document reads the same either way.
-pub(crate) const MAX_SPANS_PER_ROW: usize = 200;
-
 /// The block's text nodes, in document order.
 ///
 /// The walk is a plain `childNodes` recursion rather than a `TreeWalker`: it
@@ -53,7 +52,7 @@ pub(crate) const MAX_SPANS_PER_ROW: usize = 200;
 /// Nodes inside the block's own stroke layer are skipped — a mark's button
 /// carries the glossed word as its accessible name, and counting that text
 /// would shift every offset after the first mark.
-pub(crate) fn text_nodes_of(el: &web_sys::Element) -> Vec<web_sys::Node> {
+fn text_nodes_of(el: &web_sys::Element) -> Vec<web_sys::Node> {
     let mut nodes = Vec::new();
     collect_text_nodes(el, &mut nodes);
     nodes
@@ -114,7 +113,7 @@ fn utf16_offset_for_char(content: &str, char_offset: usize) -> u32 {
 /// end lands on the last node's end (or on `(0, 0)` for a block with no text),
 /// so a mark whose document was edited shorter still projects onto something
 /// sane instead of failing.
-pub(crate) fn index_of_text_node(lengths: &[u32], offset: usize) -> (usize, u32) {
+fn index_of_text_node(lengths: &[u32], offset: usize) -> (usize, u32) {
     let mut remaining = offset;
     for (index, &length) in lengths.iter().enumerate() {
         if remaining < length as usize {
@@ -172,33 +171,11 @@ pub(crate) fn range_for_span(el: &web_sys::Element, start: usize, end: usize) ->
     Some(range)
 }
 
-/// The client rects of `range`, as the pure tuples
-/// [`union_box`](crate::components::ai::reflow_anchor::union_box) takes.
-///
-/// Both capture paths walk a selection's fragments through here — a reflowable
-/// mark's spot projection and the PDF's
-/// [`capture_selection`](crate::components::ai::anchor::pdf::capture_selection) —
-/// so a multi-line selection is measured the same way whichever format it is in.
-/// An empty list (a range the browser will not give rects for) unions to `None`,
-/// which every caller already reads as "nothing to anchor to".
-pub(crate) fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
-    let Some(rects) = range.get_client_rects() else {
-        return Vec::new();
-    };
-    let mut out = Vec::with_capacity(rects.length() as usize);
-    for index in 0..rects.length() {
-        if let Some(rect) = rects.get(index) {
-            out.push((rect.left(), rect.top(), rect.right(), rect.bottom()));
-        }
-    }
-    out
-}
-
 /// The rendered text of a block row, one entry per text node, in document order.
 ///
 /// Concatenated, this is the row's own coordinate system: the offsets
 /// [`match_spans`] reports and [`range_for_span`] accepts are counts into it.
-pub(crate) fn text_contents(el: &web_sys::Element) -> Vec<String> {
+fn text_contents(el: &web_sys::Element) -> Vec<String> {
     text_nodes_of(el)
         .iter()
         .filter_map(|node| node.dyn_ref::<web_sys::Text>())
@@ -209,53 +186,15 @@ pub(crate) fn text_contents(el: &web_sys::Element) -> Vec<String> {
 /// Every occurrence of `needle` in a block row's rendered text, as character
 /// spans in the row's own coordinate system.
 ///
-/// Case-insensitive and non-overlapping, which is `reflow_core::search`'s rule
-/// for the hits it reports, so the nth span here is the nth hit the search found
-/// in this block — the pairing a highlight box and an active match meet on.
+/// The scan is the one both search pipelines run
+/// (`reader_core::search::occurrence_spans`), which is what makes the nth span
+/// here the nth hit the search found in this block — the pairing a highlight box
+/// and an active match meet on. The row's text is folded here rather than kept,
+/// because a row is walked on a query change and not on a keystroke of index
+/// building.
 pub(crate) fn match_spans(el: &web_sys::Element, needle: &str) -> Vec<(usize, usize)> {
-    occurrence_spans(&text_contents(el).concat(), needle)
-}
-
-/// The pure half of [`match_spans`]: the character spans of every occurrence of
-/// `needle` in `haystack`, in reading order.
-pub(crate) fn occurrence_spans(haystack: &str, needle: &str) -> Vec<(usize, usize)> {
-    let needle = needle.trim();
-    if needle.is_empty() {
-        return Vec::new();
-    }
-    // Case folding can change a string's LENGTH ('İ' folds to two characters),
-    // and offsets into the folded copy would then not be the rendered text's.
-    // When folding is not length-preserving the scan stays case-sensitive rather
-    // than cover the wrong characters: a missed hit is a smaller lie than a
-    // highlight over text the reader did not search for.
-    let folded = haystack.to_lowercase();
-    let (hay, needle) = if folded.chars().count() == haystack.chars().count() {
-        (folded.as_str(), needle.to_lowercase())
-    } else {
-        (haystack, needle.to_string())
-    };
-
-    let chars: Vec<char> = hay.chars().collect();
-    let want: Vec<char> = needle.chars().collect();
-    if want.len() > chars.len() {
-        return Vec::new();
-    }
-    let mut out = Vec::new();
-    let mut at = 0;
-    while at + want.len() <= chars.len() {
-        if chars[at..at + want.len()] == want[..] {
-            out.push((at, at + want.len()));
-            // Non-overlapping, like `str::match_indices`: "aa" in "aaa" is one
-            // hit at 0 and a candidate at 1 that the first already consumed.
-            at += want.len();
-            if out.len() >= MAX_SPANS_PER_ROW {
-                break;
-            }
-        } else {
-            at += 1;
-        }
-    }
-    out
+    let text = text_contents(el).concat();
+    reader_core::search::occurrence_spans(&text, &text.to_lowercase(), needle)
 }
 
 #[cfg(test)]
@@ -319,38 +258,5 @@ mod tests {
         // A backwards span collapses; it never inverts.
         assert_eq!(clamp_span(9, 3, 20), (9, 9));
         assert_eq!(clamp_span(0, 0, 0), (0, 0));
-    }
-
-    #[test]
-    fn occurrences_are_found_in_reading_order_and_do_not_overlap() {
-        let spans = occurrence_spans("The Dune of Dune", "dune");
-        assert_eq!(spans, vec![(4, 8), (12, 16)]);
-        // One hit, not two: the first consumes the characters the second would
-        // have started on.
-        assert_eq!(occurrence_spans("aaa", "aa"), vec![(0, 2)]);
-    }
-
-    #[test]
-    fn a_query_with_nothing_in_it_matches_nothing() {
-        assert!(occurrence_spans("anything", "").is_empty());
-        assert!(occurrence_spans("anything", "   ").is_empty());
-        // A padded query still matches, at the trimmed needle's length.
-        assert_eq!(occurrence_spans("a target here", " target "), vec![(2, 8)]);
-    }
-
-    #[test]
-    fn spans_count_characters_not_bytes_or_code_units() {
-        // An emoji is one character, so the hit after it starts at 6, not 7 or 8.
-        let spans = occurrence_spans("ab\u{1F600}cd dune", "dune");
-        assert_eq!(spans, vec![(6, 10)]);
-        // Accented text folds to itself, and a case-insensitive scan still finds
-        // it at the character offset the rendered text has.
-        assert_eq!(occurrence_spans("héllo wörld", "HÉLLO"), vec![(0, 5)]);
-    }
-
-    #[test]
-    fn a_long_run_of_hits_stops_at_the_cap() {
-        let haystack = "a".repeat(MAX_SPANS_PER_ROW * 3);
-        assert_eq!(occurrence_spans(&haystack, "a").len(), MAX_SPANS_PER_ROW);
     }
 }

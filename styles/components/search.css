@@ -21,6 +21,19 @@
    relying on link order.
    ===================================================================== */
 
+/* The reflowable half's layer: it covers its row, never intercepts a click, and
+   paints above the type without becoming a stacking context. A z-index here
+   would isolate the boxes, and `mix-blend-mode` on them needs to reach the
+   glyphs underneath — the same reason the gloss strokes' layer sits above this
+   one in the page host rather than inside a block. The PDF half needs no such
+   rule: the engine appends its boxes into a text layer that is already
+   positioned over the page. */
+.tx-hits {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 /* EVERY HIT: the accent laid over the glyphs, not replacing them. The box is a
    sibling of the text rather than a decoration on it, so it can cover a span
    boundary — a hit that wraps a line, a hit across a styled run — with one
