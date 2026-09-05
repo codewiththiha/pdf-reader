@@ -241,14 +241,15 @@ generalised instead of the feature being forked per format.
   `data-block-index` plus the matching element id (`tx-block-<index>`, from
   `viewer::page_host::block_row_id`). The selection tracker (which lives in the
   reader bundle, not the engine's) and the app's capture find their host by
-  asking for those attributes rather than for a class, so a format joins the AI feature by publishing two attributes and no
-  selector anywhere grows a second name; the id is the lookup half of the same
-  deal, because the gloss projection resolves a mark's block once per mark per
-  scroll frame and an id read is the cheapest question the DOM answers. The surrounding sentence a selection reports is cut out of
-  the same protocol — a PDF's text layer, or a reflowable document's block row,
-  whichever the selection is inside — and a row is the better sentence anyway: a
-  page of type is thousands of characters, and a word is disambiguated by its
-  clause.
+  asking for those attributes rather than for a class, so a format joins the AI
+  feature by publishing two attributes and no selector anywhere grows a second
+  name; the id is the lookup half of the same deal, because the gloss projection
+  resolves a mark's block once per mark per scroll frame and an id read is the
+  cheapest question the DOM answers. The surrounding sentence a selection
+  reports is cut out of the same protocol — a PDF's text layer, or a reflowable
+  document's block row, whichever the selection is inside — and a row is the
+  better sentence anyway: a page of type is thousands of characters, and a word
+  is disambiguated by its clause.
 - **The event grew two optional fields.** `pdfreader:selection-detail` now
   carries `{ text, context, rect, host, spot }`. `host` says which family painted
   the selection, so the app decides the pipeline from the event rather than from

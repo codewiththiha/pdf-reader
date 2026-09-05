@@ -332,9 +332,10 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 
 - Release builds optimise for size with link-time optimisation and a single codegen unit, and the
   WebAssembly output is passed through `wasm-opt`.
-- Thumbnails are cached as bitmaps in an LRU of 64 entries, roughly six screens of grid. A cache
-  hit blits synchronously with no skeleton, no pulse and no transition, so a remounted row has
-  nothing left to flicker.
+- Thumbnails are cached as bitmaps in an LRU of 16 entries — each thumbnail is a pair of rasters,
+  so the tight cap is what keeps the whole grid near eight megabytes. A cache hit blits
+  synchronously with no skeleton, no pulse and no transition, so a remounted row has nothing left
+  to flicker.
 - New thumbnail renders draw into a detached canvas, so a live canvas is never shown mid-render.
 - Canvas backing stores are explicitly released on unregister, which avoids a WKWebView leak where
   memory grew with every page scrolled.
