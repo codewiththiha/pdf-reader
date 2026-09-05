@@ -1,6 +1,6 @@
 //! Centered reader settings modal shell: the tab strip, the Escape handler and
-//! the body that hosts one tab at a time. The tabs live in `layout`, `theme`
-//! and `animations`, and the SET of them is not fixed — see `shown`.
+//! the body that hosts one tab at a time. The tabs live in `layout`, `theme`,
+//! `animations` and `fonts`, and the SET of them is not fixed — see `shown`.
 //!
 //! The `open` signal belongs to the page (two things open this modal: the gear
 //! button and the reader menu's item), so the page's signal is registered as
