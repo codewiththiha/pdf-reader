@@ -17,8 +17,8 @@
 //! a page had to know which of the two it was reading. Grouping them as
 //! siblings fixed that — and the sibling that holds page sizes is named for
 //! what it measures rather than for the format that used to own it, because a
-//! reflowable document publishes A4 into exactly the same fields (see
-//! `reflow::ReflowContent::apply_heights`). Each leaf stayed its own signal on
+//! reflowable document publishes A4 into exactly the same fields, through
+//! [`DocumentState::publish_cut`]. Each leaf stayed its own signal on
 //! purpose, rather than folding into one payload enum inside one signal, because
 //! every geometry write would then notify every reader of the document,
 //! including the ones that only wanted its title. The format is already the tag
@@ -109,6 +109,27 @@ impl DocumentContent {
 /// A hand-written default, not a derive: `DocStatus` has no `Default` (its
 /// variants are a state machine, and "the idle one" is a decision, not a zero),
 /// and `ReaderState::default()` — what a fresh mount builds — needs one.
+/// What a reflowable re-cut has to tell the document: how many pages it now
+/// has, how big each one is, and which page the reader lands on.
+///
+/// Every page of a reflowable document is the same size — A4 is the cut's one
+/// fixed point — so this carries ONE size and ONE height rather than two vectors
+/// of a repeated value, and [`DocumentState::publish_cut`] expands them. The
+/// page count is the cut's, not the reader's: a cut that changes the count has
+/// to say so before anything clamps a page against it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReflowCut {
+    /// Pages the cut produced.
+    pub num_pages: u32,
+    /// Intrinsic (scale-1) size of every page.
+    pub page_size: PageSize,
+    /// Laid-out CSS-px height of every page, at the scale the cut was made at.
+    pub css_height: f64,
+    /// The page the reader lands on: the one holding the block the PREVIOUS
+    /// cut's current page started on, so a re-cut never strands the position.
+    pub page: u32,
+}
+
 impl Default for DocumentState {
     fn default() -> Self {
         Self {
@@ -176,6 +197,23 @@ impl DocumentState {
     /// re-saved file from jumping past the last sheet.
     pub fn set_pdf_outline(&self, entries: Vec<OutlineEntry>, page_count: u32) {
         self.outline.set(Arc::new(pdf_core::outline::to_nodes(entries, page_count)));
+    }
+
+    /// Publish a reflowable cut to the shared page machinery: the page count and
+    /// the per-page sizes, fed exactly as a PDF feeds them.
+    ///
+    /// This is the one place the two pipelines meet, and it is what lets the
+    /// paged modes, the zoom ladder and the progress chrome never ask which
+    /// format is open. The reflow half decides the numbers
+    /// ([`reflow::ReflowContent::apply_heights`]) and the document writes them,
+    /// because they are the document's fields: a format's content describing its
+    /// own pages is a re-cut, while a format's content setting the reader's page
+    /// count is one module reaching across into another's state.
+    pub fn publish_cut(&self, cut: &ReflowCut) {
+        self.num_pages.set(cut.num_pages);
+        self.content
+            .metrics
+            .publish_uniform(cut.num_pages, &cut.page_size, cut.css_height);
     }
 }
 

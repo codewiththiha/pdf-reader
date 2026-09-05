@@ -193,11 +193,12 @@ fn measure_pass(
         return;
     }
 
-    // A real re-cut: publish heights + cut + page bookkeeping in one move,
-    // and hold the reader on the block they were reading — `apply_heights`
-    // answers the page that block now sits on.
-    let page = app.reader.document.content.reflow.apply_heights(app, heights, geo);
-    app.reader.viewer.page.set(page);
+    // A real re-cut: republish the cut, tell the document's shared page
+    // machinery what it now holds, and hold the reader on the block they were
+    // reading — the cut answers the page that block now sits on.
+    let cut = app.reader.document.content.reflow.apply_heights(app, heights, geo);
+    app.reader.document.publish_cut(&cut);
+    app.reader.viewer.page.set(cut.page);
 }
 
 /// Schedule another attempt, one frame later, until the budget runs out.

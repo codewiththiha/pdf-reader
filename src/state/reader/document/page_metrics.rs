@@ -11,10 +11,10 @@
 //!
 //! A PDF fills them from the file (`services::document::open::seed`, refined by
 //! the engine's geometry callback as pages render). A reflowable document fills
-//! them from its page cut, with A4 as the one fixed point
-//! (`reflow::ReflowContent::apply_heights`) — which is exactly why the field
-//! cannot keep a format's name: the reader's paged modes, its zoom ladder and
-//! its progress chrome all read this and none of them may care who counted.
+//! them from its page cut, with A4 as the one fixed point, through
+//! [`PageMetrics::publish_uniform`] — which is exactly why the field cannot keep
+//! a format's name: the reader's paged modes, its zoom ladder and its progress
+//! chrome all read this and none of them may care who counted.
 //!
 //! `page1_size` is the answer every fixed-geometry surface uses before a page
 //! has rendered, which is why the fallback policy sits on the document rather
@@ -44,6 +44,37 @@ impl PageMetrics {
         self.page1_size.set(None);
         self.intrinsic.set(Vec::new());
         self.css_heights.set(Vec::new());
+    }
+
+    /// Publish a page count whose pages are all one size — a reflowable cut,
+    /// where A4 is the one fixed point.
+    ///
+    /// Both vectors are written only when they would actually change.
+    /// `intrinsic` is an input to the virtualizers' geometry epoch, so handing
+    /// them a fresh (but identical) A4 column on every re-measure rebuilt both
+    /// page layouts — the second, redundant rewindow a reader saw right after a
+    /// text document settled onto its measured cut. A re-cut that keeps the page
+    /// count has nothing to tell them, and a zoom never reaches this at all (the
+    /// stream rescales itself, the paged modes go through
+    /// `crate::effects::reader::reflow_layout`).
+    ///
+    /// The height tolerance is half a CSS pixel: these are laid-out heights at a
+    /// fractional scale, and re-measuring the same cut must not read as a change
+    /// because the scale rounded differently.
+    pub fn publish_uniform(&self, count: u32, size: &PageSize, css_height: f64) {
+        let pages = count as usize;
+        let sizes_current = self
+            .intrinsic
+            .with_untracked(|sizes| sizes.len() == pages && sizes.iter().all(|page| page == size));
+        if !sizes_current {
+            self.intrinsic.set(vec![size.clone(); pages]);
+        }
+        let heights_current = self.css_heights.with_untracked(|store| {
+            store.len() == pages && store.iter().all(|h| (h - css_height).abs() < 0.5)
+        });
+        if !heights_current {
+            self.css_heights.set(vec![css_height; pages]);
+        }
     }
 
     /// The vertical strip's size model: a page's laid-out CSS height, plus the

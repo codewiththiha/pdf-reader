@@ -237,9 +237,13 @@ fn ready(
     state.reader.viewer.zoom.initialize(scale);
     state.reader.viewer.scroll_top.set(0.0);
 
-    state.reader.document.content.reflow.apply_heights(state, heights, geo);
-    let num_pages = state.reader.document.num_pages.get_untracked();
-    let resume = super::enter::resume_page(saved_page, num_pages);
+    // The estimate's cut, published before the resume page is chosen: the
+    // clamp inside `resume_page` is against the page count this cut produced,
+    // so reading the count back out of the signal would only be a slower way of
+    // asking the cut.
+    let cut = state.reader.document.content.reflow.apply_heights(state, heights, geo);
+    state.reader.document.publish_cut(&cut);
+    let resume = super::enter::resume_page(saved_page, cut.num_pages);
     state.reader.viewer.page.set(resume);
 
     super::enter::enter_ready(state);
@@ -249,5 +253,5 @@ fn ready(
     // rather than an omission: both are page-1 rasters out of the pdf.js
     // engine (`super::cover`, `super::warmup`), and a reflowable document has
     // no raster to hand them — its shelf card keeps the stylised fallback.
-    super::shelf::record(state, &path, name, resume, num_pages);
+    super::shelf::record(state, &path, name, resume, cut.num_pages);
 }

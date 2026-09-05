@@ -160,17 +160,22 @@ impl ReflowContent {
         self.blocks.with(|blocks| Arc::as_ptr(blocks) as usize)
     }
 
-    /// Publish a new set of block heights: re-cut the pages, publish the cut
-    /// and its inverse map, and carry the document/viewer bookkeeping that
-    /// hangs off the page count. Returns the page the reader lands on
-    /// afterwards — the page holding the block the PREVIOUS cut's current page
-    /// started on, so a re-cut never strands the position.
+    /// Publish a new set of block heights: re-cut the pages, publish the cut and
+    /// its inverse map, and answer what the document's shared page machinery has
+    /// to be told ([`super::ReflowCut`]).
+    ///
+    /// The cut, its map and the heights are this content's own to write. The page
+    /// count and the per-page sizes belong to the document, so they are RETURNED
+    /// rather than poked into a sibling's signals: a reflowable document deciding
+    /// its own pagination is a re-cut, while a reflowable document setting the
+    /// reader's page count is one module writing another's state. The caller hands
+    /// the answer to [`super::DocumentState::publish_cut`].
     pub fn apply_heights(
         &self,
         state: crate::state::AppState,
         heights: Vec<f64>,
         geo: PageGeometry,
-    ) -> u32 {
+    ) -> super::ReflowCut {
         let cuts = paginate(&heights, geo.content_height);
         let map = block_page_index(&cuts, self.block_count());
 
@@ -189,40 +194,16 @@ impl ReflowContent {
         self.block_page.set(Arc::new(map));
         self.geometry.set(geo);
 
-        // The shared page machinery, fed exactly as a PDF feeds it: page
-        // count, per-page sizes (all A4 — the cut's one fixed point) and the
-        // vertical strip's measurement store, all at the live display scale.
-        // This is the one place the two pipelines meet, and it is what lets
-        // the paged modes, the zoom ladder and the progress chrome never ask
-        // which format is open.
-        //
-        // Both vectors are written only when they would actually change.
-        // `intrinsic` is an input to the virtualizers' geometry epoch, so
-        // handing them a fresh (but identical) A4 column on every re-measure
-        // rebuilt both page layouts — the second, redundant rewindow a reader
-        // saw right after a text document settled onto its measured cut. A
-        // re-cut that keeps the page count has nothing to tell them, and a
-        // zoom never reaches this function at all (the stream rescales itself,
-        // the paged modes go through `effects::reader::reflow_layout`).
-        let scale = state.reader.viewer.zoom.visual_scale();
-        state.reader.document.num_pages.set(n);
-        let metrics = state.reader.document.content.metrics;
-        let a4 = pdf_engine::types::PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT };
-        let sizes_current = metrics.intrinsic.with_untracked(|sizes| {
-            sizes.len() == n as usize && sizes.iter().all(|size| *size == a4)
-        });
-        if !sizes_current {
-            metrics.intrinsic.set(vec![a4; n as usize]);
+        // A4 is the cut's one fixed point: every page of a reflowable document is
+        // the same size, so the sizes travel as one page and one height rather
+        // than as two vectors of a repeated value. The height is at the live
+        // display scale, which is the scale the cut was measured at.
+        super::ReflowCut {
+            num_pages: n,
+            page_size: pdf_engine::types::PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+            css_height: PAGE_HEIGHT * state.reader.viewer.zoom.visual_scale(),
+            page: new_page.clamp(1, n.max(1)),
         }
-        let heights_current = metrics.css_heights.with_untracked(|store| {
-            store.len() == n as usize
-                && store.iter().all(|h| (h - PAGE_HEIGHT * scale).abs() < 0.5)
-        });
-        if !heights_current {
-            metrics.css_heights.set(vec![PAGE_HEIGHT * scale; n as usize]);
-        }
-
-        new_page.clamp(1, n.max(1))
     }
 
     /// The stream's reading position as 0..=1, or `None` while no stream is
