@@ -438,7 +438,9 @@ src/
                           family, the sidebar rail family
     menus/                app menu, appearance menu, reader menu
     settings/             the settings modal and its tabs (layout, theme,
-                          animations, fonts)
+                          animations, fonts); the theme tab composes sections
+                          it does not own — the AI's from ai/, the raster ones
+                          from its own paper module
     viewer/               the SHAPE of reading: the mode dispatch, the four
                           layouts (single, two-page, continuous, horizontal),
                           the shells that own the scroll container,
@@ -450,8 +452,9 @@ src/
                           measure column), txt/ and md/ block views, and
                           block_view, the renderer dispatch
     search/               floating search bar and result list
-    ai/                   selection pill, word card, gloss popover, and the
-                          AI appearance section of the settings modal
+    ai/                   selection pill, word card, gloss popover, the anchor
+                          resolvers that place a mark's stroke, and the AI
+                          appearance section of the settings modal
     app_overlays/         drag-and-drop feedback, toast host
   effects/
     app/                  window title, shortcuts, persistence wiring
@@ -529,8 +532,11 @@ public/
 src-tauri/                native shell, AI providers, capabilities, icons
 styles/
   input.css               Tailwind v4 entry point assembling the design system
+  tokens.css              the @theme block, base palettes and runtime vars
   page_host.css           the .pdf-page host, its canvas and the zoom snapshot
   text.css                the reflowable page host and its measure column
+  textures.css, noise.css texture modes, and the grain overlay + its crawl
+  library.css             the bookshelf and its drag overlay
   components/             shell, title bar, animations, ai, gloss, appearance,
                           thumbnails, pdf.js's text layer
 scripts/                  engine bundling, engine smoke test, and the
@@ -563,15 +569,20 @@ so the Rust side reads `ok` first and then deserializes.
 | `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
 | `stats` | Internal counters, used to assert memory is actually released |
 
-Load order in `index.html` is deliberate. pdf.js is ESM-only in version 6 and must execute before
-the engine so `globalThis.pdfjsLib` exists, and the engine must execute before the WebAssembly
-module because the app reaches for `window.PDFReader` as soon as its first components mount.
+Load order in `index.html` is deliberate. The reader bundle goes first because it needs nothing;
+then pdf.js, which is ESM-only in version 6 and must execute before the engine so
+`globalThis.pdfjsLib` exists; then the engine. All three run before the WebAssembly module, which
+top-level-awaits its own init: the app reaches for `window.PDFReader` and for the selection state
+as soon as its first components mount, and a module script that had not run yet leaves both
+undefined.
 
 ### State model
 
-A single `AppState` tree of Leptos signals is threaded through the component tree, divided into
-document state, viewer state, search state and settings. Effects subscribe to it rather than
-components talking to one another, which keeps ownership of each concern in exactly one place.
+A single `AppState` tree of Leptos signals is threaded through the component tree: the app's
+chrome and UI, the library, and the reader — whose own branches are the document, the viewer, the
+zoom transaction, search, the gloss marks and the AI's selection state. Effects subscribe to it
+rather than components talking to one another, which keeps ownership of each concern in exactly one
+place.
 During a zoom, for example, a single system owns the display scale and render scale, and every
 zoom control posts a request to it rather than writing the scale directly.
 
@@ -608,8 +619,7 @@ Run the desktop application with hot reload:
 cargo tauri dev
 ```
 
-This generates the TypeScript engine bundle, starts Trunk on port 1420 and opens the native
-window. Tailwind is compiled by a Trunk pre-build hook, so stylesheet changes rebuild
+This generates the TypeScript bundles, starts Trunk on port 1420 and opens the native window. Tailwind is compiled by a Trunk pre-build hook, so stylesheet changes rebuild
 automatically. To run the interface in a plain browser instead, without the native shell,
 generate the engine bundle once and serve:
 
@@ -640,18 +650,22 @@ only the app and silently skip every member crate. The `pdf` shell crate is excl
 `tauri::generate_context!` resolves the frontend dist at compile time; it is clippy-checked
 and unit-tested natively on the macOS CI job instead.
 
-Around 300 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
+Around 460 tests cover the pure layer: zoom and fit maths, page layout and spread stepping,
 filename derivation, colour conversion, appearance CSS generation, presets, settings
-migration, search index arithmetic, outline activation, thumbnail geometry, and the
-virtual-list windowing invariants. On top of that, the TypeScript engine layer has its own
-stub-vm smoke suite (`node scripts/test-engine-smoke.js` in CI) covering open, render,
-theme baking, scrub mode, thumbnails and teardown.
+migration, search index arithmetic, outline activation, thumbnail geometry, the frame delta
+the animation loops share, and the virtual-list windowing invariants. On top of that, the
+TypeScript layer has its own stub-vm smoke suite (`node scripts/test-engine-smoke.js` in CI)
+covering open, render, theme baking, scrub mode, thumbnails, search, teardown, and the reader
+bundle's selection tracker — the last in a sandbox with no engine and no pdf.js in scope,
+which is the point of it.
 
 Five small scripts guard facts that are written down more than once, where nothing else
 would notice a drift: `check-versions.ts` (the app version in four files),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
-file path named in a Rust comment still resolves), `check-events.ts` (the window-event names
+file path named in a Rust comment still resolves, every path named in a stylesheet comment,
+every component name the two documents put in backticks, and every method in the README's
+engine table), `check-events.ts` (the window-event names
 the engine dispatches match the app's table) and `check-dom-contract.ts` (the attribute,
 class and element-id names the app writes match the ones the engine reads, and appear
 nowhere as a raw literal). Each is TypeScript compiled by the same Trunk pre-build hook, and
