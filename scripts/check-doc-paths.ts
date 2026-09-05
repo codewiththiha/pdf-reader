@@ -293,6 +293,100 @@ for (const file of CSS_FILES) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The two prose documents: the NAMES they put in backticks.
+//
+// A path is one kind of claim and a component name is another, and the second
+// is what a rename leaves behind most often: `PageList` and `SinglePageView`
+// outlived the components they named by several refactors, in prose no compiler
+// reads, and the README documented two engine methods that do not exist.
+//
+// Only README.md and ARCHITECTURE.md are checked. A Rust doc comment names
+// external types constantly (`Closure`, `TreeWalker`, `NSWindow`), and an
+// allowlist long enough to cover those is one nobody maintains; these two
+// documents describe this app, so a capitalised name in them is ours until
+// proven otherwise.
+// ---------------------------------------------------------------------------
+
+/** Capitalised names the documents use that are not declarations anywhere in
+ *  the workspace: keyboard keys a shortcut table has to spell, and the platform
+ *  types the app talks to but does not define. Add to this only for one of
+ *  those, never for something the tree should be declaring. */
+const PROSE_NAMES = new Set(["Shift", "Space", "Escape", "Range"]);
+
+const DECLARED = new Set<string>();
+const RS_ITEM = /\b(?:fn|struct|enum|trait|type|union|mod)\s+([A-Z][A-Za-z0-9_]*)/g;
+const RS_ENUM_BODY = /\benum\s+\w+[^{]*\{([^{}]*)\}/g;
+const RS_VARIANT = /^\s*([A-Z][A-Za-z0-9_]*)/gm;
+const TS_ITEM = /\b(?:class|function|const|interface|type)\s+([A-Z][A-Za-z0-9_]*)/g;
+
+for (const file of ALL_FILES) {
+  if (!/\.(rs|ts)$/.test(file) || file.startsWith("public/vendor/")) continue;
+  const text = read(file);
+  for (const m of text.matchAll(RS_ITEM)) DECLARED.add(m[1]!);
+  for (const m of text.matchAll(TS_ITEM)) DECLARED.add(m[1]!);
+  for (const m of text.matchAll(RS_ENUM_BODY)) {
+    for (const variant of m[1]!.matchAll(RS_VARIANT)) DECLARED.add(variant[1]!);
+  }
+}
+
+const BACKTICK_NAME = /`([A-Z][A-Za-z0-9]{3,})`/g;
+let namesChecked = 0;
+
+for (const file of ["README.md", "ARCHITECTURE.md"].filter(isFile)) {
+  read(file).split("\n").forEach((line, index) => {
+    for (const m of line.matchAll(BACKTICK_NAME)) {
+      const name = m[1]!;
+      namesChecked++;
+      if (DECLARED.has(name) || PROSE_NAMES.has(name)) continue;
+      problems.push(`${file}:${index + 1}: nothing in the workspace is named \`${name}\``);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The documented engine surface.
+//
+// `window.PDFReader` is written down three times: the TypeScript type, the Rust
+// bridge (which `crates/pdf-engine/tests/engine_contract.rs` holds against the
+// built facade), and the README's "Engine API" table. Only the third was
+// unchecked, and it had drifted — it advertised `buildSearchIndex` and `search`
+// for a search index that lives in Rust, and omitted the appearance and paper
+// methods entirely.
+// ---------------------------------------------------------------------------
+
+/** The member names of the facade's type, as declared. */
+function apiMembers(): Set<string> {
+  const table = "public/engine/types.ts";
+  const body = /export type PDFReaderApi = \{([\s\S]*?)\n\};/.exec(read(table))?.[1];
+  if (!body) throw new Error(`${table}: no PDFReaderApi type`);
+  const out = new Set<string>();
+  for (const m of body.matchAll(/^\s*(\w+)\s*:/gm)) out.add(m[1]!);
+  return out;
+}
+
+const readme = isFile("README.md") ? read("README.md") : "";
+const apiAt = readme.indexOf("### Engine API");
+if (apiAt >= 0) {
+  const nextHeading = readme.indexOf("\n## ", apiAt);
+  const section = readme.slice(apiAt, nextHeading === -1 ? readme.length : nextHeading);
+  const firstLine = readme.slice(0, apiAt).split("\n").length;
+  const members = apiMembers();
+  section.split("\n").forEach((line, index) => {
+    // The table's first column, and only that: a bare lowerCamel token there is
+    // a method name, while the prose around the table talks about envelope
+    // fields (`ok`, `error`) that are not methods and must not be checked as
+    // though they were.
+    if (!line.startsWith("|")) return;
+    const firstCell = line.split("|")[1] ?? "";
+    for (const m of firstCell.matchAll(/`([a-z][A-Za-z0-9]+)`/g)) {
+      namesChecked++;
+      if (members.has(m[1]!)) continue;
+      problems.push(`README.md:${firstLine + index}: \`${m[1]}\` is not a window.PDFReader method`);
+    }
+  });
+}
+
 if (problems.length > 0) {
   console.error(`::error::${problems.length} comment path(s) do not resolve:`);
   for (const problem of problems) console.error(`  ${problem}`);
@@ -305,5 +399,6 @@ if (problems.length > 0) {
 
 console.log(
   `doc paths resolve: ${checked} module paths across ${RUST_FILES.length} Rust files, ` +
-    `${cssChecked} paths across ${CSS_FILES.length} stylesheets`,
+    `${cssChecked} paths across ${CSS_FILES.length} stylesheets, ` +
+    `${namesChecked} names in the two documents`,
 );
