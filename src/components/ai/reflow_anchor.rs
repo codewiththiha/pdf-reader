@@ -250,7 +250,7 @@ fn collect_text_nodes(node: &web_sys::Node, out: &mut Vec<web_sys::Node>) {
                 // host — never reaches it. The class check is what keeps the
                 // offsets honest if it is ever moved inside one; it costs one
                 // `DOMTokenList::contains` per element.
-                if classes.contains("glossLayer") || classes.contains("tx-measure") {
+                if classes.contains("gloss-layer") || classes.contains("tx-measure") {
                     return;
                 }
             }

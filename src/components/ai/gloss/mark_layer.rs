@@ -94,8 +94,8 @@ pub fn GlossMarkLayer(
 ) -> impl IntoView {
     view! {
         <div
-            class="glossLayer"
-            class=("glossLayer-selecting", move || selecting.get())
+            class="gloss-layer"
+            class=("gloss-layer-selecting", move || selecting.get())
             aria-hidden="false"
         >
             <For
