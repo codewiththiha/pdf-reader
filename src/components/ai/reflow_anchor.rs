@@ -511,7 +511,7 @@ pub fn anchor_of(state: ReaderState, spot: &ReflowSpot) -> Option<PageAnchor> {
     // A block the cut has not placed yet answers page 1 rather than nothing —
     // the same leniency a search hit gets (`effects::reader::search`), because
     // the box below is what actually locates the selection, and refusing an
-    // anchor here would refuse the Info pill over text that is plainly on
+    // anchor here would refuse the Explain pill over text that is plainly on
     // screen. It happens only in the gap between a document opening and its
     // first measure pass.
     let page = page_of_block(state.document.content.reflow, spot.block).unwrap_or(1);

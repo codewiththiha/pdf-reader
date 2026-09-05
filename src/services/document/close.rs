@@ -65,7 +65,7 @@ pub fn close_document(state: AppState) {
     // so the next open of this book paints them again.
     state.reader.gloss.reset();
     // Drop any in-flight AI selection/card so a stale popover_open cannot
-    // hide the Info button or swallow the first open on the next document.
+    // hide the Explain button or swallow the first open on the next document.
     state.reader.ai_selection.reset();
     state.ui.sidebar.set(SidebarMode::None);
     // The paper session forgets the book and drops the backdrop back to the

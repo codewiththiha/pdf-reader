@@ -42,7 +42,7 @@
 .ai-reveal-delay-3 { animation-delay: 0.12s; }
 
 /* ---------------------------------------------------------------------
-   6. Selection pill entrance — the "Info" pill floats up from below the
+   6. Selection pill entrance — the "Explain" pill floats up from below the
    selection. The X translate stays -50% in both keyframes because the
    pill is centered via translateX(-50%).
    --------------------------------------------------------------------- */

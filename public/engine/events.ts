@@ -6,7 +6,7 @@
 // three event names, and a name that disagrees on the two sides fails at
 // runtime and nowhere else — no compiler, no type, no error. A misspelled
 // constant here does not throw; it silently stops internal links from
-// navigating, or the "Info" pill from ever appearing over a selection.
+// navigating, or the "Explain" pill from ever appearing over a selection.
 //
 // The app's full table is `src/events.rs`, which also holds the events the app
 // dispatches to itself (`pdfreader:gloss-open`, `pdfreader:ai-chunk`, ...).

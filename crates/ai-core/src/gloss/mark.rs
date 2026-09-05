@@ -95,7 +95,7 @@ pub trait MarkAnchor: Clone + Debug + PartialEq + Serialize + DeserializeOwned {
 ///
 /// Unlike a screen rect it survives scroll, zoom and view-mode flips: the
 /// live screen box is re-derived from the page host element whenever anything
-/// moves. Shared by the selection Info pill and the gloss card so both glue
+/// moves. Shared by the selection Explain pill and the gloss card so both glue
 /// to the page without each inventing its own coordinate system.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct PageAnchor {

@@ -1,6 +1,6 @@
 //! The open path, wired up.
 //!
-//! Every open (a stroke click or the selection Info pill) arrives as a
+//! Every open (a stroke click or the selection Explain pill) arrives as a
 //! `pdfreader:gloss-open` CustomEvent carrying the mark, which
 //! [`use_open_listener`] turns into a pending mark plus a bumped request
 //! nonce. [`use_open_effect`] tracks that nonce, asks [`open_verdict`] what
@@ -29,7 +29,7 @@ use super::geometry::GlossGeometry;
 use super::open::GlossOpen;
 use super::GlossController;
 
-/// Every open (stroke click OR Info pill) arrives as a CustomEvent that
+/// Every open (stroke click OR Explain pill) arrives as a CustomEvent that
 /// carries the mark and bumps the nonce. Tracking `request` is what makes a
 /// second open of an already-open popover re-run the open effect.
 pub fn use_open_listener(state: AppState, ctrl: GlossController) {
@@ -106,7 +106,7 @@ fn begin_open(
     viewport: RwSignal<(f64, f64)>,
     mark: GlossMark,
 ) -> GlossMark {
-    // Self-contained open: mark is already in hand (Info pill or stroke
+    // Self-contained open: mark is already in hand (Explain pill or stroke
     // click). Persist it so re-open/re-explain reuse the id.
     let mark = ctrl.commands.add_mark.run(mark);
 

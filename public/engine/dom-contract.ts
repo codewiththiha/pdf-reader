@@ -4,7 +4,7 @@
 // call each other — they meet in the DOM, through attribute names, the values
 // those attributes carry, two class names, and the shape of element ids. A
 // name that disagrees is not an error anywhere: it is a `closest` that returns
-// null, so a selection inside a page stops producing an "Info" pill, or a
+// null, so a selection inside a page stops producing an "Explain" pill, or a
 // canvas stops finding the host it was registered against, and the only symptom
 // is a reader that quietly does nothing.
 //
@@ -30,7 +30,7 @@ export const HOST_PAGE_ATTR = "data-host-page";
 /** On a rendered block of a reflowable document: its index in document order. */
 export const BLOCK_INDEX_ATTR = "data-block-index";
 
-/** On the AI menu's root: a press here is not a click that clears a selection. */
+/** On the AI pill's root: a press here is not a click that clears a selection. */
 export const AI_POPOVER_ATTR = "data-ai-popover";
 
 // --- values `HOST_ATTR` carries -------------------------------------------

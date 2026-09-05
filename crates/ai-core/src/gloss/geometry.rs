@@ -41,7 +41,7 @@ pub struct GlossBox {
 const MAX_GLOSS_CHARS: usize = 60;
 
 /// Soft edge of the length gate: selections up to twice [`MAX_GLOSS_CHARS`]
-/// still earn a (muted, explaining) Info pill; past this the menu hides.
+/// still earn a (muted, explaining) Explain pill; past this it hides.
 const MAX_GLOSS_HINT_CHARS: usize = MAX_GLOSS_CHARS * 2;
 
 /// Whether `text` can be looked up as a word.

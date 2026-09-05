@@ -32,12 +32,12 @@ let lastDetailKey: string | null = null;
 // Plain clicks (no drag) produce NO selectionchange when the selection is
 // already collapsed — exactly the state the AI UI leaves behind after it
 // suppresses a clear. Any press outside the AI UI therefore schedules one
-// recheck, so a stale detail (ghost "Info" pill) cannot linger.
+// recheck, so a stale detail (ghost "Explain" pill) cannot linger.
 let clickClearTimer: ReturnType<typeof setTimeout> | null = null;
 // Set by every mousedown: true when the press landed inside the AI UI
-// (selection menu / popover, marked [data-ai-popover]). Pressing the "Info"
-// button collapses the document selection, but that collapse must NOT clear
-// the detail state — the button click fires right after and still needs the
+// (the Explain pill and its popover, marked [data-ai-popover]). Pressing the
+// "Explain" button collapses the document selection, but that collapse must
+// NOT clear the detail state — the button click fires right after and still needs the
 // detail (and its anchor rect) to be there. Kept until the next mousedown
 // rather than cleared on mouseup: the debounced clear runs after mouseup.
 let pointerDownInAiUi = false;

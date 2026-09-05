@@ -1,8 +1,8 @@
 //! The application's component system, organized by what a component is
 //! used for:
 //!
-//!   * `ai`         — AI-assisted reading (selection-anchored menu,
-//!     explanation popover)
+//!   * `ai`         — AI-assisted reading (the selection pill and the
+//!     explanation popover it opens)
 //!   * `primitives` — generic UI (button, icon, popover, …); must never
 //!     know what a PDF reader is
 //!   * `shell` — the unified application shell (the ShellController that

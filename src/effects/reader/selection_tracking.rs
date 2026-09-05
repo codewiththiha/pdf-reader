@@ -7,7 +7,7 @@
 //! host the format family that painted it, the spot a reflowable selection's
 //! durable identity) — or `null` to clear.
 //! Collapses caused by pressing inside the AI UI itself are suppressed
-//! engine-side, so the "Info" button survives its own click.
+//! engine-side, so the "Explain" button survives its own click.
 //!
 //! This effect is the single place that turns that event into writes on
 //! `state.reader.ai_selection`: `detail` carries the text/context, `anchor`

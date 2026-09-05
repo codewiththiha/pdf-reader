@@ -57,10 +57,10 @@ impl SelectionDetail {
 pub struct AiSelectionState {
     /// The current selection details, or `None` if nothing is selected.
     pub detail: RwSignal<Option<SelectionDetail>>,
-    /// The selection's origin in page space, so the Info pill can follow
+    /// The selection's origin in page space, so the Explain pill can follow
     /// scroll and die when it leaves the viewport.
     pub anchor: RwSignal<Option<PageAnchor>>,
-    /// Whether the "Info" popover is currently open.
+    /// Whether the "Explain" popover is currently open.
     pub popover_open: RwSignal<bool>,
 }
 
@@ -77,7 +77,7 @@ impl Default for AiSelectionState {
 impl AiSelectionState {
     /// Clear selection detail, page anchor and the open flag. Called on
     /// document close so a card left open on PDF A cannot poison PDF B
-    /// (a stale `popover_open = true` would hide the Info button and make
+    /// (a stale `popover_open = true` would hide the Explain button and make
     /// the next open a no-op).
     pub fn reset(&self) {
         self.detail.set(None);

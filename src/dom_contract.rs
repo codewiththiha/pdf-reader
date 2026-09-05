@@ -5,7 +5,7 @@
 //! those attributes carry, one class name, and the shape of element ids.
 //! Neither compiler can see the other, so a rename here is not an error there —
 //! it is a query that quietly returns nothing. A host that stops advertising
-//! itself is a selection that never becomes an "Info" pill; an id that changes
+//! itself is a selection that never becomes an "Explain" pill; an id that changes
 //! shape is a canvas that never finds the page it belongs to.
 //!
 //! What lives here is the half Rust uses as a *value*: in a `closest` selector,
@@ -19,7 +19,7 @@
 //!   `crate::components::formats::reflow::stream`. It is the first thing the
 //!   engine's selection tracker asks a host for; the id shape is only the
 //!   fallback.
-//! * `data-ai-popover` — marks the AI menu's root so that a press inside it is
+//! * `data-ai-popover` — marks the AI pill's root so that a press inside it is
 //!   not read as a click that clears the selection
 //!   (`crate::components::ai::selection_pill`).
 //!

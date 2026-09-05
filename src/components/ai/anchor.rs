@@ -1,5 +1,5 @@
 //! Shared page-space anchor watchers: glue a [`PageAnchor`] to the live page
-//! host so the selection Info pill and the gloss card both follow scroll/zoom
+//! host so the selection Explain pill and the gloss card both follow scroll/zoom
 //! and die when their origin leaves a configurable band of the viewport.
 //!
 //! The pure data type lives in `ai_core::gloss::PageAnchor` so state can hold
@@ -102,7 +102,7 @@ impl FormatAnchorBridge for ReflowAnchorBridge {
     fn screen_box(&self, _anchor: &PageAnchor, _scale: f64) -> Option<GlossBox> {
         // The spot IS the anchor for a document made of type. The box a mark was
         // captured with is a viewport snapshot: it is stale after one scroll, and
-        // re-using it would move the card and the Info pill onto whatever words
+        // re-using it would move the card and the Explain pill onto whatever words
         // happen to be there now. So a spot that cannot be resolved — a block
         // virtualized away, one a re-parse orphaned, or an envelope from a
         // version this build cannot read — answers `None`, which is the same
@@ -125,7 +125,7 @@ impl FormatAnchorBridge for ReflowAnchorBridge {
 }
 
 /// The screen box of one anchor, whichever format is open — the resolver the
-/// card and the Info pill watch through.
+/// card and the Explain pill watch through.
 ///
 /// `spot` is the reflowable identity carried beside the anchor (a mark's
 /// envelope, or the selection event's); it is ignored for a PDF, whose anchor
@@ -256,7 +256,7 @@ pub fn no_invalidation() -> Signal<u64> {
 ///
 /// A re-cut moves blocks between pages, so a mark's page and its pixels both
 /// change without anything scrolling or zooming. This is the signal that makes
-/// the card and the Info pill notice.
+/// the card and the Explain pill notice.
 ///
 /// The typography is deliberately NOT read here. Every knob that moves type
 /// moves the cut (the measure column re-publishes it), so the cut's generation
@@ -296,7 +296,7 @@ pub fn reflow_invalidation(state: ReaderState) -> Signal<u64> {
     })
 }
 
-/// The selection "Info" pill lives until its origin fully leaves the viewport.
+/// The selection "Explain" pill lives until its origin fully leaves the viewport.
 ///
 /// `1.0` is deliberate, not an untuned placeholder: the pill is small and
 /// passive (it morphs nothing and owns no screen real estate), so it should
@@ -403,7 +403,7 @@ pub(super) fn selection_start() -> Option<(web_sys::Range, web_sys::Element)> {
 /// The page number comes from the host under the selection, not from the
 /// reader's current-page signal. In the virtualized continuous reader those can
 /// temporarily diverge, and anchoring to the signal can point at an unmounted
-/// page host — which makes the floating Info pill vanish even though the
+/// page host — which makes the floating Explain pill vanish even though the
 /// selection itself is valid and visible.
 ///
 /// The host is found through the `data-reader-host` attribute rather than a
@@ -450,7 +450,7 @@ pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
 /// The id scheme is `ai_core::gloss::mark_id`'s, and this is the only caller
 /// that supplies it with a clock: the crate's gloss half is pure, so reading
 /// the millisecond stamp belongs to the app side of the seam. Every capture
-/// path goes through here — the Info pill's click with an anchor in hand, its
+/// path goes through here — the Explain pill's click with an anchor in hand, its
 /// fallback that walks the live range, and the reflowable one that has a spot
 /// envelope to carry — so a mark cannot end up with an id no reader can
 /// address, which is what three separately formatted `g{page}-{now}` literals
@@ -468,7 +468,7 @@ pub fn captured_mark(
     }
 }
 
-/// The same capture, as a whole mark — the Info pill's fallback when the
+/// The same capture, as a whole mark — the Explain pill's fallback when the
 /// anchor it captured with its selection is gone.
 pub fn capture_selection_mark(scale: f64, word: String, context: String) -> Option<GlossMark> {
     Some(captured_mark(word, context, capture_selection(scale)?))

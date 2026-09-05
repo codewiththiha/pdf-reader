@@ -6,7 +6,7 @@
 //! * The geometry + spring math (pure) lives in `ai_core::gloss`, including
 //!   the side-aware card placement ([`ai_core::gloss::place_card`]).
 //! * Page-aware anchors live in [`crate::components::ai::anchor`] (shared
-//!   with the selection Info pill).
+//!   with the selection Explain pill).
 //! * [`controller`]     — the state machine hub: grouped state slices
 //!   (content / geometry / open / drag / cache), the shared commands,
 //!   and the open path as a named verdict + transitions.

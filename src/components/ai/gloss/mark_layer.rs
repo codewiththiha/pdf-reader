@@ -248,7 +248,7 @@ pub fn GlossMarkLayer(
 }
 
 /// Tell the popover to open on `mark`. Used by both the persisted stroke
-/// click and the selection Info pill so every open is a self-contained
+/// click and the selection Explain pill so every open is a self-contained
 /// CustomEvent (mark in the detail) that bumps `open_req` — never a bare
 /// `popover_open = true` that races against `detail` being cleared.
 pub fn request_gloss_open(mark: &GlossMark) {

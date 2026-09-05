@@ -20,7 +20,7 @@
 :root {
   /* One elevation for every floating surface — the card is a panel like the
      menus, not a special object with its own heavier shadow. */
-  --gloss-shadow-menu: var(--shadow-float);
+  --gloss-shadow-float: var(--shadow-float);
   --gloss-shadow-card: var(--shadow-float);
 }
 

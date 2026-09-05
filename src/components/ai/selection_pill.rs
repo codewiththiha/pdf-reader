@@ -11,7 +11,7 @@ use app_chrome::icon::{Icon, IconName};
 use crate::state::AppState;
 
 /// A small floating pill that appears near the user's text selection.
-/// Contains the "Info" button that opens the AI popover.
+/// Contains the "Explain" button that opens the AI popover.
 ///
 /// Position is re-derived from a page-space anchor on every scroll/zoom/mode
 /// change, so the pill travels with the word and disappears once the origin
@@ -23,7 +23,7 @@ use crate::state::AppState;
 /// (`ai_core::gloss::is_hintable`), and vanishes beyond it — a disabled affordance reads as a rule, where a silently
 /// vanishing pill reads as a bug.
 ///
-/// The Info click does **not** flip `popover_open` and hope `detail` survives:
+/// The Explain click does **not** flip `popover_open` and hope `detail` survives:
 /// it builds a self-contained [`GlossMark`] at click time and dispatches the
 /// same `pdfreader:gloss-open` event the persisted stroke uses. The popover's
 /// listener bumps `open_req` and sets `pending_mark`, so the open effect is
@@ -209,14 +209,14 @@ pub fn SelectionPill(state: AppState) -> impl IntoView {
                     }
                     class="flex min-h-11 items-center gap-1.5 rounded-full border border-line \
                            bg-surface px-5 text-sm font-medium tracking-wide text-ink \
-                           shadow-[var(--gloss-shadow-menu)] \
+                           shadow-[var(--gloss-shadow-float)] \
                            transition-[transform,background-color,opacity] duration-150 ease-out \
                            active:scale-[0.96] \
                            disabled:cursor-not-allowed disabled:opacity-45 disabled:active:scale-100 \
                            focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
                     <Icon name=IconName::More size=13 />
-                    <span>"Info"</span>
+                    <span>"Explain"</span>
                 </button>
             </div>
         </Show>
