@@ -551,6 +551,8 @@ scripts/                  engine bundling, engine smoke test, and the
                           consistency checks CI runs (versions, formats,
                           doc paths, event names, the DOM contract)
 tests/                    source-level tests (e.g. the conditional-class lint)
+release-notes/            one file per version; the release workflow publishes
+                          the one matching the tag as the release body
 ```
 
 ### Engine API
