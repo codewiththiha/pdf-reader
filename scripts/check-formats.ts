@@ -24,15 +24,7 @@
 // This is the TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-formats.js` so CI can run it with plain `node`.
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function read(rel: string): string {
-  return fs.readFileSync(path.join(root, rel), "utf8");
-}
+import { read } from "./repo.js";
 
 /** One openable kind, as `reader_core::format::SUPPORTED` declares it. */
 type Kind = { name: string; extensions: string[]; mimes: string[] };

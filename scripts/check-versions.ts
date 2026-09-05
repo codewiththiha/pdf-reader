@@ -15,20 +15,16 @@
 // This is the TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-versions.js` so CI can run it with plain `node`.
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import { isFile, read } from "./repo.js";
 
 type VersionSource = [file: string, version: string];
 
 function readJson(rel: string): unknown {
-  return JSON.parse(fs.readFileSync(path.join(root, rel), "utf8"));
+  return JSON.parse(read(rel));
 }
 
 function readCargoVersion(rel: string): string {
-  const text = fs.readFileSync(path.join(root, rel), "utf8");
+  const text = read(rel);
   const m = /^version\s*=\s*"([^"]+)"/m.exec(text);
   if (!m || !m[1]) throw new Error(`no [package] version found in ${rel}`);
   return m[1];
@@ -62,8 +58,8 @@ console.log(`versions agree: ${version}`);
 // (the wasm shim just gets `undefined`), so this step cross-checks the
 // compiled facade (public/pdfEngine.js, produced by the build:ts step above)
 // against every extern the bridge declares under the PDFReader namespace.
-const bridgePath = path.join(root, "crates/pdf-engine/src/bridge.rs");
-const facadePath = path.join(root, "public/pdfEngine.js");
+const BRIDGE = "crates/pdf-engine/src/bridge.rs";
+const FACADE = "public/pdfEngine.js";
 
 function bridgePdfReaderNames(bridgeSrc: string): string[] {
   // Only `extern "C"` declarations: `listen`/`has_pdf_reader` are plain pub
@@ -105,9 +101,9 @@ function bridgePdfReaderNames(bridgeSrc: string): string[] {
   return names;
 }
 
-if (fs.existsSync(facadePath)) {
-  const bridgeSrc = fs.readFileSync(bridgePath, "utf8");
-  const facadeSrc = fs.readFileSync(facadePath, "utf8");
+if (isFile(FACADE)) {
+  const bridgeSrc = read(BRIDGE);
+  const facadeSrc = read(FACADE);
   const missing: string[] = [];
   for (const name of bridgePdfReaderNames(bridgeSrc)) {
     // The facade is a shorthand object literal; the LAST property can carry

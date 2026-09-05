@@ -29,34 +29,7 @@
 // This is the TypeScript source; Trunk's pre-build hook compiles it to
 // `scripts/check-dom-contract.js` so CI can run it with plain `node`.
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function read(rel: string): string {
-  return fs.readFileSync(path.join(root, rel), "utf8");
-}
-
-function isFile(rel: string): boolean {
-  return fs.existsSync(path.join(root, rel)) && fs.statSync(path.join(root, rel)).isFile();
-}
-
-/** Every directory in the repo, minus the ones that are not source. */
-const SKIP_DIRS = new Set([".git", "node_modules", "target", "dist", ".arena", "out", "build"]);
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      walk(path.posix.join(dir, entry.name), out);
-    } else {
-      out.push(path.posix.join(dir, entry.name));
-    }
-  }
-  return out;
-}
+import { read, walk } from "./repo.js";
 
 const ALL_FILES = walk(".");
 
