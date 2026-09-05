@@ -133,6 +133,11 @@ jobs:
       - name: Verify comment paths resolve
         run: node scripts/check-doc-paths.js
 
+      # The engine and the app agree on three window-event names, declared once
+      # in Rust and once in TypeScript. A disagreement is silent at build time.
+      - name: Verify the window-event tables agree
+        run: node scripts/check-events.js
+
   # The Linux job above cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
   # feature set that feeds it) would otherwise first surface when a release
