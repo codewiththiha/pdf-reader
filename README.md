@@ -586,11 +586,11 @@ undefined.
 
 ### State model
 
-A single `AppState` tree of Leptos signals is threaded through the component tree: the app's
-chrome and UI, the library, and the reader — whose own branches are the document, the viewer, the
-zoom transaction, search, the gloss marks and the AI's selection state. Effects subscribe to it
-rather than components talking to one another, which keeps ownership of each concern in exactly one
-place.
+A single `AppState` tree of Leptos signals is threaded through the component tree: the persisted
+`settings`, the reader, the library, and the app's own `ui` state. The reader's branches are the
+document, the viewer — page, mode, fit, container size, and the zoom transaction inside it —
+search, the gloss marks and the AI's selection state. Effects subscribe to it rather than
+components talking to one another, which keeps ownership of each concern in exactly one place.
 During a zoom, for example, a single system owns the display scale and render scale, and every
 zoom control posts a request to it rather than writing the scale directly.
 
@@ -603,12 +603,15 @@ zoom control posts a request to it rather than writing the scale directly.
 - **Rust** with the `wasm32-unknown-unknown` target
 - **Node.js** 20 or newer, required by the Tailwind v4 CLI
 - **Trunk**, the WebAssembly bundler
+- **The Tauri CLI**, which the `cargo tauri dev` and `cargo tauri build` commands below run
+  through
 - **Tauri v2 system dependencies** for your platform, listed at
   <https://tauri.app/start/prerequisites/>
 
 ```bash
 rustup target add wasm32-unknown-unknown
 cargo install trunk
+cargo install tauri-cli --version "^2" --locked
 ```
 
 ### Installation
