@@ -30,10 +30,7 @@ use crate::effects::reader::navigation_sync::navigation_sync;
 use crate::effects::reader::reading_progress::reading_progress;
 use crate::features::reader::use_reader_virtualizers;
 use crate::services::document::close_document;
-use crate::state::reader::ZoomCommand;
 use crate::state::AppState;
-use reader_core::view::{PAGE_GAP, ViewMode};
-use reader_core::zoom_math::FitMode;
 use reader_core::settings::PageIndicatorStyle;
 use pdf_engine::types::DocStatus;
 
@@ -53,77 +50,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     let rv = use_reader_virtualizers(vs);
 
-    // Seed margin from persisted settings once the reader mounts. The
-    // horizontal strip is the one mode that never carries a page margin, so
-    // the seed honours the same mode rule as the sync effect below.
-    {
-        let m = state.settings.with_untracked(|st| st.layout.page_margin);
-        let horizontal = vs.viewer.mode.get_untracked() == ViewMode::ScrollHorizontal;
-        vs.viewer.page_margin.set(if horizontal { 0.0 } else { m });
-    }
-
-    // No-gap pref → runtime gap + rescale. (The continuous text stream is
-    // not party to this: it lays blocks edge to edge with no gap at all,
-    // and the vertical page strip it replaced is simply not mounted while
-    // a text document streams.)
-    {
-        let v = rv.virtualizer.clone();
-        Effect::new(move |_| {
-            let no_gap = state.settings.with(|st| st.layout.no_gap);
-            let gap = if no_gap { 0.0 } else { PAGE_GAP };
-            if (vs.viewer.page_gap.get_untracked() - gap).abs() < 1e-9 {
-                return;
-            }
-            vs.viewer.page_gap.set(gap);
-            v.rescale(1.0, vs.document.content.metrics.strip_sizes(gap));
-        });
-    }
-
-    // Page margin pref — cross-axis for the vertical strip and both
-    // paginated shells. The horizontal strip is exempt: it lays pages
-    // edge-to-edge along the scroll axis, so side air there would read as
-    // dead space between pages rather than margin. This effect resolves the
-    // stored pref to an effective margin of 0 whenever the mode is
-    // ScrollHorizontal — without touching the stored value — and tracks the
-    // mode, so leaving the horizontal strip restores whatever the setting
-    // holds on the flip itself.
-    {
-        let (v, hv) = (rv.virtualizer.clone(), rv.h_virtualizer.clone());
-        Effect::new(move |_| {
-            let stored = state.settings.with(|st| st.layout.page_margin);
-            let horizontal = vs.viewer.mode.get() == ViewMode::ScrollHorizontal;
-            let m = if horizontal { 0.0 } else { stored };
-            if (vs.viewer.page_margin.get_untracked() - m).abs() < 1e-9 {
-                return;
-            }
-            vs.viewer.page_margin.set(m);
-            let scale = vs.viewer.zoom.visual_scale();
-            let gap = vs.viewer.page_gap.get_untracked();
-            let widths = vs
-                .document
-                .content.metrics
-                .intrinsic
-                .with_untracked(|w| w.iter().map(|s| s.width).collect::<Vec<f64>>());
-            // Vertical: margin is cross-axis; sizes unchanged aside from gap.
-            v.rescale(1.0, vs.document.content.metrics.strip_sizes(gap));
-            // Horizontal: margin is main-axis — which the exempt mode simply
-            // never has (m resolves to 0 there).
-            hv.rescale(1.0, move |i| widths.get(i).copied().unwrap_or(0.0) * scale + 2.0 * m);
-            // A margin change must re-fit the page under the reader: the fit
-            // target derives from the usable width (`cw - 2*margin`), so the
-            // page only visibly gains side space once that scale is re-resolved
-            // against the newly applied margin. Posting here guarantees the
-            // refit even if no other watcher happens to fire for a setting-only
-            // change, and is a no-op when no fit is active. Entering the
-            // horizontal strip skips the post: that switch drops the fit to
-            // None anyway, and resolving the OUTGOING fit against the new axis
-            // is exactly the zoom jump the mode-change guard below exists to
-            // prevent.
-            if !horizontal && vs.viewer.fit.get_untracked() != FitMode::None {
-                vs.viewer.zoom.post(ZoomCommand::Refit, false);
-            }
-        });
-    }
+    // The layout prefs (page gap, page margin) resolve their settings into the
+    // strips' size models. Installed BEFORE the reflow layout effect below,
+    // which reads the gap they resolve.
+    crate::effects::reader::layout_prefs::layout_prefs(
+        state,
+        rv.virtualizer.clone(),
+        rv.h_virtualizer.clone(),
+    );
 
     // The vertical text strip's size model: page units sized to the sum of
     // their blocks, projected into the shared measurement store whenever the
@@ -135,52 +69,9 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // it: one re-cut republishes the pages AND moves the chapters.
     crate::effects::reader::reflow_outline::reflow_outline(state);
 
-    let prev_mode = StoredValue::new(vs.viewer.mode.get_untracked());
-    Effect::new(move |_| {
-        let mode = vs.viewer.mode.get();
-        let prev = prev_mode.get_value();
-        if mode == prev {
-            return;
-        }
-        prev_mode.set_value(mode);
-        // The incoming view's strip (if it has one) mounts fresh and anchors
-        // itself to `viewer.page` in `ScrollShell`; until it has, its
-        // dominant is not the reader's page. Raised HERE, in the same flush
-        // as the mode flip, so the scroll→page arm that re-runs for the flip
-        // sees it and stands down rather than reading the unplaced strip.
-        if matches!(mode, ViewMode::ScrollVertical | ViewMode::ScrollHorizontal) {
-            vs.viewer.awaiting_anchor.set(true);
-        }
-        // Entering the continuous text stream resets the zoom to 1: the
-        // stream has no page to fit — the window is the page, and type
-        // size belongs to the typography settings — so a fit resolved
-        // against the A4 page model would only shrink the text below its
-        // setting. The paged modes re-resolve their own fit on entry (the
-        // branch below), so nothing needs restoring on the way out.
-        if mode == ViewMode::ScrollVertical
-            && vs.reflow_streaming()
-            && !vs.viewer.zooming().get_untracked()
-        {
-            vs.viewer.fit.set(FitMode::None);
-            vs.viewer.zoom.initialize(1.0);
-        }
-        // A mode flip leaves the outgoing view's rasters behind and nothing
-        // necessarily renders right after, so the engine's own sweep (which
-        // only runs inside a render) would never fire. Release now.
-        pdf_engine::api::sweep();
-        let auto = state.settings.with(|s| s.layout.auto_scale);
-        if mode == ViewMode::ScrollHorizontal {
-            // Horizontal is one page per virtual item. Do not reinterpret the
-            // outgoing layout's fit against the new axis: a single/vertical
-            // width fit would become a height fit here and drop the readout
-            // by almost half, while a spread width fit would jump the other
-            // way. Hand ownership to the already-resolved `desired` scale so
-            // every mode switch preserves the reader's zoom.
-            vs.viewer.fit.set(FitMode::None);
-        } else if matches!(mode, ViewMode::Spread) || (auto && mode.is_paginated()) {
-            vs.viewer.fit.set(FitMode::Width);
-        }
-    });
+    // What a mode flip owes: the incoming strip's anchor, the stream's zoom, the
+    // outgoing view's rasters, and the fit the next mode owns.
+    crate::effects::reader::mode_change::mode_change(state);
 
     let actuator = crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom controller is created and driven here, and lives exactly as
