@@ -250,22 +250,32 @@ pub fn no_invalidation() -> Signal<u64> {
     Signal::derive(|| 0u64)
 }
 
-/// The `invalidate` input a reflowable document needs: the page cut, the
-/// geometry it was cut with, and the stream's extent.
+/// The `invalidate` input a reflowable document needs: the page cut's
+/// generation, the geometry it was cut with, and the stream's extent.
 ///
 /// A re-cut moves blocks between pages, so a mark's page and its pixels both
 /// change without anything scrolling or zooming. This is the signal that makes
 /// the card and the Info pill notice.
 ///
 /// The typography is deliberately NOT read here. Every knob that moves type
-/// moves the cut (the measure column re-publishes it), so `cuts` and `geometry`
-/// already cover it — and a knob that does not move them (the ink dial, the
-/// column's alignment) cannot move a mark either. Reading settings instead
-/// would re-derive every stroke on a colour change for nothing.
+/// moves the cut (the measure column re-publishes it), so the cut's generation
+/// and `geometry` already cover it — and a knob that moves neither (the ink
+/// dial, the column's alignment) cannot move a mark either. Reading settings
+/// instead would re-derive every stroke on a colour change for nothing.
 ///
 /// It is a FINGERPRINT rather than the vectors themselves: `Signal<u64>`
 /// notifies only when the value differs, so a re-measure that re-cut nothing
 /// costs one hash and wakes nobody.
+///
+/// The cut enters it as its GENERATION counter, not as its contents. This
+/// derive re-runs on every scroll frame of a reflowable document (the stroke
+/// layer reads it through [`layer_refresh`], which tracks scroll), and hashing
+/// the split meant walking every page boundary of the open book once per frame
+/// — hundreds of them in a long novel, to conclude, on almost every frame, that
+/// nothing had moved. One counter read says the same thing. The counter's
+/// granularity is coarser by design: it bumps on a re-publish that changed
+/// nothing, and the cost of that is one wake of the consumers, which is less
+/// than the hash it replaced.
 pub fn reflow_invalidation(state: ReaderState) -> Signal<u64> {
     Signal::derive(move || {
         use std::hash::{Hash, Hasher};
@@ -273,12 +283,7 @@ pub fn reflow_invalidation(state: ReaderState) -> Signal<u64> {
         // `ViewMode` is `Eq` but not `Hash`, and its discriminant is all a
         // fingerprint needs.
         (state.viewer.mode.get() as u8).hash(&mut hasher);
-        state.document.content.reflow.cuts.with(|cuts| {
-            cuts.len().hash(&mut hasher);
-            for cut in cuts.iter() {
-                cut.start.hash(&mut hasher);
-            }
-        });
+        state.document.content.reflow.cut_generation.get().hash(&mut hasher);
         let geo = state.document.content.reflow.geometry.get();
         geo.content_width.to_bits().hash(&mut hasher);
         geo.content_height.to_bits().hash(&mut hasher);

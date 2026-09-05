@@ -15,17 +15,24 @@
 //!   stays the one `PageAnchor` shape and a PDF's plain-sentence context can
 //!   never be mistaken for a spot;
 //! * the PROJECTION — `block + [start, end)` back to viewport pixels, by
-//!   asking the DOM: block → page through the live `block_page` map, page →
-//!   host element, then a real `Range` over the block's text nodes.
+//!   asking the DOM: block → the row element rendering it (by id, and in the
+//!   paginated modes only if that row is mounted under its page's host), then a
+//!   real `Range` over the row's text nodes.
 //!
 //! Projection is deliberately never cached. It runs on the watcher's frame and
 //! on the stroke layer's memo, both of which already re-run for scroll and
-//! zoom, and a cached rect is exactly the thing a re-flow invalidates.
+//! zoom, and a cached rect is exactly the thing a re-flow invalidates. The
+//! ENVELOPE is the opposite case: it is persisted content that only ever
+//! changes by being replaced, and it is re-read on every one of those frames,
+//! so its parse is memoized ([`parse_spot`]) against the string it came from.
 //!
 //! The arithmetic is kept pure and separate from the DOM walk so it is
 //! unit-testable on the host: [`index_of_text_node`] (character offsets → a
 //! text node and an offset inside it), [`clamp_span`] (a span against the text
 //! that is actually there) and [`union_box`] (client rects → one box).
+
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use ai_core::gloss::{GlossBox, PageAnchor, ReflowSpot};
 use leptos::prelude::*;
@@ -35,6 +42,7 @@ use wasm_bindgen::JsCast;
 
 use super::anchor::host_id_for_mode;
 use super::gloss::mark_layer::MARK_RADIUS;
+use crate::components::viewer::page_host::block_row_id;
 use crate::state::reader::ReflowContent;
 use crate::state::ReaderState;
 
@@ -56,8 +64,11 @@ pub const HOST_REFLOW: &str = "reflow";
 /// The host value a PDF page carries.
 pub const HOST_PDF: &str = "pdf";
 /// On a rendered block: which block of the document it is, in document order.
-/// This is the one handle a reflowable mark has on the DOM, and it is what
-/// makes the paginated modes and the continuous stream resolve identically.
+/// The identity half of the two handles a reflowable mark has on the DOM — the
+/// engine's selection tracker walks up to it with `closest`, and a capture reads
+/// the block number off it — and it is what makes the paginated modes and the
+/// continuous stream resolve identically. The lookup half is the element id,
+/// `page_host::block_row_id`, which the projection resolves per mark per frame.
 pub const BLOCK_INDEX_ATTR: &str = "data-block-index";
 
 /// What a reflowable mark's `context` holds: the spot, and the sentence that
@@ -92,6 +103,42 @@ fn parse_envelope(context: &str) -> Option<SpotEnvelope> {
     serde_json::from_str(payload).ok()
 }
 
+/// How far outside the viewport a stream row may sit and still be walked, as a
+/// fraction of the viewport's height.
+///
+/// A row's box is the slot the virtualizer reserved for it, not a tight bound
+/// on its text: the slot is sized from measured heights, but a row can still be
+/// re-laid after its measurement (a font arriving, an image decoding) and its
+/// last line can hang below the slot. A quarter screen of slack keeps the cull
+/// from ever hiding a stroke that is actually on screen, which is the one
+/// failure this could have, while still skipping every row the reader cannot
+/// see.
+const OFFSCREEN_SLACK: f64 = 0.25;
+
+/// How many contexts are remembered before the memo is dropped whole.
+///
+/// One document's marks fit far inside this, so in practice a document parses
+/// each of its envelopes once and then answers from the memo; the cap only
+/// keeps a long session across many documents from growing it forever.
+/// Clearing rather than evicting one entry keeps the hot path free of
+/// bookkeeping, and the price of a clear is a handful of JSON parses.
+const SPOT_CACHE_CAP: usize = 512;
+
+// Parsed spots, memoized by the exact context string they came from. (A `//`
+// block rather than a doc comment: rustdoc has nothing to attach a doc comment
+// on a macro invocation to, and `-D warnings` says so.)
+//
+// Keying on content is what makes this safe: a `context` is write-once —
+// `spot_envelope` produces it at capture and nothing edits it in place — so the
+// same string always parses to the same spot, and a mark whose context is
+// replaced simply arrives under a different key. `None` is cached too: a legacy
+// or malformed context is exactly as stable as a good one, and re-testing it
+// every frame is what the memo is here to stop.
+thread_local! {
+    static PARSED_SPOTS: RefCell<HashMap<String, Option<ReflowSpot>>> =
+        RefCell::new(HashMap::new());
+}
+
 /// The spot a mark carries, if it carries one.
 ///
 /// A PDF's context is a sentence, which never starts with the tag, so this is
@@ -99,8 +146,25 @@ fn parse_envelope(context: &str) -> Option<SpotEnvelope> {
 /// mark predates spots (or its offsets could not be walked at capture), and
 /// such a mark has nothing durable to be placed by — see
 /// [`super::anchor::ReflowAnchorBridge`].
+///
+/// This sits on the per-frame path: the stroke layer re-resolves every mark on
+/// every scroll and zoom frame, and the mark-list watcher asks it once per mark
+/// per tick, so it answers from a memo instead of re-parsing the JSON each
+/// time. What is NOT memoized is the projection below it — that one has to
+/// stay honest about the layout as it is right now.
 pub fn parse_spot(context: &str) -> Option<ReflowSpot> {
-    parse_envelope(context).map(|envelope| envelope.spot)
+    if let Some(hit) = PARSED_SPOTS.with(|cache| cache.borrow().get(context).copied()) {
+        return hit;
+    }
+    let spot = parse_envelope(context).map(|envelope| envelope.spot);
+    PARSED_SPOTS.with(|cache| {
+        let mut memo = cache.borrow_mut();
+        if memo.len() >= SPOT_CACHE_CAP {
+            memo.clear();
+        }
+        memo.insert(context.to_string(), spot);
+    });
+    spot
 }
 
 /// The sentence to hand the model for a mark, whichever format made it: the
@@ -129,27 +193,50 @@ pub fn page_of_block(reflow: ReflowContent, block: usize) -> Option<u32> {
 /// away — the same answer a PDF gives for an unmounted page, with the same
 /// consequence: the mark hides until the reader scrolls back to it.
 ///
-/// The lookup is one attribute selector. It resolves inside the page host when
-/// the block's page is mounted (the paginated modes, where scoping the query
-/// keeps a stale row elsewhere in the document from answering), and falls back
-/// to the whole document for the continuous stream, whose rows are not inside
-/// any page host at all.
+/// The lookup is one id read. In the paginated modes it is answered only when
+/// the row is mounted under the host this mode puts its page in, so a stale row
+/// elsewhere in the document cannot speak for a block the reader is not looking
+/// at; the continuous stream has no page hosts at all, so its rows answer
+/// wherever they are mounted.
+///
+/// Both halves are special-cased rather than left to a general search, and the
+/// reason is cost: this runs once per mark per refresh, and the stream's layer
+/// refreshes on every scroll frame. The version this replaced built an
+/// `[data-block-index='n']` selector per call, resolved the page's host id, and
+/// ran a scoped `querySelector` that — in the stream, where no host exists —
+/// always failed and was followed by a document-wide one. Two DOM searches and
+/// two allocations per mark per frame, to reach the answer one id read gives.
 fn block_node(state: ReaderState, block: usize, mode: ViewMode) -> Option<web_sys::Element> {
-    let reflow = state.document.content.reflow;
-    let selector = format!("[{BLOCK_INDEX_ATTR}='{block}']");
-    let page = page_of_block(reflow, block);
-    if let Some(page) = page {
-        if let Some(host) = app_chrome::hooks::dom::by_id(&host_id_for_mode(mode, page)) {
-            if let Some(el) = host.query_selector(&selector).ok().flatten() {
-                return Some(el);
+    // An id lookup, not a formatted attribute selector: this runs once per mark
+    // per refresh, the stream's layer refreshes on every scroll frame, and
+    // `querySelector` is the expensive half of this function. The rows carry
+    // both handles — see `page_host::block_row_id` for why neither replaces the
+    // other.
+    let id = block_row_id(block);
+    // The continuous stream renders one column of blocks with no page hosts in
+    // it, so there is nothing to scope the lookup to — and a block's page is
+    // meaningless there anyway (the stream is not paginated on screen). Every
+    // other mode scopes to the host first, which keeps a row that is mounted
+    // somewhere unexpected (a page mid-remount) from answering for a block the
+    // reader is not looking at.
+    let hostless = mode == ViewMode::ScrollVertical && state.reflowable_untracked();
+    if !hostless {
+        if let Some(page) = page_of_block(state.document.content.reflow, block) {
+            // One lookup, not two: ask the row whether the host it is mounted
+            // under is the one this mode puts its page in. A row that is mounted
+            // somewhere else — a page mid-remount, a stale twin — answers `None`
+            // and the mark hides, which is what a scoped `querySelector` on the
+            // host used to say, without first fetching the host to search it.
+            let scoped = format!("#{}", host_id_for_mode(mode, page));
+            if let Some(row) = app_chrome::hooks::dom::by_id(&id) {
+                if row.closest(&scoped).ok().flatten().is_some() {
+                    return Some(row);
+                }
             }
+            return None;
         }
     }
-    web_sys::window()?
-        .document()?
-        .query_selector(&selector)
-        .ok()
-        .flatten()
+    app_chrome::hooks::dom::by_id(&id)
 }
 
 /// The block's text nodes, in document order.
@@ -349,6 +436,31 @@ pub fn spot_screen_box_in(
     mode: ViewMode,
 ) -> Option<GlossBox> {
     let el = block_node(state, spot.block, mode)?;
+    // The stream keeps its whole window's worth of rows mounted and asks this
+    // of every mark on every scroll frame, so the walk below is skipped for a
+    // block that is nowhere near the viewport. That walk is the expensive half
+    // of placing a mark — it clones out every text node's contents to count
+    // characters, builds a `Range` and reads its client rects — and for a mark
+    // a screenful away its answer was always `None`.
+    //
+    // Stream only. A paginated mode's rows are clipped and positioned by their
+    // page host, where a row's own box does not bound its text, and only a
+    // handful of hosts are mounted at a time anyway — there is nothing to win
+    // and a wrong `None` to lose.
+    if mode == ViewMode::ScrollVertical {
+        if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+            let viewport = document
+                .document_element()
+                .map_or(0.0, |root| root.client_height() as f64);
+            if viewport > 0.0 {
+                let slack = viewport * OFFSCREEN_SLACK;
+                let rect = el.get_bounding_client_rect();
+                if rect.height() == 0.0 || rect.bottom() < -slack || rect.top() > viewport + slack {
+                    return None;
+                }
+            }
+        }
+    }
     let range = range_for_span(&el, spot.start, spot.end)?;
     union_box(&range_rects(&range))
 }

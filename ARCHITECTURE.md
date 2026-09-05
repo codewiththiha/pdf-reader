@@ -230,10 +230,13 @@ generalised instead of the feature being forked per format.
 - **The hosts declare themselves.** Every page host carries `data-reader-host`
   (the format family that painted it: `pdf` or `reflow`) and `data-host-page`
   (the 1-based page it shows), and every rendered block carries
-  `data-block-index`. The engine's selection tracker and the app's capture find
-  their host by asking for those attributes rather than for a class, so a format
-  joins the AI feature by publishing two attributes and no selector anywhere
-  grows a second name. The surrounding sentence a selection reports is cut out of
+  `data-block-index` plus the matching element id (`tx-block-<index>`, from
+  `viewer::page_host::block_row_id`). The engine's selection tracker and the
+  app's capture find their host by asking for those attributes rather than for a
+  class, so a format joins the AI feature by publishing two attributes and no
+  selector anywhere grows a second name; the id is the lookup half of the same
+  deal, because the gloss projection resolves a mark's block once per mark per
+  scroll frame and an id read is the cheapest question the DOM answers. The surrounding sentence a selection reports is cut out of
   the same protocol — a PDF's text layer, or a reflowable document's block row,
   whichever the selection is inside — and a row is the better sentence anyway: a
   page of type is thousands of characters, and a word is disambiguated by its

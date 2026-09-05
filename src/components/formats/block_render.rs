@@ -72,8 +72,15 @@ pub fn BlockView(
     // `reflow_core::block::subdivide_with`); the class does exactly that, for
     // both formats, from here.
     let class = if block.continuation { "tx-block tx-cont" } else { "tx-block" };
+    // The id is the lookup half of the pair the attribute is the identity half
+    // of: `data-block-index` is what the engine's selection tracker walks up to
+    // (and what tells a measure-column twin from a real row, since it gets no
+    // index at all), the id is what the gloss projection resolves a mark's
+    // block with, per mark per frame. See
+    // [`crate::components::viewer::page_host::block_row_id`].
+    let id = index.map(crate::components::viewer::page_host::block_row_id);
     view! {
-        <div class=class data-block-index=index>
+        <div class=class id=id data-block-index=index>
             {content}
         </div>
     }

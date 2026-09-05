@@ -95,6 +95,20 @@ pub fn host_id_for_mode(mode: ViewMode, page: u32) -> String {
     }
 }
 
+/// The element id of the row that renders `block` of a reflowable document, in
+/// any mode.
+///
+/// A block is the same element wherever it is mounted — a page's slot, the
+/// continuous stream's row — so its id carries no mode, unlike a host's. The
+/// gloss projection looks a mark's block up by this id rather than by a
+/// formatted `[data-block-index='n']` selector: it does so once per mark per
+/// refresh, the stream layer refreshes on every scroll frame, and an id lookup
+/// allocates nothing and searches nothing. The attribute stays: the engine's
+/// selection tracker walks up to it with `closest`, which an id cannot answer.
+pub fn block_row_id(block: usize) -> String {
+    format!("tx-block-{block}")
+}
+
 /// The canvas element id of `page` in `mode`: the host id with the canvas
 /// suffix. Kept next to [`host_id_for_mode`] because the pair must never drift —
 /// the engine registers a canvas against its host.

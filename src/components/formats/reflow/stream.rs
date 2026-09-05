@@ -52,6 +52,7 @@ use reflow_core::pager::first_block_of_page;
 
 use crate::components::formats::block_render::BlockView;
 use super::block_render;
+use crate::components::viewer::page_host::block_row_id;
 use crate::components::viewer::texture_surface::{texture_class, zoom_style};
 use super::page::content_style;
 use crate::state::reader::TypographySignal;
@@ -385,13 +386,17 @@ pub fn ReflowStreamLayout(
                                         class="tx-content"
                                         lang="en"
                                         // The row IS the block here: one text
-                                        // node tree, one virtual item. Both
-                                        // attributes are what the AI feature
-                                        // finds a reflowable mark by — the
-                                        // index for its words, the page for the
-                                        // selection tracker's page range (which
-                                        // in this mode is bookkeeping, since
-                                        // nothing here is paginated).
+                                        // node tree, one virtual item, and so
+                                        // the row carries the block's handles
+                                        // itself rather than leaving them to the
+                                        // `BlockView` inside it — the id the gloss
+                                        // projection resolves a mark's block by,
+                                        // the index the selection tracker walks up
+                                        // to, and the page for that tracker's page
+                                        // range (which in this mode is
+                                        // bookkeeping, since nothing here is
+                                        // paginated).
+                                        id=block_row_id(index)
                                         data-block-index=index
                                         data-host-page=move || {
                                             state

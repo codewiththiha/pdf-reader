@@ -52,6 +52,18 @@ pub struct ReflowContent {
     pub heights: RwSignal<Arc<Vec<f64>>>,
     /// The current page split of those heights.
     pub cuts: RwSignal<Arc<Vec<PageCut>>>,
+    /// Bumped every time the split above is re-published, so a consumer that
+    /// only needs to know THAT the pages moved can watch one integer instead of
+    /// comparing the whole cut — the gloss layer's invalidation fingerprint,
+    /// which is re-derived on every scroll frame of a reflowable document and
+    /// used to hash all of a long book's page boundaries to do it.
+    ///
+    /// It counts re-cuts, not changes: [`ReflowContent::apply_heights`] bumps it
+    /// whenever it publishes, including the rare re-measure that lands on the
+    /// split it already had. Over-notifying there costs one pass of the
+    /// consumers, which is exactly what they would have paid to find out nothing
+    /// had moved; under-notifying would strand a mark on the wrong page.
+    pub cut_generation: RwSignal<u64>,
     /// Block → 0-based page under the current split.
     pub block_page: RwSignal<Arc<Vec<u32>>>,
     /// The geometry the current split was cut with (a book-layout toggle
@@ -86,6 +98,7 @@ impl Default for ReflowContent {
             headings: RwSignal::new(Arc::new(Vec::new())),
             heights: RwSignal::new(Arc::new(Vec::new())),
             cuts: RwSignal::new(Arc::new(Vec::new())),
+            cut_generation: RwSignal::new(0),
             block_page: RwSignal::new(Arc::new(Vec::new())),
             geometry: RwSignal::new(PageGeometry::default()),
             remeasure: RwSignal::new(0),
@@ -105,6 +118,7 @@ impl ReflowContent {
         self.headings.set(Arc::new(Vec::new()));
         self.heights.set(Arc::new(Vec::new()));
         self.cuts.set(Arc::new(Vec::new()));
+        self.cut_generation.set(0);
         self.block_page.set(Arc::new(Vec::new()));
         // The geometry too: it is the split's other half (what the heights were
         // cut against), and leaving the previous document's book-layout gutter
@@ -171,6 +185,7 @@ impl ReflowContent {
 
         self.heights.set(Arc::new(heights));
         self.cuts.set(Arc::new(cuts));
+        self.cut_generation.update(|generation| *generation += 1);
         self.block_page.set(Arc::new(map));
         self.geometry.set(geo);
 
