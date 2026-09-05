@@ -23,7 +23,7 @@ use virtual_list_leptos::{Align, ScrollMode, Virtualizer};
 
 use app_chrome::hooks::dom::{h_page_list, page_list};
 use crate::state::ReaderState;
-use pdf_core::layout::TOOLBAR_H;
+use pdf_core::TOOLBAR_H;
 use reader_core::view::ViewMode;
 use reader_core::search::{BlockHit, SearchMatch, scroll_to_reveal};
 use pdf_engine::api as engine;

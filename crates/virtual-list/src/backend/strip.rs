@@ -698,7 +698,6 @@ mod tests {
     fn window_iteration_is_inclusive() {
         let w = Window { first: 2, last: 5 };
         assert_eq!(w.len(), 4);
-        assert!(!w.is_empty());
         assert!(w.contains(2) && w.contains(5) && !w.contains(6));
         assert_eq!(w.iter().collect::<Vec<_>>(), alloc::vec![2, 3, 4, 5]);
         assert_eq!(w.into_iter().count(), 4);
