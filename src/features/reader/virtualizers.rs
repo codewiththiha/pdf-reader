@@ -12,7 +12,7 @@ use virtual_list_leptos::{VirtualizerOptions, use_virtualizer};
 use reader_core::view::RENDER_BUDGET;
 
 use crate::state::ReaderState;
-use crate::viewer::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
+use crate::zoom::config::{MAX_ZOMBIES, STRIP_SCROLL_GRACE_MS};
 
 /// The handles `ReaderPage` hands to the viewer components and effects. Both
 /// virtualizers always exist (they are hooks); a view binds only the one for

@@ -13,7 +13,7 @@ use reader_core::filename::display_name;
 use pdf_engine::types::{OpenResult, PageSize};
 
 use crate::state::AppState;
-use crate::viewer::zoom::target::FitDims;
+use crate::zoom::target::FitDims;
 
 /// What the rest of the flow needs to know once the state is seeded.
 pub(super) struct Seeded {

@@ -43,7 +43,7 @@ use reflow_core::pager::estimate_heights;
 
 use crate::state::AppState;
 use crate::state::reader::document::reflow::estimate_metrics;
-use crate::viewer::zoom::target::FitDims;
+use crate::zoom::target::FitDims;
 
 use super::session;
 

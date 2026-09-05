@@ -38,14 +38,14 @@ The app uses the adapter and keeps only app-specific policy locally:
 - page rendering, text/search overlays, and chrome
 - measurement storage in `css_heights`
 
-`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled by the viewer engine on every frame of a zoom. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
+`css_heights` is the shared measurement store. It seeds the virtualizer, receives measured page heights, and is rescaled by the zoom actuator on every frame of a zoom. Geometry queries themselves go through the virtualizer and the layout APIs rather than through a parallel app-local model.
 
 ## Reader motion principles
 
 1. Zoom animates the LAYOUT. Every frame of the tween rescales the strips
-   through the viewer engine, so the document genuinely resizes under the
+   through the zoom actuator, so the document genuinely resizes under the
    reader's eyes.
-2. The engine holds the document point under the viewport centre exactly
+2. The actuator holds the document point under the viewport centre exactly
    where it is while it does so — computed gap-aware, because page heights
    scale and the gap between pages does not. Nothing is captured before a
    zoom and nothing is restored after it.
@@ -113,7 +113,7 @@ The app uses the adapter and keeps only app-specific policy locally:
 2. `PageList` binds the scroll container, renders `v.items()`, and reports measured page heights back into both `css_heights` and the virtualizer.
 3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
-5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the engine frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
+5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the actuator frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
 
 ## Thumbnail panel flow
 

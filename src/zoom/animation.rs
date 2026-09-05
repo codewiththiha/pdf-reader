@@ -1,8 +1,8 @@
 //! The zoom tween.
 //!
 //! Every animation frame does exactly one thing: work out the scale the eye
-//! should be at, and hand the engine the ratio between that scale and the
-//! scale the layout currently has. The engine rescales the strips and holds
+//! should be at, and hand the actuator the ratio between that scale and the
+//! scale the layout currently has. The actuator rescales the strips and holds
 //! the document point under the viewport centre exactly where it is, while
 //! the page hosts stretch the bitmap they already hold to the new size — so
 //! the reader watches the paper itself change size, with nothing to capture
@@ -41,7 +41,7 @@ use leptos::prelude::*;
 
 use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
 use crate::state::reader::{ReaderState, ZoomTransition};
-use crate::viewer::engine::ViewerEngine;
+use crate::zoom::actuator::ZoomActuator;
 
 use super::config;
 use super::coordinator::finish_transition;
@@ -63,7 +63,7 @@ type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 /// a new container size, and the tween loop calls it for every untweened
 /// landing. Both go through here so that "the layout moved and the display scale
 /// agrees with it" stays one rule rather than two that can drift apart.
-pub(crate) fn land(state: &ReaderState, engine: &ViewerEngine, t: &ZoomTransition) -> bool {
+pub(crate) fn land(state: &ReaderState, actuator: &ZoomActuator, t: &ZoomTransition) -> bool {
     let cur = state.viewer.zoom.visual_scale();
     if (t.to - cur).abs() < config::SETTLED_EPSILON {
         return false;
@@ -71,7 +71,7 @@ pub(crate) fn land(state: &ReaderState, engine: &ViewerEngine, t: &ZoomTransitio
     // Only the scrolling modes have a strip to rescale; for the paginated ones
     // the single mounted host stretches to the display scale on its own.
     if !state.viewer.mode.get_untracked().is_paginated() {
-        engine.relayout_to(state, t.to / cur);
+        actuator.relayout_to(state, t.to / cur);
     }
     state.viewer.zoom.display.set(t.to);
     true
@@ -122,7 +122,7 @@ impl Tween {
     }
 
     /// Ensure a loop is running for the current transition.
-    pub(crate) fn arm(&self, state: ReaderState, engine: ViewerEngine) {
+    pub(crate) fn arm(&self, state: ReaderState, actuator: ZoomActuator) {
         if self.alive.get() {
             return; // the live loop reads the signal; it will pick this up
         }
@@ -164,7 +164,7 @@ impl Tween {
             {
                 // Landing without a tween: one relayout to the target, then
                 // the commit.
-                land(&state, &engine, &t);
+                land(&state, &actuator, &t);
                 if t.following {
                     // A held follow LANDS but must not commit: the burst it
                     // is riding has another frame coming, and a raster pass per
@@ -185,11 +185,11 @@ impl Tween {
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
             // The per-frame pair: relay the layout out by the ratio the
             // display scale is about to move through, then show it. The
-            // engine reads `display` to work out the horizontal strip's
+            // actuator reads `display` to work out the horizontal strip's
             // exact widths, so the relayout must come first.
             if scrolls {
                 let cur = state.viewer.zoom.visual_scale();
-                engine.relayout_to(&state, visual / cur);
+                actuator.relayout_to(&state, visual / cur);
             }
             state.viewer.zoom.display.set(visual);
             if progress >= 1.0 {

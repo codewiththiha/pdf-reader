@@ -9,7 +9,7 @@
 //!    super::target),
 //! 2. opens a transition from the scale on screen right now to that target,
 //! 3. tweens the live display scale (super::animation), relaying the layout
-//!    out through the engine on every frame so the document resizes
+//!    out through the actuator on every frame so the document resizes
 //!    continuously under the reader's eyes,
 //! 4. and on landing brings the render scale onto the target and releases
 //!    the freezes (render suspension, page/scroll synchronisation, geometry
@@ -38,28 +38,28 @@ use leptos::prelude::*;
 
 use app_chrome::hooks::use_timeout::use_debounce;
 use crate::state::reader::{ReaderState, ZoomTransition};
-use crate::viewer::engine::ViewerEngine;
+use crate::zoom::actuator::ZoomActuator;
 
 use super::animation::{Tween, land};
 use super::command::holds_commit;
 use super::{config, target};
 
 /// The one zoom authority. `Clone` so it can be handed out by value; it
-/// holds nothing but the engine reference.
+/// holds nothing but the actuator reference.
 #[derive(Clone)]
 pub struct ZoomController {
-    engine: ViewerEngine,
+    actuator: ZoomActuator,
 }
 
 impl ZoomController {
-    pub fn new(engine: ViewerEngine) -> Self {
-        Self { engine }
+    pub fn new(actuator: ZoomActuator) -> Self {
+        Self { actuator }
     }
 
     /// Start the command consumer and the freeze bookkeeping. Called once
     /// from the reader shell.
     pub fn drive(&self, state: ReaderState) {
-        let engine = self.engine.clone();
+        let actuator = self.actuator.clone();
 
         // While a transition is in flight, three feedback loops must stand
         // down: the browser's per-frame scroll echo (stale by one frame —
@@ -76,8 +76,8 @@ impl ZoomController {
         // gives that for free: a pending fire is cleared on cleanup, where an
         // unowned `set_timeout` would let a fire land on a disposed reader, and
         // re-arming postpones the reset instead of queueing a second one.
-        let v = engine.vertical.clone();
-        let hv = engine.horizontal.clone();
+        let v = actuator.vertical.clone();
+        let hv = actuator.horizontal.clone();
         let grace_v = v.clone();
         let grace_hv = hv.clone();
         let grace = use_debounce(
@@ -164,7 +164,7 @@ impl ZoomController {
             // `from` is the visual scale RIGHT NOW, so a retarget continues
             // from wherever the eye currently is instead of teleporting.
             // Nothing about POSITION is captured: the layout relayouts
-            // continuously and the engine holds the reader's view still
+            // continuously and the actuator holds the reader's view still
             // itself, frame by frame.
             let mode = state.viewer.mode.get_untracked();
             let transition = ZoomTransition {
@@ -181,8 +181,8 @@ impl ZoomController {
             // zombie grace so pages the moving window evicts keep their DOM
             // past the animation's end.
             let retention = config::profile_for(mode).retention;
-            engine.vertical.set_retention_grace(retention.grace_ms);
-            engine.horizontal.set_retention_grace(retention.grace_ms);
+            actuator.vertical.set_retention_grace(retention.grace_ms);
+            actuator.horizontal.set_retention_grace(retention.grace_ms);
             // The transition goes up BEFORE anything moves, because the frames
             // it holds are exactly the ones that must not feed a measurement or
             // the browser's scroll echo back into the layout being resized.
@@ -197,9 +197,9 @@ impl ZoomController {
                 // flickering along the whole length of a drag. Landing in this
                 // task puts the new size in the same frame as the new width,
                 // which is what a continuous follow has to mean.
-                land(&state, &engine, &transition);
+                land(&state, &actuator, &transition);
             } else {
-                tween.arm(state, engine.clone());
+                tween.arm(state, actuator.clone());
             }
         });
     }

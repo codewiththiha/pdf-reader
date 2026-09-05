@@ -12,15 +12,15 @@
 //! open a transition from the scale on screen to that target
 //!     ↓
 //! tween the DISPLAY SCALE — relaying the layout out through the
-//! engine on every frame, so the document resizes continuously
+//! actuator on every frame, so the document resizes continuously
 //!     ↓
 //! bring the render scale onto the target, release the freezes
 //! ```
 //!
-//! The layout IS animated, and that is the point. Each frame hands the engine
-//! the ratio the display scale just moved through; the engine rescales the
-//! strips and holds the document point under the viewport centre exactly
-//! where it is. That is also why nothing about position is captured at
+//! The layout IS animated, and that is the point. Each frame hands the actuator
+//! ([`actuator::ZoomActuator`]) the ratio the display scale just moved through;
+//! it rescales the strips and holds the document point under the viewport
+//! centre exactly where it is. That is also why nothing about position is captured at
 //! transaction open — there is no seam to hide, so there is nothing to
 //! restore.
 //!
@@ -51,6 +51,7 @@
 //! The old thread-local controller registration is gone; `drive` runs for
 //! exactly as long as the reader page owns it.
 
+pub mod actuator;
 pub mod animation;
 pub mod command;
 pub mod config;
@@ -58,3 +59,4 @@ pub mod coordinator;
 pub mod target;
 
 pub use coordinator::ZoomController;
+

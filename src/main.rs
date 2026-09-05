@@ -6,7 +6,7 @@ mod features;
 mod services;
 mod state;
 mod storage;
-mod viewer;
+mod zoom;
 
 use app::*;
 use leptos::prelude::*;

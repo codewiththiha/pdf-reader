@@ -1,13 +1,22 @@
-//! [`ViewerEngine`]: the single owner of the virtualized scroll geometry.
+//! [`ZoomActuator`]: the single owner of the virtualized scroll geometry.
 //!
-//! The core contract is that the engine is the *only* place layout is
-//! rescaled. Zoom and fit compute a *target* and ask the engine to apply a
-//! scale factor; the engine owns the relayout so a gesture and a refit
-//! cannot diverge along separate code paths. Non-rescale geometry reads
-//! (dominant page, scroll-to-page) still go through the virtualizers
-//! directly, but only in the per-mode navigation code.
+//! Before this module existed, views, zoom, fit and navigation each reached
+//! into the virtualizers and the DOM directly, and zoom duplicating the
+//! axis-branching relayout across two code paths was the root of the races.
+//! The split that replaced it is the whole subsystem's contract: everything
+//! that must MOVE geometry (rescale a strip, hold the anchor, report a
+//! rendered size) goes through the actuator, and everything that DECIDES what
+//! the zoom should be goes through [`super::ZoomController`]. Nothing outside
+//! the two should touch a virtualizer's layout or a zoom scale.
 //!
-//! It runs on EVERY frame of a zoom: the tween hands it the ratio between
+//! The core contract is that the actuator is the *only* place layout is
+//! rescaled. Zoom and fit compute a *target* and ask it to apply a scale
+//! factor; it owns the relayout so a gesture and a refit cannot diverge along
+//! separate code paths. Non-rescale geometry reads (dominant page,
+//! scroll-to-page) still go through the virtualizers directly, but only in the
+//! per-mode navigation code.
+//!
+//! It runs on EVERY frame of a zoom: the tween hands the actuator the ratio between
 //! the scale it is about to show and the scale the layout currently has, and
 //! the layout follows continuously. Scaling the layout for real is what
 //! keeps a zoom stable. The alternative — one CSS transform over a surface
@@ -18,7 +27,7 @@
 //! once when the transform is swapped for real geometry, which reads as the
 //! document jumping.
 //!
-//! Anchoring is therefore explicit and gap-aware: the engine works out which
+//! Anchoring is therefore explicit and gap-aware: the actuator works out which
 //! document point sits under the viewport centre, rescales, finds where that
 //! same point lands in the new geometry, and puts it back under the viewport
 //! centre. Page interiors scale; the fixed gap between pages does not.
@@ -39,19 +48,19 @@ use virtual_list_leptos::{ScrollMode, Virtualizer};
 
 use crate::state::reader::ReaderState;
 
-/// Wraps the reader's two strip virtualizers and centralises the viewer's one
+/// Wraps the reader's two strip virtualizers and centralises the reader's one
 /// relayout path. The vertical (continuous) and horizontal strips stay as
 /// separate virtualizers — they are created as separate hooks in
 /// `ReaderPage` — but resizing a strip's items is done only here.
 #[derive(Clone)]
-pub struct ViewerEngine {
+pub struct ZoomActuator {
     /// The continuous (vertical) strip's virtualizer.
     pub vertical: Virtualizer,
     /// The horizontal strip's virtualizer.
     pub horizontal: Virtualizer,
 }
 
-impl ViewerEngine {
+impl ZoomActuator {
     pub fn new(vertical: Virtualizer, horizontal: Virtualizer) -> Self {
         Self { vertical, horizontal }
     }

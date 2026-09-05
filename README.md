@@ -447,16 +447,19 @@ src/
   effects/
     app/                  window title, shortcuts, persistence wiring
     reader/               fit and zoom follow, page tracking
-    appearance.rs         the appearance-to-CSS bridge
+    appearance/           the appearance-to-CSS bridge (shared, pdf, text)
   features/
     library/              the shelf: book cards, empty state, sorting
     reader/               the reader page and its two virtualizers
-  state/                  the reactive state tree: app, reader (document,
-                          viewer, zoom, search, gloss), library, ui
+  state/                  the reactive state tree: app (chrome + UI), reader
+                          (document, viewer, zoom, search, gloss, AI selection),
+                          library
   services/               the document open pipeline, the AI chunk bridge
   storage/                loads and saves over localStorage (settings,
                           library, covers, gloss marks)
-  viewer/                 engine selection and the zoom coordinator
+  zoom/                   the zoom pipeline: posted commands, target
+                          resolution, the tween, and the actuator that owns
+                          the one relayout path over both strips
 crates/
   ai-core/                the format-agnostic AI core: the word-explanation
                           wire types (WordInfo, AiError, the chunk envelope),

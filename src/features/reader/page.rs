@@ -184,11 +184,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         }
     });
 
-    let engine = crate::viewer::engine::ViewerEngine::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
+    let actuator = crate::zoom::actuator::ZoomActuator::new(rv.virtualizer.clone(), rv.h_virtualizer.clone());
     // The zoom controller is created and driven here, and lives exactly as
     // long as this page's reactive owner. Everything downstream only posts
     // commands; nothing else writes a zoom scale or rescales a strip.
-    let zoom = crate::viewer::zoom::ZoomController::new(engine);
+    let zoom = crate::zoom::ZoomController::new(actuator);
     zoom.drive(vs);
     // BEFORE reading_progress, and that is a contract rather than a habit.
     // Leptos runs effects in insertion order, so when a zoom transaction
