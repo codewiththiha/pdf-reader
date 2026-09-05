@@ -36,12 +36,16 @@ use crate::state::ReaderState;
 /// the surface is settling (a navigation issued mid-settle wins over the value
 /// the mount started with, and the stream's saved fraction is consumed by the
 /// first frame that can use it).
-pub(crate) fn settle(state: ReaderState, v: Virtualizer, frames: u32, aim: impl Fn() + 'static) {
+///
+/// The virtualizer is borrowed because the aim usually needs one too: a caller
+/// hands the loop a handle and a closure holding another handle to the same
+/// surface, and taking the first by value would leave nothing to close over.
+pub(crate) fn settle(state: ReaderState, v: &Virtualizer, frames: u32, aim: impl Fn() + 'static) {
     let generation = state.viewer.begin_anchor();
     // Shared rather than borrowed: the loop re-arms itself from inside a
     // `request_animation_frame` callback, which has to OWN everything it runs.
     let aim: Rc<dyn Fn()> = Rc::new(aim);
-    frame(state, v, frames, generation, aim);
+    frame(state, v.clone(), frames, generation, aim);
 }
 
 fn frame(state: ReaderState, v: Virtualizer, frames_left: u32, generation: u64, aim: Rc<dyn Fn()>) {

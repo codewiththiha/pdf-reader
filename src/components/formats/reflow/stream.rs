@@ -462,22 +462,24 @@ pub fn ReflowStreamLayout(
 /// while the blocks report their measured heights, so the offset the first
 /// write lands on is not yet the offset that fraction will mean.
 fn anchor_stream(state: ReaderState, v: &Virtualizer) {
-    let v = v.clone();
+    // The aim needs its own handle: the loop borrows the one it settles, and
+    // the closure that aims it has to own what it runs on every frame.
+    let aim = v.clone();
     crate::components::viewer::shells::anchor_settle::settle(
         state,
-        v.clone(),
+        v,
         ANCHOR_SETTLE_FRAMES,
         move || {
-            v.remeasure_viewport();
+            aim.remeasure_viewport();
             if let Some(fraction) = state.document.content.reflow.resume_fraction.get_untracked() {
                 // Consume the fraction: a later remount (a mode flip and back)
                 // anchors on the page — the fraction described a layout the
                 // reader has since left.
                 state.document.content.reflow.resume_fraction.set(None);
-                let total = v.total_size().get_untracked();
-                let viewport = v.viewport().get_untracked().main;
+                let total = aim.total_size().get_untracked();
+                let viewport = aim.viewport().get_untracked().main;
                 let extent = (total - viewport).max(0.0);
-                v.scroll_to_offset(fraction * extent, ScrollMode::Instant);
+                aim.scroll_to_offset(fraction * extent, ScrollMode::Instant);
             } else {
                 let page = state.viewer.page.get_untracked();
                 let block = state
@@ -486,7 +488,7 @@ fn anchor_stream(state: ReaderState, v: &Virtualizer) {
                     .reflow
                     .cuts
                     .with_untracked(|cuts| first_block_of_page(cuts, page));
-                v.scroll_to_index(block, Align::Start, ScrollMode::Instant);
+                aim.scroll_to_index(block, Align::Start, ScrollMode::Instant);
             }
         },
     );

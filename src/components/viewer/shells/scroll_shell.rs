@@ -172,10 +172,10 @@ fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis) {
         Axis::Vertical => Align::Start,
         Axis::Horizontal => Align::Center,
     };
-    let v = v.clone();
+    let aim_v = v.clone();
     super::anchor_settle::settle(state, v, ANCHOR_SETTLE_FRAMES, move || {
         let page = state.viewer.page.get_untracked();
-        v.scroll_to_index(page.saturating_sub(1) as usize, align, ScrollMode::Instant);
+        aim_v.scroll_to_index(page.saturating_sub(1) as usize, align, ScrollMode::Instant);
     });
 }
 
