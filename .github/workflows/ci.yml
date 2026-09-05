@@ -129,7 +129,8 @@ jobs:
 
       # Module docs in this repo name the modules they work with, and a rename
       # leaves the prose pointing at nothing. Rustdoc only checks `///` links it
-      # can resolve as links; most of these are backticked prose.
+      # can resolve as links; most of these are backticked prose. The same claim
+      # is made in the stylesheets' comments, which no Rust tool reads at all.
       - name: Verify comment paths resolve
         run: node scripts/check-doc-paths.js
 

@@ -238,6 +238,61 @@ for (const file of RUST_FILES) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Stylesheet comments: the same claim, in files the Rust pass never reads.
+//
+// A stylesheet names the module that writes its tokens ("painted by
+// `appearance_reflowable`", "see src/zoom"), and those references are
+// directories, or extension-less module paths, as often as they are files —
+// which is why they need their own pattern: `FILE_PATH` above only matches a
+// token that ends in a known extension. Six of them had rotted before this
+// pass existed, all naming modules that a rename had moved.
+// ---------------------------------------------------------------------------
+
+/** Every directory in the tree, so an extension-less module path resolves. */
+const DIRS = new Set<string>();
+for (const file of ALL_FILES) {
+  for (let dir = path.posix.dirname(file); dir !== "."; dir = path.posix.dirname(dir)) DIRS.add(dir);
+}
+
+const FILE_SET = new Set(ALL_FILES);
+const CSS_FILES = ALL_FILES.filter((file) => file.endsWith(".css") && file.startsWith("styles/"));
+/** A path token that starts at one of our roots. The extension is optional. */
+/** Roots a stylesheet would name. `tests` and `scripts` are left out on
+ *  purpose: prose uses a slash for "or" ("a hook for tests/overrides"), and no
+ *  stylesheet has ever pointed at either tree. */
+const CSS_PATH = /\b(?:src|crates|styles|public|src-tauri)\/[A-Za-z0-9_./-]+/g;
+const SOURCE_EXTS = [".rs", ".ts", ".css", ".js", ".mjs", ".json", ".toml", ".html"];
+
+/** Whether a token names a directory, a file, or a file whose extension the
+ *  comment left off. */
+function cssPathResolves(token: string): boolean {
+  if (DIRS.has(token) || FILE_SET.has(token)) return true;
+  return SOURCE_EXTS.some((ext) => FILE_SET.has(token + ext));
+}
+
+let cssChecked = 0;
+
+for (const file of CSS_FILES) {
+  const text = read(file);
+  for (const comment of text.matchAll(/\/\*[\s\S]*?\*\//g)) {
+    // A URL's `://` would otherwise be read as a path with a very odd root.
+    const raw = comment[0];
+    const body = raw.includes("://") ? raw.slice(0, raw.indexOf("://")) : raw;
+    for (const m of body.matchAll(CSS_PATH)) {
+      // The TOKEN's line, not the comment's: a stylesheet's header block can
+      // span fifteen lines, and a report that says line 1 sends the reader to
+      // the top of the file to hunt for it.
+      const lineNo = text.slice(0, comment.index + m.index).split("\n").length;
+      // Prose punctuation and a trailing slash are not part of the path.
+      const token = m[0].replace(/[.,;:)]+$/, "").replace(/\/+$/, "");
+      if (!token.includes("/")) continue;
+      cssChecked++;
+      if (!cssPathResolves(token)) problems.push(`${file}:${lineNo}: no such path: \`${token}\``);
+    }
+  }
+}
+
 if (problems.length > 0) {
   console.error(`::error::${problems.length} comment path(s) do not resolve:`);
   for (const problem of problems) console.error(`  ${problem}`);
@@ -248,4 +303,7 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`doc paths resolve: ${checked} module paths across ${RUST_FILES.length} Rust files`);
+console.log(
+  `doc paths resolve: ${checked} module paths across ${RUST_FILES.length} Rust files, ` +
+    `${cssChecked} paths across ${CSS_FILES.length} stylesheets`,
+);
