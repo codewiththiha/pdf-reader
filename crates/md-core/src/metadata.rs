@@ -24,17 +24,25 @@ use crate::ast::heading_of_line;
 /// opens with `---` / `---` is saying "the convention applies, there is nothing
 /// to read", and the body after it must still be the body.
 pub fn front_matter(normalized: &str) -> Option<String> {
-    let mut after_opener = normalized.strip_prefix("---")?.strip_prefix('\n')?;
-    let mut body: Vec<&str> = Vec::new();
+    let (matter, _) = split_front_matter(normalized)?;
+    Some(matter.join("\n"))
+}
+
+/// The one open/close scan both front-matter readers share: the lines between
+/// the `---` opener and its `---` / `...` closer, plus the body after the
+/// closer. `None` when the block never closes — prose that happened to start
+/// with `---` is not front matter, and the markers only belong to it when it
+/// closes.
+fn split_front_matter(normalized: &str) -> Option<(Vec<&str>, &str)> {
+    let mut rest = normalized.strip_prefix("---")?.strip_prefix('\n')?;
+    let mut matter: Vec<&str> = Vec::new();
     loop {
-        let Some(line) = next_line(&mut after_opener) else {
-            return None; // no closer: prose that happened to start with `---`
-        };
+        let line = next_line(&mut rest)?;
         let trimmed = line.trim();
         if trimmed == "---" || trimmed == "..." {
-            return Some(body.join("\n"));
+            return Some((matter, rest));
         }
-        body.push(line);
+        matter.push(line);
     }
 }
 
@@ -94,20 +102,10 @@ pub fn document_title(raw: &str) -> Option<String> {
 /// The file with a closed front-matter block removed. A file without one is
 /// returned as it came; the markers only belong to front matter when they close.
 fn after_front_matter(normalized: &str) -> &str {
-    let mut rest = match normalized
-        .strip_prefix("---")
-        .and_then(|r| r.strip_prefix('\n'))
-    {
-        Some(rest) => rest,
-        None => return normalized,
-    };
-    while let Some(line) = next_line(&mut rest) {
-        let trimmed = line.trim();
-        if trimmed == "---" || trimmed == "..." {
-            return rest;
-        }
+    match split_front_matter(normalized) {
+        Some((_, rest)) => rest,
+        None => normalized,
     }
-    normalized
 }
 
 /// The document's author, from front matter only. Markdown has no
@@ -120,15 +118,32 @@ pub fn document_author(raw: &str) -> Option<String> {
 
 /// The first heading's text, skipping fences so a `#` inside a code sample is
 /// not mistaken for the document's name.
+///
+/// The fence tracking is the same rule `reflow-core`'s splitter and the
+/// outline extractor follow — an opener is any ``` or ~~~ line, and only a
+/// bare run of THE SAME marker closes it — so an info-string line of the
+/// other marker family (```` ```rs ```` inside a `~~~` fence) keeps the fence
+/// open here exactly as it does in the blocks the reader paginates.
 fn first_heading_title(normalized: &str) -> Option<String> {
     let mut in_fence = false;
+    let mut fence_marker = "";
     for line in normalized.split('\n') {
         let trimmed = line.trim();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
+        if !in_fence && reflow_core::block::is_fence_open(trimmed) {
+            in_fence = true;
+            fence_marker = reflow_core::block::fence_marker_of(trimmed);
             continue;
         }
-        if in_fence || trimmed.is_empty() {
+        if in_fence {
+            let marker_char = fence_marker.chars().next().unwrap_or('`');
+            if trimmed.starts_with(fence_marker)
+                && trimmed.trim_end_matches(marker_char).trim().is_empty()
+            {
+                in_fence = false;
+            }
+            continue;
+        }
+        if trimmed.is_empty() {
             continue;
         }
         let (level, title) = heading_of_line(trimmed)?;
@@ -161,6 +176,22 @@ mod tests {
         assert_eq!(first_heading_title(""), None);
         // A shell prompt inside a sample is not the document's name.
         assert_eq!(first_heading_title("```\n# make install\n```\n\n# Build notes"), Some("Build notes".into()));
+    }
+
+    #[test]
+    fn a_fence_closes_only_on_a_bare_run_of_its_own_marker() {
+        // An info-string line of the OTHER marker family must not close the
+        // fence — it stays open the way the block splitter keeps it open, so
+        // the heading inside the sample is never picked as the title.
+        assert_eq!(
+            first_heading_title("~~~\n```rs\n# not a title\n```\n~~~\n\n# Build notes").as_deref(),
+            Some("Build notes")
+        );
+        // An opener carrying a language tag is not its own closer either.
+        assert_eq!(
+            first_heading_title("```rust\n# not a title\n```\n\n# Build notes").as_deref(),
+            Some("Build notes")
+        );
     }
 
     #[test]
