@@ -54,7 +54,7 @@ mod hook;
 mod observe;
 mod options;
 mod render;
-pub mod retention;
+pub(crate) mod retention;
 mod surface;
 mod virtualizer;
 

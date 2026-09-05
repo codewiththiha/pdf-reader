@@ -20,7 +20,7 @@ use virtual_list::Window;
 /// One evicted item, kept rendered until `expires_at` (monotonic-ish
 /// milliseconds, e.g. `Date::now()`).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RetainedItem {
+pub(crate) struct RetainedItem {
     /// The evicted item's index.
     pub index: usize,
     /// When the item unmounts, in milliseconds on the caller's clock.
@@ -34,7 +34,7 @@ pub struct RetainedItem {
 /// evictions, so only items that were IN the old window and are NOT in the
 /// new one are retained. Re-entering the window clears an item's retention:
 /// it is active again, and its DOM never left.
-pub fn retain_evicted(
+pub(crate) fn retain_evicted(
     old: Option<Window>,
     new: Option<Window>,
     now_ms: f64,
@@ -67,7 +67,7 @@ pub fn retain_evicted(
 
 /// Drop retained items whose time is up, and drop any that are back inside
 /// the active window (an active item needs no bridge).
-pub fn prune_retained(
+pub(crate) fn prune_retained(
     mut retained: Vec<RetainedItem>,
     active: Option<Window>,
     now_ms: f64,

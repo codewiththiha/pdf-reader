@@ -98,7 +98,6 @@ pub struct VirtualizerCore {
     eps: f64,
     max_retries: u32,
 
-    hint: usize,
     scroll_top: f64,
     viewport: Viewport,
     range: Option<Window>,
@@ -120,7 +119,6 @@ impl VirtualizerCore {
             padding_end: config.padding_end,
             eps: config.eps,
             max_retries: config.max_retries,
-            hint: 0,
             scroll_top: config.initial_offset,
             viewport: config.viewport,
             range: None,
@@ -180,8 +178,7 @@ impl VirtualizerCore {
                     }
                 };
                 self.layout = LayoutKind::Grid(GridLayout::resolve(spec, count, pitch, vp.cross));
-                self.hint = 0;
-                true
+                        true
             }
             _ => false,
         };
@@ -233,7 +230,6 @@ impl VirtualizerCore {
         let gap = self.gap;
         let cross = self.viewport.cross;
         self.layout = build_layout(&shape, count, sizes, cross, gap);
-        self.hint = 0;
         self.pending = None;
         self.queue.clear();
 
@@ -264,7 +260,6 @@ impl VirtualizerCore {
         };
         let (shape, gap, cross) = (self.shape, self.gap, self.viewport.cross);
         self.layout = build_layout(&shape, count, sizes, cross, gap);
-        self.hint = 0;
         self.queue.clear();
         self.scroll_top = match anchor {
             Some((item, px)) if count > 0 => {
@@ -380,7 +375,6 @@ impl VirtualizerCore {
         let gap = self.gap;
         let cross = self.viewport.cross;
         self.layout = build_layout(&shape, count, sizes, cross, gap);
-        self.hint = 0;
         self.pending = None;
         if let Some(top) = new_top {
             self.scroll_top = top.clamp(self.min_scroll(), self.max_scroll());
@@ -596,16 +590,12 @@ impl VirtualizerCore {
         }
     }
 
-    /// Recompute the window from the current state using the hinted search.
+    /// Recompute the window from the current state.
     fn rewindow(&mut self) -> Step {
         let range = if self.layout.is_empty() {
             None
         } else {
-            let mut hint = self.hint;
-            let base =
-                self.layout
-                    .window_hinted(self.scroll_top, self.viewport, self.budget, &mut hint);
-            self.hint = hint;
+            let base = self.layout.window(self.scroll_top, self.viewport, self.budget);
             match (base, self.pinned) {
                 (Some(window), Some((first, last))) => {
                     let last_index = self.layout.item_count() - 1;

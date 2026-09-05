@@ -123,8 +123,8 @@ pub(crate) struct VirtualizerInner {
     /// still mounted, the reactive version that items() tracks, the
     /// currently effective grace (raised around a zoom commit), and the
     /// expiry timer.
-    pub retained: RefCell<Vec<crate::retention::RetainedItem>>,
-    pub retained_version: RwSignal<u64>,
+    pub(crate) retained: RefCell<Vec<crate::retention::RetainedItem>>,
+    pub(crate) retained_version: RwSignal<u64>,
     pub retention_grace: Cell<u32>,
     pub retention_timer: RefCell<Option<TimeoutHandle>>,
 
@@ -187,16 +187,7 @@ impl VirtualizerInner {
         if let Ok(handle) = set_timeout_with_handle(
             move || {
                 inner.retention_timer.borrow_mut().take();
-                let now = now_ms();
-                let active = inner.core.borrow().range();
-                let mut retained = inner.retained.borrow_mut();
-                let before = retained.len();
-                *retained = prune_retained(std::mem::take(&mut *retained), active, now);
-                let changed = before != retained.len();
-                drop(retained);
-                if changed {
-                    inner.retained_version.update(|v| *v += 1);
-                }
+                inner.prune_expired();
                 if !inner.retained.borrow().is_empty() {
                     inner.arm_retention_timer();
                 }
@@ -204,6 +195,23 @@ impl VirtualizerInner {
             Duration::from_millis(retention_tick_ms(&self.retained.borrow(), now_ms())),
         ) {
             *self.retention_timer.borrow_mut() = Some(handle);
+        }
+    }
+
+    /// Drop every retained zombie whose grace has already expired, publishing
+    /// the change so its DOM (and the engine surface it holds) unmounts. The
+    /// one body the expiry timer's tick and the zoom-settle's
+    /// `prune_retained_now` both run.
+    fn prune_expired(&self) {
+        let now = now_ms();
+        let active = self.core.borrow().range();
+        let mut retained = self.retained.borrow_mut();
+        let before = retained.len();
+        *retained = prune_retained(std::mem::take(&mut *retained), active, now);
+        let changed = before != retained.len();
+        drop(retained);
+        if changed {
+            self.retained_version.update(|v| *v += 1);
         }
     }
 
@@ -724,16 +732,7 @@ impl Virtualizer {
     /// closes, so a zoom's retained surfaces are released right after the
     /// commit instead of after the next scroll.
     pub fn prune_retained_now(&self) {
-        let now = now_ms();
-        let active = self.inner.core.borrow().range();
-        let mut retained = self.inner.retained.borrow_mut();
-        let before = retained.len();
-        *retained = prune_retained(std::mem::take(&mut *retained), active, now);
-        let changed = before != retained.len();
-        drop(retained);
-        if changed {
-            self.inner.retained_version.update(|v| *v += 1);
-        }
+        self.inner.prune_expired();
     }
 
     /// Zoom: multiply every size by `factor` while keeping the viewport center pinned.
