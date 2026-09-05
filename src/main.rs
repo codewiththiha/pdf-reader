@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod dom_contract;
 mod effects;
 mod events;
 mod features;

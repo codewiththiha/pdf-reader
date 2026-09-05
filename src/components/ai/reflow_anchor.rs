@@ -43,6 +43,7 @@ use wasm_bindgen::JsCast;
 use super::anchor::host_id_for_mode;
 use super::gloss::mark_layer::MARK_RADIUS;
 use crate::components::viewer::page_host::block_row_id;
+use crate::dom_contract::BLOCK_INDEX_ATTR;
 use crate::state::reader::ReflowContent;
 use crate::state::ReaderState;
 
@@ -50,26 +51,6 @@ use crate::state::ReaderState;
 /// payload's meaning changes; an old mark then simply reads as having no spot
 /// and falls back to its stored rect rather than projecting wrongly.
 const SPOT_TAG: &str = "rf1:";
-
-/// The attribute every reader page host carries, naming the format family that
-/// painted it. The engine's selection tracker and the capture below both find
-/// their host through it, so a new format adds one attribute and joins.
-pub const HOST_ATTR: &str = "data-reader-host";
-// The host attribute holding the 1-based page that host paints is
-// `data-host-page`. The hosts write it as a literal attribute and the engine's
-// selection tracker reads it in TypeScript, so there is no Rust consumer to
-// hang a constant on — this note is the cross-reference.
-/// The host value a reflowable page or stream block carries.
-pub const HOST_REFLOW: &str = "reflow";
-/// The host value a PDF page carries.
-pub const HOST_PDF: &str = "pdf";
-/// On a rendered block: which block of the document it is, in document order.
-/// The identity half of the two handles a reflowable mark has on the DOM — the
-/// engine's selection tracker walks up to it with `closest`, and a capture reads
-/// the block number off it — and it is what makes the paginated modes and the
-/// continuous stream resolve identically. The lookup half is the element id,
-/// `page_host::block_row_id`, which the projection resolves per mark per frame.
-pub const BLOCK_INDEX_ATTR: &str = "data-block-index";
 
 /// What a reflowable mark's `context` holds: the spot, and the sentence that
 /// was around it when the mark was made.

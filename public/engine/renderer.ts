@@ -9,22 +9,15 @@ import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
 import { CLEANUP_EVERY, PAGE_MAX_PIXELS, session } from "./state";
+import {
+  hostIdFromCanvasId,
+  pageFromCanvasId,
+  TEXT_LAYER_CLASS,
+  TEXT_LAYER_SELECTOR,
+} from "./dom-contract";
 import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
 import { buildLinkLayer } from "./links";
-
-// Compiled once, not per canvas: pageFromCanvasId runs on the fallback path
-// of every unmounted-id resolution, which on a fast scroll is per row.
-const SP_CV_RE = /^sp-(\d+)-cv$/;
-const CONT_CV_RE = /^cont-(\d+)-cv$/;
-
-function pageFromCanvasId(canvasId: string): number {
-  const sp = SP_CV_RE.exec(canvasId);
-  if (sp && sp[1]) return parseInt(sp[1], 10);
-  const cont = CONT_CV_RE.exec(canvasId);
-  if (cont && cont[1]) return parseInt(cont[1], 10) + 1;
-  return 1;
-}
 
 /** Look up or create PageState. Recovers when registerPage ran before the
  *  <canvas> was in the DOM (Leptos mounts the effect one tick early). */
@@ -40,9 +33,9 @@ function ensurePage(
     return existing;
   }
   if (!canvas) return null;
-  const hostId = hostIdHint || canvasId.replace(/-cv$/, "-pg");
+  const hostId = hostIdHint || hostIdFromCanvasId(canvasId);
   const host = el(hostId);
-  const textLayerEl = host ? (host.querySelector(".textLayer") as HTMLElement | null) : null;
+  const textLayerEl = host ? (host.querySelector(TEXT_LAYER_SELECTOR) as HTMLElement | null) : null;
   if (existing) {
     existing.dead = false;
     existing.canvas = canvas;
@@ -53,7 +46,10 @@ function ensurePage(
   const st: PageState = {
     // Prefer the caller's hint (registerPage passes the page number); fall
     // back to parsing the id only when the mount never registered.
-    page: pageHint && pageHint > 0 ? pageHint : pageFromCanvasId(canvasId),
+    // The id is only a fallback: registerPage normally passes the page. An id
+    // this cannot parse is not a reader host at all, and page 1 is the least
+    // wrong guess for a canvas that is about to be told which page it is.
+    page: pageHint && pageHint > 0 ? pageHint : (pageFromCanvasId(canvasId) ?? 1),
     canvas,
     host,
     textLayerEl,
@@ -263,7 +259,7 @@ export async function renderPageInternal(
     st.host.style.setProperty("--scale-factor", String(scale));
 
     const layer = document.createElement("div");
-    layer.className = "textLayer";
+    layer.className = TEXT_LAYER_CLASS;
     layer.setAttribute("aria-hidden", "true");
 
     const textContent = await textTask;
@@ -292,7 +288,7 @@ export async function renderPageInternal(
       return fail("cancelled", "Render cancelled");
     }
 
-    const live = st.host.querySelector(".textLayer");
+    const live = st.host.querySelector(TEXT_LAYER_SELECTOR);
     if (live && live.parentNode) {
       live.replaceWith(layer);
     } else {

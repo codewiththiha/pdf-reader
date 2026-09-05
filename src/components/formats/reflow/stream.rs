@@ -351,7 +351,7 @@ pub fn ReflowStreamLayout(
             <div
                 id=PAGE_LIST_ID
                 node_ref=list_ref
-                data-reader-host=crate::components::ai::reflow_anchor::HOST_REFLOW
+                data-reader-host=crate::dom_contract::HOST_REFLOW
                 class=move || {
                     let base =
                         "tx-stream scrollbar-none h-full w-full overflow-y-auto outline-none";

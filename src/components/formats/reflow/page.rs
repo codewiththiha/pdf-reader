@@ -33,7 +33,7 @@ use leptos::prelude::*;
 
 use reflow_core::geometry::{SpineSide, geometry, PAGE_HEIGHT, PAGE_WIDTH};
 
-use crate::components::ai::reflow_anchor::HOST_REFLOW;
+use crate::dom_contract::HOST_REFLOW;
 use crate::components::formats::block_render::BlockView;
 use super::block_render;
 use crate::state::reader::TypographySignal;

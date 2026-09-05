@@ -9,6 +9,8 @@ use wasm_bindgen::JsCast;
 
 use pdf_core::pixel_grid::snap_px;
 
+use crate::dom_contract::PAGE_SNAPSHOT_CLASS;
+
 /// Resize a `.pdf-page` host so its EXISTING bitmap stretches to `new_scale`,
 /// optionally masking the canvas with a pixel copy first.
 ///
@@ -83,7 +85,7 @@ pub(super) fn stretch_host(
     // would be blank and re-expose the flash. The old snapshot holds a pre-wipe
     // bitmap and stretches with the host; the latest completion removes it.
     let has_snapshot = host_el
-        .query_selector_all(".page-snapshot")
+        .query_selector_all(&format!(".{PAGE_SNAPSHOT_CLASS}"))
         .map(|l| l.length() > 0)
         .unwrap_or(false);
     if has_snapshot {
@@ -93,7 +95,7 @@ pub(super) fn stretch_host(
     let Some(snap) = doc.as_ref().and_then(|d| d.create_element("canvas").ok()) else {
         return;
     };
-    _ = snap.set_attribute("class", "page-snapshot");
+    _ = snap.set_attribute("class", PAGE_SNAPSHOT_CLASS);
     if let Some(dst) = snap.dyn_ref::<web_sys::HtmlCanvasElement>() {
         dst.set_width(src.width());
         dst.set_height(src.height());
@@ -130,7 +132,7 @@ pub(super) fn stretch_host(
 /// does not release a canvas IOSurface on DOM removal alone, so a snapshot
 /// dropped after every zoom would otherwise leak a full-page RGBA buffer.
 pub(super) fn remove_snapshots(host: &web_sys::Element) {
-    if let Ok(stale) = host.query_selector_all(".page-snapshot") {
+    if let Ok(stale) = host.query_selector_all(&format!(".{PAGE_SNAPSHOT_CLASS}")) {
         let mut i = stale.length();
         while i > 0 {
             i -= 1;

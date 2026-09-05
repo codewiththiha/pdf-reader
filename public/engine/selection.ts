@@ -4,6 +4,19 @@
 // See the original pdfEngine.ts commentary: no clamp mid-drag, preserve
 // last-known pages across inter-page gaps.
 
+import {
+  AI_POPOVER_SELECTOR,
+  BLOCK_INDEX_ATTR,
+  BLOCK_ROW_SELECTOR,
+  HOST_ATTR,
+  HOST_PAGE_ATTR,
+  HOST_REFLOW,
+  HOST_SELECTOR,
+  pageFromHostId,
+  pageFromWrapId,
+  STREAM_WRAP_SELECTOR,
+  TEXT_LAYER_SELECTOR,
+} from "./dom-contract";
 import { SELECTION_DETAIL_EVENT, SELECTION_PAGES_EVENT } from "./events";
 
 let selDragging = false;
@@ -29,12 +42,11 @@ let clickClearTimer: ReturnType<typeof setTimeout> | null = null;
 // rather than cleared on mouseup: the debounced clear runs after mouseup.
 let pointerDownInAiUi = false;
 
-// Every reader page host advertises itself with `data-reader-host` (the
-// format family that painted it) and `data-host-page` (the 1-based page it is
-// showing). Asking for those two instead of for `.pdf-page` is what lets a
-// selection inside a page of type be a selection like any other: no selector
-// here grows a second class when a format arrives.
-const HOST_SELECTOR = "[data-reader-host]";
+// Every reader page host advertises itself with the format family that painted
+// it and the 1-based page it is showing (both in `./dom-contract`). Asking for
+// those two instead of for `.pdf-page` is what lets a selection inside a page of
+// type be a selection like any other: no selector here grows a second class when
+// a format arrives.
 
 function hostOf(node: Node | null): Element | null {
   if (!node) return null;
@@ -47,23 +59,23 @@ function hostOf(node: Node | null): Element | null {
 function findPageNumber(node: Node | null): number | null {
   const host = hostOf(node);
   if (!host) return null;
-  const declared = host.getAttribute("data-host-page");
+  const declared = host.getAttribute(HOST_PAGE_ATTR);
   if (declared) {
     const page = parseInt(declared, 10);
     if (Number.isFinite(page) && page > 0) return page;
   }
-  // The continuous PDF strip's hosts carry their index in the id, and so do
-  // the wrappers around them (a selection in the gap between two pages lands
-  // on a wrapper). Kept as the fallback it has always been.
+  // A host that does not declare its page still carries it in its id, and so
+  // do the wrappers around a strip's pages (a selection in the gap between two
+  // pages lands on a wrapper). Kept as the fallback it has always been.
   if (host.id) {
-    const m = /^cont-(\d+)-pg$/.exec(host.id);
-    if (m && m[1]) return parseInt(m[1], 10) + 1;
+    const fromId = pageFromHostId(host.id);
+    if (fromId !== null) return fromId;
   }
   const el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element));
-  const wrapEl = el ? el.closest("[id^='cont-'][id$='-wrap']") : null;
+  const wrapEl = el ? el.closest(STREAM_WRAP_SELECTOR) : null;
   if (wrapEl && wrapEl.id) {
-    const m = /^cont-(\d+)-wrap$/.exec(wrapEl.id);
-    if (m && m[1]) return parseInt(m[1], 10) + 1;
+    const fromWrap = pageFromWrapId(wrapEl.id);
+    if (fromWrap !== null) return fromWrap;
   }
   return null;
 }
@@ -81,9 +93,9 @@ function findReflowSpot(range: Range): ReflowSpot | null {
     ? range.startContainer.parentElement
     : (range.startContainer as Element | null);
   if (!startEl) return null;
-  const row = startEl.closest("[data-block-index]");
+  const row = startEl.closest(BLOCK_ROW_SELECTOR);
   if (!row) return null;
-  const rawBlock = row.getAttribute("data-block-index");
+  const rawBlock = row.getAttribute(BLOCK_INDEX_ATTR);
   if (!rawBlock) return null;
   const block = parseInt(rawBlock, 10);
   if (!Number.isFinite(block) || block < 0) return null;
@@ -173,7 +185,7 @@ function contextLayer(node: Node | null): Element | null {
     ? node.parentElement
     : (node as Element | null));
   if (!el) return null;
-  return el.closest("[data-block-index]") ?? el.closest(".textLayer");
+  return el.closest(BLOCK_ROW_SELECTOR) ?? el.closest(TEXT_LAYER_SELECTOR);
 }
 
 function extractContext(range: Range, selectedText: string): string {
@@ -220,10 +232,10 @@ function dispatchSelectionDetail(): void {
   lastDetailKey = key;
 
   const host = hostOf(range.startContainer);
-  const kind = host ? host.getAttribute("data-reader-host") : null;
+  const kind = host ? host.getAttribute(HOST_ATTR) : null;
   // The spot is only meaningful — and only computed — for a reflowable
   // document; a PDF's anchor is the page-space rect the app derives itself.
-  const spot = kind === "reflow" ? findReflowSpot(range) : null;
+  const spot = kind === HOST_REFLOW ? findReflowSpot(range) : null;
 
   globalThis.dispatchEvent(
     new CustomEvent(SELECTION_DETAIL_EVENT, {
@@ -256,7 +268,7 @@ export function installSelectionTracker(): void {
     if (t && t.closest && t.closest(HOST_SELECTOR)) {
       selDragging = true;
     }
-    pointerDownInAiUi = !!(t && t.closest && t.closest("[data-ai-popover]"));
+    pointerDownInAiUi = !!(t && t.closest && t.closest(AI_POPOVER_SELECTOR));
     if (!pointerDownInAiUi) {
       if (clickClearTimer) clearTimeout(clickClearTimer);
       clickClearTimer = setTimeout(dispatchSelectionDetail, 200);

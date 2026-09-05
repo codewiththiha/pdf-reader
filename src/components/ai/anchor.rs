@@ -24,7 +24,8 @@ use reader_core::view::ViewMode;
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
-use crate::components::ai::reflow_anchor::{union_box, HOST_ATTR, HOST_PDF};
+use crate::components::ai::reflow_anchor::union_box;
+use crate::dom_contract::{HOST_ATTR, HOST_PDF};
 use crate::state::ReaderState;
 use app_chrome::hooks::dom::by_id;
 use app_chrome::hooks::use_viewport::viewport_size;

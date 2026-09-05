@@ -30,6 +30,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use super::canvas_host::{remove_snapshots, stretch_host};
+use crate::dom_contract::{HOST_PDF, TEXT_LAYER_CLASS};
 use pdf_core::pixel_grid::snap_px;
 use leptos::task::spawn_local;
 
@@ -439,7 +440,7 @@ pub fn PdfPageCanvas(
         <div
             id=host_id
             class=host_class
-            data-reader-host=crate::components::ai::reflow_anchor::HOST_PDF
+            data-reader-host=HOST_PDF
             data-host-page=page
         >
             <canvas id=canvas_id />
@@ -451,7 +452,7 @@ pub fn PdfPageCanvas(
             // node's contents, so the swap is safe — but keep the class name
             // and position (immediately after the canvas) in sync with
             // `renderPageInternal` in public/pdfEngine.js.
-            <div class="textLayer" aria-hidden="true"></div>
+            <div class=TEXT_LAYER_CLASS aria-hidden="true"></div>
             // Persisted gloss highlights. Rendered by Leptos INSIDE the host,
             // so every remount repaints them from the page-space rects — the
             // reason a mark survives scrolling, zooming and reopening the book.
