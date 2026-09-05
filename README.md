@@ -438,21 +438,23 @@ src/
                           animations, fonts)
     viewer/               the SHAPE of reading: the mode dispatch, the four
                           layouts (single, two-page, continuous, horizontal),
-                          the shells that own the scroll container, and
-                          page_host — the one seam that picks a format
+                          the shells that own the scroll container,
+                          page_host — the one seam that picks a format — and
+                          controls/ (bottom bar, overlay scrollbar, page
+                          indicator, page navigation)
     formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
                           reflow/ (A4 page host, continuous stream, strip,
                           measure column), txt/ and md/ block views, and
                           block_view, the renderer dispatch
-    viewer_controls/      bottom bar, overlay scrollbar, page indicator,
-                          page navigation
     search/               floating search bar and result list
-    ai/                   selection menu, word card, gloss popover
-    overlays/             drag-and-drop feedback, toast host
+    ai/                   selection pill, word card, gloss popover, and the
+                          AI appearance section of the settings modal
+    app_overlays/         drag-and-drop feedback, toast host
   effects/
     app/                  window title, shortcuts, persistence wiring
     reader/               fit and zoom follow, page tracking
-    appearance/           the appearance-to-CSS bridge (shared, pdf, text)
+    appearance/           the appearance-to-CSS bridge (shared, raster,
+                          reflow)
   features/
     library/              the shelf: book cards, empty state, sorting
     reader/               the reader page and its two virtualizers
