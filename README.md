@@ -111,9 +111,11 @@ as real text in the DOM.
   text documents — a comfort dial that softens the ink toward the paper without filtering
   anything. Font pickers list the system faces today; the schema already reserves room for fonts
   bundled with the app.
-- **Markdown is rendered, not displayed.** Headings, lists, tables, blockquotes, links, images
-  and fenced code (GFM included; raw HTML is refused) render block by block, so a heading never
-  gets split across a page break.
+- **Markdown is rendered, not displayed.** Headings, lists, tables, blockquotes, links and fenced
+  code (GFM included; raw HTML is refused) render block by block, so a heading never gets split
+  across a page break. An image is the one construct that does not arrive: the app's
+  content-security policy admits no network origin and the asset protocol serves documents only,
+  so a Markdown image displays when — and only when — its source is a `data:` URI.
 - **Pagination follows the type.** A hidden measure column renders the document once at scale 1,
   reads the true block heights and re-cuts the pages, so what you see is paginated by the real
   fonts — and re-cuts again whenever a typography knob moves, keeping your place on the block you
@@ -638,7 +640,8 @@ Note that the file dialog and drag-and-drop rely on Tauri and are unavailable in
 cargo tauri build
 ```
 
-Bundles are produced for the host platform in `src-tauri/target/release/bundle`. The bundle
+Bundles are produced for the host platform in `target/release/bundle` — the workspace shares one
+target directory, so nothing lands under `src-tauri/`. The bundle
 configuration targets all available formats and ships icons for macOS, Windows and Linux.
 
 ### Tests
