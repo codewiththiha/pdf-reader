@@ -7,8 +7,14 @@
 //! primes the thumbnail cache. Every step after the engine's answer is
 //! guarded by the session stamp (see [`super::session`]), because all of them
 //! can outlive the attempt that started them.
+//!
+//! [`enter`] is the part the two pipelines share: the identity write, the gloss
+//! marks, the resume clamp, the startup scale and the route flip. A tail owns
+//! its own content seeding and calls into [`enter`] for everything a reader
+//! would expect to behave the same whatever the file extension was.
 
 mod cover;
+mod enter;
 mod outline;
 mod seed;
 mod shelf;
@@ -157,14 +163,10 @@ fn ready(
     // state. The resume page is one of them: the strip scrolls to
     // `viewer.page` as it binds its container (`ScrollShell`), so there is no
     // second jump to schedule here.
-    state.reader.document.error.set(None);
-    state.reader.document.status.set(DocStatus::Ready);
-    // A successful open dismisses any stale error toast.
-    state.ui.toast.set(None);
+    enter::enter_ready(state);
 
-    // Reset search + clear stale highlights. The floating search overlay must
-    // not linger after opening a new document.
-    state.reader.search.reset();
+    // The engine's own highlight layer belongs to the previous book; the
+    // search reset inside `enter_ready` is the app's half of the same cleanup.
     engine::clear_highlights();
 
     outline::resolve(state, path.clone(), stamp);

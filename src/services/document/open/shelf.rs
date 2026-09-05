@@ -10,7 +10,7 @@ use crate::storage::{save_covers, save_library};
 ///
 /// An entry evicted past the cap has its cover dropped with it, so the cover
 /// store cannot outgrow the list it belongs to.
-pub(super) fn record(
+pub(crate) fn record(
     state: AppState,
     path: &str,
     title: Option<String>,

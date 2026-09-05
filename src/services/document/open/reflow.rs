@@ -32,18 +32,16 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
 
 use md_core::MarkdownHeading;
-use pdf_engine::types::{DocStatus, PageSize};
+use pdf_engine::types::PageSize;
 use reader_core::filename::display_name;
 use reader_core::format::Format;
 use reader_core::view::ViewMode;
-use reader_core::zoom_math::FitMode;
 use reflow_core::block::TextBlock;
 use reflow_core::geometry::{geometry, PAGE_HEIGHT, PAGE_WIDTH};
 use reflow_core::pager::estimate_heights;
 
 use crate::state::AppState;
 use crate::state::reader::document::reflow::estimate_metrics;
-use crate::zoom::target::FitDims;
 
 use super::session;
 
@@ -155,6 +153,12 @@ fn parse(format: Format, raw: &str) -> Parsed {
 
 /// The document read and parsed: seed the state, flip the route, and let the
 /// measure column refine the cut.
+///
+/// The steps this shares with the PDF tail — identity, gloss marks, the resume
+/// clamp, the startup scale, the route flip, the shelf record — are
+/// [`super::enter`]'s, so the two cannot drift on what "open" means. What is
+/// left here is the reflowable half of the seeding: release the engine, parse
+/// into blocks, estimate the cut, and publish it.
 fn ready(
     state: AppState,
     path: String,
@@ -165,6 +169,25 @@ fn ready(
 ) {
     let settings = state.settings.get_untracked();
     let geo = geometry(settings.text.book_layout);
+    let name = display_name(parsed.title.as_deref(), Some(&path));
+    let Parsed { blocks, title, author, headings } = parsed;
+
+    // Document identity, through the shared handshake. A text page is always
+    // the A4 sheet `reflow_core::geometry` cuts into, and the outline starts
+    // SEEDED rather than pending: the headings are already in the blocks, so
+    // `effects::reader::reflow_outline` re-projects them against the live cut
+    // and there is no resolver tail to race.
+    super::enter::identity(
+        state,
+        super::enter::DocumentIdentity {
+            format,
+            path: path.clone(),
+            title,
+            author,
+            page1_size: PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+            outline: Some(Arc::new(Vec::new())),
+        },
+    );
 
     // A text document opening over a PDF: release the engine's book and the
     // paper session that tracked it — neither has any part in what follows.
@@ -173,71 +196,41 @@ fn ready(
     });
     pdf_engine::paper::document_close();
 
-    // Document identity.
-    let name = display_name(parsed.title.as_deref(), Some(&path));
-    let Parsed { blocks, title, author, headings } = parsed;
-    state.reader.document.format.set(format);
-    state.reader.document.path.set(Some(path.clone()));
-    state.reader.document.title.set(title);
-    state.reader.document.author.set(author);
-    state.reader.document.outline.set(Arc::new(Vec::new()));
-    state.reader.document.outline_pending.set(false);
-    state
-        .reader
-        .document
-        .content
-        .pdf
-        .page1_size
-        .set(Some(PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT }));
+    // The other pipeline's model is released at the same moment, and this
+    // document's gloss highlights are loaded before anything mounts — exactly
+    // where the PDF open loads them, so the first page (or the first stream
+    // window) already paints them. A reflowable mark is a block and a
+    // character range rather than a rect, so it is `apply_heights` below —
+    // which publishes the block→page map — that makes it projectable; loading
+    // first and paginating second is what puts a mark on the right page at
+    // first paint instead of a frame later.
+    state.reader.document.content.reflow.reset();
+    super::enter::load_marks(state, &path);
 
     // The reflowable content: blocks in, estimate cut out. `apply_heights`
-    // carries the page count and the per-page sizes across to the machinery the
-    // PDF shares. The other format's pages are released at the same moment.
-    state.reader.document.content.reflow.reset();
-    state.reader.gloss.reset();
-    // The document's gloss highlights, loaded exactly where the PDF open loads
-    // them: before anything mounts, so the first page (or the first stream
-    // window) already paints them. A reflowable mark is a block and a
-    // character range rather than a rect, so it is the `apply_heights` below —
-    // which publishes the block→page map — that makes it projectable; loading
-    // first and paginating second is what puts it on the right page at first
-    // paint instead of a frame later.
-    state.reader.gloss.marks.set(
-        crate::storage::load_gloss()
-            .remove(&path)
-            .unwrap_or_default(),
-    );
+    // carries the page count and the per-page sizes across to the machinery
+    // the PDF shares.
     let metrics = estimate_metrics(&settings.text, &geo);
     let heights = estimate_heights(&blocks, &metrics);
     state.reader.document.content.reflow.blocks.set(Arc::new(blocks));
     state.reader.document.content.reflow.headings.set(Arc::new(headings));
 
-    // The seed scale, resolved exactly the way the first live refit will
-    // (a text page is always A4, so the fit inputs are known up front) —
-    // except in the continuous stream, where there is no page to fit: the
-    // window is the page, type size belongs to the typography settings,
-    // and the zoom starts at 1.
-    let streaming = state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
-    let startup_fit = if streaming { FitMode::None } else { settings.layout.default_fit };
-    let scale = if streaming {
-        1.0
-    } else {
-        FitDims::from_geometry(
-            state.reader.viewer.mode.get_untracked(),
-            state.reader.viewer.container_size.get_untracked(),
-            state.reader.viewer.page_margin.get_untracked(),
-            (PAGE_WIDTH, PAGE_HEIGHT),
-        )
-        .map_or(1.0, |dims| dims.fit(startup_fit, 1.0))
-    };
+    // The seed scale, from the same shared step the PDF seed uses — including
+    // the stream exception, where there is no page to fit.
+    let (startup_fit, scale) = super::enter::startup_scale(state, (PAGE_WIDTH, PAGE_HEIGHT));
 
     // Reading position + zoom, seeded in the same order the PDF seed uses:
-    // anchor guard up BEFORE the page is written, zoom initialised BEFORE
-    // the heights are published at that scale. The stream's fractional
-    // resume rides along only when the document opens INTO the stream — a
-    // fraction saved by an earlier streamed session means nothing to a paged
-    // read, and letting it linger would hijack the anchor when the reader
-    // later flips the mode.
+    // anchor guard up BEFORE the page is written, zoom initialised BEFORE the
+    // heights are published at that scale. The stream's fractional resume
+    // rides along only when the document opens INTO the stream — a fraction
+    // saved by an earlier streamed session means nothing to a paged read, and
+    // letting it linger would hijack the anchor when the reader later flips
+    // the mode.
+    // Read the mode, not the fit it produced: `FitMode::None` would also be
+    // the answer for a persisted default that resolved to no fit, and the
+    // fraction below must ride along only for a document that opened INTO the
+    // stream.
+    let streaming = state.reader.viewer.mode.get_untracked() == ViewMode::ScrollVertical;
     state.reader.document.content.reflow.resume_fraction.set(if streaming { saved_fraction } else { None });
     state.reader.viewer.awaiting_anchor.set(true);
     state.reader.viewer.fit.set(startup_fit);
@@ -245,16 +238,16 @@ fn ready(
     state.reader.viewer.scroll_top.set(0.0);
 
     state.reader.document.content.reflow.apply_heights(state, heights, geo);
-    let n = state.reader.document.num_pages.get_untracked();
-    state.reader.viewer.page.set(saved_page.clamp(1, n.max(1)));
+    let num_pages = state.reader.document.num_pages.get_untracked();
+    let resume = super::enter::resume_page(saved_page, num_pages);
+    state.reader.viewer.page.set(resume);
 
-    // Ready: flip the route LAST, after every signal the fresh mount reads
-    // is seeded. A successful open dismisses any stale error toast.
-    state.reader.document.error.set(None);
-    state.reader.document.status.set(DocStatus::Ready);
-    state.ui.toast.set(None);
-    state.reader.search.reset();
+    super::enter::enter_ready(state);
 
-    // The shelf record is the last step, exactly as it is for a PDF.
-    super::shelf::record(state, &path, name, saved_page.clamp(1, n.max(1)), n);
+    // The shelf record is the last step, exactly as it is for a PDF. No cover
+    // and no thumbnail warmup follow it, and that is the format's answer
+    // rather than an omission: both are page-1 rasters out of the pdf.js
+    // engine (`super::cover`, `super::warmup`), and a reflowable document has
+    // no raster to hand them — its shelf card keeps the stylised fallback.
+    super::shelf::record(state, &path, name, resume, num_pages);
 }
