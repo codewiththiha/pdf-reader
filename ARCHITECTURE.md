@@ -24,7 +24,7 @@ It has no DOM, no framework coupling, and is the long-term public crate surface.
 
 - `VirtualizerCore` is still pure and unit-testable
 - `use_virtualizer` binds browser scroll containers and resize observers
-- the public `Virtualizer` exposes reactive mounted items/rows, total size, padding, dominant item, scrolling state, and scroll-to APIs
+- the public `Virtualizer` exposes reactive mounted items/rows, total size, dominant item, scroll offset and viewport, per-item offsets, the scroll-to APIs, and the measurement controls (report, suspend, resume, retention grace)
 
 This layer is responsible for DOM measurement flow, scroll scheduling, and keeping the geometry authoritative.
 
@@ -215,7 +215,7 @@ format-agnostic.
 - Format questions are asked once: `Format::is_reflowable` in `reader-core` is the predicate,
   `ReaderState::reflowable()` is the tracked read of it, and the UI never tests an extension
   or a document variant inline. The leaf renderer is the same deal one level down:
-  `components::formats::block_view::BlockView` dispatches a block to the text or Markdown view
+  `components::formats::block_render::BlockView` dispatches a block to the text or Markdown view
   from the document's format, so the page, the stream and the measure column share one
   answer and none of them knows what Markdown is.
 - Text never enters blend mode and never touches the paper session: a text page is recoloured by

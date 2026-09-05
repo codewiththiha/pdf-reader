@@ -454,7 +454,7 @@ src/
     formats/              the SUBSTANCE of a document: pdf/ (canvas + strip),
                           reflow/ (A4 page host, continuous stream, strip,
                           measure column), txt/ and md/ block views, and
-                          block_view, the renderer dispatch
+                          block_render, the renderer dispatch
     search/               floating search bar and result list
     ai/                   selection pill, word card, gloss popover, the anchor
                           resolvers that place a mark's stroke, and the AI
@@ -477,6 +477,10 @@ src/
   zoom/                   the zoom pipeline: posted commands, target
                           resolution, the tween, and the actuator that owns
                           the one relayout path over both strips
+  dom_contract.rs         the attribute, class and element-id names the engine
+                          reads and the app writes — one table, both sides
+  events.rs               the window-event names the engine dispatches and the
+                          app listens for
 crates/
   ai-core/                the format-agnostic AI core: the word-explanation
                           wire types (WordInfo, AiError, the chunk envelope),
