@@ -24,7 +24,11 @@ use pdf_engine::api as engine;
 use app_chrome::hooks::use_timeout::use_timeout_slot;
 use crate::state::ReaderState;
 
-use super::geometry::{CELL_W, PULSE_STOP_MS, THUMB_SCALE};
+use super::geometry::{CELL_W, THUMB_SCALE};
+
+/// Delay (ms) before the skeleton pulse is removed after a thumbnail render
+/// resolves.
+const PULSE_STOP_MS: u64 = 400;
 
 /// Registry of pages whose canvases are currently engine-bound. A `HashSet`
 /// keeps the per-cell mount/unmount bookkeeping O(1); `Arc<Mutex>` because

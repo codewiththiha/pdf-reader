@@ -20,7 +20,14 @@ use std::time::Duration;
 use leptos::prelude::*;
 use virtual_list_leptos::{ScrollMode, Virtualizer};
 
-use super::geometry::{CELL_W, GLIDE_DEBOUNCE_MS, GRACE_MS, THUMB_SCALE};
+use super::geometry::{CELL_W, THUMB_SCALE};
+
+/// Debounce for the auto-center glide: the scroll fires once this long after
+/// page writes have settled.
+const GLIDE_DEBOUNCE_MS: u64 = 80;
+/// User-drive grace window: while the user has interacted with the thumb grid
+/// within this many ms, auto-center defers instead of yanking the panel away.
+const GRACE_MS: f64 = 1500.0;
 use crate::state::ReaderState;
 use crate::state::app::SidebarMode;
 
