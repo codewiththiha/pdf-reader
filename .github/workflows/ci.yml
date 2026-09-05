@@ -127,6 +127,12 @@ jobs:
       - name: Verify supported formats are in sync
         run: node scripts/check-formats.js
 
+      # Module docs in this repo name the modules they work with, and a rename
+      # leaves the prose pointing at nothing. Rustdoc only checks `///` links it
+      # can resolve as links; most of these are backticked prose.
+      - name: Verify comment paths resolve
+        run: node scripts/check-doc-paths.js
+
   # The Linux job above cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
   # feature set that feeds it) would otherwise first surface when a release
