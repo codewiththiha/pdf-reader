@@ -1,7 +1,7 @@
 // LRU thumbnail cache + blit / render.
 
 import type { MaybeCanvas, ThumbEntry, ThumbResult } from "./types";
-import { el, errorInfo, fail, releaseCanvas, showBaked, showRaw } from "./canvas";
+import { el, fail, failFrom, offscreenFor, releaseCanvas, showBaked, showRaw } from "./canvas";
 import { bakeRaster } from "./theme/bake";
 import { readPipeline, pipelineCache } from "./theme/pipeline";
 import {
@@ -88,8 +88,7 @@ export async function renderThumb(
     try {
       return await renderThumbInternal(canvasId, page, scale);
     } catch (e) {
-      const info = errorInfo(e);
-      return fail(info.name, info.message);
+      return failFrom(e);
     }
   }
 
@@ -112,8 +111,7 @@ export async function renderThumb(
       renderThumbInternal(canvasId, page, scale)
         .then(resolve)
         .catch((e: unknown) => {
-          const info = errorInfo(e);
-          resolve(fail(info.name, info.message));
+          resolve(failFrom(e));
         })
         .finally(finish);
     });
@@ -166,14 +164,9 @@ async function renderThumbInternal(
     const cssW = Math.floor(viewport.width);
     const cssH = Math.floor(viewport.height);
 
-    const off = document.createElement("canvas");
-    off.width = Math.max(1, Math.floor(viewport.width * out));
-    off.height = Math.max(1, Math.floor(viewport.height * out));
-    const ctx = off.getContext("2d", { alpha: false });
-    if (!ctx) {
-      releaseCanvas(off);
-      return fail("no_context", "No 2d context");
-    }
+    const made = offscreenFor(viewport, out);
+    if (!made) return fail("no_context", "No 2d context");
+    const { canvas: off, ctx } = made;
     const transform = out !== 1 ? [out, 0, 0, out, 0, 0] : null;
 
     const task = pg.render({ canvasContext: ctx, viewport, transform });
@@ -187,8 +180,7 @@ async function renderThumbInternal(
       if ((e as { name?: string }).name === "RenderingCancelledException") {
         return fail("cancelled", "Thumb render cancelled");
       }
-      const info = errorInfo(e);
-      return fail(info.name, info.message);
+      return failFrom(e);
     }
     session.thumbTasks.delete(canvasId);
     pg.cleanup();
@@ -233,8 +225,7 @@ async function renderThumbInternal(
     return { ok: true, width: cssW, height: cssH, scale };
   } catch (e) {
     session.thumbTasks.delete(canvasId);
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+    return failFrom(e);
   }
 }
 
@@ -264,11 +255,9 @@ export async function prefetchThumb(page: number, scale: number): Promise<void> 
   try {
     const pg = await session.pdf.getPage(page);
     const viewport = pg.getViewport({ scale });
-    const off = document.createElement("canvas");
-    off.width = Math.max(1, Math.floor(viewport.width));
-    off.height = Math.max(1, Math.floor(viewport.height));
-    const ctx = off.getContext("2d", { alpha: false });
-    if (!ctx) { releaseCanvas(off); return; }
+    const made = offscreenFor(viewport);
+    if (!made) return;
+    const { canvas: off, ctx } = made;
     const task = pg.render({ canvasContext: ctx, viewport });
     await task.promise;
     pg.cleanup();

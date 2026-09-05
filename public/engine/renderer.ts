@@ -4,7 +4,7 @@ import type {
   PageState,
   RenderResult,
 } from "./types";
-import { el, errorInfo, fail, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
+import { el, fail, failFrom, releaseCanvas, releasePooledCanvas, showBaked } from "./canvas";
 import { stashPaperFrame } from "./paper";
 import { bakeRaster } from "./theme/bake";
 import { pipelineIsIdentity, readPipeline } from "./theme/pipeline";
@@ -18,6 +18,33 @@ import {
 import { TextLayer } from "./loader";
 import { applyHighlights } from "./highlights";
 import { buildLinkLayer } from "./links";
+
+/** A page with nothing in flight: no render task, no text layer, no viewport,
+ *  no raw raster, and both queue counters at zero. Two callers build one — a
+ *  canvas found in the DOM, and a page registered before its canvas exists —
+ *  and a field added to `PageState` should have exactly one place to be given
+ *  its initial value. */
+function blankPage(
+  page: number,
+  canvas: HTMLCanvasElement | null,
+  host: HTMLElement | null,
+  textLayerEl: HTMLElement | null
+): PageState {
+  return {
+    page,
+    canvas,
+    host,
+    textLayerEl,
+    renderTask: null,
+    textLayer: null,
+    viewport: null,
+    scale: 1,
+    dead: false,
+    rawCanvas: null,
+    queueGen: 0,
+    queueHandle: 0,
+  };
+}
 
 /** Look up or create PageState. Recovers when registerPage ran before the
  *  <canvas> was in the DOM (Leptos mounts the effect one tick early). */
@@ -43,25 +70,12 @@ function ensurePage(
     existing.textLayerEl = textLayerEl;
     return existing;
   }
-  const st: PageState = {
-    // Prefer the caller's hint (registerPage passes the page number); fall
-    // back to parsing the id only when the mount never registered.
-    // The id is only a fallback: registerPage normally passes the page. An id
-    // this cannot parse is not a reader host at all, and page 1 is the least
-    // wrong guess for a canvas that is about to be told which page it is.
-    page: pageHint && pageHint > 0 ? pageHint : (pageFromCanvasId(canvasId) ?? 1),
-    canvas,
-    host,
-    textLayerEl,
-    renderTask: null,
-    textLayer: null,
-    viewport: null,
-    scale: 1,
-    dead: false,
-    rawCanvas: null,
-    queueGen: 0,
-    queueHandle: 0,
-  };
+  // Prefer the caller's hint (registerPage passes the page number); fall back to
+  // parsing the id only when the mount never registered. An id this cannot parse
+  // is not a reader host at all, and page 1 is the least wrong guess for a
+  // canvas that is about to be told which page it is.
+  const page = pageHint && pageHint > 0 ? pageHint : (pageFromCanvasId(canvasId) ?? 1);
+  const st = blankPage(page, canvas, host, textLayerEl);
   session.stateByCanvasId.set(canvasId, st);
   return st;
 }
@@ -81,20 +95,10 @@ export function registerPage(page: number, canvasId: string, hostId?: string): v
   if (!st) {
     // Canvas not in the DOM yet. Remember the page/host so renderPage can
     // finish registration on the next tick.
-    session.stateByCanvasId.set(canvasId, {
-      page,
-      canvas: null,
-      host: hostId ? el(hostId) : null,
-      textLayerEl: null,
-      renderTask: null,
-      textLayer: null,
-      viewport: null,
-      scale: 1,
-      dead: false,
-      rawCanvas: null,
-      queueGen: 0,
-      queueHandle: 0,
-    });
+    session.stateByCanvasId.set(
+      canvasId,
+      blankPage(page, null, hostId ? el(hostId) : null, null)
+    );
   }
 }
 
@@ -205,8 +209,7 @@ export async function renderPageInternal(
     if ((e as { name?: string }).name === "RenderingCancelledException") {
       return fail("cancelled", "Render cancelled");
     }
-    const info = errorInfo(e);
-    return fail(info.name, info.message);
+    return failFrom(e);
   }
   if (st.dead) {
     try { page.cleanup(); } catch (_) { /* ignore */ }
@@ -279,8 +282,7 @@ export async function renderPageInternal(
       if ((e as { name?: string }).name === "AbortException") {
         return fail("cancelled", "Text render cancelled");
       }
-      const info = errorInfo(e);
-      return fail(info.name, info.message);
+      return failFrom(e);
     }
     if (st.dead) {
       try { page.cleanup(); } catch (_) { /* ignore */ }
@@ -360,8 +362,7 @@ export async function renderPage(
       try {
         renderPageInternal(canvasId, scale, !!renderText).then(resolve);
       } catch (e) {
-        const info = errorInfo(e);
-        resolve(fail(info.name, info.message));
+        resolve(failFrom(e));
       }
     });
   });
