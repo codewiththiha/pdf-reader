@@ -101,16 +101,10 @@ mod tests {
         // literals; parse lightness out of the oklch() forms and the hex).
         let full_ink = ink(&full);
         let half_ink = ink(&half);
-        let l_of = |v: &str| {
-            if let Ok(v) = parse_oklch(v) {
-                v.0
-            } else {
-                crate::appearance::shared::oklch::hex_to_oklch(v).unwrap().0
-            }
-        };
+        let l_of = |v: &str| crate::appearance::fixture::lch(v).0;
         let full_l = l_of(&full_ink);
         let half_l = l_of(&half_ink);
-        let paper_l = parse_oklch(&p.paper).unwrap().0;
+        let paper_l = crate::appearance::fixture::lch(&p.paper).0;
         assert!(full_l < half_l, "full {full_l} vs half {half_l}");
         assert!(half_l < paper_l, "half {half_l} vs paper {paper_l}");
         assert_eq!(full_ink, p.ink);
@@ -127,21 +121,10 @@ mod tests {
         // 0% flattens the ink into the paper: its lightness and chroma
         // land on the paper's (the hue is kept, and irrelevant at C=0).
         let zeroed = css_variables(&a, 0.0);
-        let (l, c, _) = parse_oklch(&zeroed[1].1).unwrap();
+        let (l, c, _) = crate::appearance::fixture::lch(&zeroed[1].1);
         let paper = TextPalette::compute(&a).paper;
-        let (pl, pc, _) = parse_oklch(&paper).unwrap();
+        let (pl, pc, _) = crate::appearance::fixture::lch(&paper);
         assert!((l - pl).abs() < 1e-9, "0% ink L {l} vs paper L {pl}");
         assert!(c < 0.001 && pc < 0.001, "0% ink C {c}, paper C {pc}");
-    }
-
-    /// (L, C, H) out of an `oklch(...)` literal.
-    fn parse_oklch(value: &str) -> Result<(f64, f64, f64), ()> {
-        let inner = value.trim().strip_prefix("oklch(").ok_or(())?.strip_suffix(')').ok_or(())?;
-        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>());
-        Ok((
-            it.next().ok_or(())?.map_err(|_| ())?,
-            it.next().ok_or(())?.map_err(|_| ())?,
-            it.next().ok_or(())?.map_err(|_| ())?,
-        ))
     }
 }

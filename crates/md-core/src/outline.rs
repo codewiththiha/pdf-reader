@@ -77,9 +77,6 @@ pub fn extract_headings(raw: &str) -> Vec<MarkdownHeading> {
             }
             continue;
         }
-        if in_fence {
-            continue;
-        }
         if trimmed.is_empty() {
             current = None;
             continue;

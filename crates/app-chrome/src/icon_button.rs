@@ -49,21 +49,13 @@ pub fn IconButton(
     // they inherit, so a caller's `class` passthrough can set the colour
     // without fighting a conditional utility. Toggle buttons keep the
     // accent/ink swap (only one branch is ever in the DOM).
-    let base_sig = pressed.map(|_| {
-        (
-            format!(
-                "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
-                 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
-                 disabled:cursor-not-allowed disabled:opacity-45"
-            ),
-            pressed_sig,
-        )
-    });
-    let base_plain = format!(
+    let base_class = format!(
         "{box_class} border border-transparent bg-transparent transition-colors hover:bg-line \
          focus:outline-none focus-visible:ring-2 focus-visible:ring-accent \
          disabled:cursor-not-allowed disabled:opacity-45"
     );
+    let base_sig = pressed.map(|_| (base_class.clone(), pressed_sig));
+    let base_plain = base_class;
 
     view! {
         <button

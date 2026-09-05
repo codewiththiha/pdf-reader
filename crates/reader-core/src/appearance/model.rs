@@ -226,11 +226,10 @@ impl Appearance {
         if let Some(value) = self.tinted_accent() {
             return value;
         }
-        match self.base {
-            BaseMode::Light => "#2563eb".into(),
-            BaseMode::Dark => "#60a5fa".into(),
-            BaseMode::Dim => "#7a9bd4".into(),
-        }
+        // Untinted: the accent is whatever the base mode declares, so ask
+        // `base.rs` directly rather than keeping a second copy of the three
+        // literals here to drift.
+        super::base::base_tokens(self.base).accent.into()
     }
 }
 #[cfg(test)]

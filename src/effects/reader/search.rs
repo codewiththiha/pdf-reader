@@ -63,7 +63,7 @@ pub async fn run_search(state: ReaderState) {
         return;
     }
 
-    match engine::search(&query).await {
+    match engine::search(&query) {
         Ok(resp) => {
             state.search.total.set(resp.total);
             state.search.matches.set(resp.matches);

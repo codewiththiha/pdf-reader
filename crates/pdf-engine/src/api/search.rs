@@ -115,7 +115,11 @@ pub async fn build_search_index(num_pages: u32) -> Result<u32, EngineError> {
 /// (`setSearchContext`) so already-mounted pages repaint their highlight
 /// boxes — they paint from the DOM text layer, not from the match list, so
 /// without this the results list would fill while the page stayed unmarked.
-pub async fn search(query: &str) -> Result<SearchResponse, EngineError> {
+///
+/// Deliberately synchronous: the index is local once built (querying it and
+/// publishing the context are both engine-side one-shots), so an `async`
+/// signature would only levy a future every caller must `.await` for nothing.
+pub fn search(query: &str) -> Result<SearchResponse, EngineError> {
     let response = with(|i| i.query(query));
     bridge::set_search_context(query);
     Ok(response)
