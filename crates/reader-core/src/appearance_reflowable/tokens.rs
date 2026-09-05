@@ -16,7 +16,7 @@
 //! mounted block on every tick.
 
 use crate::appearance::Appearance;
-use crate::appearance_text::palette::{TextPalette, mix_toward_paper};
+use crate::appearance_reflowable::palette::{TextPalette, mix_toward_paper};
 
 /// The ink dial as a fraction of the palette ink retained (0..=1).
 fn ink_keep(ink_contrast: f64) -> f64 {
@@ -62,7 +62,7 @@ pub fn css_variables(a: &Appearance, ink_contrast: f64) -> Vec<(&'static str, St
 mod tests {
     use super::*;
     use crate::appearance::Appearance;
-    use crate::appearance_text::palette::TextPalette;
+    use crate::appearance_reflowable::palette::TextPalette;
 
     #[test]
     fn the_variables_carry_the_palette_in_a_stable_order() {

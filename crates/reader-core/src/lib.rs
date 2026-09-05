@@ -26,12 +26,15 @@
 //!
 //! The appearance pipelines are the one deliberate narrowing: `appearance`
 //! holds the shared kernel (model, base palettes, colour maths, noise and
-//! texture helpers), and the two siblings `appearance_pdf` /
-//! `appearance_text` hold the format-specific derivations. They live here
+//! texture helpers), and the two siblings `appearance_raster` /
+//! `appearance_reflowable` hold the derivations for the two ways a page can be
+//! painted: pixels that arrive from a renderer, and type laid out in the DOM.
+//! They are named for that split rather than for a file format because the
+//! split is what they key on. They live here
 //! rather than in the format crates because they are pure colour computation
 //! over the shared [`appearance::Appearance`] type — no DOM, no engine — so
 //! the host test suite can hold every number they produce to account. The
-//! engine bridge that APPLIES the PDF pipeline stays in the app crate.
+//! engine bridge that APPLIES the raster pipeline stays in the app crate.
 //!
 //! The spring in [`spring`] is here rather than with the AI features that also
 //! use it because the floating panels and the gloss card must ride ONE
@@ -39,8 +42,8 @@
 //! from the general code into a feature.
 
 pub mod appearance;
-pub mod appearance_pdf;
-pub mod appearance_text;
+pub mod appearance_raster;
+pub mod appearance_reflowable;
 pub mod filename;
 pub mod floating;
 pub mod format;

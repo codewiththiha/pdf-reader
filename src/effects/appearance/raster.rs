@@ -1,7 +1,7 @@
-//! The PDF-specific appearance hooks: the token set the raster pipeline
-//! paints and the engine bridge it needs. Text pages never touch these —
-//! their variables live in `text.rs` and their pages repaint from CSS
-//! alone, with no engine call.
+//! The raster pipeline's appearance hooks: the token set it paints and the
+//! engine bridge it needs. A reflowable page never touches these — its
+//! variables live in `reflow.rs` and it repaints from CSS alone, with no
+//! engine call.
 
 use reader_core::appearance::Appearance;
 

@@ -11,7 +11,7 @@
 
 use crate::appearance::preview::ps_surface_tail;
 use crate::appearance::Appearance;
-use crate::appearance_text::palette::TextPalette;
+use crate::appearance_reflowable::palette::TextPalette;
 
 impl Appearance {
     /// Inline `style` for a preset thumbnail, rendered with the text-page

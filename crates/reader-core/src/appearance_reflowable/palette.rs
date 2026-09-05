@@ -2,7 +2,7 @@
 //! [`Appearance`] into the concrete colours a text/Markdown page paints.
 //!
 //! WHY ITS OWN MATH. A PDF page is an always-light raster, so base mode and
-//! tint reach it through a CSS filter chain (see `appearance_pdf`) whose
+//! tint reach it through a CSS filter chain (see `appearance_raster`) whose
 //! numbers are chosen for bitmaps. A text page owns its paper and ink
 //! outright, so it derives them directly — and deliberately NOT with the
 //! PDF maths, because the two formats need different things:

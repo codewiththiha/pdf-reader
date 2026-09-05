@@ -112,7 +112,7 @@ pub fn body_char_width(settings: &TextSettings) -> f64 {
 /// `--tx-font-sans`, `--tx-font-mono`.
 ///
 /// The ink dial is deliberately NOT here: it is resolved in Rust by the
-/// appearance pipeline (reader-core's `appearance_text`), which mixes the
+/// appearance pipeline (reader-core's `appearance_reflowable`), which mixes the
 /// palette ink toward the paper itself and paints a flat `--tx-ink` — the
 /// stylesheet never mixes live. Column alignment is also NOT here — it
 /// positions a container (a class on the stream column), not a value any
@@ -205,7 +205,7 @@ mod tests {
         assert!(joined.contains("--tx-font-sans:"), "{joined}");
         assert!(joined.contains("--tx-font-mono:"), "{joined}");
         // The ink dial is NOT part of this contract: it resolves in Rust
-        // (appearance_text) and paints as a flat --tx-ink.
+        // (appearance_reflowable) and paints as a flat --tx-ink.
         assert!(!joined.contains("--tx-ink-contrast"), "{joined}");
     }
 

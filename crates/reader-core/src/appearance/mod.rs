@@ -7,11 +7,11 @@
 //!     tint hue mapping and ceilings, the noise/texture helpers
 //!   * `preview` — the preset-thumbnail preview style/class
 //!
-//! The two format pipelines live beside this kernel as their own
-//! crate-level modules: `appearance_pdf` (the raster filter chain +
-//! UI-token overrides) and `appearance_text` (the direct-colour palette
-//! for text/Markdown pages). Both read the model and the shared kernel;
-//! neither reads the other.
+//! The two pipelines live beside this kernel as their own crate-level
+//! modules: `appearance_raster` (the filter chain + UI-token overrides for
+//! pages that arrive as bitmaps) and `appearance_reflowable` (the
+//! direct-colour palette for pages painted as CSS text). Both read the model
+//! and the shared kernel; neither reads the other.
 
 pub mod base;
 mod model;

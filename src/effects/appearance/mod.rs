@@ -7,12 +7,13 @@
 //! mode) flush or cancel a pending scrub through `flush_appearance_commit` /
 //! `cancel_appearance_commit`.
 //!
-//! Format-specific hooks live in the siblings: `pdf` owns the engine bridge
-//! (re-bake / scrub mode — only the raster pipeline needs it) and `text`
-//! recomputes the text-page tokens, which repaint from CSS alone.
+//! Pipeline-specific hooks live in the siblings: `raster` owns the engine
+//! bridge (re-bake / scrub mode — only the raster pipeline needs it) and
+//! `reflow` recomputes the reflowable page's tokens, which repaint from CSS
+//! alone.
 
-pub(crate) mod pdf;
-pub(crate) mod text;
+pub(crate) mod raster;
+pub(crate) mod reflow;
 
 use std::cell::{Cell, RefCell};
 use std::time::Duration;
@@ -68,14 +69,14 @@ thread_local! {
 fn enter_scrub() {
     let was = SCRUBBING.with(|s| s.replace(true));
     if !was {
-        pdf::set_scrub_mode(true);
+        raster::set_scrub_mode(true);
     }
 }
 
 fn leave_scrub() {
     let was = SCRUBBING.with(|s| s.replace(false));
     if was {
-        pdf::set_scrub_mode(false);
+        raster::set_scrub_mode(false);
     }
 }
 
@@ -195,7 +196,7 @@ pub fn preview_appearance(settings: RwSignal<Settings>, patch: AppearanceScrub) 
     // document — the guard lives in the engine api); the blend backdrop
     // follows in the same frame on its own, being pure CSS over the same
     // variables.
-    pdf::refresh_theme();
+    raster::refresh_theme();
 
     let commit_gen = bump_commit_gen();
     COMMIT_PAYLOAD.with(|p| p.set(Some((settings, patch))));

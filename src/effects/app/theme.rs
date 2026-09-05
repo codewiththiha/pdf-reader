@@ -1,14 +1,16 @@
 //! Applies the persisted appearance to the DOM whenever it changes.
 //!
 //! Three layers, painted on every change (they write DISJOINT property
-//! sets, so the formats never fight over a token):
-//!   shared — `data-base`, the `.dark` class, `color-scheme`, the texture
+//! sets, so the pipelines never fight over a token):
+//!   shared     — `data-base`, the `.dark` class, `color-scheme`, the texture
 //!     and noise variables (identical for every format),
-//!   PDF    — `--canvas-filter` / `--canvas-blend` plus the seven tinted
-//!     `--color-*` overrides; the raster pipeline reads these,
-//!   text   — the seven `--tx-*` tokens the text/Markdown pages read
-//!     (see reader-core `appearance_text`). The text page paints its own
-//!     paper and ink directly, so no filter ever reaches it.
+//!   raster     — `--canvas-filter` / `--canvas-blend` plus the seven tinted
+//!     `--color-*` overrides, read by the pages that arrive as bitmaps
+//!     (`effects::appearance::raster`),
+//!   reflowable — the seven `--tx-*` tokens a reflowable page reads
+//!     (`effects::appearance::reflow`, over reader-core's
+//!     `appearance_reflowable`). Such a page paints its own paper and ink
+//!     directly, so no filter ever reaches it.
 //!
 //! WHY INLINE PROPERTIES RATHER THAN CSS BLOCKS. The old design had one
 //! `:root[data-theme=...]` block per theme, so every look needed hand-written
@@ -40,7 +42,7 @@ use reader_core::settings::GlossColor;
 use reader_core::settings::RenderPipeline;
 use crate::state::{AppState, AppearanceSignal};
 
-use crate::effects::appearance::{pdf, schedule_save, text};
+use crate::effects::appearance::{raster, reflow, schedule_save};
 
 fn document_element() -> Option<web_sys::Element> {
     web_sys::window()
@@ -135,16 +137,16 @@ pub fn paint_appearance_now(a: Appearance, ink_contrast: f64) {
     // The PDF token set: clear the seven overridable tokens first so a
     // removed tint cannot leave a stale override behind, then write the
     // filter/blend pair and whatever overrides the tint produces.
-    for token in pdf::UI_TOKENS {
+    for token in raster::UI_TOKENS {
         _ = style.remove_property(token);
     }
-    for (name, value) in pdf::token_vars(&a) {
+    for (name, value) in raster::token_vars(&a) {
         _ = style.set_property(name, &value);
     }
     // The text token set, always written alongside: the namespaces are
     // disjoint, so both formats find their own tokens waiting and a format
     // swap needs no extra wiring.
-    for (name, value) in text::token_vars(&a, ink_contrast) {
+    for (name, value) in reflow::token_vars(&a, ink_contrast) {
         _ = style.set_property(name, &value);
     }
 }
@@ -201,7 +203,7 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         );
         if baked.try_get_value().flatten().as_ref() != Some(&signature) {
             baked.set_value(Some(signature));
-            pdf::refresh_theme();
+            raster::refresh_theme();
         }
 
         if !warmed.get_value() {
@@ -218,7 +220,7 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     let pipeline: Memo<RenderPipeline> = Memo::new(move |_| state.settings.with(|st| st.render_pipeline));
 
     Effect::new(move || {
-        pdf::set_live_pipeline(pipeline.get().is_live());
+        raster::set_live_pipeline(pipeline.get().is_live());
     });
 
     // Same narrowing for the gloss tokens: three fields out of the blob, so a
