@@ -59,10 +59,9 @@ use crate::components::viewer_controls::overlay_scrollbar::OverlayScrollbar;
 use crate::components::viewer_controls::progress_strip::ProgressStrip;
 use crate::state::ReaderState;
 
-/// How many frames the mount anchor re-asserts the resume position before
-/// it trusts the layout (same reasoning as the page strip's anchor: a
-/// scroll written into a box the browser has not committed yet is silently
-/// clamped to the top).
+/// How many frames the mount anchor re-asserts the resume position before it
+/// trusts the layout. More than the page strip's budget, and for a reason that
+/// belongs to the aim: see [`anchor_stream`].
 const ANCHOR_SETTLE_FRAMES: u32 = 5;
 
 /// Air under the last block, so the end of a document is a resting point
@@ -166,7 +165,7 @@ pub fn ReflowStreamLayout(
             if list_ref.get().is_none() || !v.is_bound() {
                 return;
             }
-            anchor_stream(state, &v, ANCHOR_SETTLE_FRAMES);
+            anchor_stream(state, &v);
         });
     }
 
@@ -451,60 +450,40 @@ pub fn ReflowStreamLayout(
 /// Put the stream on its resume position: the saved fraction when the last
 /// session streamed (it beats the page — it is the same position, kept at
 /// full precision), else the first block of the saved page's cut.
-fn anchor_stream(state: ReaderState, v: &Virtualizer, frames_left: u32) {
-    let generation = state.viewer.begin_anchor();
-    anchor_frame(state, v.clone(), frames_left, generation);
-}
-
-fn anchor_frame(state: ReaderState, v: Virtualizer, frames_left: u32, generation: u64) {
-    if !state.viewer.owns_anchor(generation) {
-        return;
-    }
-    v.remeasure_viewport();
-    if let Some(fraction) = state.document.content.reflow.resume_fraction.get_untracked() {
-        // Consume the fraction: a later remount (a mode flip and back)
-        // anchors on the page — the fraction described a layout the reader
-        // has since left.
-        state.document.content.reflow.resume_fraction.set(None);
-        let total = v.total_size().get_untracked();
-        let viewport = v.viewport().get_untracked().main;
-        let extent = (total - viewport).max(0.0);
-        v.scroll_to_offset(fraction * extent, ScrollMode::Instant);
-    } else {
-        let page = state.viewer.page.get_untracked();
-        let block = state
-            .document
-            .content
-            .reflow
-            .cuts
-            .with_untracked(|cuts| first_block_of_page(cuts, page));
-        v.scroll_to_index(block, Align::Start, ScrollMode::Instant);
-    }
-
-    // Landed = the browser holds the offset the core adopted, inside a box
-    // with a real extent (see the page strip's anchor for the reasoning).
-    let core = v.scroll_offset().get_untracked();
-    let landed = v
-        .surface_offset()
-        .is_some_and(|dom| (dom - core).abs() <= 1.0)
-        && v.viewport().get_untracked().main > 1.0;
-    if frames_left == 0 || landed {
-        if state.viewer.owns_anchor(generation) {
-            state.viewer.awaiting_anchor.set(false);
-        }
-        return;
-    }
-    request_animation_frame(move || {
-        if !state.viewer.owns_anchor(generation) {
-            return;
-        }
-        if !v.is_bound() {
-            if state.viewer.owns_anchor(generation) {
-                state.viewer.awaiting_anchor.set(false);
+///
+/// The re-assert loop is the page strip's ([`crate::components::viewer::shells::anchor_settle`]);
+/// what the stream adds is the aim. It gets more frames than a page strip
+/// because it is aiming at a fraction of a total extent that is still growing
+/// while the blocks report their measured heights, so the offset the first
+/// write lands on is not yet the offset that fraction will mean.
+fn anchor_stream(state: ReaderState, v: &Virtualizer) {
+    let v = v.clone();
+    crate::components::viewer::shells::anchor_settle::settle(
+        state,
+        v.clone(),
+        ANCHOR_SETTLE_FRAMES,
+        move || {
+            v.remeasure_viewport();
+            if let Some(fraction) = state.document.content.reflow.resume_fraction.get_untracked() {
+                // Consume the fraction: a later remount (a mode flip and back)
+                // anchors on the page — the fraction described a layout the
+                // reader has since left.
+                state.document.content.reflow.resume_fraction.set(None);
+                let total = v.total_size().get_untracked();
+                let viewport = v.viewport().get_untracked().main;
+                let extent = (total - viewport).max(0.0);
+                v.scroll_to_offset(fraction * extent, ScrollMode::Instant);
+            } else {
+                let page = state.viewer.page.get_untracked();
+                let block = state
+                    .document
+                    .content
+                    .reflow
+                    .cuts
+                    .with_untracked(|cuts| first_block_of_page(cuts, page));
+                v.scroll_to_index(block, Align::Start, ScrollMode::Instant);
             }
-            return;
-        }
-        anchor_frame(state, v, frames_left - 1, generation);
-    });
+        },
+    );
 }
 

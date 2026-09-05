@@ -91,7 +91,7 @@ pub fn ScrollShell(
             if list_ref.get().is_none() || !v.is_bound() {
                 return;
             }
-            anchor_to_page(state, &v, axis, ANCHOR_SETTLE_FRAMES);
+            anchor_to_page(state, &v, axis);
         });
     }
 
@@ -160,65 +160,22 @@ const ANCHOR_SETTLE_FRAMES: u32 = 3;
 /// takes its position from, whether the mount is a document open (resume),
 /// a return from the library, or a switch into this mode.
 ///
-/// The jump is instant and re-asserted for a few frames: the first write
+/// The jump is instant and re-asserted for a few frames, by the settle loop
+/// both scrolling surfaces share ([`super::anchor_settle`]): the first write
 /// happens the moment the container is bound, when the browser may not have
 /// laid the scroller out yet, and a `scrollTop` written into a box that is
-/// still 0 tall is silently clamped. Each frame re-measures the container,
-/// re-issues the jump (a no-op once it has landed) and, once the DOM agrees
-/// with the target, hands the page back to the scroll→page sync by lowering
-/// `awaiting_anchor`. The page is re-read every frame so a navigation issued
-/// while the strip was settling wins over the value the mount started with.
-fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis, frames_left: u32) {
-    let generation = state.viewer.begin_anchor();
-    anchor_to_page_frame(state, v, axis, frames_left, generation);
-}
-
-fn anchor_to_page_frame(
-    state: ReaderState,
-    v: &Virtualizer,
-    axis: Axis,
-    frames_left: u32,
-    generation: u64,
-) {
-    if !state.viewer.owns_anchor(generation) {
-        return;
-    }
+/// still 0 tall is silently clamped. The aim re-runs every frame, so the page
+/// is re-read as it settles and a navigation issued mid-settle wins over the
+/// value the mount started with.
+fn anchor_to_page(state: ReaderState, v: &Virtualizer, axis: Axis) {
     let align = match axis {
         Axis::Vertical => Align::Start,
         Axis::Horizontal => Align::Center,
     };
-    v.remeasure_viewport();
-    let page = state.viewer.page.get_untracked();
-    let index = page.saturating_sub(1) as usize;
-    v.scroll_to_index(index, align, ScrollMode::Instant);
-
-    // Landed = the browser holds the offset the core adopted, inside a box
-    // that has a real extent. A clamped write leaves the two apart.
-    let core = v.scroll_offset().get_untracked();
-    let landed = v
-        .surface_offset()
-        .is_some_and(|dom| (dom - core).abs() <= 1.0)
-        && v.viewport().get_untracked().main > 1.0;
-    if frames_left == 0 || landed {
-        if state.viewer.owns_anchor(generation) {
-            state.viewer.awaiting_anchor.set(false);
-        }
-        return;
-    }
     let v = v.clone();
-    request_animation_frame(move || {
-        if !state.viewer.owns_anchor(generation) {
-            return;
-        }
-        // The strip may have been unmounted (a close, a mode flip) between
-        // frames; a detached surface has nothing to anchor.
-        if !v.is_bound() {
-            if state.viewer.owns_anchor(generation) {
-                state.viewer.awaiting_anchor.set(false);
-            }
-            return;
-        }
-        anchor_to_page_frame(state, &v, axis, frames_left - 1, generation);
+    super::anchor_settle::settle(state, v, ANCHOR_SETTLE_FRAMES, move || {
+        let page = state.viewer.page.get_untracked();
+        v.scroll_to_index(page.saturating_sub(1) as usize, align, ScrollMode::Instant);
     });
 }
 
