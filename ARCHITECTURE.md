@@ -110,7 +110,12 @@ The app uses the adapter and keeps only app-specific policy locally:
 ## Continuous reader flow
 
 1. `ReaderPage` builds one `Virtualizer` for the continuous surface.
-2. `PageList` binds the scroll container, renders `v.items()`, and reports measured page heights back into both `css_heights` and the virtualizer.
+2. `ScrollShell` binds the scroll container and hands the mounted window to
+   `UniversalStripHost`, which picks the format's strip — `PdfPageStrip` or the
+   reflowable one. The strip renders `v.items()`, and the PDF's reports measured
+   page heights back into both `css_heights` and the virtualizer; a page of type
+   is A4 by definition, so there the cut publishes its sizes instead
+   (`effects::reader::reflow_layout`).
 3. Navigation sync uses the virtualizer for dominant-page tracking and page-to-scroll jumps.
 4. Search reveal uses virtualizer offsets plus virtualizer scroll commands.
 5. Zoom runs through one controller: commands resolve to a target, the tween relays the layout out through the actuator frame by frame — `css_heights`, both strips and the page hosts all follow the live display scale — and the render scale catches up once, at the end.
@@ -132,7 +137,8 @@ spread, two scroll modes) and what it *is* (PDF, plain text, Markdown). The UI i
 along the first axis and the crates along the second, and exactly one file joins them.
 
 - `src/components/viewer/` is shape: the mode dispatch, the four layouts, the shells that
-  hold the scroll container. A layout may not name a format; adding a view mode touches
+  hold the scroll container, and the reader's own controls (the bottom bar, the overlay
+  scrollbar, the page indicator). A layout may not name a format; adding a view mode touches
   this directory and `reader-core`'s `view` module, and no format crate.
 - `src/components/formats/` is substance: `pdf/`, `reflow/`, `txt/`, `md/`. Adding a format
   touches this directory, one parser crate, and one match arm in the open flow.
@@ -150,9 +156,11 @@ along the first axis and the crates along the second, and exactly one file joins
   address a page of pixels.
 
 The state mirrors it: `state::reader::document` holds the document's identity (path, title,
-format, page count, outline) and, beside it, a `DocumentContent` with `pdf` and `reflow`
-halves. Both halves publish page sizes into the same `css_heights`/`intrinsic` store, so the
-virtualizers, the zoom coordinator and the progress chrome never ask who measured what.
+format, page count, outline) and, beside it, a `DocumentContent` with two halves: `metrics`,
+the page-size store both families write (`page1_size`, `intrinsic`, `css_heights`), and
+`reflow`, the reflowable pipeline's own blocks, heights and current cut. A PDF fills the
+metrics from the file and a reflowable document from its page cut, so the virtualizers, the
+zoom coordinator and the progress chrome never ask who measured what.
 
 ## Text and Markdown pipeline
 

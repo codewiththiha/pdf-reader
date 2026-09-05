@@ -2,7 +2,8 @@
 //! [`PageShell`]. It owns everything the family shares — the scroller element
 //! and its container binding, the horizontal wheel translation, the overlay
 //! scrollbar, and the thin reading-progress strip — so the axis-generic
-//! [`PageStrip`] it wraps stays purely presentational.
+//! [`UniversalStripHost`] it wraps, which mounts the format's own strip, stays
+//! purely presentational.
 
 use leptos::html;
 use leptos::prelude::*;

@@ -1,12 +1,12 @@
 //! Axis-generic virtualized page strip, shared by the two scrolling layouts.
 //!
-//! This is the unified replacement for `page_list` (vertical) and the inline
-//! loop that used to live inside `HorizontalView`: one component renders the
+//! This is the unified replacement for the vertical page list and the inline
+//! loop the horizontal layout used to carry itself: one component renders the
 //! mounted page window along either axis, absolutely positioning each page at
 //! the virtualizer's `item_top`, and reporting the rendered main-axis size
 //! back into the virtualizer's size model.
 //!
-//! A zoom resizes this strip for real: the viewer engine rescales the
+//! A zoom resizes this strip for real: the zoom actuator rescales the
 //! virtualizer's items frame by frame and holds the document point under the
 //! viewport centre still, while the page hosts below stretch the bitmap they
 //! already hold to the new size. Nothing here animates a transform over

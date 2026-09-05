@@ -64,7 +64,7 @@ impl ZoomController {
         // While a transition is in flight, three feedback loops must stand
         // down: the browser's per-frame scroll echo (stale by one frame —
         // adopting it would fight the rescale anchor), size reports from the
-        // strips (the guard in `PageStrip` already refuses to report
+        // strips (the guard in `PdfPageStrip` already refuses to report
         // mid-zoom; the suspension makes that airtight at the virtualizer
         // too), and — on landing — the flush order, because the last
         // relayout must finish before buffered measurements re-enter.

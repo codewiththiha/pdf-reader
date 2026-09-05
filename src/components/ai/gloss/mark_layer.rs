@@ -39,8 +39,8 @@
 //!
 //! Clicking travels as a `pdfreader:gloss-open` CustomEvent rather than a
 //! callback prop: the popover lives at the reader-page level, far above the
-//! page hosts, and threading a callback through `PageList`/`SinglePageView`/
-//! `PageCanvas` would couple three view layers to the AI feature for one
+//! page hosts, and threading a callback through `PdfPageStrip`/`SingleLayout`/
+//! `PdfPageCanvas` would couple three view layers to the AI feature for one
 //! message. Selection state is the exception: it is shared reactive state on
 //! `state.reader.gloss`, threaded down like `marks` and `processing` because
 //! every stroke must repaint the moment it changes.

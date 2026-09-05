@@ -1,6 +1,8 @@
 //! The four view layouts. Each is thin and shaped identically: it renders its
-//! [`PageCanvas`](crate::components::formats::pdf::PdfPageCanvas) arrangement inside
-//! the right shell, with zero scroll or zoom logic of its own.
+//! page arrangement inside the right shell, through the hosts that pick a format
+//! ([`UniversalPageHost`](crate::components::viewer::page_host::UniversalPageHost)
+//! and [`UniversalStripHost`](crate::components::viewer::page_host::UniversalStripHost)),
+//! with zero scroll or zoom logic of its own.
 
 pub mod scroll_horizontal;
 pub mod scroll_vertical;

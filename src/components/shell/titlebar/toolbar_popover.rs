@@ -11,8 +11,8 @@
 //!   HERE is what makes that automatic for every menu, so a new one cannot
 //!   forget it.
 //!
-//! Not a `SuperPopover`: it is a thin, single-purpose composition — holds,
-//! policy, pass-through. New policy belongs in its own wrapper, not here.
+//! Not a second popover primitive: it is a thin, single-purpose composition —
+//! holds, policy, pass-through. New policy belongs in its own wrapper, not here.
 
 use leptos::children::ChildrenFn;
 use leptos::html;

@@ -556,7 +556,11 @@ so the Rust side reads `ok` first and then deserializes.
 | `renderPage` | Render one page |
 | `renderThumb` / `cancelThumb` | Thumbnail rendering on a separate, cheaper path |
 | `hasThumb` / `blitThumb` | Probe the bitmap cache and blit a cached frame |
-| `buildSearchIndex` / `search` / `clearHighlights` | Full-text search lifecycle |
+| `extractPageText` | One page's text items with their rects — the input to the search index, which is Rust (`crates/pdf-core`'s `SearchIndex`), not the engine's |
+| `setSearchContext` / `setActiveMatch` / `clearHighlights` | Paint, move and clear the engine's highlight rects in the text layer |
+| `refreshTheme` / `setScrubMode` / `setLivePipeline` / `isLivePipeline` | The appearance pipeline: rebake canvases with the theme, or keep them raw under the CSS filter chain while a slider moves |
+| `setPaper` / `setPaperActive` / `takePaperFrame` / `samplePaperPage` | The paper session: the backdrop's own raster, handed to and sampled from the pages |
+| `coverDataUrl` / `prefetchThumb` | The shelf cover and thumbnail prefetch |
 | `stats` | Internal counters, used to assert memory is actually released |
 
 Load order in `index.html` is deliberate. pdf.js is ESM-only in version 6 and must execute before

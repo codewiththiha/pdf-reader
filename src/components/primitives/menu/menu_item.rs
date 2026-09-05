@@ -1,6 +1,6 @@
-//! Menu row: icon + label + optional trailing content. Shared by the More
-//! menu rows, the toolbar's overflow rows (`OverflowRow`) and the context
-//! menu primitive (where danger rows and disabled rows live).
+//! Menu row: icon + label + optional trailing content. Shared by the reader
+//! menu's rows and the gloss context menu (where the danger row and the
+//! disabled rows live).
 
 use leptos::prelude::*;
 
