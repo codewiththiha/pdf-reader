@@ -10,7 +10,9 @@
 //
 // So: every module path (`crate::a::b`, `super::x`, `ai_core::gloss::y`) and
 // every file path with a slash in it (`effects/reader/zoom.rs`) that appears in
-// a Rust comment must resolve. Resolution is deliberately shallow — it checks
+// a Rust comment must resolve, and so must every path the two prose documents
+// put in backticks — README.md and ARCHITECTURE.md send readers to files, and
+// those references rot the same way a comment's do. Resolution is deliberately shallow — it checks
 // that the MODULE exists and that the last name is declared or re-exported
 // there, which is all a comment promises — and deliberately conservative: a path
 // whose first segment is not one of ours is assumed to be an external crate and
@@ -265,8 +267,8 @@ const CSS_PATH = /\b(?:src|crates|styles|public|src-tauri)\/[A-Za-z0-9_./-]+/g;
 const SOURCE_EXTS = [".rs", ".ts", ".css", ".js", ".mjs", ".json", ".toml", ".html"];
 
 /** Whether a token names a directory, a file, or a file whose extension the
- *  comment left off. */
-function cssPathResolves(token: string): boolean {
+ *  prose left off. */
+function sourcePathResolves(token: string): boolean {
   if (DIRS.has(token) || FILE_SET.has(token)) return true;
   return SOURCE_EXTS.some((ext) => FILE_SET.has(token + ext));
 }
@@ -288,7 +290,7 @@ for (const file of CSS_FILES) {
       const token = m[0].replace(/[.,;:)]+$/, "").replace(/\/+$/, "");
       if (!token.includes("/")) continue;
       cssChecked++;
-      if (!cssPathResolves(token)) problems.push(`${file}:${lineNo}: no such path: \`${token}\``);
+      if (!sourcePathResolves(token)) problems.push(`${file}:${lineNo}: no such path: \`${token}\``);
     }
   }
 }
@@ -387,6 +389,123 @@ if (apiAt >= 0) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// The two prose documents: the PATHS they put in backticks.
+//
+// ARCHITECTURE.md describes the tree by module path — `anchor::stroke_resolver`,
+// `components::formats::reflow::stream` — and README.md points at files. Neither
+// document is compiled, and a module path in prose carries no crate prefix to
+// anchor it, so the pass above cannot read them: `anchor::x` in a Rust file means
+// "a neighbour of mine", and in a document it means "wherever `anchor` lives".
+//
+// Resolution therefore starts from the NAME: every module in the tree is indexed
+// by the name a document would call it, and a path is tried against each module
+// that could be its first segment (plus the crate root, when the name is a
+// crate). `block_view` is the drift this catches — the renderer dispatch was
+// renamed `block_render`, and both documents kept sending readers to a module
+// that did not exist.
+// ---------------------------------------------------------------------------
+
+/** Every Rust module in the tree, by the name a document would call it. */
+const MODULES_BY_NAME = new Map<string, string[]>();
+for (const file of RUST_FILES) {
+  const base = file.slice(0, -3); // drop `.rs`
+  const name = path.posix.basename(file) === "mod.rs" ? path.posix.dirname(base) : base;
+  const key = path.posix.basename(name);
+  const list = MODULES_BY_NAME.get(key);
+  if (list) list.push(name);
+  else MODULES_BY_NAME.set(key, [name]);
+}
+
+/**
+ * A document's module path, resolved against every base its first segment could
+ * mean. `anchor` is both `crates/virtual-list/src/anchor.rs` and
+ * `src/components/ai/anchor/`, so an ambiguous name is not an error: the path is
+ * good if ANY reading of it holds, and the near-miss is only reported when none
+ * does. `prefix` is how many of the caller's segments the base itself consumed
+ * (one, for a crate name).
+ */
+function resolveDocModules(
+  segs: string[],
+): { ok: boolean; near: string | null } {
+  const first = segs[0]!;
+  const attempts: Array<[string, string[], number]> = [];
+  const crateRoot = CRATE_ROOTS.get(first);
+  if (crateRoot) attempts.push([crateRoot, segs.slice(1), 1]);
+  for (const base of MODULES_BY_NAME.get(first) ?? []) {
+    attempts.push([path.posix.dirname(base), segs, 0]);
+  }
+
+  // The near-miss from the reading that got FURTHEST: `anchor` is two modules in
+  // this tree, and reporting the one that resolved nothing would send whoever
+  // fixes it to the wrong file.
+  let near: string[] = [];
+  let best = -1;
+  for (const [base, rest, prefix] of attempts) {
+    if (rest.length === 0) continue;
+    const { count, file } = resolveModules(base, rest);
+    if (count === 0) {
+      // No module below the base, but the base's own facade may re-export the
+      // name — which is how a crate's `lib.rs` answers for its whole surface.
+      const rootFile = rootModule(base);
+      if (rootFile && rest.length === 1 && declaresItem(rootFile, rest[0]!)) {
+        return { ok: true, near: null };
+      }
+      continue;
+    }
+    const consumed = prefix + count;
+    if (consumed >= segs.length) return { ok: true, near: null };
+    const item = segs[consumed]!;
+    if (file && declaresItem(file, item)) return { ok: true, near: null };
+    // Two modules can share a name (`anchor` is one here), so an invented tail
+    // is blamed on every reading that got this far, rather than on whichever
+    // happened to be indexed first.
+    if (consumed > best) {
+      best = consumed;
+      near = [];
+    }
+    near.push(file ?? base);
+  }
+  return {
+    ok: false,
+    near: near.length === 0 ? null : `\`${segs[best]!}\` is not declared or re-exported by ${near.join(" or ")}`,
+  };
+}
+
+/** Roots a document would name. `target/` and `dist/` are build output. */
+const DOC_PATH = /\b(?:src|crates|styles|public|scripts|tests|release-notes|src-tauri)\/[A-Za-z0-9_./-]*/g;
+
+let docModules = 0;
+let docPaths = 0;
+
+for (const file of ["README.md", "ARCHITECTURE.md"].filter(isFile)) {
+  read(file).split("\n").forEach((line, index) => {
+    const lineNo = index + 1;
+
+    for (const backticked of line.matchAll(/`([^`]*)`/g)) {
+      for (const m of backticked[1]!.matchAll(MODULE_PATH)) {
+        const whole = m[0];
+        const segs = whole.split("::");
+        if (SKIP_FIRST.has(segs[0]!)) continue;
+        docModules++;
+        const resolved = resolveDocModules(segs);
+        if (resolved.ok) continue;
+        problems.push(
+          `${file}:${lineNo}: ${resolved.near ?? "no module there"} (from \`${whole}\`)`,
+        );
+      }
+    }
+
+    for (const m of line.matchAll(DOC_PATH)) {
+      // Prose punctuation and a trailing slash are not part of the path.
+      const token = m[0].replace(/[.,;:)]+$/, "").replace(/\/+$/, "");
+      if (!token.includes("/")) continue;
+      docPaths++;
+      if (!sourcePathResolves(token)) problems.push(`${file}:${lineNo}: no such path: \`${token}\``);
+    }
+  });
+}
+
 if (problems.length > 0) {
   console.error(`::error::${problems.length} comment path(s) do not resolve:`);
   for (const problem of problems) console.error(`  ${problem}`);
@@ -400,5 +519,6 @@ if (problems.length > 0) {
 console.log(
   `doc paths resolve: ${checked} module paths across ${RUST_FILES.length} Rust files, ` +
     `${cssChecked} paths across ${CSS_FILES.length} stylesheets, ` +
-    `${namesChecked} names in the two documents`,
+    `${namesChecked} names, ${docModules} module paths and ${docPaths} file paths ` +
+    `in the two documents`,
 );
