@@ -10,7 +10,7 @@ mod shell;
 use leptos::prelude::*;
 use leptos_router::components::Router;
 
-use crate::components::overlays::toast::ToastHost;
+use crate::components::app_overlays::toast::ToastHost;
 use bootstrap::{create_app_state, provide_app_contexts};
 use effects::install_app_effects;
 use shell::AppShell;
