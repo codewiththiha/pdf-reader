@@ -141,7 +141,7 @@ impl SystemFont {
     }
 
     /// Find a face by its persisted id.
-    pub fn from_id(id: &str) -> Option<SystemFont> {
+    fn from_id(id: &str) -> Option<SystemFont> {
         Self::all().iter().copied().find(|f| f.id() == id)
     }
 
@@ -241,7 +241,7 @@ pub enum FontChoice {
 impl FontChoice {
     /// Parse the persisted form. Unknown ids fall back to [`FontChoice::Default`]
     /// rather than failing the whole settings blob.
-    pub fn from_storage(s: &str) -> FontChoice {
+    fn from_storage(s: &str) -> FontChoice {
         match s {
             "default" | "" => FontChoice::Default,
             rest => {
@@ -263,7 +263,7 @@ impl FontChoice {
     }
 
     /// Produce the persisted form.
-    pub fn to_storage(&self) -> String {
+    fn to_storage(&self) -> String {
         match self {
             FontChoice::Default => "default".to_string(),
             FontChoice::System(f) => format!("system:{}", f.id()),

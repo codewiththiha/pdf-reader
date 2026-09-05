@@ -71,11 +71,8 @@ impl Appearance {
 
 #[cfg(test)]
 mod tests {
-    use crate::appearance::{Appearance, BaseMode};
-
-    fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
-        Appearance { base, tint_hue: hue, tint_strength: strength, ..Default::default() }
-    }
+    use crate::appearance::fixture::tinted;
+    use crate::appearance::BaseMode;
 
     #[test]
     fn no_tint_leaves_the_base_filters_untouched() {

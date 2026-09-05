@@ -54,7 +54,7 @@ fn next_line<'a>(rest: &mut &'a str) -> Option<&'a str> {
 /// The value of a top-level front-matter key: quotes and a trailing comment
 /// stripped, indentation honoured. `None` when the key is absent, empty, or
 /// nested inside something else.
-pub fn front_matter_value(matter: &str, key: &str) -> Option<String> {
+fn front_matter_value(matter: &str, key: &str) -> Option<String> {
     for line in matter.split('\n') {
         // Leading whitespace means the key belongs to a nested structure.
         if line.starts_with([' ', '\t']) {
@@ -93,7 +93,7 @@ pub fn document_title(raw: &str) -> Option<String> {
 
 /// The file with a closed front-matter block removed. A file without one is
 /// returned as it came; the markers only belong to front matter when they close.
-pub fn after_front_matter(normalized: &str) -> &str {
+fn after_front_matter(normalized: &str) -> &str {
     let mut rest = match normalized
         .strip_prefix("---")
         .and_then(|r| r.strip_prefix('\n'))

@@ -68,20 +68,14 @@ impl Appearance {
 
 #[cfg(test)]
 mod tests {
+    use crate::appearance::fixture::{lch, tinted};
     use crate::appearance::shared::oklch::hex_to_oklch;
     use crate::appearance::shared::tint::ui_hue_oklch;
-    use crate::appearance::{Appearance, BaseMode};
+    use crate::appearance::BaseMode;
 
-    fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
-        Appearance { base, tint_hue: hue, tint_strength: strength, ..Default::default() }
-    }
-
-    /// (L, C, H) of a token in an override set.
-    fn lch(o: &[(&'static str, String)], name: &str) -> (f64, f64, f64) {
-        let v = &o.iter().find(|(k, _)| *k == name).unwrap().1;
-        let inner = v.trim_start_matches("oklch(").trim_end_matches(')');
-        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().unwrap());
-        (it.next().unwrap(), it.next().unwrap(), it.next().unwrap())
+    /// (L, C, H) of one token in an override set.
+    fn token_lch(o: &[(&'static str, String)], name: &str) -> (f64, f64, f64) {
+        lch(&o.iter().find(|(k, _)| *k == name).unwrap().1)
     }
 
     #[test]
@@ -105,7 +99,7 @@ mod tests {
                 ("--color-ink", "#1f2937"),
             ] {
                 let want = hex_to_oklch(base_hex).unwrap().0;
-                let got = lch(&o, token).0;
+                let got = token_lch(&o, token).0;
                 assert!(
                     (got - want).abs() < 0.001,
                     "{token} at {strength}%: L moved {want} -> {got}"
@@ -119,16 +113,16 @@ mod tests {
         // Page brighter than chrome, chrome brighter than its borders. If this
         // collapses the UI loses all its edges.
         let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
-        let paper = lch(&o, "--color-paper").0;
-        let surface = lch(&o, "--color-surface").0;
-        let line = lch(&o, "--color-line").0;
+        let paper = token_lch(&o, "--color-paper").0;
+        let surface = token_lch(&o, "--color-surface").0;
+        let line = token_lch(&o, "--color-line").0;
         assert!(paper > surface + 0.01, "paper {paper} vs surface {surface}");
         assert!(surface > line + 0.01, "surface {surface} vs line {line}");
 
         // ...and inverted in dark mode.
         let d = tinted(BaseMode::Dark, 104, 100).ui_overrides();
-        let dpaper = lch(&d, "--color-paper").0;
-        let dsurface = lch(&d, "--color-surface").0;
+        let dpaper = token_lch(&d, "--color-paper").0;
+        let dsurface = token_lch(&d, "--color-surface").0;
         assert!(dpaper < dsurface, "dark paper must stay the darkest");
     }
 
@@ -140,7 +134,7 @@ mod tests {
         let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
         let want = ui_hue_oklch(104.0);
         for token in ["--color-paper", "--color-accent", "--color-accent-soft", "--color-line"] {
-            let h = lch(&o, token).2;
+            let h = token_lch(&o, token).2;
             let d = (h - want).abs().min(360.0 - (h - want).abs());
             assert!(d < 1.0, "{token} hue {h} should be ~{want}");
         }
@@ -149,9 +143,9 @@ mod tests {
     #[test]
     fn ink_stays_almost_neutral_so_text_does_not_go_murky() {
         let o = tinted(BaseMode::Light, 104, 100).ui_overrides();
-        let ink_c = lch(&o, "--color-ink").1;
-        let paper_c = lch(&o, "--color-paper").1;
-        let accent_c = lch(&o, "--color-accent").1;
+        let ink_c = token_lch(&o, "--color-ink").1;
+        let paper_c = token_lch(&o, "--color-paper").1;
+        let accent_c = token_lch(&o, "--color-accent").1;
         assert!(ink_c < 0.03, "ink chroma {ink_c} too colourful");
         assert!(accent_c > paper_c, "the accent must be the most saturated");
     }
@@ -160,7 +154,7 @@ mod tests {
     fn chroma_rises_with_strength() {
         let weak = tinted(BaseMode::Light, 104, 20).ui_overrides();
         let strong = tinted(BaseMode::Light, 104, 90).ui_overrides();
-        assert!(lch(&weak, "--color-paper").1 < lch(&strong, "--color-paper").1);
+        assert!(token_lch(&weak, "--color-paper").1 < token_lch(&strong, "--color-paper").1);
     }
 
     #[test]
@@ -174,10 +168,7 @@ mod tests {
         let h = o
             .iter()
             .find(|(k, _)| *k == "--color-paper")
-            .map(|(_, v)| {
-                let inner = v.trim_start_matches("oklch(").trim_end_matches(')');
-                inner.split_whitespace().nth(2).unwrap().parse::<f64>().unwrap()
-            })
+            .map(|(_, v)| lch(v).2)
             .unwrap();
         // sRGB 34deg (a warm tan) sits near 60deg on the OKLCH circle, NOT 34.
         let want = ui_hue_oklch(34.0);

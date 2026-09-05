@@ -11,7 +11,7 @@
 
 use crate::appearance::preview::ps_surface_tail;
 use crate::appearance::Appearance;
-use crate::appearance_reflowable::palette::TextPalette;
+use super::palette::TextPalette;
 
 impl Appearance {
     /// Inline `style` for a preset thumbnail, rendered with the text-page
@@ -43,11 +43,8 @@ impl Appearance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::appearance::{Appearance, BaseMode};
-
-    fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
-        Appearance { base, tint_hue: hue, tint_strength: strength, ..Default::default() }
-    }
+    use crate::appearance::fixture::tinted;
+    use crate::appearance::BaseMode;
 
     #[test]
     fn the_text_swatch_carries_the_text_palette() {

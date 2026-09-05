@@ -31,7 +31,7 @@ impl OutlineNode {
 
 /// The deepest level the panel will indent. Deeper headings still appear, at
 /// the cap — a chapter the reader can see is worth more than a clean tree.
-pub const MAX_OUTLINE_DEPTH: u32 = 5;
+const MAX_OUTLINE_DEPTH: u32 = 5;
 
 /// Clamp a raw depth into the range the panel draws. A negative-looking depth
 /// (an outline that numbers its levels from 1) is normalised by the caller

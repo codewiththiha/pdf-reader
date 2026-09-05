@@ -13,7 +13,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::appearance::{Appearance, BaseMode, NoiseMode, TextureMode};
-use crate::presets::{builtin_presets, Preset};
+use crate::appearance::presets::{builtin_presets, Preset};
 
 mod animation;
 mod gloss;
@@ -139,7 +139,7 @@ impl Settings {
         v
     }
 
-    pub fn find_preset(&self, id: &str) -> Option<Preset> {
+    fn find_preset(&self, id: &str) -> Option<Preset> {
         self.all_presets().into_iter().find(|p| p.id == id)
     }
 

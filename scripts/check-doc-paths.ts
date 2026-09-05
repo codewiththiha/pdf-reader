@@ -244,7 +244,7 @@ for (const file of RUST_FILES) {
 // Stylesheet comments: the same claim, in files the Rust pass never reads.
 //
 // A stylesheet names the module that writes its tokens ("painted by
-// `appearance_reflowable`", "see src/zoom"), and those references are
+// `appearance::reflowable`", "see src/zoom"), and those references are
 // directories, or extension-less module paths, as often as they are files —
 // which is why they need their own pattern: `FILE_PATH` above only matches a
 // token that ends in a known extension. Six of them had rotted before this

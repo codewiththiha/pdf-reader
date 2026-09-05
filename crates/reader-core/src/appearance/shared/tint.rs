@@ -7,7 +7,7 @@
 //! — and nowhere else — is what makes one slider drive both formats onto
 //! the same hue at the same strength.
 
-use crate::appearance::shared::oklch::{hex_to_oklch, oklch_css};
+use crate::appearance::shared::oklch::{hex_to_oklch, hue_toward, oklch_css};
 
 /// Map an sRGB hue angle (`tint_hue`, applied via `hue-rotate()`) to the
 /// corresponding OKLCH hue angle (what the tokens are emitted in). The two
@@ -67,15 +67,7 @@ pub fn chroma_ceiling(token: &str) -> f64 {
 /// ratios survive a 100% tint.
 pub fn tinted_token(hex: &str, target_h: f64, t: f64, max_c: f64) -> Option<String> {
     let (l, c0, h0) = hex_to_oklch(hex)?;
-
-    let mut delta = target_h - h0;
-    while delta > 180.0 {
-        delta -= 360.0;
-    }
-    while delta < -180.0 {
-        delta += 360.0;
-    }
-    let h = (h0 + delta * t).rem_euclid(360.0);
+    let h = hue_toward(h0, target_h, t);
 
     // Near-neutral bases (white paper, gray line) have a meaningless hue,
     // so blend from their own chroma up to the ceiling rather than
@@ -88,12 +80,7 @@ pub fn tinted_token(hex: &str, target_h: f64, t: f64, max_c: f64) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn lch(value: &str) -> (f64, f64, f64) {
-        let inner = value.trim_start_matches("oklch(").trim_end_matches(')');
-        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().unwrap());
-        (it.next().unwrap(), it.next().unwrap(), it.next().unwrap())
-    }
+    use crate::appearance::fixture::lch;
 
     #[test]
     fn the_srgb_hue_maps_onto_the_oklch_circle_not_identity() {

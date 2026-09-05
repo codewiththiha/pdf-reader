@@ -8,10 +8,10 @@
 //! crate of its own rather than in whichever feature got it first.
 
 /// Spring stiffness for animated boxes.
-pub const SPRING_STIFFNESS: f64 = 210.0;
+const SPRING_STIFFNESS: f64 = 210.0;
 
 /// Spring damping for animated boxes.
-pub const SPRING_DAMPING: f64 = 26.0;
+const SPRING_DAMPING: f64 = 26.0;
 
 /// One explicit-Euler step of a 1-D spring toward `t` from `c` at velocity
 /// `v`. Returns `(position, velocity)`. dt is clamped by the caller so long

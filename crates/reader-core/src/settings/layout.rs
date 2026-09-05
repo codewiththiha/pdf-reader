@@ -10,8 +10,8 @@ use crate::zoom_math::FitMode;
 
 use super::on_true;
 
-pub(super) fn default_page_margin() -> f64 { 0.0 }
-pub(super) fn default_label_max_pct() -> f64 { 100.0 }
+fn default_page_margin() -> f64 { 0.0 }
+fn default_label_max_pct() -> f64 { 100.0 }
 /// The fit mode a document opens with. `FitMode::None` is not a startup mode,
 /// which is why [`super::sanitize`] retries it.
 pub(super) fn default_startup_fit() -> FitMode { FitMode::Page }

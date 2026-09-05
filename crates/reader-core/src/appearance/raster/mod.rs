@@ -6,7 +6,7 @@
 //! always light, so base mode and tint reach it through CSS filters over the
 //! pixels, and the seven `--color-*` UI tokens are overridden from the same
 //! maths. A page painted as DOM type does not import this module — it derives
-//! its own palette directly (see [`crate::appearance_reflowable`]). The shared
+//! its own palette directly (see [`crate::appearance::reflowable`]). The shared
 //! kernel both pipelines build on lives in [`crate::appearance::shared`].
 //!
 //!   * [`filter`] — `canvas_filter()` / `canvas_blend()`: the raster pipeline

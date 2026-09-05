@@ -169,14 +169,6 @@ impl ReflowSpot {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    /// The same spot clamped to a block that now holds `chars` characters.
-    /// A re-parse can shorten a document under an old mark; clamping keeps the
-    /// mark on its sentence instead of off the end of the block.
-    pub fn clamped_to(self, chars: usize) -> Self {
-        let start = self.start.min(chars);
-        Self { block: self.block, start, end: self.end.clamp(start, chars) }
-    }
 }
 
 // NOTE: nothing instantiates `GlossMark<ReflowSpot>`. A reflowable mark keeps
@@ -298,10 +290,9 @@ mod tests {
         let spot = ReflowSpot::new(7, 12, 24);
         assert_eq!(spot.len(), 12);
         assert!(!spot.is_empty());
-        // A block that shrank under the mark: the range stays inside it.
-        assert_eq!(spot.clamped_to(20), ReflowSpot::new(7, 12, 20));
-        assert_eq!(spot.clamped_to(5), ReflowSpot::new(7, 5, 5));
-        assert!(spot.clamped_to(5).is_empty());
+        // A block that shrank under the mark is clamped where the mark is
+        // PROJECTED (`formats::reflow::spot::clamp_span`), against the text
+        // that is actually on the page rather than a char count guessed here.
         // An end before the start is a collapsed range, not a backwards one.
         assert!(ReflowSpot::new(1, 9, 3).is_empty());
     }

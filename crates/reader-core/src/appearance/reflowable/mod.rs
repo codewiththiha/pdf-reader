@@ -2,7 +2,7 @@
 //! OKLCH, written as `--tx-*` tokens — no CSS filter involved.
 //!
 //! A page that arrives as a bitmap is an always-light raster, so its
-//! appearance works through a CSS filter chain ([`crate::appearance_raster`]).
+//! appearance works through a CSS filter chain ([`crate::appearance::raster`]).
 //! A reflowable page paints real DOM type, so its paper and ink can be
 //! computed once and assigned outright; this module is that computation, and
 //! it is DELIBERATELY not the raster maths — such a page wants a bright light

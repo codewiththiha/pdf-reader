@@ -251,4 +251,4 @@ pub fn HoverRevealSurface(
 
 /// What a hidden surface looks like unless the caller says otherwise: gone,
 /// and click-transparent so it cannot swallow the hover that reopens it.
-pub const HIDDEN_CLASS: &str = "opacity-0 pointer-events-none";
+const HIDDEN_CLASS: &str = "opacity-0 pointer-events-none";

@@ -23,7 +23,7 @@ pub fn rect_from_element(el: &web_sys::Element) -> Rect {
 
 /// Convert the leptos event's target into a `web_sys::Element` for
 /// `closest`-style exclusion checks, if it is one.
-pub fn target_element(ev: &web_sys::Event) -> Option<web_sys::Element> {
+fn target_element(ev: &web_sys::Event) -> Option<web_sys::Element> {
     ev.target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
 }

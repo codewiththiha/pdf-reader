@@ -4,13 +4,13 @@
 //! Springs `value` toward `target`; while `snap` is true (dragging / a forced
 //! beat / reduced-motion) it jumps instead of wobbling.
 //!
-//! Mirrors the self-referencing rAF loop in `crate::zoom::animation`: one
-//! `StepSlot` (`Rc<RefCell<Option<Rc<dyn Fn()>>>>`) owns the step closure, the
-//! closure holds a *weak* ref back to it to re-arm, and replacing the slot
-//! (when `target` changes) drops the old loop's only strong ref so it dies.
-//! `vel` and `last_ms` live outside the Effect so velocity survives a
-//! retarget, keeping the morph continuous — unless a caller hard-resets via
-//! [`SpringBox::reset_to`] when a *new* anchor opens.
+//! The frame machinery is [`FrameLoop`], the primitive the zoom tween rides
+//! too: one loop, whose step is REPLACED when `target` changes rather than
+//! stacked, so a retarget mid-flight carries the spring's velocity over
+//! instead of restarting it. `vel` and `last_ms` live outside the Effect for
+//! the same reason — velocity survives a retarget, keeping the morph
+//! continuous — unless a caller hard-resets via [`SpringBox::reset_to`] when a
+//! *new* anchor opens.
 //!
 //! This module implements [`SpringValue`] for the floating box and for nothing
 //! else. A domain type that wants to ride the spring brings its own adapter —
@@ -19,37 +19,12 @@
 //! crate, and would make every other consumer of the primitive depend on the
 //! feature too.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
-use wasm_bindgen::JsCast;
 
 use app_chrome::floating::types::FloatBox;
+use app_chrome::hooks::use_raf::FrameLoop;
 
 use super::frame::frame_delta;
-
-fn cancel_raf(id: Option<i32>) {
-    if let Some(id) = id
-        && let Some(w) = web_sys::window()
-    {
-        let _ = w.cancel_animation_frame(id);
-    }
-}
-
-fn schedule_raf(raf_id: StoredValue<Option<i32>, LocalStorage>, f: impl FnOnce() + 'static) {
-    cancel_raf(raf_id.try_get_value().flatten());
-    let Some(w) = web_sys::window() else {
-        return;
-    };
-    let cb = Closure::once_into_js(f);
-    if let Ok(id) = w.request_animation_frame(cb.as_ref().unchecked_ref()) {
-        raf_id.set_value(Some(id));
-    }
-}
-
-type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 /// The largest field magnitude that counts as "stopped" for loop teardown.
 const SETTLE_EPS: f64 = 0.6;
@@ -131,11 +106,9 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
     let value = RwSignal::new(target.get_untracked());
     let vel = StoredValue::new_local(T::zero());
     let last_ms = StoredValue::new_local(f64::NAN);
-    // The owner-scoped holder for the current step closure, so it outlives the
-    // rAF callbacks between Effect re-runs (same shape as zoom.rs's anim_slot).
-    let anim_slot = StoredValue::new_local(None::<StepSlot>);
-    let raf_id = StoredValue::new_local(None::<i32>);
-    on_cleanup(move || cancel_raf(raf_id.try_get_value().flatten()));
+    // One loop for the life of this hook: a retarget replaces its step rather
+    // than starting a second loop, and it stops with the owner that built it.
+    let frames = FrameLoop::new();
 
     let reset_to = Callback::new(move |b: T| {
         value.set(Some(b));
@@ -150,19 +123,15 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
             value.set(None);
             vel.set_value(T::zero());
             last_ms.set_value(f64::NAN);
-            cancel_raf(raf_id.try_get_value().flatten());
-            raf_id.set_value(None);
+            frames.stop();
             return;
         }
 
-        let slot: StepSlot = Rc::new(RefCell::new(None));
-        let weak = Rc::downgrade(&slot);
-
-        let step: Rc<dyn Fn()> = Rc::new(move || {
+        frames.arm(move || {
             let dest = match target.get_untracked() {
                 Some(d) => d,
                 // Target cleared mid-flight: stop.
-                None => return,
+                None => return false,
             };
 
             let now = js_sys::Date::now();
@@ -180,7 +149,7 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
                 }
                 // Snapped to target; target changes re-run the Effect to move
                 // again, so no further frames are needed here.
-                return;
+                return false;
             }
 
             let cur = value.get_untracked().unwrap_or(dest);
@@ -191,20 +160,12 @@ pub fn use_spring_box<T: SpringValue>(target: Signal<Option<T>>, snap: Signal<bo
             if next.close(&dest, SETTLE_EPS) && velocity_small(next_vel, SETTLE_EPS) {
                 value.set(Some(dest));
                 vel.set_value(T::zero());
-                return;
+                return false;
             }
 
             value.set(Some(next));
-
-            // Re-arm: upgrade our weak slot to the strong closure and queue it.
-            if let Some(next) = weak.upgrade().and_then(|s| s.borrow().clone()) {
-                schedule_raf(raf_id, move || next());
-            }
+            true
         });
-
-        *slot.borrow_mut() = Some(step.clone());
-        anim_slot.set_value(Some(slot));
-        schedule_raf(raf_id, move || step());
     });
 
     SpringBox { value, reset_to }

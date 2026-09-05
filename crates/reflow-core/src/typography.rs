@@ -21,17 +21,17 @@ pub use reader_core::settings::typography::{
 
 /// The serif stack the body falls back to when no default font is chosen:
 /// the classic book-reading faces, in availability order.
-pub const SERIF_STACK: &str =
+const SERIF_STACK: &str =
     "Charter, \"Bitstream Charter\", \"Iowan Old Style\", Georgia, \"Times New Roman\", serif";
 /// The sans family's natural stack.
-pub const SANS_STACK: &str =
+const SANS_STACK: &str =
     "ui-sans, -apple-system, \"Segoe UI\", Helvetica, Arial, sans-serif";
 /// The monospace family's natural stack.
-pub const MONO_STACK: &str =
+const MONO_STACK: &str =
     "ui-mono, Menlo, Consolas, \"Liberation Mono\", \"Courier New\", monospace";
 
 /// The natural stack of a family — what a `Default` family slot resolves to.
-pub fn family_default_stack(family: TextFamily) -> &'static str {
+fn family_default_stack(family: TextFamily) -> &'static str {
     match family {
         TextFamily::Serif => SERIF_STACK,
         TextFamily::SansSerif => SANS_STACK,
@@ -49,7 +49,7 @@ pub fn family_default_stack(family: TextFamily) -> &'static str {
 /// * A bundled font resolves to its own stack; a bundled id the build does
 ///   not (yet) ship falls back the same way as `Default`, so a saved choice
 ///   never renders nothing.
-pub fn resolve_stack(settings: &TextSettings, choice: &FontChoice, family: Option<TextFamily>) -> String {
+fn resolve_stack(settings: &TextSettings, choice: &FontChoice, family: Option<TextFamily>) -> String {
     match choice {
         FontChoice::Default => match family {
             Some(family) => family_default_stack(family).to_string(),
@@ -71,12 +71,12 @@ pub fn resolve_stack(settings: &TextSettings, choice: &FontChoice, family: Optio
 
 /// The stack body text renders in: the Default picker's choice, or the
 /// Serif slot when that choice is `Default` (see [`resolve_stack`]).
-pub fn body_stack(settings: &TextSettings) -> String {
+fn body_stack(settings: &TextSettings) -> String {
     resolve_stack(settings, &settings.default_font, None)
 }
 
 /// The stack a family renders in, honouring its override slot.
-pub fn family_stack(settings: &TextSettings, family: TextFamily) -> String {
+fn family_stack(settings: &TextSettings, family: TextFamily) -> String {
     let choice = match family {
         TextFamily::Serif => &settings.serif_font,
         TextFamily::SansSerif => &settings.sans_font,
@@ -112,7 +112,7 @@ pub fn body_char_width(settings: &TextSettings) -> f64 {
 /// `--tx-font-sans`, `--tx-font-mono`.
 ///
 /// The ink dial is deliberately NOT here: it is resolved in Rust by the
-/// appearance pipeline (reader-core's `appearance_reflowable`), which mixes the
+/// appearance pipeline (reader-core's `appearance::reflowable`), which mixes the
 /// palette ink toward the paper itself and paints a flat `--tx-ink` — the
 /// stylesheet never mixes live. Column alignment is also NOT here — it
 /// positions a container (a class on the stream column), not a value any
@@ -205,7 +205,7 @@ mod tests {
         assert!(joined.contains("--tx-font-sans:"), "{joined}");
         assert!(joined.contains("--tx-font-mono:"), "{joined}");
         // The ink dial is NOT part of this contract: it resolves in Rust
-        // (appearance_reflowable) and paints as a flat --tx-ink.
+        // (appearance::reflowable) and paints as a flat --tx-ink.
         assert!(!joined.contains("--tx-ink-contrast"), "{joined}");
     }
 

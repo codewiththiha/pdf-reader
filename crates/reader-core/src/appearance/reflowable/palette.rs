@@ -2,7 +2,7 @@
 //! [`Appearance`] into the concrete colours a text/Markdown page paints.
 //!
 //! WHY ITS OWN MATH. A PDF page is an always-light raster, so base mode and
-//! tint reach it through a CSS filter chain (see `appearance_raster`) whose
+//! tint reach it through a CSS filter chain (see [`crate::appearance::raster`]) whose
 //! numbers are chosen for bitmaps. A text page owns its paper and ink
 //! outright, so it derives them directly — and deliberately NOT with the
 //! PDF maths, because the two formats need different things:
@@ -34,7 +34,7 @@
 //!      comes up.
 
 use crate::appearance::base::base_tokens;
-use crate::appearance::shared::oklch::{hex_to_oklch, oklch_css};
+use crate::appearance::shared::oklch::{hex_to_oklch, hue_toward, oklch_css, parse_color};
 use crate::appearance::shared::tint::ui_hue_oklch;
 use crate::appearance::{Appearance, BaseMode};
 
@@ -114,14 +114,7 @@ impl TextPalette {
         let base = base_tokens(a.base);
         let (accent, accent_soft) = if a.has_tint() {
             let (_, _, ah0) = hex_to_oklch(base.accent).unwrap_or((accent_l, 0.12, target_h));
-            let mut delta = target_h - ah0;
-            while delta > 180.0 {
-                delta -= 360.0;
-            }
-            while delta < -180.0 {
-                delta += 360.0;
-            }
-            let accent_h = (ah0 + delta * t).rem_euclid(360.0);
+            let accent_h = hue_toward(ah0, target_h, t);
             (
                 oklch_css(accent_l, 0.12 + t * 0.08, accent_h),
                 oklch_css(accent_soft_l, 0.04 + t * 0.04, accent_h),
@@ -178,31 +171,11 @@ pub fn mix_toward_paper(color: &str, paper: &str, keep: f64) -> String {
     oklch_css(l + (pl - l) * (1.0 - keep), c + (pc - c) * (1.0 - keep), h)
 }
 
-/// (L, C, H) out of a hex literal or an `oklch(...)` literal.
-fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
-    let v = value.trim();
-    if let Some(inner) = v.strip_prefix("oklch(").and_then(|s| s.strip_suffix(')')) {
-        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().ok());
-        return Some((it.next().flatten()?, it.next().flatten()?, it.next().flatten()?));
-    }
-    hex_to_oklch(v)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::appearance::base::base_tokens;
-
-    fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
-        Appearance { base, tint_hue: hue, tint_strength: strength, ..Default::default() }
-    }
-
-    /// (L, C, H) parsed out of an `oklch(...)` literal.
-    fn lch(value: &str) -> (f64, f64, f64) {
-        let inner = value.trim_start_matches("oklch(").trim_end_matches(')');
-        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().unwrap());
-        (it.next().unwrap(), it.next().unwrap(), it.next().unwrap())
-    }
+    use crate::appearance::fixture::{lch, tinted};
 
     #[test]
     fn light_anchors_hold_at_every_slider_position() {

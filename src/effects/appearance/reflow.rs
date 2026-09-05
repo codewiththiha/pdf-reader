@@ -4,7 +4,7 @@
 //! (with the ink dial resolved in Rust, not in the stylesheet).
 
 use reader_core::appearance::Appearance;
-use reader_core::appearance_reflowable::tokens;
+use reader_core::appearance::reflowable::tokens;
 
 /// The `--tx-*` variables for an appearance and the ink-contrast dial
 /// (0..=100). Always painted alongside the raster token set — the two

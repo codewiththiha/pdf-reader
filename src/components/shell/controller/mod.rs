@@ -351,7 +351,7 @@ impl ShellController {
     /// control moves left into the space they would have occupied. Also
     /// off wholesale on Windows and Linux: frameless windows have no native
     /// lights, so the row never owes the corner anything.
-    pub fn lights_gutter(&self) -> Signal<bool> {
+    fn lights_gutter(&self) -> Signal<bool> {
         let this = *self;
         Signal::derive(move || {
             app_chrome::platform::is_macos()

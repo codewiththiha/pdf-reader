@@ -68,6 +68,42 @@ pub fn hex_to_oklch(hex: &str) -> Option<(f64, f64, f64)> {
     Some((ll, chroma, hue))
 }
 
+/// (L, C, H) out of a colour this reader emits: an `oklch(...)` literal or an
+/// `#rrggbb` hex.
+///
+/// The inverse of [`oklch_css`], and the only place the literal's grammar is
+/// written down. Untinted palettes emit hex and tinted ones emit oklch, so
+/// anything that reads a palette back — [`crate::appearance::reflowable::palette`]'s
+/// precomposed mixes, and the tests that hold every emitted number to account
+/// — has to accept both.
+pub fn parse_color(value: &str) -> Option<(f64, f64, f64)> {
+    let v = value.trim();
+    if let Some(inner) = v.strip_prefix("oklch(").and_then(|s| s.strip_suffix(')')) {
+        let mut it = inner.split_whitespace().map(|x| x.parse::<f64>().ok());
+        return Some((it.next().flatten()?, it.next().flatten()?, it.next().flatten()?));
+    }
+    hex_to_oklch(v)
+}
+
+/// Hue `from` rotated a fraction `t` of the way to `to`, the SHORT way round
+/// the circle.
+///
+/// The trap this exists for: hue is an angle, so 350 -> 10 is a 20 degree step
+/// forward and not a 340 degree sweep backwards through the whole spectrum. A
+/// tint that took the long way turned a warm paper green on its way to red.
+/// Both the UI-token tint and the text palette's accent ride it, so one slider
+/// moves every colour the same direction.
+pub fn hue_toward(from: f64, to: f64, t: f64) -> f64 {
+    let mut delta = to - from;
+    while delta > 180.0 {
+        delta -= 360.0;
+    }
+    while delta < -180.0 {
+        delta += 360.0;
+    }
+    (from + delta * t).rem_euclid(360.0)
+}
+
 /// A CSS `oklch(...)` literal, rounded so presets compare stably in tests.
 #[inline]
 pub fn oklch_css(l: f64, c: f64, h: f64) -> String {
@@ -131,6 +167,27 @@ mod tests {
         assert!(hex_to_oklch("nonsense").is_none());
         assert!(hex_to_oklch("#gggggg").is_none());
         assert!(hex_to_oklch("").is_none());
+    }
+
+    #[test]
+    fn an_emitted_literal_reads_back_as_the_numbers_it_was_built_from() {
+        // The round trip both pipelines depend on: tinted palettes emit oklch,
+        // untinted ones emit hex, and one parser has to read either.
+        let (l, c, h) = parse_color(&oklch_css(0.98, 0.08, 104.0)).unwrap();
+        assert!((l - 0.98).abs() < 1e-9 && (c - 0.08).abs() < 1e-9 && (h - 104.0).abs() < 1e-9);
+        assert!((parse_color("#ffffff").unwrap().0 - 1.0).abs() < 0.002);
+        assert!(parse_color("oklch(nonsense)").is_none());
+        assert!(parse_color("currentColor").is_none());
+    }
+
+    #[test]
+    fn a_hue_walks_the_short_way_and_lands_where_it_is_told() {
+        assert!((hue_toward(350.0, 10.0, 1.0) - 10.0).abs() < 1e-9);
+        assert!((hue_toward(350.0, 10.0, 0.5) - 0.0).abs() < 1e-9);
+        assert!((hue_toward(10.0, 350.0, 0.5) - 0.0).abs() < 1e-9);
+        // Full strength is the target exactly, and no strength moves at all.
+        assert!((hue_toward(104.0, 200.0, 1.0) - 200.0).abs() < 1e-9);
+        assert!((hue_toward(104.0, 200.0, 0.0) - 104.0).abs() < 1e-9);
     }
 
     #[test]

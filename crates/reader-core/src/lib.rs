@@ -24,17 +24,17 @@
 //!   schema names: `pdf-paper` (which pixels of a page carry the paper colour)
 //!   and `virtual-list` (how far ahead a strip mounts).
 //!
-//! The appearance pipelines are the one deliberate narrowing: `appearance`
-//! holds the shared kernel (model, base palettes, colour maths, noise and
-//! texture helpers), and the two siblings `appearance_raster` /
-//! `appearance_reflowable` hold the derivations for the two ways a page can be
-//! painted: pixels that arrive from a renderer, and type laid out in the DOM.
-//! They are named for that split rather than for a file format because the
-//! split is what they key on. They live here
-//! rather than in the format crates because they are pure colour computation
-//! over the shared [`appearance::Appearance`] type — no DOM, no engine — so
-//! the host test suite can hold every number they produce to account. The
-//! engine bridge that APPLIES the raster pipeline stays in the app crate.
+//! Appearance is one tree, `appearance/`, and it is the one deliberate
+//! narrowing in this crate: the kernel (model, base palettes, colour maths,
+//! noise and texture helpers, presets) at its root, and the two pipelines
+//! under it — `appearance::raster` for pages that arrive as pixels from a
+//! renderer, `appearance::reflowable` for pages laid out as DOM type. They
+//! are named for that split rather than for a file format because the split
+//! is what they key on, and neither reads the other. They live here rather
+//! than in the format crates because they are pure colour computation over
+//! the shared [`appearance::Appearance`] type — no DOM, no engine — so the
+//! host test suite can hold every number they produce to account. The engine
+//! bridge that APPLIES the raster pipeline stays in the app crate.
 //!
 //! The floating-box geometry and the spring those boxes ride are deliberately
 //! NOT here: they live in `ui-geom`, a dependency-free leaf. The chrome crate
@@ -43,12 +43,9 @@
 //! into a feature — to do it.
 
 pub mod appearance;
-pub mod appearance_raster;
-pub mod appearance_reflowable;
 pub mod filename;
 pub mod format;
 pub mod outline;
-pub mod presets;
 pub mod search;
 pub mod settings;
 pub mod view;

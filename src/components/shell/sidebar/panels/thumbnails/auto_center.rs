@@ -264,7 +264,7 @@ fn arm_glide(g: Glide) {
 /// The "take me to where I am" gesture: a `pdfreader:reveal-active`
 /// event (re-clicking the active sidebar tab) smooth-scrolls onto the
 /// current page and hands the panel back to the reader.
-pub(crate) fn install_reveal_listener(
+fn install_reveal_listener(
     auto: &AutoCenter,
     state: ReaderState,
     sidebar: RwSignal<SidebarMode>,
@@ -303,7 +303,7 @@ pub(crate) fn install_reveal_listener(
 
 /// The open/page-follow effect: snap on a fresh open, then glide after
 /// the page signal moves (debounced, grace-aware).
-pub(crate) fn install_center_effect(
+fn install_center_effect(
     auto: &AutoCenter,
     state: ReaderState,
     sidebar: RwSignal<SidebarMode>,
@@ -381,7 +381,7 @@ pub(crate) fn install_center_effect(
 /// still hold a clone of the step), then the step slot is dropped, so the
 /// self-re-arming `Rc<dyn Fn()>` loses its last strong reference and the
 /// glide cannot keep re-arming after the panel is gone.
-pub(crate) fn install_lifetime_cleanup(auto: &AutoCenter) {
+fn install_lifetime_cleanup(auto: &AutoCenter) {
     let timer = auto.glide_timer;
     let step_slot = auto.glide_step;
     on_cleanup(move || {

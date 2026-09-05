@@ -11,7 +11,7 @@ use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use app_chrome::icon::{Icon, IconName};
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
-use reader_core::presets::{Preset, make_preset_id};
+use reader_core::appearance::presets::{Preset, make_preset_id};
 
 #[component]
 pub(super) fn PresetEditor(

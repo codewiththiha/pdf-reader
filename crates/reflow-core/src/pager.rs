@@ -31,12 +31,12 @@ pub struct BlockMetrics {
 
 impl BlockMetrics {
     /// Height of one line, in px.
-    pub fn line_height_px(&self) -> f64 {
+    fn line_height_px(&self) -> f64 {
         self.font_size * self.line_height
     }
 
     /// How many glyphs fit on a line, at least one.
-    pub fn chars_per_line(&self) -> f64 {
+    fn chars_per_line(&self) -> f64 {
         (self.content_width / (self.font_size * self.char_width).max(0.001)).max(1.0)
     }
 }

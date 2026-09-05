@@ -4,7 +4,7 @@ pub const MIN_SCALE: f64 = 0.25;
 pub const MAX_SCALE: f64 = 5.0;
 
 /// Zoom presets shown in the zoom menu / used by +/- stepping.
-pub const ZOOM_STEPS: &[f64] = &[
+const ZOOM_STEPS: &[f64] = &[
     0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0,
 ];
 

@@ -191,7 +191,7 @@ pub fn next_search_index(len: usize, active: Option<usize>, dir: i32) -> Option<
 /// Fraction of the reading area to leave above a match when scrolling it into
 /// view, so it lands in comfortable reading position rather than jammed against
 /// the top edge.
-pub const MATCH_VIEW_BIAS: f64 = 0.35;
+const MATCH_VIEW_BIAS: f64 = 0.35;
 
 /// Scroll offset that brings a match into view, or `None` if it already is.
 ///

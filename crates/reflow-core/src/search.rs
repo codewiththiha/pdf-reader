@@ -35,7 +35,7 @@ pub struct TextHit {
 /// Matches per query are capped: a pathological haystack (a one-character
 /// query in a megabyte file) must not produce a match list that dwarfs the
 /// document.
-pub const MAX_MATCHES: usize = 2000;
+const MAX_MATCHES: usize = 2000;
 
 /// Every occurrence of `query` in the document, in reading order. An empty
 /// or whitespace-only query matches nothing.

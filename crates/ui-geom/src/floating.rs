@@ -67,7 +67,7 @@ impl Rect {
         self.x
     }
     /// Vertical center of the rect.
-    pub fn center_y(self) -> f64 {
+    fn center_y(self) -> f64 {
         self.y + self.h * 0.5
     }
 }
@@ -183,7 +183,7 @@ pub fn clamp_point_to_viewport(p: Point, size: Size, viewport: Size, margin: f64
 /// Clamp `rect` inside the viewport margin, shrinking the allowed range when
 /// the panel is larger than the viewport allows (the range collapses to the
 /// margin rather than panicking on min > max).
-pub fn clamp_rect_to_viewport(rect: Rect, viewport: Size, margin: f64) -> Rect {
+fn clamp_rect_to_viewport(rect: Rect, viewport: Size, margin: f64) -> Rect {
     Rect {
         x: rect.x.clamp(margin, (viewport.w - rect.w - margin).max(margin)),
         y: rect.y.clamp(margin, (viewport.h - rect.h - margin).max(margin)),

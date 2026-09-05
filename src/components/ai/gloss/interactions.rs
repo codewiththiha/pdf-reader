@@ -182,16 +182,7 @@ pub fn use_zoom_reset(state: AppState, ctrl: GlossController) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn origin(y: f64, h: f64) -> Option<GlossBox> {
-        Some(GlossBox {
-            x: 100.0,
-            y,
-            w: 40.0,
-            h,
-            r: 6.0,
-        })
-    }
+    use crate::components::ai::fixture::origin;
 
     #[test]
     fn an_unmounted_page_counts_as_gone() {

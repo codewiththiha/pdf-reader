@@ -125,19 +125,8 @@ pub fn watch_page_anchor(
 
 #[cfg(test)]
 mod tests {
-    use ai_core::gloss::GlossBox;
-
     use super::{origin_outside_band, CARD_EXIT_FRAC, PILL_EXIT_FRAC};
-
-    fn origin(y: f64, h: f64) -> Option<GlossBox> {
-        Some(GlossBox {
-            x: 100.0,
-            y,
-            w: 40.0,
-            h,
-            r: 6.0,
-        })
-    }
+    use crate::components::ai::fixture::origin;
 
     #[test]
     fn an_unmounted_page_is_outside_every_band() {

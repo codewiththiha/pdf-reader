@@ -139,10 +139,8 @@ pub(crate) fn ps_surface_tail(a: &Appearance, dark_paper: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::appearance::fixture::tinted;
     use crate::appearance::{Appearance, BaseMode, NoiseMode, TextureMode};
-    fn tinted(base: BaseMode, hue: u16, strength: u8) -> Appearance {
-        Appearance { base, tint_hue: hue, tint_strength: strength, ..Default::default() }
-    }
 
     #[test]
     fn a_preview_carries_its_own_look_not_the_live_one() {

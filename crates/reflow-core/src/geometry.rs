@@ -63,7 +63,7 @@ impl PageGeometry {
     /// The inline paddings of page `page` (0-based). With a book layout the
     /// gutter faces the spine: page 0 is a recto (gutter on the LEFT), and
     /// it alternates from there. Without one, both sides are symmetric.
-    pub fn inline_pads(&self, book_layout: bool, page: usize) -> (f64, f64) {
+    fn inline_pads(&self, book_layout: bool, page: usize) -> (f64, f64) {
         if !book_layout {
             return (self.pad_inline_left, self.pad_inline_right);
         }
@@ -79,7 +79,7 @@ impl PageGeometry {
     /// page as a recto (gutter on the LEFT) — the spine sits between the
     /// two hosts, so the page's own parity is irrelevant there. Without a
     /// book layout both sides stay symmetric.
-    pub fn spread_pads(&self, book_layout: bool, right_page: bool) -> (f64, f64) {
+    fn spread_pads(&self, book_layout: bool, right_page: bool) -> (f64, f64) {
         if !book_layout {
             return (self.pad_inline_left, self.pad_inline_right);
         }

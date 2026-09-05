@@ -260,7 +260,7 @@ pub fn union_box(rects: &[(f64, f64, f64, f64)]) -> Option<GlossBox> {
 }
 
 /// The viewport box a spot covers right now, in the reader's current view mode.
-pub fn spot_screen_box(state: ReaderState, spot: &ReflowSpot) -> Option<GlossBox> {
+fn spot_screen_box(state: ReaderState, spot: &ReflowSpot) -> Option<GlossBox> {
     let mode = state.viewer.mode.get_untracked();
     spot_screen_box_in(state, spot, mode)
 }

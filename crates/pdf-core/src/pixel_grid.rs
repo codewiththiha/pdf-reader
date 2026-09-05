@@ -36,7 +36,7 @@
 ///
 /// Split from [`snap_px`] so the arithmetic is testable off the browser: the
 /// only thing the wasm-only half adds is the ratio itself.
-pub fn snap_to(v: f64, dpr: f64) -> f64 {
+fn snap_to(v: f64, dpr: f64) -> f64 {
     // A non-finite or nonsensical ratio (some headless environments report 0)
     // would turn a good coordinate into NaN; pass the value through instead.
     if !(v.is_finite() && dpr.is_finite() && dpr > 0.0) {
@@ -54,7 +54,7 @@ pub fn snap_to(v: f64, dpr: f64) -> f64 {
 /// `snap_to` above is the arithmetic and stays pure, so the host test suite can
 /// prove the rule without a browser; only this read is wasm-only.
 #[cfg(target_arch = "wasm32")]
-pub fn device_pixel_ratio() -> f64 {
+fn device_pixel_ratio() -> f64 {
     web_sys::window()
         .map(|w| w.device_pixel_ratio())
         .filter(|d| *d > 0.0 && d.is_finite())
@@ -64,7 +64,7 @@ pub fn device_pixel_ratio() -> f64 {
 /// The same answer with no display to ask: the grid is the CSS grid, so nothing
 /// is snapped and nothing is harmed. Keeps the crate host-testable.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn device_pixel_ratio() -> f64 {
+fn device_pixel_ratio() -> f64 {
     1.0
 }
 

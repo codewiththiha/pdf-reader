@@ -18,7 +18,7 @@ pub const CELL_W: f64 = 120.0;
 /// [`ROW_GAP`]: cross and main gaps are different knobs in the adapter.
 pub const GAP_CROSS: f64 = 12.0;
 /// CSS-px gap between rows (the page-number band lives inside each cell).
-pub const ROW_GAP: f64 = 8.0;
+const ROW_GAP: f64 = 8.0;
 /// Extra rows rendered above/below the visible window (pre-render margin).
 ///
 /// Two, not one. A row entering the viewport is already mounted, and a truly

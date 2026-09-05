@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::appearance::{Appearance, BaseMode, NoiseMode, TextureMode};
+use super::{Appearance, BaseMode, NoiseMode, TextureMode};
 
 /// A named look. `id` is stable and used for selection/highlighting; user
 /// presets get a generated id so two presets may share a label without the UI

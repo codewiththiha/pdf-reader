@@ -9,7 +9,7 @@
 //!     (`effects::appearance::raster`),
 //!   reflowable — the seven `--tx-*` tokens a reflowable page reads
 //!     (`effects::appearance::reflow`, over reader-core's
-//!     `appearance_reflowable`). Such a page paints its own paper and ink
+//!     `reader_core::appearance::reflowable`). Such a page paints its own paper and ink
 //!     directly, so no filter ever reaches it.
 //!
 //! WHY INLINE PROPERTIES RATHER THAN CSS BLOCKS. The old design had one

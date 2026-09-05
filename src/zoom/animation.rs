@@ -34,10 +34,9 @@
 //! arriving. The loop can still be handed one (a follow taking over while a
 //! tween is already running), so it knows how to land it without committing it.
 
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
-
 use leptos::prelude::*;
+
+use app_chrome::hooks::use_raf::FrameLoop;
 
 use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
 use crate::state::reader::{ReaderState, ZoomTransition};
@@ -45,9 +44,6 @@ use crate::zoom::actuator::ZoomActuator;
 
 use super::config;
 use super::coordinator::finish_transition;
-
-/// rAF step that can re-arm itself.
-type StepSlot = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
 
 /// Land a transaction: relay the layout out to its target, then show it.
 ///
@@ -86,64 +82,30 @@ fn ease_out_cubic(t: f64) -> f64 {
 
 /// The single tween loop owned by the zoom controller.
 ///
-/// The slot is stored here — not in a local of `arm` — so the running step
-/// closure keeps itself alive across frames (each step hands the next frame
-/// the `Rc` it clones out of the slot). `arm` is idempotent: while a loop
-/// is alive it adopts whatever transition is on the signal, so retargets
-/// never stack a second loop.
+/// A thin wrapper over [`FrameLoop`]: the machinery (the slot the step re-arms
+/// itself through, the flag a queued frame checks before it touches a signal,
+/// the owner cleanup that stops it all) is the primitive's, and what is left
+/// here is the one thing only the tween knows — what a frame does.
+///
+/// `arm` is idempotent: while a loop is running it adopts whatever transition
+/// is on the signal, so retargets never stack a second loop.
 pub(crate) struct Tween {
-    alive: Rc<Cell<bool>>,
-    slot: StepSlot,
+    frames: FrameLoop,
 }
 
 impl Tween {
+    /// Build from the reader's owner — this is called in a component body, next
+    /// to `drive`, and the loop's cleanup is registered here.
     pub(crate) fn new() -> Self {
-        let alive = Rc::new(Cell::new(false));
-        // Teardown has to be able to stop this loop, because the loop is driven
-        // from a rAF callback and an owner's cleanup cannot cancel one of those:
-        // the callback is already queued when the page goes away. The flag is
-        // what the queued frame checks before it reads anything.
-        //
-        // Parked through a stored id rather than captured directly for the same
-        // reason `use_debounce` does it: a cleanup closure may not hold an `Rc`,
-        // and the store is dropped before the closure could reach it, hence the
-        // `try_` read. Called from the reader's owner — this is built in a
-        // component body, next to `drive`.
-        let store = StoredValue::new_local(Some(alive.clone()));
-        on_cleanup(move || {
-            if let Some(flag) = store.try_get_value().flatten() {
-                flag.set(false);
-            }
-        });
-        Self {
-            alive,
-            slot: Rc::new(RefCell::new(None)),
-        }
+        Self { frames: FrameLoop::new() }
     }
 
     /// Ensure a loop is running for the current transition.
     pub(crate) fn arm(&self, state: ReaderState, actuator: ZoomActuator) {
-        if self.alive.get() {
-            return; // the live loop reads the signal; it will pick this up
-        }
-        self.alive.set(true);
-
-        let alive = self.alive.clone();
-        let weak = Rc::downgrade(&self.slot);
-        let step: Rc<dyn Fn()> = Rc::new(move || {
-            // Stopped, or disposed? Both answers mean the same thing here: do
-            // not touch a signal. The check has to come first because reading a
-            // graph whose owner has been cleaned up does not hand back `None`, it
-            // unwinds through a callback nobody owns — and `!alive` is the one
-            // piece of evidence that is still safe to read, since the flag lives
-            // in the loop's own `Rc` and `new` clears it on cleanup.
-            if !alive.get() {
-                return;
-            }
+        self.frames.arm(move || {
             // Idle? The loop dies here until the next `arm`.
             let Some(t) = state.viewer.zoom.transition.get_untracked() else {
-                alive.set(false);
-                return;
+                return false;
             };
             let mode = state.viewer.mode.get_untracked();
             // Only the scrolling modes have a strip to rescale.
@@ -174,12 +136,10 @@ impl Tween {
                     // idle here instead of re-arming is what lets the next frame
                     // own the next rAF: `arm` adopts whatever transition is on the
                     // signal.
-                    alive.set(false);
-                    return;
+                                        return false;
                 }
                 finish_transition(&state, &t);
-                alive.set(false);
-                return;
+                                return false;
             }
             let progress = ((js_sys::Date::now() - t.start_ms) / duration).clamp(0.0, 1.0);
             let visual = t.from + (t.to - t.from) * ease_out_cubic(progress);
@@ -194,15 +154,10 @@ impl Tween {
             state.viewer.zoom.display.set(visual);
             if progress >= 1.0 {
                 finish_transition(&state, &t);
-                alive.set(false);
-                return;
+                return false;
             }
-            if let Some(next) = weak.upgrade().and_then(|s| s.borrow().clone()) {
-                request_animation_frame(move || next());
-            }
+            true
         });
-        *self.slot.borrow_mut() = Some(step.clone());
-        request_animation_frame(move || step());
     }
 }
 

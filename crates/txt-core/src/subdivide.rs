@@ -17,7 +17,7 @@ use reflow_core::block::{SPLIT_MAX_LINES, TextBlock, subdivide_with};
 /// paragraph owning exactly one paragraph space however far the cut spreads.
 ///
 /// `max_lines` of 0 disables the pass (the block list comes back untouched).
-pub fn subdivide_with_budget(blocks: Vec<TextBlock>, max_lines: usize) -> Vec<TextBlock> {
+fn subdivide_with_budget(blocks: Vec<TextBlock>, max_lines: usize) -> Vec<TextBlock> {
     subdivide_with(blocks, max_lines, |_, _| true)
 }
 
