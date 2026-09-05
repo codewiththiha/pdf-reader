@@ -34,6 +34,7 @@ ignore = [
     "./public/pdfEngine.js",
     "./public/bake.worker.js",
     "./scripts/check-versions.js",
+    "./scripts/check-formats.js",
     "./scripts/test-engine-smoke.js",
     "./scripts/engine-smoke",
 ]

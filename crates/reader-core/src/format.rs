@@ -3,6 +3,12 @@
 //! The open dialog's filter, the drop target's "is this worth showing feedback
 //! for" and the OS handoff all answer the same question, so the answer lives
 //! here once. Adding a format is adding a row to [`SUPPORTED`].
+//!
+//! Two declarations outside this crate are derived from that row and cannot see
+//! it: the Tauri shell's filesystem gate (`DOCUMENT_EXTENSIONS`) and the
+//! bundle's file associations (`tauri.conf.json`). `scripts/check-formats.ts`
+//! reads all three and fails CI when they disagree, so the row here is the only
+//! one that needs thinking about — but it does still need adding there.
 
 /// One openable document kind: its file extensions (lower-case, no dot) and
 /// the MIME types a drag may advertise it under before its name is known.

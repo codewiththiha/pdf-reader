@@ -35,8 +35,11 @@ mod macos;
 
 /// Every extension the reader opens (lower-case, dot included). The shell's
 /// filesystem gates accept exactly these and nothing else, so the webview's
-/// `read_file_*` commands are not a general file-read primitive. Keep in
-/// sync with the frontend's `reader_core::format` registry.
+/// `read_file_*` commands are not a general file-read primitive.
+///
+/// Derived from the frontend's `reader_core::format` registry, which is the
+/// source of truth — `scripts/check-formats.ts` fails CI when the two drift, as
+/// it does for the bundle's file associations in `tauri.conf.json`.
 const DOCUMENT_EXTENSIONS: &[&str] = &[".pdf", ".txt", ".text", ".md", ".markdown", ".mdown"];
 
 /// The OS-opened document path the frontend has not collected yet.

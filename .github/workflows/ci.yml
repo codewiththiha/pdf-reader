@@ -120,6 +120,13 @@ jobs:
       - name: Verify versions are in sync
         run: node scripts/check-versions.js
 
+      # The formats the reader opens are declared three times (the reader-core
+      # registry, the Tauri shell's filesystem gate and the bundle's file
+      # associations) in two languages that cannot see each other. Same family
+      # of check as the versions one above.
+      - name: Verify supported formats are in sync
+        run: node scripts/check-formats.js
+
   # The Linux job above cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
   # feature set that feeds it) would otherwise first surface when a release
