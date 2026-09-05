@@ -212,7 +212,7 @@ pub fn ReflowStreamLayout(
 
     // A zoom transaction freezes the stream's scroll echo and measurements
     // for the same reasons the zoom coordinator freezes the page strips
-    // (see `viewer::zoom::coordinator`): a rescale's scroll write echoes one
+    // (see `crate::zoom::coordinator`): a rescale's scroll write echoes one
     // frame late, and adopting that echo mid-tween pins the next anchored
     // rescale from a stale offset. The coordinator owns the page strips and
     // cannot reach this one, so the stream freezes itself for exactly the

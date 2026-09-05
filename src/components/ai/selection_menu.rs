@@ -18,9 +18,9 @@ use crate::state::AppState;
 /// fully leaves the viewport.
 ///
 /// Length gate: word lookup is for words and short phrases. Past
-/// `ai_core::gloss::MAX_GLOSS_CHARS` the pill stays visible but MUTED
-/// (disabled, explaining tooltip) up to the hint band's edge, and vanishes
-/// beyond it — a disabled affordance reads as a rule, where a silently
+/// `ai_core::gloss::is_glossable`'s limit the pill stays visible but MUTED
+/// (disabled, explaining tooltip) up to the hint band's edge
+/// (`ai_core::gloss::is_hintable`), and vanishes beyond it — a disabled affordance reads as a rule, where a silently
 /// vanishing menu reads as a bug.
 ///
 /// The Info click does **not** flip `popover_open` and hope `detail` survives:

@@ -14,7 +14,8 @@ fn provider() -> &'static dyn AiProvider {
     PROVIDER.get_or_init(create_provider).as_ref()
 }
 
-/// Mirror of `ai_core::gloss::MAX_GLOSS_CHARS` — the frontend gate (the
+/// Mirror of the limit behind `ai_core::gloss::is_glossable` (its
+/// `MAX_GLOSS_CHARS`, in `ai_core::gloss::geometry`) — the frontend gate (the
 /// Info pill) is the real one; this only protects the invoke boundary.
 /// Keep the two in sync.
 const MAX_GLOSS_CHARS: usize = 60;

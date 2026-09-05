@@ -2,7 +2,7 @@
 //!
 //! The engine resolves `{ok:true, ...}` objects whose field names are camelCase
 //! (they come straight from JS). These structs are deserialized via
-//! serde_wasm_bindgen after the `ok` flag is checked in crate::api::engine.
+//! serde_wasm_bindgen after the `ok` flag is checked in `crate::api::resolve`.
 //!
 //! CONTRACT: field names are the wire contract with pdfEngine.js.
 
@@ -103,7 +103,7 @@ pub enum DocStatus {
 /// (a live render's stash) and `samplePaperPage` (an offscreen sample).
 ///
 /// The pixels travel as a typed array rather than JSON, so this shape is
-/// parsed by hand in `api::parse_frame`, not through serde.
+/// parsed by hand in `crate::api::paper::parse_frame`, not through serde.
 pub struct PaperFrame {
     pub page: u32,
     pub width: u32,

@@ -1,9 +1,9 @@
 //! The two phase machines of the word card: what its BOX is doing
 //! ([`GlossPhase`]) and what its DATA is doing ([`AiPhase`]).
 //!
-//! They lived in `components/ai/types.rs`, a file whose own doc had to explain
-//! that the wire types were no longer in it and were only re-exported "so the
-//! existing import paths keep resolving". Both enums are read exclusively by
+//! They lived in the AI feature's old `types` module, a file whose own doc had
+//! to explain that the wire types were no longer in it and were only
+//! re-exported "so the existing import paths keep resolving". Both enums are read exclusively by
 //! this module — the card's geometry, its content, the chunk hook and the
 //! surface that composes them — and neither is a wire type, so they belong here
 //! with their only consumers, and the wire types are imported from
