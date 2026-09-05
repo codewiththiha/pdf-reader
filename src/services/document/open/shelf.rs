@@ -4,7 +4,6 @@ use leptos::prelude::*;
 
 use crate::state::library::{RecentBook, self};
 use crate::state::AppState;
-use crate::storage::{save_covers, save_library};
 
 /// Move this book to the front of the shelf and persist it.
 ///
@@ -41,15 +40,11 @@ pub(crate) fn record(
         },
     );
     state.library.books.set(recent);
-    if let Err(e) = state.library.books.with_untracked(|books| save_library(books)) {
-        e.report();
-    }
+    crate::storage::persist_library(state.library);
     if let Some(evicted_path) = evicted {
         state.library.covers.update(|c| {
             c.remove(&evicted_path);
         });
-        if let Err(e) = state.library.covers.with_untracked(save_covers) {
-            e.report();
-        }
+        crate::storage::persist_covers(state.library);
     }
 }

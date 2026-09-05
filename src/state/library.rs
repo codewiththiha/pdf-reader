@@ -6,7 +6,13 @@
 //! is the appearance/zoom blob that repaints and re-serialises on every write.
 //! Coupling the two would make each page turn re-run the appearance paint
 //! effect and re-serialise the whole settings JSON. The library therefore lives
-//! in its own signal and its own localStorage key, saved on its own debounce.
+//! in its own signal and its own localStorage key, and written on its own
+//! schedule: reading progress — the hot path, a write per page turn — is saved
+//! on a debounce by `crate::effects::reader::reading_progress`, while the
+//! moments that are the last thing before a teardown — a document closing, a
+//! book leaving the shelf — write immediately through
+//! `crate::storage::persist_library`, because a debounced save there is a save
+//! that may never land.
 
 use serde::{Deserialize, Serialize};
 

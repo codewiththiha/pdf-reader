@@ -9,7 +9,6 @@ use wasm_bindgen_futures::spawn_local;
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 use crate::state::{AppState, SidebarMode};
-use crate::storage::save_library;
 
 /// Close the current document and return to the library shelf.
 ///
@@ -41,10 +40,8 @@ pub fn close_document(state: AppState) {
                 changed = true;
             }
         });
-        if changed
-            && let Err(e) = state.library.books.with_untracked(|books| save_library(books))
-        {
-            e.report();
+        if changed {
+            crate::storage::persist_library(state.library);
         }
     }
 
