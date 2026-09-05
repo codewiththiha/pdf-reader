@@ -4,6 +4,8 @@
 // See the original pdfEngine.ts commentary: no clamp mid-drag, preserve
 // last-known pages across inter-page gaps.
 
+import { SELECTION_DETAIL_EVENT, SELECTION_PAGES_EVENT } from "./events";
+
 let selDragging = false;
 let lastKnownAnchorPage: number | null = null;
 let lastKnownFocusPage: number | null = null;
@@ -123,7 +125,7 @@ function dispatchSelectionPages(): void {
       lastKnownAnchorPage = null;
       lastKnownFocusPage = null;
       globalThis.dispatchEvent(
-        new CustomEvent("pdfreader:selection-pages", { detail: null })
+        new CustomEvent(SELECTION_PAGES_EVENT, { detail: null })
       );
     }
     return;
@@ -145,7 +147,7 @@ function dispatchSelectionPages(): void {
   if (key === lastSelectionRangeKey) return;
   lastSelectionRangeKey = key;
   globalThis.dispatchEvent(
-    new CustomEvent("pdfreader:selection-pages", {
+    new CustomEvent(SELECTION_PAGES_EVENT, {
       detail: { first, last },
     })
   );
@@ -198,7 +200,7 @@ function dispatchSelectionDetail(): void {
     if (lastDetailKey === null) return;
     lastDetailKey = null;
     globalThis.dispatchEvent(
-      new CustomEvent("pdfreader:selection-detail", { detail: null })
+      new CustomEvent(SELECTION_DETAIL_EVENT, { detail: null })
     );
     return;
   }
@@ -224,7 +226,7 @@ function dispatchSelectionDetail(): void {
   const spot = kind === "reflow" ? findReflowSpot(range) : null;
 
   globalThis.dispatchEvent(
-    new CustomEvent("pdfreader:selection-detail", {
+    new CustomEvent(SELECTION_DETAIL_EVENT, {
       detail: {
         text,
         context: extractContext(range, text),
