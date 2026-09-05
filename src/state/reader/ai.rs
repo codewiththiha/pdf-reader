@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use serde::Deserialize;
 
 /// Bounding rectangle of the selected text, in viewport CSS pixels — the
-/// "warp window" the AI selection menu anchors to.
+/// "warp window" the AI selection pill anchors to.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct SelectionRect {
     pub x: f64,

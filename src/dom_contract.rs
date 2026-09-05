@@ -21,7 +21,7 @@
 //!   fallback.
 //! * `data-ai-popover` — marks the AI menu's root so that a press inside it is
 //!   not read as a click that clears the selection
-//!   (`crate::components::ai::selection_menu`).
+//!   (`crate::components::ai::selection_pill`).
 //!
 //! Element ids are built, not spelled: `crate::components::viewer::page_host`
 //! owns [`crate::components::viewer::page_host::host_id_for_mode`] (the

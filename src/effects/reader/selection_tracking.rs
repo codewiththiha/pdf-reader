@@ -1,4 +1,4 @@
-//! Text-selection detail tracking for the AI explain feature.
+//! Selection detail tracking for the AI explain feature, in every format.
 //!
 //! The engine's selectionchange listener debounces the native selection,
 //! measures its bounding rect and grabs the surrounding sentence, then
@@ -11,7 +11,7 @@
 //!
 //! This effect is the single place that turns that event into writes on
 //! `state.reader.ai_selection`: `detail` carries the text/context, `anchor`
-//! is the origin the floating menu follows, and a genuine clear also closes an
+//! is the origin the floating pill follows, and a genuine clear also closes an
 //! open popover.
 //!
 //! It is also the one place that decides WHICH pipeline anchors a selection,
@@ -73,7 +73,7 @@ fn anchor_for(detail: &SelectionDetail, state: AppState) -> Option<PageAnchor> {
     bridge.capture(scale)
 }
 
-pub fn text_selection(state: AppState) {
+pub fn selection_tracking(state: AppState) {
     let _handle = window_event_listener(
         leptos::ev::Custom::new(crate::events::SELECTION_DETAIL_EVENT),
         move |ev: web_sys::CustomEvent| {

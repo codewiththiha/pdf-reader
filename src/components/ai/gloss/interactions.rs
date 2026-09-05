@@ -10,7 +10,7 @@ use ai_core::gloss::{GlossBox, boxes_close};
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::components::ai::anchor::{AnchorWatch, MENU_EXIT_FRAC, origin_outside_band};
+use crate::components::ai::anchor::{AnchorWatch, PILL_EXIT_FRAC, origin_outside_band};
 use crate::components::ai::gloss::controller::GlossController;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::hooks::use_viewport::viewport_size;
@@ -70,7 +70,7 @@ pub fn use_dismiss_interactions(ctrl: GlossController) {
 /// The hard exit is the full-viewport band, the same shape the watcher applies
 /// to its softer `CARD_EXIT_FRAC` one.
 fn origin_gone(origin: Option<GlossBox>, vh: f64) -> bool {
-    origin_outside_band(origin, vh, MENU_EXIT_FRAC)
+    origin_outside_band(origin, vh, PILL_EXIT_FRAC)
 }
 
 /// The soft band's verdict for an origin still inside the viewport: arm the

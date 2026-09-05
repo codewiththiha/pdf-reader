@@ -3,7 +3,7 @@ use leptos::prelude::*;
 
 use crate::components::ai::anchor::{
     anchor_resolver, captured_mark, capture_selection_mark, no_invalidation, reflow_invalidation,
-    watch_page_anchor, FormatAnchorBridge, ReflowAnchorBridge, MENU_EXIT_FRAC,
+    watch_page_anchor, FormatAnchorBridge, ReflowAnchorBridge, PILL_EXIT_FRAC,
 };
 use crate::components::ai::gloss::mark_layer::request_gloss_open;
 use crate::components::ai::reflow_anchor::spot_envelope;
@@ -21,7 +21,7 @@ use crate::state::AppState;
 /// `ai_core::gloss::is_glossable`'s limit the pill stays visible but MUTED
 /// (disabled, explaining tooltip) up to the hint band's edge
 /// (`ai_core::gloss::is_hintable`), and vanishes beyond it — a disabled affordance reads as a rule, where a silently
-/// vanishing menu reads as a bug.
+/// vanishing pill reads as a bug.
 ///
 /// The Info click does **not** flip `popover_open` and hope `detail` survives:
 /// it builds a self-contained [`GlossMark`] at click time and dispatches the
@@ -35,7 +35,7 @@ use crate::state::AppState;
 /// NOT clear the selection detail — otherwise the button would swallow
 /// its own click (the press collapses the selection before click fires).
 #[component]
-pub fn SelectionMenu(state: AppState) -> impl IntoView {
+pub fn SelectionPill(state: AppState) -> impl IntoView {
     let detail = state.reader.ai_selection.detail;
     let popover_open = state.reader.ai_selection.popover_open;
 
@@ -66,7 +66,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
         state.reader.viewer.scroll_top.into(),
         state.reader.viewer.page.into(),
         invalidate,
-        MENU_EXIT_FRAC,
+        PILL_EXIT_FRAC,
     );
 
     // Once the selection's origin leaves the viewport, the menu is gone for
@@ -107,7 +107,7 @@ pub fn SelectionMenu(state: AppState) -> impl IntoView {
             <div
                 data-ai-popover=""
                 style=move || style.get()
-                class=format!("ai-selection-menu-enter {}", app_chrome::layers::AI_SELECTION)
+                class=format!("ai-pill-enter {}", app_chrome::layers::AI_SELECTION)
             >
                 <button
                     type="button"

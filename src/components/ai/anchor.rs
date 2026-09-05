@@ -302,7 +302,7 @@ pub fn reflow_invalidation(state: ReaderState) -> Signal<u64> {
 /// passive (it morphs nothing and owns no screen real estate), so it should
 /// never vanish while any part of the text it points at is still visible —
 /// unlike the gloss card below, which covers content and yields earlier.
-pub const MENU_EXIT_FRAC: f64 = 1.0;
+pub const PILL_EXIT_FRAC: f64 = 1.0;
 /// The expanded gloss card tolerates scroll until its origin passes this
 /// fraction of the viewport height (or leaves the top edge).
 pub const CARD_EXIT_FRAC: f64 = 0.8;
@@ -413,7 +413,7 @@ pub(super) fn selection_start() -> Option<(web_sys::Range, web_sys::Element)> {
 /// anchor needs the block and character offsets the engine's selection tracker
 /// reports with the event, so it goes through
 /// [`crate::components::ai::reflow_anchor::anchor_of`] instead — which is what
-/// `crate::effects::reader::text_selection` decides between.
+/// `crate::effects::reader::selection_tracking` decides between.
 pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
     if scale <= 0.0 {
         return None;
@@ -558,7 +558,7 @@ pub fn watch_page_anchor(
 
 #[cfg(test)]
 mod tests {
-    use super::{CARD_EXIT_FRAC, GlossBox, MENU_EXIT_FRAC, origin_outside_band, page_from_host_id};
+    use super::{CARD_EXIT_FRAC, GlossBox, PILL_EXIT_FRAC, origin_outside_band, page_from_host_id};
 
     fn origin(y: f64, h: f64) -> Option<GlossBox> {
         Some(GlossBox {
@@ -572,20 +572,20 @@ mod tests {
 
     #[test]
     fn an_unmounted_page_is_outside_every_band() {
-        assert!(origin_outside_band(None, 900.0, MENU_EXIT_FRAC));
+        assert!(origin_outside_band(None, 900.0, PILL_EXIT_FRAC));
         assert!(origin_outside_band(None, 900.0, CARD_EXIT_FRAC));
     }
 
     #[test]
     fn the_full_band_only_gives_up_off_screen() {
         let vh = 900.0;
-        assert!(!origin_outside_band(origin(300.0, 100.0), vh, MENU_EXIT_FRAC));
+        assert!(!origin_outside_band(origin(300.0, 100.0), vh, PILL_EXIT_FRAC));
         // Overlapping either edge is still visible.
-        assert!(!origin_outside_band(origin(-50.0, 100.0), vh, MENU_EXIT_FRAC));
-        assert!(!origin_outside_band(origin(850.0, 100.0), vh, MENU_EXIT_FRAC));
+        assert!(!origin_outside_band(origin(-50.0, 100.0), vh, PILL_EXIT_FRAC));
+        assert!(!origin_outside_band(origin(850.0, 100.0), vh, PILL_EXIT_FRAC));
         // Fully above / fully below.
-        assert!(origin_outside_band(origin(-150.0, 100.0), vh, MENU_EXIT_FRAC));
-        assert!(origin_outside_band(origin(901.0, 100.0), vh, MENU_EXIT_FRAC));
+        assert!(origin_outside_band(origin(-150.0, 100.0), vh, PILL_EXIT_FRAC));
+        assert!(origin_outside_band(origin(901.0, 100.0), vh, PILL_EXIT_FRAC));
     }
 
     #[test]
@@ -594,7 +594,7 @@ mod tests {
         assert!(!origin_outside_band(origin(700.0, 20.0), vh, CARD_EXIT_FRAC));
         assert!(origin_outside_band(origin(760.0, 20.0), vh, CARD_EXIT_FRAC));
         // Still visible, but past the band: the pill would stay, the card goes.
-        assert!(!origin_outside_band(origin(760.0, 20.0), vh, MENU_EXIT_FRAC));
+        assert!(!origin_outside_band(origin(760.0, 20.0), vh, PILL_EXIT_FRAC));
     }
 
     #[test]
