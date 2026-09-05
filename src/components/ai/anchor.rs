@@ -24,7 +24,7 @@ use reader_core::view::ViewMode;
 use wasm_bindgen::JsCast;
 
 use crate::components::ai::gloss::mark_layer::MARK_RADIUS;
-use crate::components::ai::reflow_anchor::union_box;
+use crate::components::ai::reflow_anchor::{range_rects, union_box};
 use crate::dom_contract::{HOST_ATTR, HOST_PDF};
 use crate::state::ReaderState;
 use app_chrome::hooks::dom::by_id;
@@ -378,6 +378,28 @@ pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64, exit_frac: f64) ->
 /// Capture the current DOM selection as a page-space anchor, for a format whose
 /// identity IS a page-space rect (the PDF).
 ///
+/// The live selection's first range, and the element its start sits in.
+///
+/// Both capture paths begin here — this module's page-space one and
+/// [`crate::components::ai::reflow_anchor::capture_selection`] — and differ only
+/// in what they walk UP to afterwards: a page host for one, a block row for the
+/// other. Sharing the walk is what keeps the half that is not format-specific
+/// from drifting, and that half is where the awkward cases are: a collapsed
+/// selection, an empty one, and a start container that is a text node rather
+/// than an element.
+pub(super) fn selection_start() -> Option<(web_sys::Range, web_sys::Element)> {
+    let selection = web_sys::window()?.get_selection().ok()??;
+    if selection.is_collapsed() || selection.range_count() == 0 {
+        return None;
+    }
+    let range = selection.get_range_at(0).ok()?;
+    let node = range.start_container().ok()?;
+    let el = node
+        .parent_element()
+        .or_else(|| node.dyn_into::<web_sys::Element>().ok())?;
+    Some((range, el))
+}
+
 /// The page number comes from the host under the selection, not from the
 /// reader's current-page signal. In the virtualized continuous reader those can
 /// temporarily diverge, and anchoring to the signal can point at an unmounted
@@ -396,15 +418,7 @@ pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
     if scale <= 0.0 {
         return None;
     }
-    let sel = web_sys::window()?.get_selection().ok()??;
-    if sel.is_collapsed() || sel.range_count() == 0 {
-        return None;
-    }
-    let range = sel.get_range_at(0).ok()?;
-    let node = range.start_container().ok()?;
-    let el = node
-        .parent_element()
-        .or_else(|| node.dyn_into::<web_sys::Element>().ok())?;
+    let (range, el) = selection_start()?;
     let host = el
         .closest(&format!("[{HOST_ATTR}]"))
         .ok()
@@ -416,16 +430,9 @@ pub fn capture_selection(scale: f64) -> Option<PageAnchor> {
     }
     let page = page_from_host_id(&host.id())?;
     let hr = host.get_bounding_client_rect();
-    let rects = range.get_client_rects()?;
-    let mut fragments = Vec::with_capacity(rects.length() as usize);
-    for i in 0..rects.length() {
-        if let Some(rc) = rects.get(i) {
-            fragments.push((rc.left(), rc.top(), rc.right(), rc.bottom()));
-        }
-    }
-    // One union rule for every format, so a stroke can never be a different
-    // shape than the card that springs from it.
-    let union = union_box(&fragments)?;
+    // One rect walk and one union rule for every format, so a stroke can never
+    // be a different shape than the card that springs from it.
+    let union = union_box(&range_rects(&range))?;
     Some(PageAnchor {
         page,
         rect: GlossBox {

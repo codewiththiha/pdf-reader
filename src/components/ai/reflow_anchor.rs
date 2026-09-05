@@ -383,7 +383,13 @@ fn range_for_span(el: &web_sys::Element, start: usize, end: usize) -> Option<web
 }
 
 /// The client rects of `range`, as the pure tuples [`union_box`] takes.
-fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
+///
+/// Both capture paths walk a selection's fragments through here — this module's
+/// spot projection and [`super::anchor::capture_selection`] — so a multi-line
+/// selection is measured the same way whichever format it is in. An empty list
+/// (a range the browser will not give rects for) unions to `None`, which every
+/// caller already reads as "nothing to anchor to".
+pub(super) fn range_rects(range: &web_sys::Range) -> Vec<(f64, f64, f64, f64)> {
     let Some(rects) = range.get_client_rects() else {
         return Vec::new();
     };
@@ -454,15 +460,7 @@ pub fn spot_screen_box_in(
 /// This is the app-side capture, for the paths that need a spot without an
 /// event to hand.
 pub fn capture_selection(state: ReaderState) -> Option<(ReflowSpot, PageAnchor)> {
-    let selection = web_sys::window()?.get_selection().ok()??;
-    if selection.is_collapsed() || selection.range_count() == 0 {
-        return None;
-    }
-    let range = selection.get_range_at(0).ok()?;
-    let node = range.start_container().ok()?;
-    let el = node
-        .parent_element()
-        .or_else(|| node.dyn_into::<web_sys::Element>().ok())?;
+    let (range, el) = super::anchor::selection_start()?;
     let row = el.closest(&format!("[{BLOCK_INDEX_ATTR}]")).ok().flatten()?;
     let block = row
         .get_attribute(BLOCK_INDEX_ATTR)
