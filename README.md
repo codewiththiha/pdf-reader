@@ -58,7 +58,7 @@ optional paper textures and film grain, all persisted between sessions.
 - Continuous appearance model with three base modes plus a hue and strength tint, replacing
   hard-coded themes.
 - Five paper textures with adjustable opacity and scale, plus static or animated film grain.
-- Eight built-in presets and unlimited user-saved presets organised into named groups.
+- Five built-in presets, and unlimited user-saved ones organised into named groups.
 - Full-text search with per-page results, highlight rectangles and wrap-around navigation.
 - Document outline (table of contents) with automatic highlighting of the active section.
 - Virtualized thumbnail grid backed by an LRU bitmap cache.
@@ -67,8 +67,8 @@ optional paper textures and film grain, all persisted between sessions.
   Apple Intelligence on Apple Silicon, a deterministic mock everywhere else.
 - Native file dialog, drag-and-drop opening, and restoration of the last-opened document.
 - Settings persisted to local storage with a migration path across schema changes.
-- Roughly 300 Rust unit tests across the workspace, plus a stub-vm smoke suite for the
-  TypeScript engine layer.
+- Roughly 460 Rust unit tests across the workspace, plus a stub-vm smoke suite for the
+  TypeScript layer, and five scripts that keep facts written down twice from drifting.
 
 ---
 
@@ -364,6 +364,7 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Turn page (single) | `Up arrow` / `Down arrow` |
 | Screen up / down | `Page Up` / `Page Down` |
 | Screen down / up | `Space` / `Shift` + `Space` |
+| Auto-scroll on or off (the two scrolling modes) | `Shift` + `A` |
 | Dismiss overlay or search | `Escape` |
 
 In continuous mode the reader owns the arrow keys and scrolls the page list directly. Leaving them
