@@ -55,11 +55,6 @@
 //! - sums cannot drift over long lists;
 //! - the storage footprint is identical (`8 * (n + 1)` bytes).
 //!
-//! For typical continuous scrolling the index is the same as the last frame's,
-//! or one step away. [`Strip::index_at_hinted`] takes a `&mut usize` hint and
-//! checks the neighbour first, falling back to a galloping search for big
-//! jumps (scrollbar drag). That makes smooth scrolling amortized `O(1)`.
-//!
 //! When items change size at runtime, [`Strip::set_size`] re-runs the suffix of
 //! the prefix-sum in `O(n)` time. A surface that resizes items far more often
 //! than this one does can supply its own tree by implementing

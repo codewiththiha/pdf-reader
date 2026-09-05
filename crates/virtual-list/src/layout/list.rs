@@ -1,40 +1,33 @@
 //! A single column of variably-sized items: the [`Strip`] backend behind the
 //! [`Layout`] contract, plus per-item estimates.
 
-use crate::{Budget, Strip, StripBackend, Viewport, Window};
+use crate::{Budget, Strip, Viewport, Window};
 
 use super::Layout;
 
 /// A column (or row, for horizontal axes) of variably-sized items with a
 /// fixed gap between them.
 ///
-/// Backed by a [`StripBackend`] (default [`Strip`]). The windowing is written
-/// once against the trait (see [`crate::backend`]), so a custom backend can
-/// be substituted without touching this layer.
+/// Backed by a [`Strip`]; the windowing maths is written once in
+/// [`crate::backend`] and shared with the grid's row strip.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct ListLayout<B: StripBackend = Strip> {
-    pub(crate) backend: B,
+pub struct ListLayout {
+    pub(crate) backend: Strip,
     pub(crate) gap: f64,
 }
 
-impl<B: StripBackend> ListLayout<B> {
+impl ListLayout {
     /// Build from explicit item sizes.
-    /// Note: for the default `Strip` backend, this rebuilds the prefix-sum.
-    pub fn new(sizes: impl IntoIterator<Item = f64>, gap: f64) -> Self
-    where
-        B: From<Strip>,
-    {
+    /// Note: the [`Strip`] backend rebuilds its prefix-sum here.
+    pub fn new(sizes: impl IntoIterator<Item = f64>, gap: f64) -> Self {
         Self {
-            backend: B::from(Strip::new(sizes, gap)),
+            backend: Strip::new(sizes, gap),
             gap,
         }
     }
 
     /// Build a layout of `count` identically-sized items.
-    pub fn uniform(count: usize, size: f64, gap: f64) -> Self
-    where
-        B: From<Strip>,
-    {
+    pub fn uniform(count: usize, size: f64, gap: f64) -> Self {
         Self::new(core::iter::repeat_n(size, count), gap)
     }
 
@@ -47,10 +40,7 @@ impl<B: StripBackend> ListLayout<B> {
     /// corrections then shift the content under the scroll anchor (the
     /// "landed on a different page after zoom-out" bug this API exists to
     /// prevent).
-    pub fn estimated(count: usize, estimate: impl Fn(usize) -> f64, gap: f64) -> Self
-    where
-        B: From<Strip>,
-    {
+    pub fn estimated(count: usize, estimate: impl Fn(usize) -> f64, gap: f64) -> Self {
         Self::new((0..count).map(estimate), gap)
     }
 
@@ -62,7 +52,7 @@ impl<B: StripBackend> ListLayout<B> {
 
 }
 
-impl<B: StripBackend> Layout for ListLayout<B> {
+impl Layout for ListLayout {
     #[inline]
     fn item_count(&self) -> usize {
         self.backend.len()
@@ -98,27 +88,11 @@ impl<B: StripBackend> Layout for ListLayout<B> {
         self.backend.index_at(pos)
     }
 
-    fn index_at_hinted(&self, pos: f64, _hint: &mut usize) -> usize {
-        // For now, fall back to unhinted index_at. A full hinted path
-        // requires the backend to expose index_at_hinted directly.
-        self.backend.index_at(pos)
-    }
-
     fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
         crate::backend::overlapping(&self.backend, top, extent)
     }
 
     fn window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window> {
-        crate::backend::window(&self.backend, scroll, viewport.main, budget)
-    }
-
-    fn window_hinted(
-        &self,
-        scroll: f64,
-        viewport: Viewport,
-        budget: Budget,
-        _hint: &mut usize,
-    ) -> Option<Window> {
         crate::backend::window(&self.backend, scroll, viewport.main, budget)
     }
 

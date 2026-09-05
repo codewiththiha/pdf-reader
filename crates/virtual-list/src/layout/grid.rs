@@ -184,17 +184,6 @@ impl GridLayout {
         self.rows.window(scroll, viewport.main, budget)
     }
 
-    /// [`rows_window`](Self::rows_window) with a per-frame hint.
-    fn rows_window_hinted(
-        &self,
-        scroll: f64,
-        viewport: Viewport,
-        budget: Budget,
-        hint: &mut usize,
-    ) -> Option<Window> {
-        self.rows.window_hinted(scroll, viewport.main, budget, hint)
-    }
-
     /// Expand a row window into an item window (clamping a partial last row).
     fn expand(&self, rows: Window) -> Window {
         debug_assert!(self.items > 0);
@@ -253,18 +242,6 @@ impl Layout for GridLayout {
         (self.rows.index_at(pos) * self.columns).min(self.items - 1)
     }
 
-    fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
-        if self.items == 0 {
-            *hint = 0;
-            return 0;
-        }
-        let mut row_hint = *hint / self.columns;
-        let row = self.rows.index_at_hinted(pos, &mut row_hint);
-        let idx = (row * self.columns).min(self.items - 1);
-        *hint = idx;
-        idx
-    }
-
     fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
         self.rows.overlapping(top, extent).map(|w| self.expand(w))
     }
@@ -272,22 +249,6 @@ impl Layout for GridLayout {
     fn window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window> {
         self.rows_window(scroll, viewport, budget)
             .map(|w| self.expand(w))
-    }
-
-    fn window_hinted(
-        &self,
-        scroll: f64,
-        viewport: Viewport,
-        budget: Budget,
-        hint: &mut usize,
-    ) -> Option<Window> {
-        if self.items == 0 {
-            return None;
-        }
-        let mut row_hint = *hint / self.columns;
-        let rows = self.rows_window_hinted(scroll, viewport, budget, &mut row_hint)?;
-        *hint = (row_hint * self.columns).min(self.items - 1);
-        Some(self.expand(rows))
     }
 
     fn dominant(&self, scroll: f64, extent: f64) -> usize {
@@ -443,32 +404,6 @@ mod tests {
         let pitch = g.row_pitch();
         let top = 4.0 * pitch - pitch * 0.25;
         assert_eq!(g.dominant(top, 300.0), 8);
-    }
-
-    #[test]
-    fn hinted_matches_unhinted() {
-        let g = thumbs(500);
-        let mut hint = 0usize;
-        let mut pos = 0.0;
-        while pos < g.total() {
-            assert_eq!(
-                g.index_at(pos),
-                g.index_at_hinted(pos, &mut hint),
-                "index_at {pos}"
-            );
-            pos += 23.0;
-        }
-        let budget = Budget::items(2, 64);
-        let mut hint = 0usize;
-        let mut top = 0.0;
-        while top < g.total() {
-            assert_eq!(
-                g.window(top, Viewport::main_only(720.0), budget),
-                g.window_hinted(top, Viewport::main_only(720.0), budget, &mut hint),
-                "window at {top}"
-            );
-            top += 61.0;
-        }
     }
 
     #[test]

@@ -65,10 +65,6 @@ pub trait Layout {
     /// Index of the item whose span contains `pos` (leading-edge semantics).
     fn index_at(&self, pos: f64) -> usize;
 
-    /// [`index_at`](Self::index_at) with the previous frame's answer as a
-    /// hint — amortized `O(1)` for continuous scrolling.
-    fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize;
-
     /// Items overlapping `[top, top + extent)`, or `None` if none do.
     fn overlapping(&self, top: f64, extent: f64) -> Option<Window>;
 
@@ -81,23 +77,13 @@ pub trait Layout {
     /// Items to keep mounted: visible + overscan, trimmed to the budget.
     fn window(&self, scroll: f64, viewport: Viewport, budget: Budget) -> Option<Window>;
 
-    /// [`window`](Self::window) with a per-frame hint (amortized `O(1)`).
-    fn window_hinted(
-        &self,
-        scroll: f64,
-        viewport: Viewport,
-        budget: Budget,
-        hint: &mut usize,
-    ) -> Option<Window>;
-
     /// The item occupying most of the viewport (area-of-viewport, ties to
     /// the lower index). Stable across zoom — see [`crate::Strip::dominant`]
     /// for why the top edge is the wrong question.
     fn dominant(&self, scroll: f64, extent: f64) -> usize;
 
     /// Resize one item; returns the signed delta (feed it to
-    /// [`crate::anchor::correct`]). Backends pick the cost: `O(n)` for
-    /// [`ListLayout`], `O(log n)` for a Fenwick-backed one.
+    /// [`crate::anchor::correct`]).
     fn set_size(&mut self, index: usize, new_size: f64) -> f64;
 
     /// Average item extent along the scroll axis — resolves
@@ -164,13 +150,6 @@ impl Layout for LayoutKind {
         }
     }
 
-    fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
-        match self {
-            Self::List(l) => l.index_at_hinted(pos, hint),
-            Self::Grid(g) => g.index_at_hinted(pos, hint),
-        }
-    }
-
     fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
         match self {
             Self::List(l) => l.overlapping(top, extent),
@@ -182,19 +161,6 @@ impl Layout for LayoutKind {
         match self {
             Self::List(l) => l.window(scroll, viewport, budget),
             Self::Grid(g) => g.window(scroll, viewport, budget),
-        }
-    }
-
-    fn window_hinted(
-        &self,
-        scroll: f64,
-        viewport: Viewport,
-        budget: Budget,
-        hint: &mut usize,
-    ) -> Option<Window> {
-        match self {
-            Self::List(l) => l.window_hinted(scroll, viewport, budget, hint),
-            Self::Grid(g) => g.window_hinted(scroll, viewport, budget, hint),
         }
     }
 

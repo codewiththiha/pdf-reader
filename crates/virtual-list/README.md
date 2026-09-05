@@ -37,8 +37,6 @@ The naive implementation walks the size array to find an item's offset. That is 
 
 `Strip` keeps a prefix-sum table instead, so `offset` is `O(1)` and positional queries are `O(log n)` binary searches. Building the table is `O(n)` once per size change.
 
-For continuous scrolling, the answer is usually the same index as last frame or one step away. `index_at_hinted(pos, &mut hint)` checks the neighbour first, then falls back to a galloping search for big jumps like scrollbar drags. That makes smooth scrolling amortized `O(1)`.
-
 ## Overscan and ceilings
 
 `Budget` splits mount policy into two orthogonal knobs:
@@ -63,7 +61,6 @@ Two invariants hold for any budget:
 (`overlapping`, `visible`, `window`, `dominant`) is written once against that trait, so a new
 backend — a tree, a chunked column, whatever a surface needs — only has to provide the primitives,
 and the `i64` sub-pixel math keeps boundary behaviour bit-for-bit identical between them.
-`ListLayout` is generic over the backend and defaults to `Strip`.
 
 | Backend | Lookup | Update | Use when |
 | ------- | ------ | ------ | -------- |
@@ -82,9 +79,8 @@ let budget = Budget::screenfuls(1.0, 7);
 let win = strip.window(10_000.0, 900.0, budget).unwrap();
 assert!(win.contains(strip.index_at(10_000.0)));
 
-let mut hint = 0usize;
 for top in (0..10_000).map(|i| i as f64 * 7.3) {
-    let _ = strip.index_at_hinted(top, &mut hint);
+    let _ = strip.index_at(top);
 }
 ```
 

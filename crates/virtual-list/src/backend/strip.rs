@@ -136,136 +136,8 @@ impl Strip {
     /// names a real item (given a non-empty strip). Returns `0` when empty.
     ///
     /// Uses `partition_point` over `i64` sub-pixels — `O(log n)` per call.
-    /// For continuous scrolling prefer [`Strip::index_at_hinted`], which is
-    /// amortized `O(1)` when the position is the same as or adjacent to the
-    /// previous frame.
     pub fn index_at(&self, pos: f64) -> usize {
         StripBackend::index_at(self, pos)
-    }
-
-    /// [`Strip::index_at`] with a **hint** — the previous frame's result, which
-    /// is checked first. For continuous scrolling (trackpad, mouse wheel,
-    /// keyboard line-scroll) the answer is almost always the same index or one
-    /// step away, so this reduces the `O(log n)` binary search to amortized
-    /// `O(1)`.
-    ///
-    /// If the hint is wrong by more than a step or two (a scrollbar drag, a
-    /// jump-to-anchor), this falls back to a **galloping** search: probe 1, 2,
-    /// 4, 8, ... steps away to bracket the answer, then binary-search inside
-    /// that bracket. The worst case stays `O(log n)`; the best case is a single
-    /// integer comparison.
-    ///
-    /// The hint is updated in place, so callers can keep it across frames in
-    /// the rendering loop's state.
-    pub fn index_at_hinted(&self, pos: f64, hint: &mut usize) -> usize {
-        let len = self.len();
-        if len == 0 || pos <= 0.0 {
-            *hint = 0;
-            return 0;
-        }
-        let p = to_sub(pos);
-
-        // Clamp hint to a valid item index.
-        if *hint >= len {
-            *hint = len - 1;
-        }
-        let h = *hint;
-
-        // 1) O(1): still inside the same item?
-        let h_start = self.starts[h];
-        let h_end = h_start.saturating_add(self.size_sub(h));
-        if p >= h_start && p < h_end {
-            return h;
-        }
-        // 2) O(1): did we step into the next / previous item?
-        if h + 1 < len {
-            let n_start = self.starts[h + 1];
-            let n_end = n_start.saturating_add(self.size_sub(h + 1));
-            if p >= n_start && p < n_end {
-                *hint = h + 1;
-                return h + 1;
-            }
-        }
-        if h > 0 {
-            let p_start = self.starts[h - 1];
-            let p_end = p_start.saturating_add(self.size_sub(h - 1));
-            if p >= p_start && p < p_end {
-                *hint = h - 1;
-                return h - 1;
-            }
-        }
-
-        // 3) Galloping search: bracket the answer, then binary search inside.
-        let target = if p < h_start {
-            // We jumped UPWARDS (back towards 0). Find the largest index `i`
-            // with `starts[i] <= p` and `i <= h`.
-            let mut lo = 0usize;
-            let mut step = 1usize;
-            // Probe 1, 2, 4, ... below h until we find an index whose start is
-            // > p (so the answer is below it).
-            let mut probe = h;
-            loop {
-                let next = probe.saturating_sub(step);
-                if next == probe {
-                    break;
-                }
-                if self.starts[next] <= p {
-                    probe = next;
-                    // We found a lower bound; binary search [probe, h].
-                    lo = probe;
-                    break;
-                }
-                probe = next;
-                if probe == 0 {
-                    break;
-                }
-                step <<= 1;
-            }
-            // Binary search in [lo, h] for the largest index whose start <= p.
-            self.starts[lo..=h]
-                .partition_point(|&s| s <= p)
-                .saturating_sub(1)
-                + lo
-        } else {
-            // We jumped DOWNWARDS (forward). Find the largest index `i` with
-            // `starts[i] <= p` and `i >= h`.
-            let mut hi = h;
-            let mut step = 1usize;
-            let mut probe = h;
-            loop {
-                let next = probe.saturating_add(step).min(len - 1);
-                if next == probe {
-                    break;
-                }
-                if self.starts[next] > p {
-                    hi = next;
-                    break;
-                }
-                probe = next;
-                if probe == len - 1 {
-                    // Reached the end; the answer is len-1 (or its
-                    // neighbour, resolved below).
-                    hi = len - 1;
-                    break;
-                }
-                step <<= 1;
-            }
-            // Binary search in [h, hi].
-            h + self.starts[h..=hi]
-                .partition_point(|&s| s <= p)
-                .saturating_sub(1)
-        };
-
-        // Apply the same boundary rule as `index_at`: if pos is at or past the
-        // end of the candidate, the next item leads.
-        let idx =
-            if self.starts[target].saturating_add(self.size_sub(target)) <= p && target + 1 < len {
-                target + 1
-            } else {
-                target
-            };
-        *hint = idx;
-        idx
     }
 
     /// Inclusive range of items overlapping the span `[top, top + extent)`.
@@ -276,31 +148,6 @@ impl Strip {
     /// no extent, or when the span lies entirely within a gap.
     pub fn overlapping(&self, top: f64, extent: f64) -> Option<Window> {
         super::overlapping(self, top, extent)
-    }
-
-    /// [`Strip::overlapping`] with a **hint** — see [`Strip::index_at_hinted`].
-    fn overlapping_hinted(&self, top: f64, extent: f64, hint: &mut usize) -> Option<Window> {
-        let len = self.len();
-        if len == 0 {
-            return None;
-        }
-        let extent = extent.max(0.0);
-        if extent == 0.0 {
-            return None;
-        }
-        let bottom_sub = to_sub(top + extent);
-
-        let mut first = self.index_at_hinted(top, hint);
-        if self.starts[first].saturating_add(self.size_sub(first)) <= to_sub(top) {
-            first += 1;
-        }
-        if first >= len || self.starts[first] >= bottom_sub {
-            return None;
-        }
-        let last = self.starts[..len]
-            .partition_point(|&s| s < bottom_sub)
-            .saturating_sub(1);
-        (last >= first).then_some(Window { first, last })
     }
 
     /// Inclusive range of items that are at least partly on screen.
@@ -327,48 +174,6 @@ impl Strip {
     ///   last one evicted.
     pub fn window(&self, scroll_top: f64, viewport: f64, budget: Budget) -> Option<Window> {
         crate::backend::window(self, scroll_top, viewport, budget)
-    }
-
-    /// [`Strip::window`] using a hinted overlap search (amortized O(1) when
-    /// `hint` is the previous frame's first mounted index).
-    pub fn window_hinted(
-        &self,
-        scroll_top: f64,
-        viewport: f64,
-        budget: Budget,
-        hint: &mut usize,
-    ) -> Option<Window> {
-        if self.is_empty() {
-            return None;
-        }
-        let vh = viewport.max(0.0);
-        if vh == 0.0 {
-            return (scroll_top < self.total()).then(|| {
-                let index = self.index_at_hinted(scroll_top, hint);
-                Window {
-                    first: index,
-                    last: index,
-                }
-            });
-        }
-        let look = budget.overscan.padding(vh, self.mean_size());
-        let padded = self.overlapping_hinted(scroll_top - look, vh + 2.0 * look, hint)?;
-        let vis = self.visible(scroll_top, vh).unwrap_or(padded);
-        let max = budget.max_items.max(1);
-        let Window {
-            mut first,
-            mut last,
-        } = padded;
-        while last - first + 1 > max {
-            if first < vis.first {
-                first += 1;
-            } else if last > vis.last {
-                last -= 1;
-            } else {
-                break;
-            }
-        }
-        Some(Window { first, last })
     }
 
     /// Index of the item occupying the most of the viewport.
@@ -758,51 +563,6 @@ mod tests {
         assert_eq!(to_sub(f64::NAN), 0);
         assert_eq!(to_sub(f64::INFINITY), i64::MAX);
         assert_eq!(to_sub(-1.0), 0);
-    }
-
-    // ---- new tests for the upgrades --------------------------------------
-
-    #[test]
-    fn hinted_index_matches_unhinted_for_all_positions() {
-        let s = Strip::uniform(50, 100.0, 24.0);
-        let mut hint = 0usize;
-        let mut pos = 0.0;
-        while pos < s.total() {
-            let a = s.index_at(pos);
-            let b = s.index_at_hinted(pos, &mut hint);
-            assert_eq!(
-                a, b,
-                "hinted disagrees with unhinted at pos={pos}: {a} vs {b}"
-            );
-            pos += 1.0;
-        }
-    }
-
-    #[test]
-    fn hinted_index_handles_large_jumps() {
-        let s = Strip::uniform(1000, 100.0, 24.0);
-        let mut hint = 0usize;
-        // Jump to the middle.
-        let mid = s.total() / 2.0;
-        assert_eq!(s.index_at_hinted(mid, &mut hint), s.index_at(mid));
-        // Jump to near the end.
-        let end = s.total() - 50.0;
-        assert_eq!(s.index_at_hinted(end, &mut hint), s.index_at(end));
-        // Jump back to the start.
-        assert_eq!(s.index_at_hinted(0.0, &mut hint), s.index_at(0.0));
-    }
-
-    #[test]
-    fn hinted_overlapping_matches_unhinted() {
-        let s = Strip::new([100.0, 200.0, 150.0, 100.0, 200.0], 24.0);
-        let mut hint = 0usize;
-        let mut top = 0.0;
-        while top < s.total() {
-            let a = s.overlapping(top, 200.0);
-            let b = s.overlapping_hinted(top, 200.0, &mut hint);
-            assert_eq!(a, b, "hinted overlapping disagrees at top={top}");
-            top += 23.0;
-        }
     }
 
     #[test]

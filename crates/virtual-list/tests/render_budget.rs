@@ -9,13 +9,13 @@ fn window(
     gap: f64,
     budget: Budget,
 ) -> Option<(usize, usize)> {
-    ListLayout::<virtual_list::Strip>::new(heights.iter().copied(), gap)
+    ListLayout::new(heights.iter().copied(), gap)
         .window(scroll_top, Viewport::main_only(viewport_h), budget)
         .map(|w| (w.first, w.last))
 }
 
 fn span_overlapping(top: f64, height: f64, heights: &[f64], gap: f64) -> Option<(usize, usize)> {
-    ListLayout::<virtual_list::Strip>::new(heights.iter().copied(), gap)
+    ListLayout::new(heights.iter().copied(), gap)
         .overlapping(top, height)
         .map(|w| (w.first, w.last))
 }
@@ -28,7 +28,7 @@ fn uniform(n: usize, h: f64) -> Vec<f64> {
 
 /// Park the viewport `frac` of the way down item `idx` (0-based).
 fn scroll_into(idx: usize, frac: f64, heights: &[f64], vh: f64) -> f64 {
-    let layout = ListLayout::<virtual_list::Strip>::new(heights.iter().copied(), GAP);
+    let layout = ListLayout::new(heights.iter().copied(), GAP);
     layout.offset(idx) + heights[idx] * frac - vh * 0.5
 }
 
@@ -65,7 +65,7 @@ fn next_item_mounts_before_the_reader_arrives() {
     let mid = scroll_into(idx, 0.5, &h, vh);
     assert_eq!(window(mid, vh, &h, GAP, budget), Some((idx, idx)));
 
-    let layout = ListLayout::<virtual_list::Strip>::new(h.iter().copied(), GAP);
+    let layout = ListLayout::new(h.iter().copied(), GAP);
     let page_bottom = layout.offset(idx) + h[idx];
     let near = page_bottom - vh - 10.0;
     let (f, l) = window(near, vh, &h, GAP, budget).unwrap();
@@ -81,7 +81,7 @@ fn item_above_is_dropped_once_far_enough_behind() {
     let h = uniform(40, 3960.0);
     let budget = Budget::default();
     let idx = 10;
-    let layout = ListLayout::<virtual_list::Strip>::new(h.iter().copied(), GAP);
+    let layout = ListLayout::new(h.iter().copied(), GAP);
     let top = layout.offset(idx);
 
     let just_in = top + 100.0;
