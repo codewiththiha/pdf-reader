@@ -37,6 +37,7 @@ ignore = [
     "./scripts/check-formats.js",
     "./scripts/check-doc-paths.js",
     "./scripts/check-events.js",
+    "./scripts/check-dom-contract.js",
     "./scripts/test-engine-smoke.js",
     "./scripts/engine-smoke",
 ]

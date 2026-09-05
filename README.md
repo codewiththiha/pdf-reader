@@ -516,7 +516,7 @@ styles/
   components/             shell, title bar, animations, ai, gloss, appearance
 scripts/                  engine bundling, engine smoke test, and the
                           consistency checks CI runs (versions, formats,
-                          doc paths, event names)
+                          doc paths, event names, the DOM contract)
 tests/                    source-level tests (e.g. the conditional-class lint)
 ```
 
@@ -624,14 +624,15 @@ virtual-list windowing invariants. On top of that, the TypeScript engine layer h
 stub-vm smoke suite (`node scripts/test-engine-smoke.js` in CI) covering open, render,
 theme baking, scrub mode, thumbnails and teardown.
 
-Four small scripts guard facts that are written down more than once, where nothing else
+Five small scripts guard facts that are written down more than once, where nothing else
 would notice a drift: `check-versions.ts` (the app version in four files),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
-file path named in a Rust comment still resolves) and `check-events.ts` (the window-event
-names the engine dispatches match the app's table, and appear nowhere as a raw literal).
-Each is TypeScript compiled by the same Trunk pre-build hook, and each fails CI rather than
-warning.
+file path named in a Rust comment still resolves), `check-events.ts` (the window-event names
+the engine dispatches match the app's table) and `check-dom-contract.ts` (the attribute,
+class and element-id names the app writes match the ones the engine reads, and appear
+nowhere as a raw literal). Each is TypeScript compiled by the same Trunk pre-build hook, and
+each fails CI rather than warning.
 
 ---
 

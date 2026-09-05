@@ -138,6 +138,12 @@ jobs:
       - name: Verify the window-event tables agree
         run: node scripts/check-events.js
 
+      # The app builds the page hosts and the engine paints into them; the only
+      # thing they share is names in the DOM, and a `closest` that finds nothing
+      # is not an error.
+      - name: Verify the DOM contract agrees
+        run: node scripts/check-dom-contract.js
+
   # The Linux job above cannot see `set_traffic_lights`: it is
   # `#[cfg(target_os = "macos")]`, so a type error in it (or in the objc2
   # feature set that feeds it) would otherwise first surface when a release
