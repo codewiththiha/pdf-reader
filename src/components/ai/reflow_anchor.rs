@@ -171,10 +171,17 @@ fn collect_text_nodes(node: &web_sys::Node, out: &mut Vec<web_sys::Node>) {
         web_sys::Node::ELEMENT_NODE => {
             if let Some(el) = node.dyn_ref::<web_sys::Element>() {
                 let classes = el.class_list();
-                // Neither the stroke layer's own text (a mark's button carries
-                // the glossed word as its accessible name) nor a measure column
-                // is document text; counting either would shift every offset
-                // after it.
+                // The stroke layer's own text is not document text (a mark's
+                // button carries the glossed word as its accessible name), and
+                // counting it would shift every offset after the first mark.
+                //
+                // The measure column is the same case, guarded rather than
+                // excluded by construction: it renders every block a second
+                // time, but it is mounted as a SIBLING of the page hosts
+                // (`features/reader/page.rs`), so this walk — which starts at a
+                // host — never reaches it. The class check is what keeps the
+                // offsets honest if it is ever moved inside one; it costs one
+                // `DOMTokenList::contains` per element.
                 if classes.contains("glossLayer") || classes.contains("tx-measure") {
                     return;
                 }

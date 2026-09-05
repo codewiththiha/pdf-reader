@@ -60,6 +60,9 @@ impl Format {
         matches!(self, Self::Text | Self::Markdown)
     }
 
+    /// The kind's display name, for sentences that name one document's format
+    /// ("Could not open this Markdown"). The registry's `DocumentKind::name`
+    /// and this must agree; [`kind_names`] is the plural counterpart.
     pub fn label(self) -> &'static str {
         match self {
             Format::Pdf => "PDF",
@@ -94,6 +97,30 @@ pub fn format_of(path: &str) -> Format {
 /// Every supported extension, flattened (for dialog filters).
 pub fn extensions() -> impl Iterator<Item = &'static str> {
     SUPPORTED.iter().flat_map(|kind| kind.extensions.iter().copied())
+}
+
+/// Every supported kind's display name, in registry order ("PDF", "Text", ...).
+///
+/// For the sentences that tell the reader what may be dropped or opened. UI copy
+/// is generated from the registry rather than typed out because the registry is
+/// the one place a format is added: a fourth row then appears in the drop
+/// overlay, the open button's tooltip and the failure message with no edit to
+/// any of them.
+pub fn kind_names() -> impl Iterator<Item = &'static str> {
+    SUPPORTED.iter().map(|kind| kind.name)
+}
+
+/// The supported kinds as a reading list: "PDF, Text or Markdown".
+///
+/// Two kinds read "PDF or Text"; one reads just its name. The oxford comma is
+/// deliberately absent — this ends up inside short UI sentences.
+pub fn kind_list() -> String {
+    let names: Vec<&str> = kind_names().collect();
+    match names.len() {
+        0 => String::new(),
+        1 => names[0].to_string(),
+        _ => format!("{} or {}", names[..names.len() - 1].join(", "), names[names.len() - 1]),
+    }
 }
 
 /// Whether `path` names a file the reader can open, by extension. Case- and
@@ -171,5 +198,22 @@ mod tests {
         assert_eq!(format_of("/books/notes.epub"), Format::Pdf);
         assert_eq!(format_of("/books/Makefile"), Format::Pdf);
         assert_eq!(format_of("C:\\books\\chapter.MARKDOWN"), Format::Markdown);
+    }
+
+    #[test]
+    fn the_kind_list_is_read_out_of_the_registry() {
+        // UI copy is generated, never typed: a row added to `SUPPORTED` shows up
+        // here (and in the drop overlay, the open tooltip and the failure
+        // message) with no edit to any of them.
+        assert_eq!(kind_list(), "PDF, Text or Markdown");
+        assert_eq!(kind_names().count(), SUPPORTED.len());
+        // Every extension resolves to a kind whose label is in that list, so no
+        // document can fail with a sentence that does not name its own format.
+        for kind in SUPPORTED {
+            for ext in kind.extensions {
+                let path = format!("/books/sample.{ext}");
+                assert!(kind_list().contains(format_of(&path).label()));
+            }
+        }
     }
 }

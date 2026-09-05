@@ -231,12 +231,23 @@ html.appearance-scrubbing .pdf-page::before {
   animation: thumb-skeleton-pulse 1.6s ease-in-out infinite;
 }
 
-/* css-comment-stripped */
+/* The pulse, FROZEN for the fade. The cover's class cannot simply be dropped
+   when the render resolves: removing an animation mid-flight snaps its property
+   back to the base value in one frame, and the cover would jump from its
+   mid-pulse tint to plain --thumb-bg exactly as the opacity fade begins. Pausing
+   instead holds whatever tint the pulse had reached, so the fade interpolates
+   from a continuous background, and the timer in `thumbnail_cell.rs`
+   (PULSE_STOP_MS) drops both classes once the cover is invisible at opacity 0. */
 .thumb-skeleton-settling {
   animation-play-state: paused;
 }
 
-/* css-comment-stripped */
+/* THE HOST IS NOT TEXT. Everything a page paints — the canvas raster, the
+   themed paper and texture layers, the snapshot overlay — is decoration as far
+   as the selection engine is concerned, so a drag that starts anywhere on the
+   page would otherwise select the whole host box (and, on WebKit, sweep every
+   descendant in its path). Selection is handed back to the document text alone,
+   in the glyph spans of the text layer below (see SELECTION SCOPING). */
 .pdf-page,
 .pdf-page * {
   user-select: none;

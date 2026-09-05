@@ -17,7 +17,11 @@ pub(crate) fn EmptyState(state: AppState) -> impl IntoView {
             <div class="flex max-w-md flex-col items-center gap-3 text-center">
                 <p class="text-lg text-ink">"Open a document to start reading"</p>
                 {has_tauri.then(|| view! {
-                    <p class="text-sm text-muted">"Or drop a PDF, TXT or Markdown file anywhere in the window"</p>
+                    // The kinds come out of the format registry rather than out
+                    // of a sentence someone has to remember to update.
+                    <p class="text-sm text-muted">
+                        {move || format!("Or drop a {} file anywhere in the window", reader_core::format::kind_list())}
+                    </p>
                 })}
                 <Button
                     on_click=move |_| document::open_dialog(state)

@@ -9,7 +9,7 @@
 //!
 //! This is the PDF tail. A reflowable document's chapters are already in its
 //! text, so there is nothing to resolve and nothing to wait for: its outline is
-//! projected from the block list by `effects::reader::text_outline`, and the open
+//! projected from the block list by `effects::reader::reflow_outline`, and the open
 //! flow files it without a hop through here.
 
 use leptos::prelude::*;

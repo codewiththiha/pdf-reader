@@ -57,10 +57,13 @@ impl<A> std::ops::Deref for GlossMark<A> {
 /// layer has, and each format projects its own anchors (for PDF, the app's
 /// `components::ai::anchor`).
 ///
-/// [`PageAnchor`] is the PDF implementation. A future format (epub, plain
-/// text, ...) implements this with its own notion of a spot — a line and
-/// character offset, a block id — and the rest of the AI feature (the card,
-/// the cache, the settings) reuses it unchanged.
+/// [`PageAnchor`] is the PDF implementation: an identity as durable as pixels.
+/// The reflowable formats did NOT add a second implementation — a spot there is
+/// a block index and a character range, and it rides in [`GlossMark::context`]
+/// as a tagged envelope because the pages under it are re-cut whenever the
+/// typography moves (the app's `components::ai::reflow_anchor` owns that
+/// envelope). [`ReflowSpot`] still implements the trait so a future format whose
+/// identity IS durable can be flattened into the schema the same way.
 pub trait MarkAnchor: Clone + Debug + PartialEq + Serialize + DeserializeOwned {
     /// Whether two anchors denote the same logical spot in the document.
     ///
@@ -158,6 +161,13 @@ impl ReflowSpot {
     }
 }
 
+// NOTE: nothing instantiates `GlossMark<ReflowSpot>`. A reflowable mark keeps
+// `PageAnchor` as its flattened anchor and carries the spot in `context`, so the
+// comparison that actually runs is `commands::same_glossed_spot` in the app,
+// which parses both envelopes and falls back to `same_spot` on the anchors. This
+// impl is the trait's answer for a spot made of characters — kept because it is
+// the definition a future durable-character format would reuse, not because the
+// current one calls it.
 impl MarkAnchor for ReflowSpot {
     /// Character identity is exact: there is no sub-pixel drift to tolerate
     /// when nothing was ever measured in pixels.

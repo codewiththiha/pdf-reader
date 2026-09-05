@@ -46,7 +46,7 @@ pub struct ReflowContent {
     /// blocks rather than as a finished outline because a Markdown heading has
     /// no page number until the cut says so — the outline is re-projected onto
     /// `block_page` whenever the cut moves (see
-    /// `crate::effects::reader::text_outline`).
+    /// `crate::effects::reader::reflow_outline`).
     pub headings: RwSignal<Arc<Vec<MarkdownHeading>>>,
     /// Block heights at scale 1 — estimate-seeded, measurement-refined.
     pub heights: RwSignal<Arc<Vec<f64>>>,
@@ -106,6 +106,11 @@ impl ReflowContent {
         self.heights.set(Arc::new(Vec::new()));
         self.cuts.set(Arc::new(Vec::new()));
         self.block_page.set(Arc::new(Vec::new()));
+        // The geometry too: it is the split's other half (what the heights were
+        // cut against), and leaving the previous document's book-layout gutter
+        // behind would let a stale `geometry` claim a re-cut is needed — or not
+        // needed — for a document that has no blocks at all.
+        self.geometry.set(PageGeometry::default());
         self.remeasure.set(0);
         self.stream.set_value(None);
         self.resume_fraction.set(None);

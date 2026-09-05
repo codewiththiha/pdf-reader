@@ -23,6 +23,9 @@ use crate::components::primitives::motion::spring::SpringBox;
 use crate::services::ai::invoke_explain_word;
 use crate::state::AppState;
 
+use super::content::GlossContent;
+use super::geometry::GlossGeometry;
+use super::open::GlossOpen;
 use super::GlossController;
 
 /// Every open (stroke click OR Info pill) arrives as a CustomEvent that
@@ -151,37 +154,44 @@ fn serve_cached(
 
 /// Fresh (or retried) explain. No surface while thinking: the highlighter
 /// stroke is the only processing UI, so nothing is stacked over the word.
-fn begin_fetch(
-    ctrl: GlossController,
+///
+/// Takes the three slices it writes rather than the whole controller because
+/// the retry command (`super::commands`) is built BEFORE the controller exists
+/// and must still funnel through here: one opening ritual, one spelling of the
+/// desktop-only verdict, and no second copy of either to drift.
+pub(super) fn begin_fetch(
+    content: GlossContent,
+    geometry: GlossGeometry,
+    open: GlossOpen,
     processing_id: RwSignal<Option<String>>,
     mark: GlossMark,
 ) {
-    ctrl.content.word_info.set(None);
-    ctrl.content.error.set(None);
-    ctrl.content.phase.set(AiPhase::Processing);
-    ctrl.geometry.gphase.set(GlossPhase::Processing);
-    ctrl.geometry.surface_visible.set(false);
+    content.word_info.set(None);
+    content.error.set(None);
+    content.phase.set(AiPhase::Processing);
+    geometry.gphase.set(GlossPhase::Processing);
+    geometry.surface_visible.set(false);
     processing_id.set(Some(mark.id.clone()));
 
     if tauri_bridge::has_tauri() {
-        let run = ctrl.open.begin_run(&mark.id);
+        let run = open.begin_run(&mark.id);
         // The sentence, not the envelope: a reflowable mark's
-            // `context` carries its spot alongside the prose, and the model
-            // wants only the prose.
-            let explain = crate::components::ai::reflow_anchor::explain_context(&mark);
-            invoke_explain_word(mark.word, explain, run);
+        // `context` carries its spot alongside the prose, and the model
+        // wants only the prose.
+        let explain = crate::components::ai::reflow_anchor::explain_context(&mark);
+        invoke_explain_word(mark.word, explain, run);
     } else {
         // The environment cannot change mid-session: this is a terminal,
         // non-retryable state, shown as an expanded error card.
-        ctrl.content.error.set(Some(AiError {
+        content.error.set(Some(AiError {
             kind: AiErrorKind::Other("desktop-only".into()),
             message: "AI explanations are only available in the desktop app.".into(),
             retryable: false,
         }));
-        ctrl.content.phase.set(AiPhase::Error);
+        content.phase.set(AiPhase::Error);
         processing_id.set(None);
-        ctrl.geometry.gphase.set(GlossPhase::Expanded);
-        ctrl.geometry.surface_visible.set(true);
+        geometry.gphase.set(GlossPhase::Expanded);
+        geometry.surface_visible.set(true);
     }
 }
 
@@ -227,7 +237,13 @@ pub fn use_open_effect(
                 let mark = begin_open(&state, ctrl, &watch, &spring, viewport, pending);
                 match ctrl.cache.get(&mark.id) {
                     Some(info) => serve_cached(ctrl, processing_id, info),
-                    None => begin_fetch(ctrl, processing_id, mark),
+                    None => begin_fetch(
+                        ctrl.content,
+                        ctrl.geometry,
+                        ctrl.open,
+                        processing_id,
+                        mark,
+                    ),
                 }
             }
         }

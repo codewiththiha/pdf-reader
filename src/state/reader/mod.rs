@@ -1,7 +1,7 @@
 //! Reader-level reactive state, one file per domain: the document, the viewer
 //! signals, the zoom pipeline's shape, search, the AI text selection and the
-//! gloss marks. Pure UI chrome (sidebar, toast) lives in `state/ui` +
-//! `state/app`; pure domain logic in `reader-core` and the format crates.
+//! gloss marks. Pure UI chrome (sidebar, toast) lives in `state::app`;
+//! pure domain logic in `reader-core` and the format crates.
 //!
 //! This module is the barrel. Everything below used to be one 650-line file,
 //! which meant a page that only wanted `ViewerSignals` read the document, the

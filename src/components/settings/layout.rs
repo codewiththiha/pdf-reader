@@ -265,7 +265,7 @@ pub(crate) fn LayoutTab(state: AppState) -> impl IntoView {
                     on_change=Callback::new(move |v| {
                         s.update(|st| st.layout.page_shadow = v);
                     })
-                    title="Drop shadow under PDF pages".to_string()
+                    title="Drop shadow under pages".to_string()
                 />
             </Row>
             <Row label="Overlay Sidebar">

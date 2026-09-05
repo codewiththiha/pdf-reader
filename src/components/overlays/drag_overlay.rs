@@ -18,7 +18,7 @@ pub fn DragOverlay() -> impl IntoView {
                     <Icon name=IconName::Drop size=40 />
                 </div>
                 <p class="drag-dropzone-title">"Drop to open"</p>
-                <p class="drag-dropzone-sub">"Release your PDF to start reading"</p>
+                <p class="drag-dropzone-sub">"Release to start reading"</p>
             </div>
         </div>
     }

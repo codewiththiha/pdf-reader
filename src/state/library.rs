@@ -1,4 +1,4 @@
-//! The "recent books" library: which PDFs the reader has opened, where they
+//! The "recent books" library: which documents the reader has opened, where they
 //! left off in each, and the persisted cover art for the shelf.
 //!
 //! Kept OUT of `Settings` on purpose. Reading position changes on every page

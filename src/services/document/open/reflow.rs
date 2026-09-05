@@ -21,7 +21,7 @@
 //!
 //! Markdown also gets an outline, and it is seeded rather than resolved: the
 //! headings are already in the text, so this file hands the reader the block
-//! indices and `effects::reader::text_outline` turns them into pages against the
+//! indices and `effects::reader::reflow_outline` turns them into pages against the
 //! live cut. There is no `outline::resolve` tail to race, which is why
 //! `outline_pending` goes false here.
 

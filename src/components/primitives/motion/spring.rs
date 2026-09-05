@@ -3,7 +3,7 @@
 //! Springs `value` toward `target`; while `snap` is true (dragging / a forced
 //! beat / reduced-motion) it jumps instead of wobbling.
 //!
-//! Mirrors the self-referencing rAF loop in `effects/reader/zoom.rs`: one
+//! Mirrors the self-referencing rAF loop in `crate::viewer::zoom::animation`: one
 //! `StepSlot` (`Rc<RefCell<Option<Rc<dyn Fn()>>>>`) owns the step closure, the
 //! closure holds a *weak* ref back to it to re-arm, and replacing the slot
 //! (when `target` changes) drops the old loop's only strong ref so it dies.

@@ -37,11 +37,11 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
                     data-tauri-drag-region="true"
                     class="flex shrink-0 items-center gap-1"
                 >
-                    <Tooltip text="Open PDF (Cmd/Ctrl+O)">
+                    <Tooltip text="Open a document (Cmd/Ctrl+O)">
                         <Button
                             on_click=move |_| crate::services::document::open_dialog(state)
                             variant=ButtonVariant::Toolbar
-                            title="Open PDF (Cmd/Ctrl+O)"
+                            title="Open a document (Cmd/Ctrl+O)"
                         >
                             <Icon name=IconName::Open size=18 />
                             <span>"Open"</span>

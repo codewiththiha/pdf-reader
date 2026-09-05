@@ -4,7 +4,7 @@
 //! a page-1 cover with a spine and fore-edge, the title, and a "page X of Y"
 //! resume hint. Clicking a book reopens it at the saved page; a hover-only
 //! remove button dismisses it from the shelf. When the shelf is empty it
-//! degrades to the plain open-a-PDF prompt.
+//! degrades to the plain open-a-document prompt.
 //!
 //! Rendered as the reader-view fallback whenever no document is open
 //! (`doc.status != Ready`), so it is where the reader lands on launch, after
@@ -53,7 +53,23 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
             <Show when=is_error fallback=|| ()>
                 <div class="flex h-full w-full items-center justify-center pt-12 text-center text-muted">
                     <p class="text-lg">
-                        {move || error.get().unwrap_or_else(|| "Could not open this PDF".to_string())}
+                        // The fallback names the document's own kind rather
+                        // than one format: this shelf holds all three. The path
+                        // is read UNTRACKED on purpose — the sentence is a
+                        // snapshot of the attempt that failed, and a tracked
+                        // read inside `unwrap_or_else` would only be subscribed
+                        // on the runs where it happens to execute.
+                        {move || {
+                            error.get().unwrap_or_else(|| {
+                                let kind = state
+                                    .reader
+                                    .document
+                                    .path
+                                    .get_untracked()
+                                    .map_or("document", |p| reader_core::format::format_of(&p).label());
+                                format!("Could not open this {kind}")
+                            })
+                        }}
                     </p>
                 </div>
             </Show>
@@ -82,16 +98,16 @@ pub fn LibraryShelf(state: AppState) -> impl IntoView {
                                 <div class="flex shrink-0 items-center gap-2">
                                     <Show when=move || has_tauri fallback=|| ()>
                                         <span class="hidden text-xs text-muted sm:block">
-                                            "…or drop a PDF anywhere"
+                                            "…or drop a file anywhere"
                                         </span>
                                     </Show>
                                     <Button
                                         on_click=move |_| document::open_dialog(open_state)
                                         variant=ButtonVariant::Primary
-                                        title="Open a PDF file"
+                                        title="Open a document"
                                     >
                                         <Icon name=IconName::Open size=18 />
-                                        <span>"Open PDF"</span>
+                                        <span>"Open"</span>
                                     </Button>
                                 </div>
                             </header>

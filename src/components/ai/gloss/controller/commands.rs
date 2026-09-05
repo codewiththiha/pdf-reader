@@ -4,8 +4,7 @@
 use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
 
-use crate::components::ai::types::{AiPhase, GlossPhase};
-use crate::services::ai::invoke_explain_word;
+use crate::components::ai::types::GlossPhase;
 use crate::state::AppState;
 
 use super::cache::GlossCache;
@@ -197,22 +196,18 @@ pub(super) fn build_commands(
             return;
         };
         if !tauri_bridge::has_tauri() {
-            return; // the environment cannot change mid-session
+            // The environment cannot change mid-session, and the desktop-only
+            // verdict `begin_fetch` would reach is not retryable — so the
+            // button that got us here cannot be showing. Leave the card alone.
+            return;
         }
-        content.error.set(None);
-        content.word_info.set(None);
-        content.phase.set(AiPhase::Processing);
-        geometry.gphase.set(GlossPhase::Processing);
-        geometry.surface_visible.set(false);
-        processing_id.set(Some(mark.id.clone()));
-        // A retry is a NEW run: the failed one's late chunks are no longer
-        // this card's business.
-        let run = open.begin_run(&mark.id);
-        // The sentence, not the envelope: a reflowable mark's
-            // `context` carries its spot alongside the prose, and the model
-            // wants only the prose.
-            let explain = crate::components::ai::reflow_anchor::explain_context(&mark);
-            invoke_explain_word(mark.word, explain, run);
+        // A retry is a NEW run of the same opening ritual: `begin_fetch` starts
+        // the run (the failed one's late chunks are no longer this card's
+        // business), clears the last answer, and puts the stroke back into
+        // thinking. Persistence is deliberately not repeated — the mark is
+        // already canonical, which is why this goes through the transition and
+        // not through the open path.
+        super::wiring::begin_fetch(content, geometry, open, processing_id, mark);
     });
 
     GlossCommands {
