@@ -49,9 +49,14 @@
      the canvas's multiply/screen blend; with the blend baked into the raster
      the texture must multiply OVER the baked page instead. Both blends are
      commutative, so the composite is the same — texture darkens/lightens
-     paper and ink exactly as before, at full sharpness. During a scrub the
-     canvas is raw + live-CSS blended again, and the scrub rule below returns
-     this layer to z-index 0 (its original place). */
+     paper and ink exactly as before, at full sharpness. During a BAKED
+     pipeline's scrub the canvas is raw + live-CSS blended again, and the
+     scrub rule in page_host.css returns this layer to z-index 0 (its
+     original place) for exactly that window. Under the LIVE pipeline it
+     stays here, over the blend: the blend backdrop composites its texture
+     the same way (components/shell.css), and soft-light — unlike
+     multiply/screen — is not identity on the paper, so the two orders
+     would read as different stroke strengths in dim. */
   z-index: 1;
   pointer-events: none;
   /* User-controlled texture strength. 0.9 was the old hard-coded value and is
