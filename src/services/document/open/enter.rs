@@ -140,17 +140,22 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
         let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
         let docked = !state.settings.with_untracked(|s| s.layout.sidebar_overlay)
             && state.ui.sidebar.get_untracked() != crate::state::SidebarMode::None;
-        let mut cw = vw - if docked { DOCKED_RAIL_W } else { 0.0 };
-        if !state.reader.reflowable_untracked() {
-            cw *= state.reader.viewer.column_width_pct.get_untracked() / 100.0;
-        }
+        let cw = vw - if docked { DOCKED_RAIL_W } else { 0.0 };
         FitDims::from_geometry(
             state.reader.viewer.mode.get_untracked(),
             (cw.max(1.0), vh.max(1.0)),
             state.reader.viewer.page_margin.get_untracked(),
             page_size,
         )
-        .map_or(1.0, |dims| dims.fit(startup_fit, 1.0))
+        .map_or(1.0, |mut dims| {
+            if !state.reader.reflowable_untracked() {
+                dims.cw_eff = (dims.cw_eff
+                    * state.reader.viewer.column_width_pct.get_untracked()
+                    / 100.0)
+                    .max(1.0);
+            }
+            dims.fit(startup_fit, 1.0)
+        })
     };
     (startup_fit, scale)
 }

@@ -120,24 +120,28 @@ pub fn PdfPageStrip(
                 // window mounts around the resume page — so the first report
                 // means the reader's page has pixels. Until then the loader
                 // cover owns the slot (see `crate::features::reader::page`).
-                if !state.viewer.first_paint.get_untracked() {
+                if page == state.viewer.page.get_untracked()
+                    && !state.viewer.first_paint.get_untracked()
+                {
                     state.viewer.first_paint.set(true);
                 }
             })
         }
         Axis::Horizontal => {
-            Callback::new(move |(_page, w, _h): (u32, f64, f64)| {
+            Callback::new(move |(page, w, _h): (u32, f64, f64)| {
                 if state.viewer.zooming_now() {
                     return;
                 }
                 if w > 0.0 {
                     let m = state.viewer.page_margin.get_untracked();
                     handle
-                        .with_value(|v| v.report_size(_page.saturating_sub(1) as usize, w + 2.0 * m));
+                        .with_value(|v| v.report_size(page.saturating_sub(1) as usize, w + 2.0 * m));
                     // Same gate as the vertical arm, same reason: the report
                     // is a completed render, and the window is the resume
                     // page's.
-                    if !state.viewer.first_paint.get_untracked() {
+                    if page == state.viewer.page.get_untracked()
+                        && !state.viewer.first_paint.get_untracked()
+                    {
                         state.viewer.first_paint.set(true);
                     }
                 }

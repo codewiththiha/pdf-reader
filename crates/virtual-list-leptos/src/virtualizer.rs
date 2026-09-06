@@ -654,11 +654,12 @@ impl Virtualizer {
     /// cannot read its state off the [`VirtualItem`] it was handed: a scroll
     /// that crosses the row into or out of the render band would leave the
     /// stale answer in place. This signal re-derives on the things that move
-    /// the band and the window — scroll, range, layout, retention — and the
-    /// view rebuilds only when the state itself crosses.
+    /// the band and the window — scroll, viewport, range, layout, retention —
+    /// and the view rebuilds only when the state itself crosses.
     pub fn item_state(&self, index: usize) -> Signal<VirtualItemState, LocalStorage> {
         let inner = self.inner.clone();
         Signal::derive_local(move || {
+            let _ = inner.viewport.get();
             let _ = inner.range.get();
             let _ = inner.layout_version.get();
             let _ = inner.scroll_top.get();

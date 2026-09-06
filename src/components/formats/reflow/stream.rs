@@ -338,11 +338,9 @@ pub fn ReflowStreamLayout(
                     .blocks
                     .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
                 let children = col.children();
-                let count = mounted.len().min(children.length() as usize);
                 let mut batch: Vec<(usize, f64)> = Vec::new();
-                for slot in 0..count {
-                    let (Some(child), Some(item)) = (children.item(slot as u32), mounted.get(slot))
-                    else {
+                for slot in 0..children.length() {
+                    let Some(child) = children.item(slot) else {
                         continue;
                     };
                     // Every mounted row is measured, blanks included: a blank
@@ -353,15 +351,21 @@ pub fn ReflowStreamLayout(
                     let Ok(el) = child.dyn_into::<web_sys::HtmlElement>() else {
                         continue;
                     };
+                    let Some(index) = el
+                        .get_attribute("data-block-index")
+                        .and_then(|value| value.parse::<usize>().ok())
+                    else {
+                        continue;
+                    };
                     let height = el.offset_height() as f64;
                     if height > 0.0 {
-                        v.report_size(item.index, height);
+                        v.report_size(index, height);
                         if scale > 0.0 {
-                            batch.push((item.index, height / scale));
+                            batch.push((index, height / scale));
                         }
                     }
                 }
-                crate::effects::reader::reflow_measure::ingest(doc_id, &batch);
+                crate::effects::reader::reflow_measure::ingest(doc_id, scale, &batch);
             });
         });
     }
@@ -634,4 +638,3 @@ fn anchor_stream(state: ReaderState, v: &Virtualizer) {
         },
     );
 }
-

@@ -27,7 +27,7 @@ use super::MarkResolver;
 pub fn origin_outside_band(origin: Option<GlossBox>, vh: f64) -> bool {
     match origin {
         None => true,
-        Some(b) => (b.y + b.h) < 0.0 || b.y > vh,
+        Some(b) => (b.y + b.h) <= 0.0 || b.y >= vh,
     }
 }
 
@@ -131,6 +131,13 @@ mod tests {
         // Fully above / fully below.
         assert!(origin_outside_band(origin(-150.0, 100.0), vh));
         assert!(origin_outside_band(origin(901.0, 100.0), vh));
+    }
+
+    #[test]
+    fn touching_a_viewport_edge_without_overlapping_is_outside() {
+        let vh = 900.0;
+        assert!(origin_outside_band(origin(-100.0, 100.0), vh));
+        assert!(origin_outside_band(origin(vh, 100.0), vh));
     }
 
     #[test]

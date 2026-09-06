@@ -58,33 +58,34 @@ const INGEST_DEBOUNCE_MS: u64 = 120;
 
 thread_local! {
     /// The batch the next flush will land, with the identity of the document
-    /// it was measured against: a document swapped in while a batch waits is
-    /// a reason to drop the batch, not to pour it over the new book.
-    static PENDING: RefCell<(usize, Vec<(usize, f64)>)> = const { RefCell::new((0, Vec::new())) };
+    /// and display scale it was measured against: either changing while a
+    /// batch waits is a reason to drop the stale reports.
+    static PENDING: RefCell<(usize, f64, Vec<(usize, f64)>)> = const { RefCell::new((0, 1.0, Vec::new())) };
     /// The installed flush. `None` outside the reader's lifetime: an ingest
     /// with nobody home is a report nobody owes an answer to.
     static FLUSHER: RefCell<Option<Debouncer>> = const { RefCell::new(None) };
 }
 
 /// Hand a batch of measured SCALE-1 heights — `(block index, height)` — to
-/// the shared store. The caller divides out the live display scale first:
-/// the store is the scale-1 truth the estimate seeds, and a zoomed number
-/// written into it would poison every layout that reads it.
+/// the shared store. The caller divides out the supplied live display scale
+/// first: the store is the scale-1 truth the estimate seeds, and a zoomed
+/// number written into it would poison every layout that reads it.
 ///
 /// `doc_id` is the block list's `Arc` pointer (see
 /// `crate::state::reader::document::reflow::ReflowContent::document_id`):
 /// the flush drops a batch whose document has since been swapped out.
-pub fn ingest(doc_id: usize, batch: &[(usize, f64)]) {
+pub fn ingest(doc_id: usize, scale: f64, batch: &[(usize, f64)]) {
     if batch.is_empty() {
         return;
     }
     PENDING.with(|pending| {
         let mut pending = pending.borrow_mut();
-        if pending.0 != doc_id {
-            pending.1.clear();
+        if pending.0 != doc_id || pending.1 != scale {
+            pending.2.clear();
             pending.0 = doc_id;
+            pending.1 = scale;
         }
-        pending.1.extend_from_slice(batch);
+        pending.2.extend_from_slice(batch);
     });
     FLUSHER.with(|flusher| {
         if let Some(debouncer) = *flusher.borrow() {
@@ -170,7 +171,7 @@ pub fn install_reflow_measure(state: AppState) {
 
 /// Land the waiting batch in the shared store, then let the cut follow.
 fn flush(state: AppState) {
-    let (doc_id, batch) = PENDING.with(|pending| std::mem::take(&mut *pending.borrow_mut()));
+    let (doc_id, scale, batch) = PENDING.with(|pending| std::mem::take(&mut *pending.borrow_mut()));
     if batch.is_empty() {
         return;
     }
@@ -183,7 +184,7 @@ fn flush(state: AppState) {
     }
     let next = reflow
         .heights
-        .with_untracked(|heights| applied_heights(heights, &batch));
+        .with_untracked(|heights| applied_heights(heights, &batch, scale));
     let Some(next) = next else {
         // Everything landed within the jitter gate: no write, no epoch, no
         // re-cut — the loop terminates exactly here.
@@ -213,14 +214,15 @@ pub(crate) fn dialled_geometry(
 }
 
 /// Apply one measurement batch to the standing heights. Answers `None` when
-/// nothing moved more than [`INGEST_EPSILON`] — then no `Arc` is built, no
-/// epoch bumps, and the loop has nowhere to go.
-fn applied_heights(current: &[f64], batch: &[(usize, f64)]) -> Option<Vec<f64>> {
+/// nothing moved more than the reporting-scale-adjusted [`INGEST_EPSILON`] —
+/// then no `Arc` is built, no epoch bumps, and the loop has nowhere to go.
+fn applied_heights(current: &[f64], batch: &[(usize, f64)], scale: f64) -> Option<Vec<f64>> {
     let mut next = current.to_vec();
     let mut moved = false;
+    let epsilon = INGEST_EPSILON / scale;
     for &(index, height) in batch {
         if let Some(slot) = next.get_mut(index) {
-            if (*slot - height).abs() > INGEST_EPSILON {
+            if (*slot - height).abs() > epsilon {
                 *slot = height;
                 moved = true;
             }
@@ -289,7 +291,7 @@ mod tests {
         // A measurement lands 110px short of the estimate — real text ran
         // shorter than character counts said.
         let batch = vec![(0usize, 190.0)];
-        let next = applied_heights(&heights, &batch).expect("110px moves any gate");
+        let next = applied_heights(&heights, &batch, 1.0).expect("110px moves any gate");
         let after = paginate(&next, 500.0);
         let after_map = block_page_index(&after, next.len());
         assert_ne!(before, after, "the correction must re-cut");
@@ -304,13 +306,23 @@ mod tests {
     fn a_correction_inside_the_gate_is_a_no_op() {
         let heights = vec![300.0, 300.0, 300.0];
         // 1.5px of rounding noise: nothing downstream may hear about it.
-        assert_eq!(applied_heights(&heights, &[(1usize, 301.5)]), None);
-        assert_eq!(applied_heights(&heights, &[(1usize, 298.2)]), None);
+        assert_eq!(applied_heights(&heights, &[(1usize, 301.5)], 1.0), None);
+        assert_eq!(applied_heights(&heights, &[(1usize, 298.2)], 1.0), None);
         // A batch that names nothing is also a no-op, not an empty write.
-        assert_eq!(applied_heights(&heights, &[]), None);
+        assert_eq!(applied_heights(&heights, &[], 1.0), None);
         // An index beyond the store (a stale report from a window the
         // outgoing layout still held) cannot grow or panic it.
-        assert_eq!(applied_heights(&heights, &[(9usize, 100.0)]), None);
+        assert_eq!(applied_heights(&heights, &[(9usize, 100.0)], 1.0), None);
+    }
+
+    #[test]
+    fn the_jitter_gate_is_adjusted_to_the_reporting_scale() {
+        let heights = vec![300.0];
+        assert_eq!(applied_heights(&heights, &[(0, 300.9)], 2.0), None);
+        assert_eq!(
+            applied_heights(&heights, &[(0, 301.1)], 2.0),
+            Some(vec![301.1])
+        );
     }
 
     #[test]

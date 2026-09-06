@@ -168,7 +168,7 @@ pub fn ReflowPage(
                         batch.push((index, height / scale));
                     }
                 }
-                crate::effects::reader::reflow_measure::ingest(doc_id, &batch);
+                crate::effects::reader::reflow_measure::ingest(doc_id, scale, &batch);
             });
         });
     }

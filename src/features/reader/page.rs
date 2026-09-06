@@ -158,11 +158,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             let _ = cleanup.try_set_value(None);
         });
         Effect::new(move |_| {
+            if let Some(handle) = net.try_update_value(Option::take).flatten() {
+                handle.clear();
+            }
             if r.document.status.get() != DocStatus::Ready || r.viewer.first_paint.get() {
                 return;
-            }
-            if let Some(handle) = net.try_get_value().flatten() {
-                handle.clear();
             }
             let vs = r.viewer;
             if let Ok(handle) = set_timeout_with_handle(
