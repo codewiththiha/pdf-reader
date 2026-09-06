@@ -179,6 +179,9 @@ function toUint8(bytes: unknown): Uint8Array {
   });
 }
 
+/** Fetch a document's bytes from a web path or local filesystem via Tauri.
+ *  Web-served paths go through fetch; native paths use Tauri's `read_file_bytes`
+ *  command. Resolves to a Uint8Array ready for pdf.js. */
 async function fetchBytes(path: string): Promise<Uint8Array> {
   if (isWebServedPath(path)) {
     const url = path.startsWith("samples/") ? "/" + path : path;

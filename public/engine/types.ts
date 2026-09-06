@@ -116,8 +116,12 @@ export type PaperFrame = {
 
 export type ActiveMatch = { page: number; index: number } | null;
 
+/** An operation that failed: carries the error name and message. */
 type Err = { ok: false; error: { name: string; message: string } };
+/** An operation that succeeded: carries the result fields plus `ok: true`. */
 type Ok<T extends Record<string, unknown>> = T & { ok: true };
+/** A discriminated union of success or failure, the shape every async engine
+ *  API resolves to. The `ok` boolean is the discriminant. */
 type Result<T extends Record<string, unknown>> = Ok<T> | Err;
 
 export type OpenResult = Result<{
@@ -132,6 +136,7 @@ export type OpenResult = Result<{
   pageHeights: number[];
   pageWidths: number[];
 }>;
+/** The result of resolving a document's outline: flattened chapter tree. */
 type OutlineResult = Result<{
   outline: { title: string; page: number; depth: number }[];
 }>;

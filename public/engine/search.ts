@@ -27,6 +27,8 @@ function itemRect(item: TextItem, pageH: number): { x: number; y: number; w: num
   };
 }
 
+/** One text run extracted from a page: the string and its bounding rect in
+ *  scale-1 CSS px, relative to the page's top-left. */
 type ExtractedPageItem = { str: string; x: number; y: number; w: number; h: number };
 
 /** Extract `page`'s text runs, normalised to scale-1 CSS px relative to the

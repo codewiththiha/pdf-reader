@@ -17,6 +17,9 @@ import { session } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
 import { pipelineCache, readPipeline } from "./pipeline";
 
+/** Release a thumbnail entry's display surface (ImageBitmap or pooled canvas),
+ *  leaving the raw raster untouched. Called when an entry's themed display is
+ *  stale and must be rebuilt from raw. */
 function releaseDisplayOnly(entry: ThumbEntry | null): void {
   if (!entry) return;
   try {
