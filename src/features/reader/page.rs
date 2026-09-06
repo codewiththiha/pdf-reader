@@ -110,24 +110,31 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
 
     // The first-paint gate: an opaque cover the colour of the reader's own
     // paper masks the viewer from the moment the document is ready until the
-    // reading surface has actually LANDED on the resume point, so the first
-    // frames are never seen — the reader appears already settled on the
-    // saved page instead of racing toward it. Scrolling surfaces release the
-    // gate when their mount anchor lowers `awaiting_anchor`; the anchor loop
-    // runs under the cover, since the viewer is mounted, only masked.
-    // Paginated modes have nothing to scroll-anchor and release at once —
-    // which also unsticks `awaiting_anchor` in Single/Spread, where nothing
-    // else would lower it.
+    // page the reader should see has actually PAINTED, so the first frames
+    // are never seen — the reader appears already settled on the saved page
+    // instead of racing toward it. The release is paint-driven, and each
+    // surface owns its own definition of painted: the PDF strip lifts the
+    // gate on a geometry report (a completed render — see
+    // `crate::components::formats::pdf::strip`), the text stream and text
+    // strip lift it when their mount anchor lands (DOM text paints
+    // synchronously — see `crate::components::viewer::shells::anchor_settle`).
+    // The anchor loops run under the
+    // cover, since the viewer is mounted, only masked.
     {
         let r = state.reader;
         Effect::new(move |_| {
             if r.document.status.get() != DocStatus::Ready || r.viewer.first_paint.get() {
                 return;
             }
-            if r.viewer.mode.get().is_paginated() && r.viewer.awaiting_anchor.get_untracked() {
-                r.viewer.awaiting_anchor.set(false);
-            }
-            if !r.viewer.awaiting_anchor.get() {
+            // Paginated modes are the one surface with no scroll anchor to
+            // land and no render callback to wait on: their hosts mount
+            // synchronously, so the first frame after mount releases the
+            // gate — which also unsticks `awaiting_anchor` in Single/Spread,
+            // where nothing else would lower it.
+            if r.viewer.mode.get().is_paginated() {
+                if r.viewer.awaiting_anchor.get_untracked() {
+                    r.viewer.awaiting_anchor.set(false);
+                }
                 let vs = r.viewer;
                 // Let the landed frame paint before the cover lifts.
                 request_animation_frame(move || vs.first_paint.set(true));
@@ -135,11 +142,12 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
         });
     }
     {
-        // Safety net: a settle loop that cannot land (a surface that never
-        // binds, a pathological layout) must not leave the cover up. The
-        // worst case is the cover lifting over a still-settling frame —
-        // never over the wrong page, which the strips' initial windows
-        // already open on.
+        // Safety net: a first render that never reports (a settle loop that
+        // cannot land, a surface that never binds) must never strand the
+        // cover. The worst case is the cover lifting over a still-settling
+        // frame — never over the wrong page, which the strips' initial
+        // windows already open on, and never over the white invert, which
+        // the paper-ready gate stands down until a colour is sampled.
         let r = state.reader;
         let net: StoredValue<Option<TimeoutHandle>, LocalStorage> = StoredValue::new_local(None);
         let cleanup = net;
@@ -159,7 +167,7 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             let vs = r.viewer;
             if let Ok(handle) = set_timeout_with_handle(
                 move || vs.first_paint.set(true),
-                std::time::Duration::from_millis(600),
+                std::time::Duration::from_millis(900),
             ) {
                 let _ = net.try_set_value(Some(handle));
             }

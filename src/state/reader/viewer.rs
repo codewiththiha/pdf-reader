@@ -118,15 +118,20 @@ pub struct ViewerSignals {
     /// strip's queued animation frame runs; the identity keeps that stale
     /// callback from releasing the replacement's guard.
     pub(crate) anchor_generation: RwSignal<u64>,
-    /// The one-shot gate over this open's first VISIBLE frame. False from
-    /// the moment a document is claimed ([`Self::reset_position`] re-arms
-    /// it on every close) until the reading surface has actually landed on
-    /// the resume point — the strip's anchor releasing `awaiting_anchor`,
-    /// the paginated modes' immediate release, or, failing all of those,
-    /// the safety net. For exactly that long an opaque cover the colour of
-    /// the reader's paper masks the viewer (`features::reader::page`), so
-    /// the first renders — however healthy — are never watched arriving:
-    /// the reader appears already settled on the resume page.
+    /// The one-shot gate over this open's first VISIBLE frame — false from
+    /// the moment a document is claimed ([`Self::reset_position`] re-arms it
+    /// on every close, `open_path` on every open) until the page the reader
+    /// should see has actually PAINTED. The release is paint-driven, and each
+    /// surface owns its own: the PDF strip lifts it on a completed render
+    /// (its `on_geometry` reports), the text stream and text strip lift it
+    /// when their mount anchor lands (DOM text paints synchronously), and
+    /// the paginated modes — which have no anchor to land — release on
+    /// their first frame after mount. A safety net in
+    /// `features::reader::page` guarantees a release either way. For
+    /// exactly that long an opaque cover the colour of the reader's paper
+    /// masks the viewer there, so the first renders — however healthy — are
+    /// never watched arriving: the reader appears already settled on the
+    /// resume page.
     pub first_paint: RwSignal<bool>,
 }
 

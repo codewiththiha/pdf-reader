@@ -83,8 +83,16 @@ fn landed(v: &Virtualizer) -> bool {
 }
 
 /// Lower the guard the scroll→page sync stands behind while a mount anchors.
+///
+/// A reflowable surface paints synchronously — its pages are DOM text, not
+/// rasters — so for one the anchor LANDING is the paint: the first-paint
+/// cover lifts with the guard (the PDF strip's lift is paint-true instead,
+/// on its `on_geometry` reports — see `crate::components::formats::pdf::strip`).
 fn release(state: ReaderState, generation: u64) {
     if state.viewer.owns_anchor(generation) {
         state.viewer.awaiting_anchor.set(false);
+        if state.reflowable() && !state.viewer.first_paint.get_untracked() {
+            state.viewer.first_paint.set(true);
+        }
     }
 }
