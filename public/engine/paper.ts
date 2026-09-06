@@ -22,6 +22,7 @@
 import { session } from "./state";
 import type { PaperFrame } from "./types";
 import { releaseCanvas } from "./canvas";
+import { publishBakedPaper } from "./theme/paper";
 
 /** Longest edge of a frame handed to Rust. Small enough that a page render
  * for colour purposes is near-free, large enough that a paper/plain region
@@ -134,9 +135,13 @@ export function takePaperFrame(
 // Public API (pdfEngine facade)
 // --------------------------------------------------------------------------
 
-/** Publish `hex` as `--pdf-paper` (empty string clears it). */
+/** Publish `hex` as `--pdf-paper` (empty string clears it). A baked
+ *  backdrop cannot re-derive this colour with the compositor — its pages
+ *  already carry the themed result — so the pre-themed paper rides out
+ *  with it, in the same write. */
 export function setPaper(hex: string): void {
   session.setDetectedPaper(hex ? hex : null);
+  publishBakedPaper();
 }
 
 /** Render `page` offscreen at a tiny scale and hand its frame back. The

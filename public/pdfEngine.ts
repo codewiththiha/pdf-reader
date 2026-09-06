@@ -33,6 +33,7 @@ import {
 } from "./engine/search";
 import { rebakeTheme, setPipelineModeInternal, setScrubModeInternal } from "./engine/theme/scrub";
 import { invalidatePipeline, isLivePipeline } from "./engine/theme/pipeline";
+import { publishBakedPaper } from "./engine/theme/paper";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
   clearLegacyPaperCache,
@@ -105,6 +106,10 @@ async function destroy(): Promise<void> {
     session.setNumPages(0);
     session.setCurrentPath(null);
     resetPaperForDocument();
+    // The document's paper goes with it: setPdf's null-out cleared
+    // --pdf-paper, and the backdrop's pre-themed twin must not outlive the
+    // book it was themed for.
+    publishBakedPaper();
     disposeScratch();
   }
 }

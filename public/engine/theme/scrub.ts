@@ -7,7 +7,7 @@ import { bakeInto } from "./bake";
 import { showRaw } from "../canvas";
 import { session } from "../state";
 import { isLivePipeline, readPipeline, setLivePipeline } from "./pipeline";
-import { paperInfo } from "./paper";
+import { paperInfo, publishBakedPaper } from "./paper";
 import { ensureEntryCurrent, paintAllVisibleThumbs } from "./thumbnails";
 import { preparePagesForScrub, renderPageInternal, rerenderLivePages } from "../renderer";
 
@@ -25,6 +25,11 @@ export async function rebakeTheme(force = false): Promise<void> {
   if (isLivePipeline()) return;
   if (session.themeScrubActive) return;
   const pipeline = readPipeline();
+  // The backdrop's pre-themed paper rides on the same filter + paper this
+  // rebake burns into the rasters, so it refreshes alongside them. When the
+  // fingerprint below is unchanged it rewrites the identical value; the
+  // detected paper itself publishes from setPaper the moment it moves.
+  publishBakedPaper();
   const fingerprint = pipelineFingerprint();
   if (!force && fingerprint === lastBakedFingerprint) {
     // The output is already current even though invalidatePipeline assigned a
@@ -155,6 +160,11 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
 export async function setPipelineModeInternal(live: boolean): Promise<void> {
   if (isLivePipeline() === live) return;
   setLivePipeline(live);
+  // The backdrop's gated paper flips with the pipeline: a baked backdrop
+  // paints the pre-themed paper, a live one re-derives it in the
+  // compositor. Publishing now covers every corner of the swap — the bake
+  // below republishes the same value once it lands.
+  publishBakedPaper();
   if (live) {
     // Expose the raws and hand the theming back to CSS. Identical to entering
     // a scrub, except nothing will leave it again.
