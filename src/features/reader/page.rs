@@ -65,6 +65,11 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // those stop asking for it). Installed AFTER the gap effects so its
     // relayout reads the gap they just resolved.
     crate::effects::reader::reflow_layout::reflow_layout(state, rv.virtualizer.clone());
+    // The reflowable measurement pipeline: the pipe the stream's and the
+    // page hosts' block measurements flow through into the page cut, and the
+    // re-estimate that follows the typography and the width dials. Installed
+    // beside the layout it feeds.
+    crate::effects::reader::reflow_measure::install_reflow_measure(state);
     // The Markdown outline follows the same page cut, so it is installed beside
     // it: one re-cut republishes the pages AND moves the chapters.
     crate::effects::reader::reflow_outline::reflow_outline(state);
@@ -216,14 +221,6 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 h_virtualizer=rv.h_virtualizer_view.get_value()
                                 progress_visible=progress_visible
                             />
-                        </Show>
-                        // The offscreen measure column for text documents:
-                        // mounted for as long as one is open, torn down with
-                        // it. It renders every block once at scale 1 and
-                        // refines the page cut from the DOM's real heights
-                        // (see `components::formats::reflow::measure`).
-                        <Show when=move || state.reader.reflowable()>
-                            <crate::components::formats::reflow::ReflowMeasureColumn app=state />
                         </Show>
                         <FloatingDocumentTitle state=state />
                         // Corner page counter, gated on a ready document and

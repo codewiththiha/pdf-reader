@@ -9,6 +9,20 @@
 //! bookkeeping hang off it), but in this mode it is pure bookkeeping — the
 //! reader scrolls text, not pages.
 //!
+//! The window is split in two: a wide MOUNT window (two screens of overscan
+//! each way) and the narrower RENDER band the virtualizer runs around the
+//! viewport (see `virtual_list_leptos::VirtualizerOptions::stream`). Rows
+//! inside the band carry real type; rows the band has not reached yet are
+//! empty boxes at the virtualizer's own heights — the scrollbar and the
+//! anchors stay honest, and a fling through a huge document slides
+//! placeholders past the reader's eyes instead of laying out every
+//! paragraph it flies past. What the rows render is the virtualizer's
+//! answer (`item_state`), not app-side gesture bookkeeping: a slow
+//! wheel-scroll never blanks what the reader is looking at, and a settled
+//! band is never blank at all. The heights that size it all are the shared
+//! store's (seeded by the estimate at open, corrected by the blocks the
+//! stream itself measures — see `crate::effects::reader::reflow_measure`).
+//!
 //! The window is the page: the scroller paints the paper colour and the
 //! blocks flow over it in a centered reading column, narrowed by the page
 //! margin and positioned by the column-alignment setting. Nothing floats:
@@ -36,19 +50,17 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::time::Duration;
 
 use leptos::html;
 use leptos::prelude::*;
-use reader_core::view::RENDER_BUDGET;
-use virtual_list::Viewport;
+use virtual_list::{Budget, Viewport};
 use virtual_list_leptos::{
-    use_virtualizer, Align, ScrollMode, VirtualItem, Virtualizer, VirtualizerOptions,
+    use_virtualizer, Align, ScrollMode, VirtualItem, VirtualItemState, Virtualizer,
+    VirtualizerOptions,
 };
 use wasm_bindgen::JsCast;
 
 use app_chrome::hooks::dom::PAGE_LIST_ID;
-use app_chrome::hooks::use_timeout::use_debounce;
 use app_chrome::hooks::use_resize_observer::observe_content_size;
 use reflow_core::pager::first_block_of_page;
 
@@ -77,16 +89,15 @@ const STREAM_TAIL_PADDING: f64 = 96.0;
 /// the floor for a block whose estimate never landed).
 const FALLBACK_BLOCK_H: f64 = 24.0;
 
-/// How long after the last scroll event the stream is considered settled
-/// again. Short enough that type popping back in reads as the same gesture
-/// ending; long enough that a fling's worth of block renders never starts.
-const SETTLE_MS: u64 = 120;
-
-/// How far from the viewport's centre (in viewport heights) a row may sit and
-/// still render its type while the stream is unsettled. One viewport each
-/// way covers everything on screen with room for the dominant signal to lag
-/// a frame, and blanks the rest: the rows the reader is flying past.
-const BLANK_VIEWPORTS: f64 = 1.0;
+/// The stream's mount budget: deliberately WIDER than the render band the
+/// stream runs (three quarters of a viewport each way, see
+/// `VirtualizerOptions::stream`). The band decides which of the mounted rows
+/// carry type; the rest of the window stays mounted as empty boxes at the
+/// virtualizer's own heights — cheap to keep warm, which is why the budget
+/// can afford two whole screens of overscan each side. The layout and the
+/// scrollbar never see the band, and a fling slides placeholders past the
+/// reader's eyes instead of laying out every paragraph it flies past.
+const STREAM_MOUNT_BUDGET: Budget = Budget::screenfuls(2.0, 128);
 
 #[component]
 pub fn ReflowStreamLayout(
@@ -140,8 +151,8 @@ pub fn ReflowStreamLayout(
         if height > 1.0 { height } else { 800.0 }
     };
     let v = use_virtualizer(
-        VirtualizerOptions::list(block_count, estimate)
-            .budget(RENDER_BUDGET)
+        VirtualizerOptions::stream(block_count, estimate)
+            .budget(STREAM_MOUNT_BUDGET)
             .padding(0.0, STREAM_TAIL_PADDING)
             .initial(Viewport::main_only(initial_vh), 0.0)
             .epoch(epoch),
@@ -191,36 +202,6 @@ pub fn ReflowStreamLayout(
         let scroll_top = state.viewer.scroll_top;
         let offset = v.scroll_offset();
         Effect::new(move |_| scroll_top.set(offset.get()));
-    }
-
-    // THE SETTLE GATE — the stream's half of "blank while flinging". While
-    // the reader is actively scrolling, rows outside the viewport's
-    // neighbourhood (see `BLANK_VIEWPORTS`) render as empty boxes at their
-    // measured height instead of type; when the scroll has been quiet for
-    // `SETTLE_MS`, everything the window holds renders for real. Layout
-    // never moves — the blanks carry the virtualizer's own numbers, so the
-    // scrollbar and the measurement pass stay honest — and the near band
-    // keeps whatever is actually on screen live, so a slow wheel-scroll
-    // never shows a blank where the reader is looking. A fast fling through
-    // a huge document then mounts paragraphs as cheap empty boxes, which is
-    // the difference between the stream keeping up and the stream lagging
-    // the thumb.
-    let settled = RwSignal::new(true);
-    let settle = use_debounce(Duration::from_millis(SETTLE_MS), move || settled.set(true));
-    {
-        let offset = v.scroll_offset();
-        Effect::new(move |_| {
-            let _ = offset.get();
-            // The guard matters as much as the debounce: a fling writes the
-            // offset every frame, and an unconditional `set(false)` would
-            // wake every row's gate effect each of those frames to
-            // recompute the same answer. Only the crossing itself is
-            // allowed to notify.
-            if settled.get_untracked() {
-                settled.set(false);
-            }
-            settle.trigger();
-        });
     }
 
     // The extent rides a plain signal for the same reason: the chrome that
@@ -275,14 +256,20 @@ pub fn ReflowStreamLayout(
     }
 
     // The rendered truth: whatever the window actually mounted, measured
-    // and reported back. The model above is measured at the PAGE column
-    // width; when the reading column is narrower (a small window, a fat
-    // margin), the real blocks run taller, and this pass is what keeps the
-    // stream's geometry honest without a second offscreen column. It runs
-    // one frame after any input that can move a rendered height — window
-    // churn, typography, margin, container, zoom commits — and reports
-    // nothing while a zoom transaction is open (a mid-tween height belongs
-    // to a geometry that is already being replaced).
+    // and reported back — two ways at once. `report_size` keeps the
+    // virtualizer's OWN layout live (the immediate half); the same numbers,
+    // divided by the display scale back to scale-1 truth, also feed the
+    // shared height store (`effects::reader::reflow_measure::ingest`), which
+    // debounces them into the page cut. The model above is measured at the
+    // PAGE column width; when the reading column is narrower (a small
+    // window, a fat margin), the real blocks run taller, and this pass is
+    // what keeps the stream's geometry honest without a second offscreen
+    // column. It runs one frame after any input that can move a rendered
+    // height — window churn, typography, margin, container, zoom commits —
+    // and reports nothing while a zoom transaction is open (a mid-tween
+    // height belongs to a geometry that is already being replaced). Blanks
+    // are skipped: a placeholder reports the layout's own size back, which
+    // is nothing the store does not already know.
     let column_ref: NodeRef<html::Div> = NodeRef::new();
     {
         let v = v.clone();
@@ -294,7 +281,6 @@ pub fn ReflowStreamLayout(
             let _ = state.viewer.column_width_pct.get();
             let (cw, ch) = state.viewer.container_size.get();
             let _scale = state.viewer.zoom.display.get();
-            let _epoch = state.document.content.reflow.remeasure.get();
             let _ = (mounted.len(), cw, ch);
             let column = column_ref;
             let v = v.clone();
@@ -305,21 +291,38 @@ pub fn ReflowStreamLayout(
                 let Some(col) = column.get() else {
                     return;
                 };
+                let scale = state.viewer.zoom.visual_scale();
+                let doc_id = state
+                    .document
+                    .content
+                    .reflow
+                    .blocks
+                    .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
                 let children = col.children();
                 let count = mounted.len().min(children.length() as usize);
+                let mut batch: Vec<(usize, f64)> = Vec::new();
                 for slot in 0..count {
                     let (Some(child), Some(item)) = (children.item(slot as u32), mounted.get(slot))
                     else {
                         continue;
                     };
+                    // Every mounted row is measured, blanks included: a blank
+                    // reports the layout's own height, which the epsilon gate
+                    // turns into a no-op, and trusting the (scroll-stale)
+                    // `state` snapshot to skip would risk missing a row the
+                    // render band has since filled with type.
                     let Ok(el) = child.dyn_into::<web_sys::HtmlElement>() else {
                         continue;
                     };
                     let height = el.offset_height() as f64;
                     if height > 0.0 {
                         v.report_size(item.index, height);
+                        if scale > 0.0 {
+                            batch.push((item.index, height / scale));
+                        }
                     }
                 }
+                crate::effects::reader::reflow_measure::ingest(doc_id, &batch);
             });
         });
     }
@@ -353,13 +356,6 @@ pub fn ReflowStreamLayout(
     let items = v.items();
     let total_size = v.total_size();
     let handle = StoredValue::new_local(v.clone());
-    // Row-gate inputs, taken once here so the per-row closures below share
-    // one set of handles: the scroll offset and viewport the near-band is
-    // measured against, and the items signal a blank row reads its height
-    // from.
-    let scroll_extent = v.scroll_offset();
-    let viewport_for_rows = v.viewport();
-    let items_for_blank = items.clone();
     let scale = state.viewer.zoom.display.read_only();
     let margin = state.viewer.page_margin.read_only();
     let column_pct = state.viewer.column_width_pct.read_only();
@@ -439,46 +435,16 @@ pub fn ReflowStreamLayout(
                             children=move |(_, item): (usize, VirtualItem)| {
                                 let index = item.index;
                                 let top = handle.with_value(|v| v.item_top(index));
-                                // The blank-while-flinging gate for THIS row:
-                                // a per-row signal an effect holds at
-                                // "settled or near the viewport". It is a
-                                // signal-and-effect rather than a plain
-                                // derived read because the view below must
-                                // rebuild only when the answer CROSSES — a
-                                // fling moves the offset (and with it every
-                                // row's distance) each frame, and a view
-                                // closure re-run per frame would rebuild the
-                                // very paragraphs the gate exists to skip.
-                                // The effect re-runs cheap; it writes only
-                                // the crossing.
-                                let rendered = RwSignal::new(true);
-                                {
-                                    let top_for_near = top.clone();
-                                    let near = move || {
-                                        let vh = viewport_for_rows.get().main;
-                                        let centre = scroll_extent.get() + vh / 2.0;
-                                        (top_for_near.get() - centre).abs()
-                                            <= vh * BLANK_VIEWPORTS
-                                    };
-                                    Effect::new(move |_| {
-                                        let show = settled.get() || near();
-                                        if rendered.get_untracked() != show {
-                                            rendered.set(show);
-                                        }
-                                    });
-                                }
-                                let blank_height = {
-                                    let items = items_for_blank;
-                                    move || {
-                                        items
-                                            .get()
-                                            .into_iter()
-                                            .find(|i| i.index == index)
-                                            .map(|i| i.size)
-                                            .unwrap_or(FALLBACK_BLOCK_H)
-                                            .round()
-                                    }
-                                };
+                                // The row's render state, as a signal: a `For` child does
+                                // not re-run for a key it already holds, so the crossing
+                                // into or out of the render band has to reach the view
+                                // through a reactive read — not through the `VirtualItem`
+                                // snapshot the child was handed at mount.
+                                let row_state = handle.with_value(|v| v.item_state(index));
+                                // The virtualizer's own height for the item: what a blank
+                                // placeholder sizes itself to, so layout and the scrollbar
+                                // never move while the type stands down.
+                                let blank_height = handle.with_value(|v| v.item_size(index));
                                 let block = state.document.content.reflow.block_at(index);
                                 view! {
                                     <div
@@ -514,9 +480,11 @@ pub fn ReflowStreamLayout(
                                         {match block {
                                             Some(block) => {
                                                 view! {
-                                                    // Settled or near the
-                                                    // viewport: real type, and
-                                                    // its hits with it. Flinging:
+                                                    // Inside the render band
+                                                    // (or retained across a
+                                                    // window change): real
+                                                    // type, and its hits with
+                                                    // it. Outside the band:
                                                     // an empty box at the
                                                     // virtualizer's own height,
                                                     // so the window slides
@@ -530,22 +498,22 @@ pub fn ReflowStreamLayout(
                                                     // rather than rebuilding
                                                     // the box.
                                                     {move || {
-                                                        if rendered.get() {
-                                                            view! {
-                                                                <BlockView state=state block=block.clone() render=block_render(state) />
-                                                                <BlockSearchHits state=state block=index />
-                                                            }
-                                                                .into_any()
-                                                        } else {
+                                                        if row_state.get() == VirtualItemState::Blank {
                                                             view! {
                                                                 <div
                                                                     class="tx-blank"
                                                                     aria-hidden="true"
                                                                     style=move || format!(
                                                                         "height:{}px",
-                                                                        blank_height()
+                                                                        blank_height.get().round()
                                                                     )
                                                                 />
+                                                            }
+                                                                .into_any()
+                                                        } else {
+                                                            view! {
+                                                                <BlockView state=state block=block.clone() render=block_render(state) />
+                                                                <BlockSearchHits state=state block=index />
                                                             }
                                                                 .into_any()
                                                         }

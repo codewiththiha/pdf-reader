@@ -120,7 +120,7 @@ pub fn layout_prefs(state: AppState, vertical: Virtualizer, horizontal: Virtuali
     // fit maths and the stream's column (which have no settings handle)
     // read the mirrored value. The refit a dial move deserves is posted by
     // the fit watcher, which subscribes to the setting itself; the
-    // reflowable side re-measures through the measure column's own
+    // reflowable side re-measures through the measurement pipeline's own
     // dependency on this signal.
     Effect::new(move |_| {
         let pct = state.settings.with(|st| st.layout.column_width_pct);

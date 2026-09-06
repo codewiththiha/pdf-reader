@@ -29,10 +29,16 @@
 //! anything: gutter padding is a stylesheet concern, while a raster's gutter is
 //! the spread's gap.
 
+use std::sync::Arc;
+
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 use reflow_core::geometry::{PageGeometry, SpineSide};
 
+use app_chrome::hooks::dom::by_id;
+
+use crate::components::viewer::page_host::block_row_id;
 use crate::dom_contract::HOST_REFLOW;
 use crate::components::formats::block_render::BlockView;
 use super::block_render;
@@ -108,10 +114,11 @@ pub fn ReflowPage(
         move || if class.is_empty() { "tx-page".to_string() } else { format!("tx-page {class}") };
 
     let reflow = state.document.content.reflow;
-    // The cut's own geometry, read tracked: the measure column re-publishes
-    // it whenever the margin or column-width dial moves, and the card must
-    // follow — a wider dialled column is a wider card wrapping it, with the
-    // pads to match, or the type would outgrow the box it was measured in.
+    // The cut's own geometry, read tracked: the measurement pipeline
+    // re-publishes it whenever the margin or column-width dial moves, and the
+    // card must follow — a wider dialled column is a wider card wrapping it,
+    // with the pads to match, or the type would outgrow the box it was
+    // measured in.
     let geometry = move || reflow.geometry.get();
     let render = block_render(state);
     // The host id is the element's, the gloss resolver's and the coordinate
@@ -121,6 +128,50 @@ pub fn ReflowPage(
     // The block range is read TRACKED: a re-cut publishes a new range for the
     // same page number, and the host must re-render it.
     let range = move || page_range(reflow, page);
+
+    // The blocks this host renders are its own measurement source: their
+    // rendered heights, divided back to scale 1, feed the shared store the
+    // page cut follows (`crate::effects::reader::reflow_measure`), so the
+    // breaks CONVERGE on what has actually been read instead of holding the
+    // open-time estimate forever. The page strip's own sizes never hear
+    // about these numbers — a strip page is the sheet (`PAGE_HEIGHT` per
+    // cut), not the sum of its blocks — only the store does, and through it
+    // the next re-cut. Read at the display scale, reported at scale 1, and
+    // silent while a zoom transaction owns the geometry.
+    {
+        Effect::new(move |_| {
+            let (start, end) = range();
+            let scale = scale.get();
+            let _typography = typography.get();
+            let _ = state.viewer.page_margin.get();
+            let _ = state.viewer.column_width_pct.get();
+            if start == end {
+                return;
+            }
+            request_animation_frame(move || {
+                if state.viewer.zooming_now() {
+                    return;
+                }
+                let doc_id = reflow
+                    .blocks
+                    .with_untracked(|blocks| Arc::as_ptr(blocks) as usize);
+                let mut batch: Vec<(usize, f64)> = Vec::new();
+                for index in start..end {
+                    let Some(row) = by_id(&block_row_id(index)) else {
+                        continue;
+                    };
+                    let Ok(el) = row.dyn_into::<web_sys::HtmlElement>() else {
+                        continue;
+                    };
+                    let height = el.offset_height() as f64;
+                    if height > 0.0 && scale > 0.0 {
+                        batch.push((index, height / scale));
+                    }
+                }
+                crate::effects::reader::reflow_measure::ingest(doc_id, &batch);
+            });
+        });
+    }
 
     view! {
         <div
