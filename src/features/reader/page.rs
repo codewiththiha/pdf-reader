@@ -108,6 +108,64 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
     // root, ahead of the first document open.
     crate::effects::reader::blend_backdrop::blend_backdrop(state);
 
+    // The first-paint gate: an opaque cover the colour of the reader's own
+    // paper masks the viewer from the moment the document is ready until the
+    // reading surface has actually LANDED on the resume point, so the first
+    // frames are never seen — the reader appears already settled on the
+    // saved page instead of racing toward it. Scrolling surfaces release the
+    // gate when their mount anchor lowers `awaiting_anchor`; the anchor loop
+    // runs under the cover, since the viewer is mounted, only masked.
+    // Paginated modes have nothing to scroll-anchor and release at once —
+    // which also unsticks `awaiting_anchor` in Single/Spread, where nothing
+    // else would lower it.
+    {
+        let r = state.reader;
+        Effect::new(move |_| {
+            if r.document.status.get() != DocStatus::Ready || r.viewer.first_paint.get() {
+                return;
+            }
+            if r.viewer.mode.get().is_paginated() && r.viewer.awaiting_anchor.get_untracked() {
+                r.viewer.awaiting_anchor.set(false);
+            }
+            if !r.viewer.awaiting_anchor.get() {
+                let vs = r.viewer;
+                // Let the landed frame paint before the cover lifts.
+                request_animation_frame(move || vs.first_paint.set(true));
+            }
+        });
+    }
+    {
+        // Safety net: a settle loop that cannot land (a surface that never
+        // binds, a pathological layout) must not leave the cover up. The
+        // worst case is the cover lifting over a still-settling frame —
+        // never over the wrong page, which the strips' initial windows
+        // already open on.
+        let r = state.reader;
+        let net: StoredValue<Option<TimeoutHandle>, LocalStorage> = StoredValue::new_local(None);
+        let cleanup = net;
+        on_cleanup(move || {
+            if let Some(handle) = cleanup.try_get_value().flatten() {
+                handle.clear();
+            }
+            let _ = cleanup.try_set_value(None);
+        });
+        Effect::new(move |_| {
+            if r.document.status.get() != DocStatus::Ready || r.viewer.first_paint.get() {
+                return;
+            }
+            if let Some(handle) = net.try_get_value().flatten() {
+                handle.clear();
+            }
+            let vs = r.viewer;
+            if let Ok(handle) = set_timeout_with_handle(
+                move || vs.first_paint.set(true),
+                std::time::Duration::from_millis(600),
+            ) {
+                let _ = net.try_set_value(Some(handle));
+            }
+        });
+    }
+
     let status = state.reader.document.status;
     let is_ready = move || status.get() == DocStatus::Ready;
 
@@ -221,6 +279,31 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
                                 h_virtualizer=rv.h_virtualizer_view.get_value()
                                 progress_visible=progress_visible
                             />
+                        </Show>
+                        // The first-paint cover (the gate effects above own
+                        // its timing): an opaque sheet of the paper the
+                        // reader is about to paint, over everything the
+                        // viewer slot stacks, until the reading surface has
+                        // landed on the resume point. Lifting it is seamless
+                        // in light, dark and tinted themes because it wears
+                        // the same paper token the surface underneath does.
+                        <Show when=move || is_ready() && !state.reader.viewer.first_paint.get()>
+                            <div
+                                class=format!(
+                                    "absolute inset-0 {} flex items-center justify-center",
+                                    app_chrome::layers::DRAG_OVERLAY
+                                )
+                                style=move || format!(
+                                    "background:{}",
+                                    if state.reader.reflowable() {
+                                        "var(--tx-paper)"
+                                    } else {
+                                        "var(--color-paper)"
+                                    }
+                                )
+                            >
+                                <crate::components::primitives::feedback::CenteredLoader />
+                            </div>
                         </Show>
                         <FloatingDocumentTitle state=state />
                         // Corner page counter, gated on a ready document and

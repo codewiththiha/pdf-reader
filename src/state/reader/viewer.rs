@@ -118,6 +118,16 @@ pub struct ViewerSignals {
     /// strip's queued animation frame runs; the identity keeps that stale
     /// callback from releasing the replacement's guard.
     pub(crate) anchor_generation: RwSignal<u64>,
+    /// The one-shot gate over this open's first VISIBLE frame. False from
+    /// the moment a document is claimed ([`Self::reset_position`] re-arms
+    /// it on every close) until the reading surface has actually landed on
+    /// the resume point — the strip's anchor releasing `awaiting_anchor`,
+    /// the paginated modes' immediate release, or, failing all of those,
+    /// the safety net. For exactly that long an opaque cover the colour of
+    /// the reader's paper masks the viewer (`features::reader::page`), so
+    /// the first renders — however healthy — are never watched arriving:
+    /// the reader appears already settled on the resume page.
+    pub first_paint: RwSignal<bool>,
 }
 
 impl ViewerSignals {
@@ -145,6 +155,8 @@ impl ViewerSignals {
         self.auto_scroll.set(false);
         self.page_gap.set(PAGE_GAP);
         self.page_margin.set(0.0);
+        // Re-arm the first-paint cover: the next open gets its own gate.
+        self.first_paint.set(false);
     }
 
     /// True while a zoom transaction is in flight: renders are suspended,
@@ -197,6 +209,7 @@ impl Default for ViewerSignals {
             motion: RwSignal::new(Motion::default()),
             awaiting_anchor: RwSignal::new(false),
             anchor_generation: RwSignal::new(0),
+            first_paint: RwSignal::new(false),
         }
     }
 }

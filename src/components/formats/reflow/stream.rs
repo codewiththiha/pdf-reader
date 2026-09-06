@@ -150,11 +150,50 @@ pub fn ReflowStreamLayout(
         let (_, height) = state.viewer.container_size.get_untracked();
         if height > 1.0 { height } else { 800.0 }
     };
+    // Start on the resume position rather than the top of the document: the
+    // first window mounts around the saved fraction (or the saved page)
+    // instead of painting the file's opening for the few frames the mount
+    // anchor needs to land. Computed under the same numbers the layout is
+    // built from, and agreeing with what the anchor aims at — `anchor_stream`
+    // re-asserts the same spot a moment later and consumes the fraction, so
+    // nothing downstream changes; the aim simply agrees on its first frame.
+    let initial_offset = {
+        let scale = state.viewer.zoom.visual_scale();
+        let total = state
+            .document
+            .content
+            .reflow
+            .heights
+            .with_untracked(|heights| heights.iter().sum::<f64>())
+            * scale
+            + STREAM_TAIL_PADDING;
+        match state.document.content.reflow.resume_fraction.get_untracked() {
+            Some(fraction) if total > initial_vh => {
+                (fraction * (total - initial_vh)).clamp(0.0, total)
+            }
+            _ => {
+                let page = state.viewer.page.get_untracked().max(1);
+                let block = state
+                    .document
+                    .content
+                    .reflow
+                    .cuts
+                    .with_untracked(|cuts| first_block_of_page(cuts, page));
+                state
+                    .document
+                    .content
+                    .reflow
+                    .heights
+                    .with_untracked(|heights| heights.iter().take(block).sum::<f64>())
+                    * scale
+            }
+        }
+    };
     let v = use_virtualizer(
         VirtualizerOptions::stream(block_count, estimate)
             .budget(STREAM_MOUNT_BUDGET)
             .padding(0.0, STREAM_TAIL_PADDING)
-            .initial(Viewport::main_only(initial_vh), 0.0)
+            .initial(Viewport::main_only(initial_vh), initial_offset)
             .epoch(epoch),
     );
 

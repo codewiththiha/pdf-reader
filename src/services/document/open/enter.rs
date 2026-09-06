@@ -120,20 +120,33 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
     let scale = if streaming {
         1.0
     } else {
+        // The container CANNOT be asked at seed time: `container_size` is
+        // what the mounted scroller reports, and nothing is mounted yet —
+        // seeding from it fits the first page against the previous
+        // document's box (or the default one), and the post-mount refit
+        // then commits a zoom over the first renders. The window is alive
+        // already, so measure IT instead: the title bar overlays the
+        // content, so only a DOCKED rail gives width up (`w-72`,
+        // border-box), and the fit maths gets the same container the
+        // mounted viewer will report a moment later — which is what turns
+        // the post-mount refit into a no-op.
+        //
         // For a PDF, the column-width dial scales the fit budget the same
         // way the live fit maths scales it (see `crate::zoom::target`); a
         // reflowable document's page box already carries the dial through
         // the geometry it was cut with, so its container stays plain. The
         // format is settled by the identity step that runs before this one.
-        let (cw, ch) = state.reader.viewer.container_size.get_untracked();
-        let cw = if state.reader.reflowable_untracked() {
-            cw
-        } else {
-            cw * state.reader.viewer.column_width_pct.get_untracked() / 100.0
-        };
+        const DOCKED_RAIL_W: f64 = 288.0;
+        let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
+        let docked = !state.settings.with_untracked(|s| s.layout.sidebar_overlay)
+            && state.ui.sidebar.get_untracked() != crate::state::SidebarMode::None;
+        let mut cw = vw - if docked { DOCKED_RAIL_W } else { 0.0 };
+        if !state.reader.reflowable_untracked() {
+            cw *= state.reader.viewer.column_width_pct.get_untracked() / 100.0;
+        }
         FitDims::from_geometry(
             state.reader.viewer.mode.get_untracked(),
-            (cw, ch),
+            (cw.max(1.0), vh.max(1.0)),
             state.reader.viewer.page_margin.get_untracked(),
             page_size,
         )
