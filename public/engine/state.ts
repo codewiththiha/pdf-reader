@@ -56,7 +56,7 @@ export const PAGE_MAX_PIXELS = memoryScaledPixelCeiling();
 const RAW_IDLE_MS = 10_000;
 const SWEEP_IDLE_MS = 30_000;
 
-export class EngineSession {
+class EngineSession {
   loadingTask: LoadingTask | null = null;
   pdf: PDFDocumentProxy | null = null;
   numPages = 0;

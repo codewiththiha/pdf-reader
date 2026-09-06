@@ -36,7 +36,6 @@ import { invalidatePipeline, isLivePipeline } from "./engine/theme/pipeline";
 import { publishBakedPaper } from "./engine/theme/paper";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
-  clearLegacyPaperCache,
   resetPaperForDocument,
   samplePaperPage,
   setPaper,
@@ -225,7 +224,6 @@ try {
 // The selection tracker is NOT installed here: it is format-agnostic and
 // lives in the reader bundle (public/readerEngine.ts), which index.html loads
 // first. Nothing in this facade depends on it.
-clearLegacyPaperCache();
 
 globalThis.PDFReader = {
   version: () => ENGINE_VERSION,
@@ -252,7 +250,6 @@ globalThis.PDFReader = {
   isLivePipeline,
   setPaper,
   setPaperActive,
-  clearLegacyPaperCache,
   takePaperFrame,
   samplePaperPage,
   sweep: () => {

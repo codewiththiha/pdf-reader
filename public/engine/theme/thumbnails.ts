@@ -17,7 +17,7 @@ import { session } from "../state";
 import { bakeRaster, rasterToCanvas } from "./bake";
 import { pipelineCache, readPipeline } from "./pipeline";
 
-export function releaseDisplayOnly(entry: ThumbEntry | null): void {
+function releaseDisplayOnly(entry: ThumbEntry | null): void {
   if (!entry) return;
   try {
     if (entry.display && typeof (entry.display as ImageBitmap).close === "function") {

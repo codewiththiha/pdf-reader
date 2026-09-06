@@ -78,7 +78,7 @@ export async function rebakeTheme(force = false): Promise<void> {
  * (a class check per live page). Canvases that lost their unbaked raw are
  * re-rendered rather than baked in place, which would double-filter.
  */
-export async function settleCanvasTheme(): Promise<void> {
+async function settleCanvasTheme(): Promise<void> {
   const wantRaw = isLivePipeline() || session.themeScrubActive;
   const rerender: Array<() => Promise<unknown>> = [];
   for (const [id, st] of session.stateByCanvasId) {
