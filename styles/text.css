@@ -281,6 +281,16 @@
   position: relative;
 }
 
+/* A row the stream blanked while the reader flings past it: an empty box
+   at the virtualizer's own height for the item, so layout and the
+   scrollbar never move while the type stands down. A whisper of ink, not
+   a skeleton — the point is that nothing is rendered, not that something
+   else is. */
+.tx-blank {
+  background: color-mix(in srgb, var(--tx-ink) 5%, transparent);
+  border-radius: 4px;
+}
+
 /* Column alignment for the continuous stream. The page margin is an
    INSET (--tx-col-inset, written by the stream's inline style), so
    Left/Right honour it exactly like Center — and a zero margin still

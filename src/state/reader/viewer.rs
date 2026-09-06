@@ -95,6 +95,12 @@ pub struct ViewerSignals {
     pub page_gap: RwSignal<f64>,
     /// Horizontal inset around pages (CSS px). `0` removes the margin.
     pub page_margin: RwSignal<f64>,
+    /// The column-width dial, as the open reader resolves it (percent:
+    /// `100` is the natural column). Mirrored from the persisted setting by
+    /// the layout prefs so the surfaces that have no settings handle — the
+    /// stream's column, the fit maths — read one runtime number, the same
+    /// arrangement the page margin uses.
+    pub column_width_pct: RwSignal<f64>,
     /// Which motions animate. Written only by the shell, from the settings
     /// (`Motion::from_prefs`); see the type's contract.
     pub motion: RwSignal<Motion>,
@@ -187,6 +193,7 @@ impl Default for ViewerSignals {
             auto_scroll: RwSignal::new(false),
             page_gap: RwSignal::new(PAGE_GAP),
             page_margin: RwSignal::new(0.0),
+            column_width_pct: RwSignal::new(100.0),
             motion: RwSignal::new(Motion::default()),
             awaiting_anchor: RwSignal::new(false),
             anchor_generation: RwSignal::new(0),

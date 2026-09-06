@@ -25,7 +25,7 @@ use leptos::prelude::*;
 
 use md_core::MarkdownHeading;
 use reflow_core::block::TextBlock;
-use reflow_core::geometry::{PageGeometry, PAGE_HEIGHT, PAGE_WIDTH};
+use reflow_core::geometry::{PageGeometry, PAGE_HEIGHT};
 use reflow_core::pager::{block_page_index, paginate, BlockMetrics, PageCut};
 use reflow_core::typography::TextSettings;
 use virtual_list_leptos::Virtualizer;
@@ -194,13 +194,15 @@ impl ReflowContent {
         self.block_page.set(Arc::new(map));
         self.geometry.set(geo);
 
-        // A4 is the cut's one fixed point: every page of a reflowable document is
-        // the same size, so the sizes travel as one page and one height rather
-        // than as two vectors of a repeated value. The height is at the live
-        // display scale, which is the scale the cut was measured at.
+        // A4 is the cut's one fixed point: every page of a reflowable
+        // document is the same size, so the sizes travel as one page and one
+        // height rather than as two vectors of a repeated value. The WIDTH is
+        // the dialled card — the column-width dial grows the sheet with the
+        // column — and the height is at the live display scale, which is the
+        // scale the cut was measured at.
         super::ReflowCut {
             num_pages: n,
-            page_size: pdf_engine::types::PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+            page_size: pdf_engine::types::PageSize { width: geo.width, height: PAGE_HEIGHT },
             css_height: PAGE_HEIGHT * state.reader.viewer.zoom.visual_scale(),
             page: new_page.clamp(1, n.max(1)),
         }

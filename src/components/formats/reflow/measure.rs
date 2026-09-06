@@ -6,8 +6,9 @@
 //! the numbers. This column renders every block ONCE, offscreen, at scale 1
 //! and exactly the typography the pages use, reads the rendered heights,
 //! and republishes the page cut from them. After that first pass the cut is
-//! measurement-true, and it only moves again when the typography (or the
-//! book-layout toggle that changes the column width) changes.
+//! measurement-true, and it only moves again when the typography, the
+//! book-layout toggle, or one of the reader's two width dials (the page
+//! margin spent inside the card, the column-width percentage) changes.
 //!
 //! Zoom deliberately never reaches this column: heights are scale-1 truths,
 //! and a uniform scale provably preserves the cut (see `components::formats::reflow::page`).
@@ -28,6 +29,29 @@ use super::page::content_style;
 use crate::state::reader::TypographySignal;
 use crate::state::AppState;
 
+/// Everything the measure pass needs beyond the blocks themselves: the
+/// typography the column renders at, plus the two reader dials that move the
+/// text column's width — the page margin (spent inside the card) and the
+/// column-width percentage. One struct so the pass and its retries cannot
+/// disagree about which world they measured.
+#[derive(Clone)]
+pub(crate) struct MeasureInputs {
+    pub typography: TextSettings,
+    pub margin: f64,
+    pub column_pct: f64,
+}
+
+/// The geometry a measure pass cuts against — the ONE definition the column's
+/// width, the paginator and the page hosts all share, so a dial move re-cuts
+/// through the same numbers everywhere. Kept beside [`MeasureInputs`] because
+/// the two answer the same question: what did the reader dial, and what does
+/// it mean for the sheet.
+pub(crate) fn dialled_geometry(inputs: &MeasureInputs) -> reflow_core::geometry::PageGeometry {
+    geometry(inputs.typography.book_layout)
+        .with_extra_inline(inputs.margin)
+        .with_column_pct(inputs.column_pct)
+}
+
 /// The offscreen box, written inline so the twin hides itself from its very
 /// first frame even if `styles.css` has not landed yet (see the view below).
 /// `styles/text.css` carries the same declarations on `.tx-measure` for parity.
@@ -47,9 +71,11 @@ pub fn ReflowMeasureColumn(app: AppState) -> impl IntoView {
     let container: NodeRef<html::Div> = NodeRef::new();
 
     // The measure pass. Tracked reads: the document (a new file remeasures),
-    // the typography (any knob moves the heights), and the remeasure epoch
-    // (the explicit "again" lever). The pass itself runs on the next frame,
-    // so the column's own re-render for the new inputs has already landed.
+    // the typography (any knob moves the heights), the reader's two width
+    // dials (the margin inside the card, the column percentage), and the
+    // remeasure epoch (the explicit "again" lever). The pass itself runs on
+    // the next frame, so the column's own re-render for the new inputs has
+    // already landed.
     Effect::new(move |_| {
         // Tracked, and read unconditionally: an empty block list is the "no
         // document" answer every other surface gives, and a `return` before the
@@ -59,11 +85,15 @@ pub fn ReflowMeasureColumn(app: AppState) -> impl IntoView {
         if count == 0 {
             return;
         }
-        let t = typography.get();
+        let inputs = MeasureInputs {
+            typography: typography.get(),
+            margin: app.reader.viewer.page_margin.get(),
+            column_pct: app.reader.viewer.column_width_pct.get(),
+        };
         let _epoch = app.reader.document.content.reflow.remeasure.get();
         let col = container;
         request_animation_frame(move || {
-            measure_pass(app, col, count, &t, MEASURE_SETTLE_FRAMES);
+            measure_pass(app, col, count, &inputs, MEASURE_SETTLE_FRAMES);
         });
     });
 
@@ -75,6 +105,12 @@ pub fn ReflowMeasureColumn(app: AppState) -> impl IntoView {
     // paginates against fiction. `visibility: hidden` keeps layout honest —
     // `display:none` would not lay out at all.
     //
+    // The width follows the same two dials the pass cuts against (the margin
+    // inside the card, the column percentage), read tracked so a dial move
+    // re-renders the column and re-measures it in the same flush — the twin
+    // below must never measure a paragraph at one width and paginate it at
+    // another.
+    //
     // The offscreen box is ALSO written inline, and that is not duplication
     // for its own sake. `styles.css` is compiled by a Trunk `pre_build` hook,
     // so the module can boot before (or between) stylesheet swaps; a column
@@ -84,13 +120,24 @@ pub fn ReflowMeasureColumn(app: AppState) -> impl IntoView {
     // file. An inline style cannot be late, so the twin is invisible from its
     // very first frame no matter what the cascade is doing. `text.css` keeps
     // the same declarations for parity.
+    let column_width = {
+        let viewer = app.reader.viewer;
+        move || {
+            dialled_geometry(&MeasureInputs {
+                typography: typography.get(),
+                margin: viewer.page_margin.get(),
+                column_pct: viewer.column_width_pct.get(),
+            })
+            .content_width
+        }
+    };
     view! {
         <div
             node_ref=container
             class="tx-measure tx-content"
             aria-hidden="true"
             lang="en"
-            style:width=move || format!("{}px", geometry(typography.get().book_layout).content_width)
+            style:width=move || format!("{}px", column_width())
             style=move || format!("{}{}", HIDDEN_TWIN, content_style(1.0))
         >
             <For
@@ -125,11 +172,11 @@ fn measure_pass(
     app: AppState,
     container: NodeRef<html::Div>,
     count: usize,
-    typography: &TextSettings,
+    inputs: &MeasureInputs,
     frames_left: u32,
 ) {
     let Some(col) = container.get() else {
-        retry(app, container, count, typography, frames_left);
+        retry(app, container, count, inputs, frames_left);
         return;
     };
     let children = col.children();
@@ -137,23 +184,23 @@ fn measure_pass(
     // the pass, but a browser that has not committed it yet shows the OLD
     // children (or none). Retry until it does.
     if children.length() as usize != count {
-        retry(app, container, count, typography, frames_left);
+        retry(app, container, count, inputs, frames_left);
         return;
     }
     let mut heights = Vec::with_capacity(count);
     for index in 0..count {
         let Some(child) = children.item(index as u32) else {
-            retry(app, container, count, typography, frames_left);
+            retry(app, container, count, inputs, frames_left);
             return;
         };
         let Ok(el) = child.dyn_into::<web_sys::HtmlElement>() else {
-            retry(app, container, count, typography, frames_left);
+            retry(app, container, count, inputs, frames_left);
             return;
         };
         heights.push(el.offset_height() as f64);
     }
 
-    let geo = geometry(typography.book_layout);
+    let geo = dialled_geometry(inputs);
     let new_cuts = paginate(&heights, geo.content_height);
     let changed = app
         .reader
@@ -206,14 +253,14 @@ fn retry(
     app: AppState,
     container: NodeRef<html::Div>,
     count: usize,
-    typography: &TextSettings,
+    inputs: &MeasureInputs,
     frames_left: u32,
 ) {
     if frames_left == 0 {
         return;
     }
-    let t = typography.clone();
+    let inputs = inputs.clone();
     request_animation_frame(move || {
-        measure_pass(app, container, count, &t, frames_left - 1);
+        measure_pass(app, container, count, &inputs, frames_left - 1);
     });
 }

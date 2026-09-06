@@ -31,7 +31,7 @@
 
 use leptos::prelude::*;
 
-use reflow_core::geometry::{SpineSide, geometry, PAGE_HEIGHT, PAGE_WIDTH};
+use reflow_core::geometry::{PageGeometry, SpineSide};
 
 use crate::dom_contract::HOST_REFLOW;
 use crate::components::formats::block_render::BlockView;
@@ -40,17 +40,25 @@ use crate::state::reader::TypographySignal;
 use crate::state::reader::ReflowContent;
 use crate::state::ReaderState;
 
-/// The page's inline style at the live scale: the A4 box and its book-layout (or
-/// symmetric) paddings. All paddings are geometry, scaled here; the TYPE inside
-/// scales through `--ts` on the content column.
-fn page_style(page: u32, scale: f64, book_layout: bool, spine: SpineSide) -> String {
-    let geo = geometry(book_layout);
+/// The page's inline style at the live scale: the page box and its
+/// book-layout (or symmetric) paddings, both taken from the geometry the
+/// current cut was made with — so the card a reader sees is exactly the card
+/// the paginator packed, whatever the margin and column-width dials hold.
+/// All paddings are geometry, scaled here; the TYPE inside scales through
+/// `--ts` on the content column.
+fn page_style(
+    page: u32,
+    scale: f64,
+    book_layout: bool,
+    spine: SpineSide,
+    geo: PageGeometry,
+) -> String {
     let (pad_left, pad_right) =
         geo.pads(book_layout, page.saturating_sub(1) as usize, spine);
     format!(
         "width:{}px;height:{}px;padding:{}px {}px {}px {}px;",
-        PAGE_WIDTH * scale,
-        PAGE_HEIGHT * scale,
+        geo.width * scale,
+        geo.height * scale,
         geo.pad_block * scale,
         pad_right * scale,
         geo.pad_block * scale,
@@ -100,6 +108,11 @@ pub fn ReflowPage(
         move || if class.is_empty() { "tx-page".to_string() } else { format!("tx-page {class}") };
 
     let reflow = state.document.content.reflow;
+    // The cut's own geometry, read tracked: the measure column re-publishes
+    // it whenever the margin or column-width dial moves, and the card must
+    // follow — a wider dialled column is a wider card wrapping it, with the
+    // pads to match, or the type would outgrow the box it was measured in.
+    let geometry = move || reflow.geometry.get();
     let render = block_render(state);
     // The host id is the element's, the gloss resolver's and the coordinate
     // origin its strokes are positioned against; each consumer needs its own.
@@ -113,7 +126,7 @@ pub fn ReflowPage(
         <div
             id=gloss_host_id
             class=host_class
-            style=move || page_style(page, scale.get(), book_layout.get(), spine)
+            style=move || page_style(page, scale.get(), book_layout.get(), spine, geometry())
             // The two facts the AI feature reads off a host instead of asking
             // which pipeline painted it: what family this is, and which page.
             // The selection tracker finds its host through the first, and the

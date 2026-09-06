@@ -37,7 +37,7 @@ use reader_core::filename::display_name;
 use reader_core::format::Format;
 use reader_core::view::ViewMode;
 use reflow_core::block::TextBlock;
-use reflow_core::geometry::{geometry, PAGE_HEIGHT, PAGE_WIDTH};
+use reflow_core::geometry::{geometry, PAGE_HEIGHT};
 use reflow_core::pager::estimate_heights;
 
 use crate::state::AppState;
@@ -168,15 +168,24 @@ fn ready(
     saved_fraction: Option<f64>,
 ) {
     let settings = state.settings.get_untracked();
-    let geo = geometry(settings.text.book_layout);
+    // The geometry the first cut is estimated against — resolved through the
+    // same two dials the measure column will resolve (the reader's margin
+    // and column-width runtime signals, which the layout prefs have already
+    // seeded from the persisted settings), so the seed and the refine agree
+    // and the dialled document never opens against numbers it immediately
+    // re-cuts away from.
+    let geo = geometry(settings.text.book_layout)
+        .with_extra_inline(state.reader.viewer.page_margin.get_untracked())
+        .with_column_pct(state.reader.viewer.column_width_pct.get_untracked());
     let name = display_name(parsed.title.as_deref(), Some(&path));
     let Parsed { blocks, title, author, headings } = parsed;
 
-    // Document identity, through the shared handshake. A text page is always
-    // the A4 sheet `reflow_core::geometry` cuts into, and the outline starts
-    // SEEDED rather than pending: the headings are already in the blocks, so
-    // `effects::reader::reflow_outline` re-projects them against the live cut
-    // and there is no resolver tail to race.
+    // Document identity, through the shared handshake. A text page is the
+    // sheet `reflow_core::geometry` cuts into — as wide as the column and
+    // its pads say, which the dials above already answered — and the outline
+    // starts SEEDED rather than pending: the headings are already in the
+    // blocks, so `effects::reader::reflow_outline` re-projects them against
+    // the live cut and there is no resolver tail to race.
     super::enter::identity(
         state,
         super::enter::DocumentIdentity {
@@ -184,7 +193,7 @@ fn ready(
             path: path.clone(),
             title,
             author,
-            page1_size: PageSize { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+            page1_size: PageSize { width: geo.width, height: PAGE_HEIGHT },
             outline: Some(Arc::new(Vec::new())),
         },
     );
@@ -217,7 +226,7 @@ fn ready(
 
     // The seed scale, from the same shared step the PDF seed uses — including
     // the stream exception, where there is no page to fit.
-    let (startup_fit, scale) = super::enter::startup_scale(state, (PAGE_WIDTH, PAGE_HEIGHT));
+    let (startup_fit, scale) = super::enter::startup_scale(state, (geo.width, PAGE_HEIGHT));
 
     // Reading position + zoom, seeded in the same order the PDF seed uses:
     // anchor guard up BEFORE the page is written, zoom initialised BEFORE the
