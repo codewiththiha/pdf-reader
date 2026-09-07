@@ -31,7 +31,7 @@ pub mod typography;
 pub use animation::AnimationSettings;
 pub use layout::{
     DEFAULT_COLUMN_WIDTH_PCT, FloatingLabelStyle, LayoutSettings, MAX_COLUMN_WIDTH_PCT,
-    MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle, RenderPipeline,
+    MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
 };
 pub use typography::TextSettings;
 
@@ -83,10 +83,6 @@ pub struct Settings {
     /// Settings.
     #[serde(default)]
     pub gloss_density: GlossDensity,
-    /// Live compositor pipeline vs baked rasters. Blobs saved before the
-    /// field existed load as `Live`, which is the behaviour they had.
-    #[serde(default)]
-    pub render_pipeline: RenderPipeline,
     /// Typography of the reflowable formats (plain text and Markdown): fonts,
     /// spacing, justification, the book layout. PDFs never read this — their
     /// type is baked into the page. Blobs saved before the text formats
@@ -113,7 +109,6 @@ impl Default for Settings {
             gloss_opacity: default_gloss_opacity(),
             gloss_custom: default_custom_gloss(),
             gloss_density: GlossDensity::default(),
-            render_pipeline: RenderPipeline::default(),
             text: TextSettings::default(),
         }
     }

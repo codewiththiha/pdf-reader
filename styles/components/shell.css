@@ -155,8 +155,9 @@ body {
    colour flat. Base and page hosts both being F (styles/page_host.css) is
    what kills the 1px rim a fractional device-pixel page edge used to show:
    the edge pixel mixes F with F. The flatness is only honest while the
-   baker owns the rasters, so blend mode forces the baked pipeline while a
-   PDF is open (src/effects/app/theme.rs). No texture on the backdrop: each
+   baker owns the rasters — and it always does at rest: the theme is
+   pre-rendered into every raster, with real-time compositing confined to
+   the scrub window below. No texture on the backdrop: each
    page's ::before overhangs and paints the gutter (textures.css, BLEND
    BLEED), so page and gutter stay phase-locked by construction. No
    transitions anywhere in this block — a tint scrub repaints it in
@@ -170,8 +171,9 @@ body {
    under the live CSS filter + blend, but --pdf-paper-baked only republishes
    at the scrub exit (one bake per drag), which froze the gutter at the last
    settled colour for the length of the drag. So while scrub.ts keeps
-   html.appearance-scrubbing up, the backdrop rejoins the live pipeline:
-   base back to the un-blended --color-paper, plus the old cover shape —
+   html.appearance-scrubbing up, the backdrop re-derives its paper in real
+   time — the compositor's own pass: base back to the un-blended
+   --color-paper, plus the old cover shape —
    detected --pdf-paper through --backdrop-filter (the live --canvas-filter,
    gated on data-paper-ready) and --canvas-blend. Pure compositor work per
    frame; no engine call per tick. The handover back is pop-free: rebakeTheme

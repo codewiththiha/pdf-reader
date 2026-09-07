@@ -29,12 +29,11 @@
   position: absolute;
   inset: 0;
   /* Above the opaque baked canvas (z 0), below the text layer (z 2). The
-     blend is baked into the raster, so the texture multiplies over it —
-     commutative with the old behind-the-canvas order, same composite.
-     During a baked-pipeline scrub the canvas is raw + live-blended again
-     and the scrub rule in page_host.css returns this layer to z-index 0
-     for that window; under the live pipeline it stays over the blend,
-     matching how the blend backdrop composites its texture
+     theme is pre-rendered into the raster, so the texture multiplies over
+     it — commutative with the old behind-the-canvas order, same composite.
+     During a tint scrub the canvas is raw + live-blended again and the
+     scrub rule in page_host.css returns this layer to z-index 0 for that
+     window, matching how the blend backdrop composites its texture
      (components/shell.css) — soft-light is not identity on the paper, so
      the two orders would read as different stroke strengths in dim. */
   z-index: 1;

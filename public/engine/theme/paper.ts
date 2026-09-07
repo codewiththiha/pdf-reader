@@ -1,12 +1,11 @@
-// Paper colour discovery: resolve --color-paper to a concrete colour and
-// its RGB pixels (used by the identity check and the bake blend step), and
-// publish the backdrop's pre-themed paper when the baked pipeline owns the
-// canvases.
+// Paper colour discovery: resolve --color-paper to a concrete colour and its
+// RGB pixels (used by the identity check and the bake blend step), and
+// publish the backdrop's pre-rendered (pre-themed) paper.
 
 import type { PaperInfo, PipelineCache } from "../types";
 import { acquireScratch, releaseScratch } from "../canvas";
 import { applyFilterToData } from "./filterKernel";
-import { isLivePipeline, readPipeline } from "./pipeline";
+import { readPipeline } from "./pipeline";
 import { session } from "../state";
 
 export function paperInfo(pipeline: PipelineCache): PaperInfo {
@@ -115,28 +114,20 @@ function bakedPaperHex(pipeline: PipelineCache): string | null {
   return toPaperHex(out);
 }
 
-/** Keep `--pdf-paper-baked` honest for the pipeline the reader is in NOW:
- *  the pre-themed paper when the baked pipeline owns the canvases, nothing
- *  when the live compositor re-derives the paper. Called whenever one of the
- *  three inputs moves — the detected paper (`setPaper`), the theme
- *  (`rebakeTheme`), the pipeline switch (`setPipelineModeInternal`) — so the
- *  settled backdrop never lags the pages. A tint scrub is the one window
- *  whose ticks never reach here: per-tick engine work is exactly what the
- *  scrub scheduler refuses, so the backdrop tracks the drag from CSS alone
- *  (the SCRUB WINDOW cover in styles/components/shell.css) and the scrub exit
- *  republishes this before the class drops — a same-value handover. Live mode
- *  removes the property: only the blend backdrop reads it and blend forces
- *  the baked pipeline, but a stale themed value must not outlive the mode
- *  that justified it. */
+/** Keep `--pdf-paper-baked` honest: the detected paper pre-rendered through
+ *  the current filter + blend — the colour a baked raster's paper carries.
+ *  Called whenever an input moves: the detected paper (`setPaper`) or the
+ *  theme (`rebakeTheme`), so the settled backdrop never lags the pages. A
+ *  tint scrub is the one window whose ticks never reach here: per-tick engine
+ *  work is exactly what the scrub scheduler refuses, so the backdrop tracks
+ *  the drag from CSS alone (the SCRUB WINDOW cover in
+ *  styles/components/shell.css) and the scrub exit republishes this before
+ *  the class drops — a same-value handover. */
 export function publishBakedPaper(): void {
   let el: HTMLElement;
   try {
     el = document.documentElement;
   } catch (_) {
-    return;
-  }
-  if (isLivePipeline()) {
-    el.style.removeProperty("--pdf-paper-baked");
     return;
   }
   const hex = bakedPaperHex(readPipeline());

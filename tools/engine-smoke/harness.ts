@@ -266,10 +266,11 @@ const docEl: FakeCanvas & { id: string; width: number; height: number } = (() =>
   return el;
 })();
 
-/** Whether the engine is currently in live mode, read the way the browser
- * reads it: the class that turns the CSS filter path on. Smoke tests use it to
- * avoid pretending the fake canvas can run a browser compositor. */
-export function isLivePipelineActive(): boolean {
+/** Whether the engine is inside a scrub window (real-time compositing), read
+ * the way the browser reads it: the class that turns the CSS filter path on.
+ * Smoke tests use it to avoid pretending the fake canvas can run a browser
+ * compositor. */
+export function isScrubActive(): boolean {
   return docEl.classList.contains("appearance-scrubbing");
 }
 
@@ -483,8 +484,6 @@ interface PDFReaderHandle {
   hasThumb(page: number, scale: number): boolean;
   refreshTheme(): Promise<void>;
   setScrubMode(on: boolean): Promise<void>;
-  setLivePipeline(on: boolean): Promise<void>;
-  isLivePipeline(): boolean;
   setPaper(hex: string): void;
   setPaperActive(on: boolean): void;
   takePaperFrame(canvasId: string): {

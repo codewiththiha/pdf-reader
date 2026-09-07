@@ -61,11 +61,11 @@ class EngineSession {
 
   /** The dominant raster colour of the open document — the PDF's own paper —
    *  or null until the paper session (the Rust side of the pipeline) resolves
-   *  one. Under the live pipeline the blend backdrop paints this through the
-   *  same filter + blend the raw canvases use; under the baked pipeline it
-   *  paints the pre-themed twin the engine derives from it
-   *  (--pdf-paper-baked, theme/paper.ts), so backdrop and page are the same
-   *  composite by construction in either mode. */
+   *  one. During a scrub the blend backdrop re-derives from this through the
+   *  same live CSS filter + blend the raw canvases use; settled, it paints
+   *  the pre-rendered twin the engine derives from it (--pdf-paper-baked,
+   *  theme/paper.ts), so backdrop and page are the same composite by
+   *  construction either way. */
   detectedPaper: string | null = null;
 
   /** Live page surfaces, keyed by canvas id. Bounded by the virtualizer's

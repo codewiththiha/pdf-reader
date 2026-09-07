@@ -37,7 +37,6 @@ use reader_core::appearance::shared::{noise, texture};
 use reader_core::appearance::Appearance;
 use reader_core::format::Format;
 use reader_core::settings::GlossColor;
-use reader_core::settings::RenderPipeline;
 use crate::state::{AppState, AppearanceSignal};
 
 use crate::effects::appearance::{is_scrubbing, raster, reflow, schedule_save};
@@ -209,39 +208,6 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
         if !warmed.get_value() {
             warmed.set_value(true);
             let _ = body_el().map(|b| b.offset_height());
-        }
-    });
-
-    // The rendering pipeline is a one-field choice with an expensive
-    // consequence (every mounted raster is swapped), so it gets its own narrow
-    // effect: no other settings write may trigger it, and the engine is told
-    // only when the reader flips it. The first run pushes the persisted choice
-    // into an engine that always boots live.
-    let pipeline: Memo<(RenderPipeline, bool)> = Memo::new(move |_| {
-        state.settings.with(|st| (st.render_pipeline, st.layout.blend_mode))
-    });
-
-    Effect::new(move || {
-        let (p, blend_mode) = pipeline.get();
-        // Blend mode flattens every painter of paper onto ONE computed
-        // colour: backdrop base and page hosts both carry --pdf-paper-baked,
-        // so a page edge on a fractional device pixel mixes F with F and the
-        // 1px rim the un-blended host base used to show vanishes. That
-        // flatness is only honest while the baker owns the rasters — a LIVE
-        // canvas blends against its host's un-blended base, exactly the
-        // colour that leaked into the rim — so blend implies baked while a
-        // PDF is open. Reflowable formats paint their own paper and never
-        // raise `.reader-bg.blend` (src/features/reader/page.rs), so the
-        // setting must not cost them the pipeline they chose.
-        let blend = blend_mode && !state.reader.reflowable();
-        let live = p.is_live() && !blend;
-        raster::set_live_pipeline(live);
-        // CSS keys the blend backdrop off the EFFECTIVE choice, not the
-        // persisted one: the attribute lands synchronously, the raster swap
-        // follows through the engine's serialized theme queue, and the scrub
-        // class marks the window a baked scrub exposes raw pixels.
-        if let Some(el) = document_element() {
-            let _ = el.set_attribute("data-pipeline", if live { "live" } else { "baked" });
         }
     });
 

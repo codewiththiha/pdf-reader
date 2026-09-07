@@ -23,37 +23,6 @@ pub const MIN_COLUMN_WIDTH_PCT: f64 = 60.0;
 /// The column-width dial's ceiling. See [`MIN_COLUMN_WIDTH_PCT`].
 pub const MAX_COLUMN_WIDTH_PCT: f64 = 140.0;
 
-/// How the appearance reaches the pixels of a page.
-///
-/// `Live` leaves the raw raster on screen and lets the compositor apply the
-/// filter and blend every frame, so a page and the document backdrop go
-/// through ONE floating-point pass — the two match exactly, which is what
-/// makes blend mode seamless. `Baked` burns the same pipeline into each raster
-/// once per appearance change: plain opaque textures, cheaper per frame, but
-/// re-quantized in integer stages, so a baked page is never bit-identical to
-/// the live composite. Live for fidelity, baked for a lighter compositor on
-/// large pages and slow machines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RenderPipeline {
-    #[default]
-    Live,
-    Baked,
-}
-
-impl RenderPipeline {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Live => "Live",
-            Self::Baked => "Baked",
-        }
-    }
-
-    pub fn is_live(&self) -> bool {
-        matches!(self, Self::Live)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PageIndicatorStyle {

@@ -28,8 +28,8 @@ import {
   setActiveMatch,
   setSearchContext,
 } from "./engine/search";
-import { rebakeTheme, setPipelineModeInternal, setScrubModeInternal } from "./engine/theme/scrub";
-import { invalidatePipeline, isLivePipeline } from "./engine/theme/pipeline";
+import { rebakeTheme, setScrubModeInternal } from "./engine/theme/scrub";
+import { invalidatePipeline } from "./engine/theme/pipeline";
 import { publishBakedPaper } from "./engine/theme/paper";
 import { paintAllVisibleThumbs } from "./engine/theme/thumbnails";
 import {
@@ -167,13 +167,6 @@ function setScrubMode(on: boolean): Promise<void> {
   return enqueueTheme(() => setScrubModeInternal(on));
 }
 
-/** Reader-facing pipeline switch (Appearance ▸ Rendering). Queued with every
- * other theme mutation so a mode flip mid-scrub still ends in a consistent
- * raster state. */
-function setLivePipelineMode(on: boolean): Promise<void> {
-  return enqueueTheme(() => setPipelineModeInternal(on));
-}
-
 function stats(): Stats {
   return {
     pages: session.stateByCanvasId.size,
@@ -243,8 +236,6 @@ globalThis.PDFReader = {
   clearHighlights,
   refreshTheme,
   setScrubMode,
-  setLivePipeline: setLivePipelineMode,
-  isLivePipeline,
   setPaper,
   setPaperActive,
   takePaperFrame,
@@ -260,9 +251,3 @@ globalThis.PDFReader = {
 // extensibility, so freeze the object (has_pdf_reader only checks existence).
 Object.freeze(globalThis.PDFReader);
 
-// Boot in the engine's default mode. Live means the raw rasters go under the
-// CSS pipeline immediately; the reader's persisted choice is applied by the
-// app right after mount, through setLivePipeline.
-if (isLivePipeline()) {
-  void setScrubMode(true);
-}
