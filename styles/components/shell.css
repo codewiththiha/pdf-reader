@@ -158,11 +158,12 @@ body {
 }
 
 .reader-bg {
-  /* The positioning context and stacking context the blend paper's retired
-     cover layer used to need; both stay load-bearing — the reader stacks
-     absolutely positioned chrome inside this element, and the z-index still
-     cages the pages' own stacking contexts (whose texture layers paint the
-     gutter in blend mode). */
+  /* The positioning context and stacking context the blend paper's cover
+     layer needs — retired for the settled state, but alive for the scrub
+     window further down; both stay load-bearing regardless: the reader
+     stacks absolutely positioned chrome inside this element, and the
+     z-index cages the pages' own stacking contexts (whose texture layers
+     paint the gutter in blend mode). */
   position: relative;
   z-index: 0;
   /* The un-blended app paper: what a raw canvas live-blends against during
@@ -185,7 +186,9 @@ body {
    The engine publishes the detected paper run through the SAME filter
    matrix + blend it bakes with as --pdf-paper-baked
    (public/engine/theme/paper.ts); the backdrop base carries that computed
-   colour directly, with NO cover layer on top of it.
+   colour directly, with NO cover layer on top of it in the settled state
+   (the SCRUB WINDOW block below is the one exception, and only for the
+   length of a drag).
 
    The cover this replaces — a pseudo-element over the un-blended
    --color-paper base — could not stay seamless: a page edge landing on a
@@ -198,13 +201,15 @@ body {
 
    The flat colour is only honest while the baker owns the rasters, so
    blend mode forces the baked pipeline while a PDF is open (the pipeline
-   effect in src/effects/app/theme.rs) — there is no live re-derivation
-   here left to keep in lockstep with the canvases. A baked scrub exposes
-   raw rasters that live-blend against the host's --color-paper (the
-   .canvas-raw marker and the scrub override in styles/page_host.css); for
-   exactly that window the pages preview against the true blend base while
-   the backdrop holds the last settled F. Deliberately NO transition — a
-   tint scrub must repaint it in lockstep with the canvases.
+   effect in src/effects/app/theme.rs). A baked scrub exposes raw rasters
+   that live-blend against the host's --color-paper (the .canvas-raw
+   marker and the scrub override in styles/page_host.css); for exactly
+   that window the SCRUB WINDOW block below puts the backdrop back on the
+   live pipeline, or the gutter would freeze at the last settled F for
+   the length of the drag — --pdf-paper-baked republishes only at the
+   scrub exit, one bake per drag by design. Deliberately NO transition
+   anywhere in this block — a tint scrub must repaint it in lockstep with
+   the canvases.
 
    The backdrop carries NO texture: each page's own ::before overhangs the
    page box and paints the surrounding gutter (see textures.css, BLEND
@@ -215,6 +220,45 @@ body {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
+
+/* SCRUB WINDOW — a tint drag exposes RAW rasters that re-colour every frame
+   under the compositor's live filter + blend, but the flat backdrop colour
+   above is a baked value: --pdf-paper-baked republishes only when the scrub
+   exits (rebakeTheme stands down while it runs, one bake per drag rather
+   than one per tick). Left flat, the gutter freezes at the last settled F
+   for the whole drag and snaps when the slider stops — the pages move and
+   the paper around them does not.
+
+   So for exactly that window (html.appearance-scrubbing, raised and dropped
+   by public/engine/theme/scrub.ts around the raw exposure) the backdrop
+   rejoins the live pipeline in the shape the retired cover had: the base
+   returns to the un-blended --color-paper and a cover over it runs the
+   detected --pdf-paper through --backdrop-filter (the live --canvas-filter,
+   gated on data-paper-ready) and --canvas-blend — the same compositor pass
+   the raw canvases are under, resolving per frame from variables the slider
+   already repaints, with zero engine work per tick. The handover back is
+   same-value and pop-free: rebakeTheme republishes --pdf-paper-baked before
+   the class drops, and the cover's compositor F and the baker's integer F
+   are the same pipeline over the same inputs.
+
+   The fractional-edge rim the flat paper killed can, in principle, show for
+   the length of a drag — the host is un-blended again while the raws are
+   out (styles/page_host.css). That window already previews pages against
+   the true blend base by necessity; the settled state, which is what a
+   reader actually looks at, keeps the seamless flat paper. */
+html.appearance-scrubbing .reader-bg.blend {
+  background-color: var(--color-paper);
+}
+html.appearance-scrubbing .reader-bg.blend::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* above the base it blends against, below texture + pages */
+  pointer-events: none;
+  background-color: var(--pdf-paper, var(--color-paper));
+  filter: var(--backdrop-filter, none);
+  mix-blend-mode: var(--canvas-blend, multiply);
+}
 
 /* TEXT/MD paginated modes (single, two-page): show the same paper as the
    scroll modes. The scroller carries the `bg-surface` utility for PDF

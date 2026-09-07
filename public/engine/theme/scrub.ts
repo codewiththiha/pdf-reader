@@ -116,9 +116,12 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
   if (session.themeScrubActive === on) return;
 
   if (on) {
-    // The global class now controls only the texture stacking order. Canvas
-    // theming is attached to each raw raster by showRaw/showBaked, so a baked
-    // canvas remains unfiltered while another canvas changes asynchronously.
+    // The global class delimits the scrub window for the CSS that keys off
+    // it — the texture stacking order, and the page hosts' / backdrop's
+    // return to the live blend base (styles/page_host.css, the SCRUB WINDOW
+    // block in styles/components/shell.css). Canvas theming itself is
+    // attached to each raw raster by showRaw/showBaked, so a baked canvas
+    // remains unfiltered while another canvas changes asynchronously.
     document.documentElement.classList.add("appearance-scrubbing");
     session.setThemeScrubActive(true);
     for (const st of session.stateByCanvasId.values()) {

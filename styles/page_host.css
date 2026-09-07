@@ -90,7 +90,9 @@
 /* A baked scrub exposes raw rasters that live-blend against their base
    (the .canvas-raw marker below), and that blend is only correct over the
    UN-themed base — for exactly the scrub window the host drops back to
-   --color-paper while the backdrop holds the last settled F. */
+   --color-paper while the backdrop rejoins the same live pipeline through
+   the scrub cover (the SCRUB WINDOW block in components/shell.css): page
+   and gutter re-derive F from the same live inputs, per frame. */
 html.appearance-scrubbing .reader-bg.blend .pdf-page {
   background-color: var(--color-paper);
 }

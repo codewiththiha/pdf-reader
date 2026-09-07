@@ -124,10 +124,16 @@ function bakedPaperHex(pipeline: PipelineCache): string | null {
  *  when the live pipeline re-derives the paper in the compositor. Called at
  *  every moment one of the three inputs moves — the detected paper itself
  *  (`setPaper`), the theme (`rebakeTheme`), and the pipeline switch
- *  (`setPipelineModeInternal`) — so the backdrop can never lag the pages.
- *  Live mode removes the property: the CSS only reads it under
- *  `html[data-pipeline="baked"]`, but a stale themed value must not outlive
- *  the mode that justified it. */
+ *  (`setPipelineModeInternal`) — so the settled backdrop can never lag the
+ *  pages. A tint scrub is the one window whose ticks never reach here: the
+ *  drag repaints the variables per frame, and per-tick engine work is
+ *  exactly what the scrub scheduler refuses — so the backdrop tracks the
+ *  drag from CSS alone (the SCRUB WINDOW cover in
+ *  styles/components/shell.css), and the scrub exit republishes this before
+ *  the class drops, making the handover same-value. Live mode removes the
+ *  property: only the blend backdrop reads it, and blend forces the baked
+ *  pipeline — but a stale themed value must not outlive the mode that
+ *  justified it. */
 export function publishBakedPaper(): void {
   let el: HTMLElement;
   try {
