@@ -4,15 +4,14 @@
 import type { PipelineCache } from "../types";
 import { paperInfo } from "./paper";
 
-/** Live mode keeps the compositor's filter + blend on every canvas, so a page
- * and the document backdrop share one floating-point pass. Baked mode burns
- * the same pipeline into each raster instead (worker or inline kernel), which
- * costs a re-bake per appearance change but leaves the compositor with plain
- * opaque textures. Baking re-quantizes in integer stages, so a baked page can
+/** Live mode keeps the compositor's filter + blend on every canvas, so a
+ * page and the document backdrop share one floating-point pass. Baked mode
+ * burns the same pipeline into each raster instead (worker or inline
+ * kernel): a re-bake per appearance change, but plain opaque textures for
+ * the compositor. Baking re-quantizes in integer stages, so a baked page can
  * never be bit-identical to the live composite — which is why this is a
- * reader-facing choice rather than a build-time constant.
- *
- * Live is the default; `setLivePipeline` flips it at runtime. */
+ * reader-facing choice rather than a build-time constant. Live is the
+ * default; setLivePipeline flips it at runtime. */
 let livePipeline = true;
 
 export function isLivePipeline(): boolean {

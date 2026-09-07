@@ -159,9 +159,9 @@ export async function run(): Promise<void> {
   }
 
   // 13. THE PIPELINE SWITCH (Appearance > Rendering). Flipping to baked must
-  // burn the CURRENT pipeline into the rasters already on screen and drop the
-  // raw markers; flipping back must expose the raws again untouched. The
-  // pipeline is left as it started so the later scenarios still describe the
+  // burn the CURRENT pipeline into the rasters already on screen and drop
+  // the raw markers; flipping back must expose the raws again untouched. The
+  // pipeline is left as it started so later scenarios still describe the
   // engine's default mode.
   const startedLive = PDFReader.isLivePipeline();
   await PDFReader.setLivePipeline(false);
@@ -185,11 +185,11 @@ export async function run(): Promise<void> {
   if (!startedLive) await PDFReader.setLivePipeline(false);
 
   // 14. THE BAKED BACKDROP PAPER. A baked page already carries the themed
-  // paper in its pixels, so the backdrop may not run the filter + blend a
+  // paper in its pixels, so the backdrop must not run the filter + blend a
   // second time over the detected colour — the engine publishes the
   // pre-themed paper as --pdf-paper-baked instead. multiply and screen are
-  // identity on the paper, so the mode where a double pass shows is dim's
-  // soft-light; assert it there.
+  // identity on paper; the mode where a double pass shows is dim's
+  // soft-light, so assert it there.
   const rootProp = (name: string): string => {
     const root = getEl("documentElement") as unknown as {
       style: { getPropertyValue: (n: string) => string };

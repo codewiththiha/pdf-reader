@@ -1,19 +1,13 @@
-/* =====================================================================
-   App shell: document/body defaults, reader scrollbars, the drag
-   regions, and the adaptive-toolbar measurement twin.
-   ===================================================================== */
+/* App shell: document/body defaults, reader scrollbars, drag regions,
+   floating-surface classes and the reader backdrop papers. */
 
-/* ---------------------------------------------------------------------
-   7. App shell defaults.
-   --------------------------------------------------------------------- */
 html,
 body {
   height: 100%;
   margin: 0;
   overscroll-behavior: none;
-  /* The auto-hide bottom bar slides down out of view; clip it here so its
-     hidden 12px translate can never leak a phantom window scrollbar. The
-     only scrollers left are the page list, thumbnails, outline and popovers. */
+  /* Clips the auto-hide bottom bar's 12px off-screen translate so it can
+     never leak a phantom window scrollbar. */
   overflow: hidden;
 }
 
@@ -50,34 +44,23 @@ body {
   background: transparent;
 }
 
-/* ---------------------------------------------------------------------
-   13. Auto-hide chrome — no text selection while grabbing the drag
-   regions (the always-mounted hot strips + the hover-reveal bars).
-   --------------------------------------------------------------------- */
+/* No text selection while grabbing the window drag regions. */
 [data-tauri-drag-region] {
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* --- sidebar aside containment -----------------------------------------
-   Scope layout recalculation to the aside itself. Without this, every
-   frame of the 300ms width transition reflows the viewer, the toolbar
-   and the bottom bar as well (the aside is a flex sibling of the
-   flex-1 viewer, so each width tween invalidates the whole row).
-   `layout style` (NOT `content`): paint containment would create a new
-   clipping context — the panels inside are position:absolute; inset:0
-   and rely on the aside's overflow:hidden clip, and paint containment
-   can subtly change how that clip interacts with the backdrop-filter
-   toolbar above. `layout style` scopes layout without touching paint. */
+/* Scope layout recalc to the aside: without it every frame of the 300ms
+   width transition reflows the whole flex row (viewer, toolbar, bottom
+   bar). `layout style`, NOT `content` — paint containment would create a
+   clipping context and disturb the absolute-inset panels inside and the
+   backdrop-filter toolbar above. */
 .sidebar-aside {
   contain: layout style;
 }
 
-/* --- stable floating surface classes ---------------------------------
-   The shared visual contract for menu/popover/context-menu/action-bar
-   surfaces: rounded, hairline border, surface fill, floating elevation.
-   Components compose these with their own layout utilities so every
-   floating surface reuses one look. */
+/* Shared visual contract for floating surfaces (menus, popovers, context
+   menus, action bars). Components add their own layout utilities on top. */
 .surface-popover {
   border-radius: 0.75rem;
   border: 1px solid var(--color-line);
@@ -86,12 +69,10 @@ body {
   padding: 0.25rem;
 }
 
-/* --- stable component classes ------------------------------------------
-   The shared layout/fit contract for the visual primitives. Rules live in
-   `@layer components` so per-instance Tailwind utilities (sizes, colours,
-   tone states) keep winning; the classes only guarantee the common fit and
-   give tests/overrides a stable hook. Values mirror the utilities the
-   primitives emit, so adding these classes changes nothing visually. */
+/* Shared fit contract for the visual primitives, in `@layer components` so
+   per-instance Tailwind utilities keep winning. Values mirror the utilities
+   the primitives already emit; the classes give tests/overrides a stable
+   hook. */
 @layer components {
   .btn {
     display: inline-flex;
@@ -118,19 +99,13 @@ body {
     align-items: center;
     gap: 0.5rem;                /* gap-2 */
   }
-  /* --- toast anchor ------------------------------------------------------
-     The ONE centering mechanism for every toast host: the app-root error host
-     and the gloss undo toast both use it, so they cannot drift apart in
-     placement. Fixed, full-width, flex-centered, and lifted 4rem because the
-     reader's auto-hide bottom bar is h-10 (2.5rem) at `bottom-0`.
-
-     Centering is deliberately flexbox, NOT `left: 50%` plus a half-width
-     transform. Tailwind v4 writes `translate-x-*` to the `translate` property
-     while an entrance keyframe animates `transform` — both apply, so a toast
-     that centered itself with `-translate-x-1/2` *and* a `translateX(-50%)`
-     keyframe sat a full half-width left of centre. With no transform in the
-     geometry there is nothing to double-count, and the reduced-motion nets
-     that strip the entrance cannot move the panel either. */
+  /* The one centering mechanism for every toast host (app-root errors and
+     the gloss undo toast), lifted 4rem clear of the h-10 auto-hide bottom
+     bar. Flex-centered, NOT left:50% + translate: Tailwind v4 writes
+     translate-x-* to the `translate` property while entrance keyframes
+     animate `transform`, so a -translate-x-1/2 toast with a translateX(-50%)
+     keyframe sat half a width off-centre. With no transform in the geometry
+     the reduced-motion nets cannot move the panel either. */
   .toast-anchor {
     position: fixed;
     inset-inline: 0;
@@ -139,7 +114,7 @@ body {
     flex-direction: column;
     align-items: center;
     gap: 0.5rem;
-    padding-inline: 1rem;         /* px-4, so a long message never touches an edge */
+    padding-inline: 1rem;         /* px-4, long messages never touch an edge */
   }
   .surface-toast {
     border-radius: 0.75rem;     /* rounded-xl */
@@ -148,8 +123,7 @@ body {
   }
 }
 
-
-/* Overlay scrollbars: hide native bars on tagged scrollports. */
+/* Hide native bars on tagged scrollports. */
 .scrollbar-none {
   scrollbar-width: none;
 }
@@ -157,95 +131,51 @@ body {
   display: none;
 }
 
+/* The reader backdrop. Positioning + stacking context for the scrub-window
+   cover below, and the cage for the pages' own stacking contexts (whose
+   texture layers paint the gutter in blend mode). Base colour is the
+   un-blended app paper: what a raw canvas live-blends against during a
+   baked scrub, and what every non-blend mode shows. */
 .reader-bg {
-  /* The positioning context and stacking context the blend paper's cover
-     layer needs — retired for the settled state, but alive for the scrub
-     window further down; both stay load-bearing regardless: the reader
-     stacks absolutely positioned chrome inside this element, and the
-     z-index cages the pages' own stacking contexts (whose texture layers
-     paint the gutter in blend mode). */
   position: relative;
   z-index: 0;
-  /* The un-blended app paper: what a raw canvas live-blends against during
-     a baked scrub, and the paper every non-blend mode shows. Blend mode
-     overrides it with the engine's computed colour further down. */
   background-color: var(--color-paper);
 }
-/* TEXT PAPER — a reflowable document's page IS the whole surface: the
-   `.reader-bg` backdrop is the paper (`--tx-paper`) and the `.tx-page`
-   hosts are transparent frames (see text.css), so nothing stacks over
-   the view mode's backdrop. PDF keeps `--color-paper` and the blend
-   paper. `data-format` is painted by the appearance effect from the open
-   document's format. */
+/* A reflowable document's page IS the surface: the backdrop paints
+   --tx-paper and the .tx-page hosts are transparent frames (text.css).
+   data-format is set by the appearance effect from the open format. */
 :root[data-format="text"] .reader-bg,
 :root[data-format="markdown"] .reader-bg {
   background-color: var(--tx-paper);
 }
-/* BLEND PAPER — the backdrop must equal the CANVAS background, and that is
-   the PDF's own paper run through the theme pipeline, not any app colour.
-   The engine publishes the detected paper run through the SAME filter
-   matrix + blend it bakes with as --pdf-paper-baked
-   (public/engine/theme/paper.ts); the backdrop base carries that computed
-   colour directly, with NO cover layer on top of it in the settled state
-   (the SCRUB WINDOW block below is the one exception, and only for the
-   length of a drag).
-
-   The cover this replaces — a pseudo-element over the un-blended
-   --color-paper base — could not stay seamless: a page edge landing on a
-   fractional device pixel half-exposes whatever sits under the canvas, and
-   the canvas blends against the HOST base, so the rim pixel mixed half a
-   page with half the un-blended base and read as a 1px hairline on
-   whichever edge was currently fractional. With base and host both F
-   (page_host.css carries the other half of this rule), an edge pixel mixes
-   F with F and the rim vanishes; there is no seam left to have a gap.
-
-   The flat colour is only honest while the baker owns the rasters, so
-   blend mode forces the baked pipeline while a PDF is open (the pipeline
-   effect in src/effects/app/theme.rs). A baked scrub exposes raw rasters
-   that live-blend against the host's --color-paper (the .canvas-raw
-   marker and the scrub override in styles/page_host.css); for exactly
-   that window the SCRUB WINDOW block below puts the backdrop back on the
-   live pipeline, or the gutter would freeze at the last settled F for
-   the length of the drag — --pdf-paper-baked republishes only at the
-   scrub exit, one bake per drag by design. Deliberately NO transition
-   anywhere in this block — a tint scrub must repaint it in lockstep with
-   the canvases.
-
-   The backdrop carries NO texture: each page's own ::before overhangs the
-   page box and paints the surrounding gutter (see textures.css, BLEND
-   BLEED), so page and gutter are literally the same layer — same pitch,
-   same phase, at every zoom and scroll — instead of a separate backdrop
-   lattice that could never stay phase-locked to the pages. */
+/* BLEND PAPER — the backdrop must equal the canvas background: the PDF's
+   own paper run through the theme pipeline. The engine publishes it,
+   pre-computed through the same filter + blend it bakes with, as
+   --pdf-paper-baked (public/engine/theme/paper.ts); the base carries that
+   colour flat. Base and page hosts both being F (styles/page_host.css) is
+   what kills the 1px rim a fractional device-pixel page edge used to show:
+   the edge pixel mixes F with F. The flatness is only honest while the
+   baker owns the rasters, so blend mode forces the baked pipeline while a
+   PDF is open (src/effects/app/theme.rs). No texture on the backdrop: each
+   page's ::before overhangs and paints the gutter (textures.css, BLEND
+   BLEED), so page and gutter stay phase-locked by construction. No
+   transitions anywhere in this block — a tint scrub repaints it in
+   lockstep with the canvases. */
 .reader-bg.blend {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
-/* SCRUB WINDOW — a tint drag exposes RAW rasters that re-colour every frame
-   under the compositor's live filter + blend, but the flat backdrop colour
-   above is a baked value: --pdf-paper-baked republishes only when the scrub
-   exits (rebakeTheme stands down while it runs, one bake per drag rather
-   than one per tick). Left flat, the gutter freezes at the last settled F
-   for the whole drag and snaps when the slider stops — the pages move and
-   the paper around them does not.
-
-   So for exactly that window (html.appearance-scrubbing, raised and dropped
-   by public/engine/theme/scrub.ts around the raw exposure) the backdrop
-   rejoins the live pipeline in the shape the retired cover had: the base
-   returns to the un-blended --color-paper and a cover over it runs the
+/* SCRUB WINDOW — a tint drag exposes raw rasters that re-colour per frame
+   under the live CSS filter + blend, but --pdf-paper-baked only republishes
+   at the scrub exit (one bake per drag), which froze the gutter at the last
+   settled colour for the length of the drag. So while scrub.ts keeps
+   html.appearance-scrubbing up, the backdrop rejoins the live pipeline:
+   base back to the un-blended --color-paper, plus the old cover shape —
    detected --pdf-paper through --backdrop-filter (the live --canvas-filter,
-   gated on data-paper-ready) and --canvas-blend — the same compositor pass
-   the raw canvases are under, resolving per frame from variables the slider
-   already repaints, with zero engine work per tick. The handover back is
-   same-value and pop-free: rebakeTheme republishes --pdf-paper-baked before
-   the class drops, and the cover's compositor F and the baker's integer F
-   are the same pipeline over the same inputs.
-
-   The fractional-edge rim the flat paper killed can, in principle, show for
-   the length of a drag — the host is un-blended again while the raws are
-   out (styles/page_host.css). That window already previews pages against
-   the true blend base by necessity; the settled state, which is what a
-   reader actually looks at, keeps the seamless flat paper. */
+   gated on data-paper-ready) and --canvas-blend. Pure compositor work per
+   frame; no engine call per tick. The handover back is pop-free: rebakeTheme
+   republishes --pdf-paper-baked before the class drops. */
 html.appearance-scrubbing .reader-bg.blend {
   background-color: var(--color-paper);
 }
@@ -260,15 +190,10 @@ html.appearance-scrubbing .reader-bg.blend::after {
   mix-blend-mode: var(--canvas-blend, multiply);
 }
 
-/* TEXT/MD paginated modes (single, two-page): show the same paper as the
-   scroll modes. The scroller carries the `bg-surface` utility for PDF
-   (the gutter around pages is the chrome surface), but for reflowable
-   formats that opaque chrome layer hides .reader-bg's --tx-paper and
-   makes single/two-page read as a different theme. Drop it so the view
-   mode's backdrop shows through. Scoped to data-format, so PDF never
-   matches and keeps its surface gutter. */
+/* Reflowable single/two-page modes: drop the scroller's opaque bg-surface
+   utility (correct for PDF gutters) so the --tx-paper backdrop shows
+   through. Scoped to data-format; PDF keeps its surface gutter. */
 :root[data-format="text"] .paginated-scroller,
 :root[data-format="markdown"] .paginated-scroller {
   background-color: transparent;
 }
-

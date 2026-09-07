@@ -1,40 +1,31 @@
 //! The paper-session state machine, wired to the engine's eyes — named
-//! `backdrop` for what it drives. The pure colour math it leans on is the
-//! `pdf-paper` crate (the brain); this module is its live half, and the two
-//! no longer share a name one namespace apart.
+//! `backdrop` for what it drives. The pure colour math lives in the
+//! `pdf-paper` crate (the brain); this module is its live half.
 //!
 //! Every colour decision — what a page's paper is, what the backdrop should
-//! show right now — lives in the pure crate and in this state machine. The
-//! TS engine keeps only the pixel plumbing: it stashes a raw frame per live
+//! show right now — lives in the pure crate and in this state machine. The TS
+//! engine keeps only the pixel plumbing: it stashes a raw frame per live
 //! render, renders offscreen samples on request, and paints whatever
 //! `--pdf-paper` it is told to.
 //!
 //! The backdrop is a colour PER PAGE, blended along the reader's scroll
-//! position so it arrives at the next page's paper at the same moment the
-//! page itself does. Nothing is persisted: the palette is rebuilt from the
-//! frames the reader paints (and a small look-ahead) every time a book
-//! opens, which is cheap — one ≤96px frame per page.
+//! position so it arrives at the next page's paper at the same moment the page
+//! itself does. Nothing is persisted: the palette is rebuilt from the frames
+//! the reader paints (and a small look-ahead) every time a book opens — cheap,
+//! one <=96px frame per page.
 //!
-//! The lifecycle, in one breath:
+//! The lifecycle, in one breath: [`configure`] (blend on/off, detection area —
+//! an area change invalidates everything, since a histogram fed through one
+//! area says nothing about the other), [`document_open`] (reset; publish
+//! nothing until a colour is known), [`live_frame`] (drain each successful
+//! render's stashed frame into the per-page palette), [`document_close`] (drop
+//! the backdrop back to the theme paper), [`position`] (per scroll tick: the
+//! viewport's visible-paint-weighted mean page index, where the palette
+//! interpolates so the backdrop meets the pages where they are).
 //!
-//! * [`configure`] — the reader's settings (blend on/off, detection area).
-//!   A detection-area change invalidates everything, because a histogram fed
-//!   through one area says nothing about the other.
-//! * [`document_open`] — a fresh book: reset, publish nothing until a colour
-//!   is known.
-//! * [`live_frame`] — after every successful render, the one stashed raw
-//!   frame feeds the per-page palette (and the interim colour that holds the
-//!   backdrop until the palette can answer).
-//! * [`document_close`] — forget the book and drop the backdrop back to the
-//!   theme paper.
-//! * [`position`] — per scroll tick: the viewport's visible-paint-weighted
-//!   mean page index. The palette interpolates along its ladder at exactly
-//!   that point, so the backdrop meets the pages where they are — no seam at
-//!   the dominant-page handover.
-//!
-//! Every spawned task carries the session's generation token and re-checks
-//! it after each `await`, so a sample started for one book can never land
-//! in the next.
+//! Every spawned task carries the session's generation token and re-checks it
+//! after each `await`, so a sample started for one book can never land in the
+//! next.
 
 use std::cell::RefCell;
 

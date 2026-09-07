@@ -1,10 +1,7 @@
-// =====================================================================
-// pdfEngine.ts — window.PDFReader facade.
-//
-// Implementation lives in public/engine/* (loader, renderer, thumbnails,
-// search, theme). This file only wires the public API and document teardown.
-// Compiled to public/pdfEngine.js; the browser loads it as an ES module.
-// =====================================================================
+// window.PDFReader facade. The implementation lives in public/engine/*
+// (loader, renderer, thumbnails, search, theme); this file wires the public
+// API and document teardown. Compiled to public/pdfEngine.js and loaded by
+// the browser as an ES module.
 
 export {};
 
@@ -115,10 +112,10 @@ async function destroy(): Promise<void> {
 
 (globalThis as unknown as { __pdfDestroy?: () => Promise<void> }).__pdfDestroy = destroy;
 
-// Rust invokes these APIs fire-and-forget. Keep one promise chain so a pause
-// in a tint drag cannot interleave `scrub off → bake` with a new `scrub on`.
-// A failed mutation is reported but deliberately swallowed so it never poisons
-// the queue and blocks every later appearance change.
+// Rust invokes these fire-and-forget, so all mutations ride one promise
+// chain: a pause in a tint drag cannot interleave `scrub off -> bake` with a
+// new `scrub on`. A failed mutation is reported but swallowed so it never
+// poisons the queue and blocks every later appearance change.
 let themeChain: Promise<void> = Promise.resolve();
 
 function enqueueTheme(work: () => Promise<void>): Promise<void> {

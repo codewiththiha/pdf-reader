@@ -17,10 +17,10 @@ export async function run(): Promise<void> {
   const t = await PDFReader.renderThumb("thumb-1", 1, 0.25);
   if (!t.ok) throw new Error("thumb failed: " + JSON.stringify(t));
   console.log("thumb ok:", t.width, t.height);
-  // A cache hit is asked about the way the app asks about it: the synchronous
-  // probe a cell reads while it is still being built. The render promise used
-  // to carry a `cached` flag instead, which arrived after the cell's first
-  // frame was composited and so could never do the job its doc claimed.
+  // A cache hit is asked about the way the app asks: the synchronous probe a
+  // cell reads while it is still being built. The render promise's old
+  // `cached` flag arrived after the cell's first frame was composited and so
+  // could never do the job its doc claimed.
   if (!PDFReader.hasThumb(1, 0.25)) throw new Error("thumb not cached after render");
   const t2 = await PDFReader.renderThumb("thumb-1", 1, 0.25);
   if (!t2.ok) throw new Error("thumb cache hit failed: " + JSON.stringify(t2));

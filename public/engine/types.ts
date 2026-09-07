@@ -129,8 +129,8 @@ export type OpenResult = Result<{
   title: string | null;
   author: string | null;
   /** Deliberately empty: the chapter tree resolves via `resolveOutline`
-   * after the reader is up (flattening it blocks on one worker round trip
-   * per destination, and must not hold `open` hostage). */
+   * after the reader is up — flattening it would hold `open` hostage to a
+   * worker round trip per destination. */
   outline: { title: string; page: number; depth: number }[];
   page1Size: { width: number; height: number };
   pageHeights: number[];

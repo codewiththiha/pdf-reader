@@ -26,9 +26,9 @@ export async function rebakeTheme(force = false): Promise<void> {
   if (session.themeScrubActive) return;
   const pipeline = readPipeline();
   // The backdrop's pre-themed paper rides on the same filter + paper this
-  // rebake burns into the rasters, so it refreshes alongside them. When the
-  // fingerprint below is unchanged it rewrites the identical value; the
-  // detected paper itself publishes from setPaper the moment it moves.
+  // rebake burns into the rasters, so it refreshes alongside them. An
+  // unchanged fingerprint rewrites the identical value; the detected paper
+  // itself publishes from setPaper the moment it moves.
   publishBakedPaper();
   const fingerprint = pipelineFingerprint();
   if (!force && fingerprint === lastBakedFingerprint) {
@@ -69,13 +69,11 @@ export async function rebakeTheme(force = false): Promise<void> {
  * carry exactly the theme state of the mode the document is in NOW —
  * `canvas-raw` (raw pixels under the live CSS filter + blend) when the live
  * pipeline or a scrub is in force, baked pixels without the tag otherwise.
- *
  * Page renders are NOT serialized with the theme queue, so a render landing
  * mid-transition can settle one page on the other side of the tag from its
- * sibling — a spread's left half themed, right half not — or bake against a
- * palette generation the repaint already invalidated. This sweep is the
- * generation guard's second half: idempotent, and cheap when nothing drifted
- * (a class check per live page). Canvases that lost their unbaked raw are
+ * sibling (a spread half-themed) or bake against an invalidated palette
+ * generation. This sweep is the generation guard's second half: idempotent,
+ * and cheap when nothing drifted. Canvases that lost their unbaked raw are
  * re-rendered rather than baked in place, which would double-filter.
  */
 async function settleCanvasTheme(): Promise<void> {
@@ -117,11 +115,11 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
 
   if (on) {
     // The global class delimits the scrub window for the CSS that keys off
-    // it — the texture stacking order, and the page hosts' / backdrop's
-    // return to the live blend base (styles/page_host.css, the SCRUB WINDOW
-    // block in styles/components/shell.css). Canvas theming itself is
-    // attached to each raw raster by showRaw/showBaked, so a baked canvas
-    // remains unfiltered while another canvas changes asynchronously.
+    // it: the texture stacking order, and the page hosts' / backdrop's return
+    // to the live blend base (styles/page_host.css, styles/components/
+    // shell.css). Canvas theming itself rides each raw raster via
+    // showRaw/showBaked, so a baked canvas remains unfiltered while another
+    // changes asynchronously.
     document.documentElement.classList.add("appearance-scrubbing");
     session.setThemeScrubActive(true);
     for (const st of session.stateByCanvasId.values()) {
@@ -155,10 +153,10 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
 }
 
 /**
- * Switch the whole theming pipeline between live (compositor filter + blend on
- * the raw rasters) and baked (the filter burned into every raster). Called
- * only through pdfEngine's serialized theme queue, so the raster swap below
- * can never interleave with a refresh or a scrub.
+ * Switch the theming pipeline between live (compositor filter + blend on the
+ * raw rasters) and baked (the filter burned into every raster). Called only
+ * through pdfEngine's serialized theme queue, so the raster swap can never
+ * interleave with a refresh or a scrub.
  */
 export async function setPipelineModeInternal(live: boolean): Promise<void> {
   if (isLivePipeline() === live) return;

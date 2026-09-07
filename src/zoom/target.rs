@@ -1,15 +1,15 @@
-//! Target resolution: turning a `ZoomCommand` plus the current context
-//! into one concrete scale. Manual steps, fit modes and window constraints
-//! all resolve here so they cannot drift apart.
+//! Target resolution: turning a `ZoomCommand` plus the current context into
+//! one concrete scale. Manual steps, fit modes and window constraints all
+//! resolve here so they cannot drift apart.
 //!
 //! Resolution also records the intent: a manual zoom writes `desired` and
 //! clears the fit mode (a fit ceiling must never fight a gesture), a fit
 //! refresh writes `desired` to the resolved fit, and a window constraint
-//! deliberately leaves `desired` untouched — the reader's chosen zoom is
-//! the ceiling, so a manual zoom can go as far as the clamp allows and is
-//! never shrunk back to the fit width. A container follow answers with
-//! whichever of those two owns the scale right now, so the same numbers
-//! govern a slide, a drag and a pause after one.
+//! deliberately leaves `desired` untouched — the reader's chosen zoom is the
+//! ceiling, so a manual zoom goes as far as the clamp allows and is never
+//! shrunk back to fit width. A container follow answers with whichever of
+//! those two owns the scale right now, so the same numbers govern a slide, a
+//! drag and a pause after one.
 
 use leptos::prelude::*;
 
@@ -20,9 +20,8 @@ use crate::state::reader::{ReaderState, ZoomCommand};
 
 use super::config::{SETTLED_EPSILON, ZoomProfile, profile_for};
 
-/// Resolve a command to the scale it wants, or `None` when it must stand
-/// down (nothing to re-resolve, an unmeasured container, an unmeasured
-/// document).
+/// Resolve a command to the scale it wants, or `None` when it must stand down
+/// (nothing to re-resolve, an unmeasured container, an unmeasured document).
 ///
 /// `in_flight` is the target of a transition already running; manual steps
 /// chain from it so a fast `+ +` advances two presets rather than resolving
@@ -33,19 +32,18 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
     let profile = profile_for(state.viewer.mode.get_untracked());
     match cmd {
         ZoomCommand::Step(dir) => {
-            // Step from the in-flight target while a tween runs, else from
-            // the settled scale. Mid-animation values are deliberately
-            // avoided: nearest_zoom would usually round to the preset the
-            // tween is already heading towards and swallow the press.
+            // Step from the in-flight target while a tween runs, else from the
+            // settled scale. Mid-animation values are deliberately avoided:
+            // nearest_zoom would round to the preset the tween is already
+            // heading towards and swallow the press.
             let base = in_flight.unwrap_or_else(|| zoom.visual_scale());
             let target = profile.clamp(nearest_zoom(base, dir));
             // At the end of the ladder `nearest_zoom` answers with the same
-            // preset it was given, so there is nowhere to go. Bail BEFORE
-            // recording any intent: writing `desired` and clearing the fit
-            // mode here would silently drop the reader out of Fit Width just
-            // because they leaned on a zoom button that had nothing left to
-            // do. The coordinator bails on an unchanged target too; this is
-            // what keeps the state untouched.
+            // preset, so there is nowhere to go. Bail BEFORE recording intent:
+            // writing `desired` and clearing the fit mode here would drop the
+            // reader out of Fit Width just because they leaned on a zoom
+            // button with nothing left to do. The coordinator bails on an
+            // unchanged target too; this keeps the state untouched.
             if (target - base).abs() < SETTLED_EPSILON {
                 return None;
             }
@@ -56,12 +54,11 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
         ZoomCommand::Refit => fit_owned_target(state, &profile),
         ZoomCommand::Constrain => ceiling_target(state, &profile),
         // The space around the page moved. Both watchers' cases are the same
-        // question — what does the current width deserve? — and exactly one of
-        // them owns the answer: a fit mode does while it is active, the
-        // reader's own chosen zoom otherwise. Dispatching here instead of letting
-        // the watcher choose keeps the two from disagreeing about who is in
-        // charge, which is how a slide used to end with the page at a scale
-        // neither of them had asked for.
+        // question — what does the current width deserve? — and exactly one
+        // owns the answer: an active fit mode, else the reader's chosen zoom.
+        // Dispatching here instead of letting the watcher choose keeps the two
+        // from disagreeing about who is in charge, which is how a slide used
+        // to end at a scale neither had asked for.
         ZoomCommand::Follow => {
             fit_owned_target(state, &profile).or_else(|| ceiling_target(state, &profile))
         }
@@ -69,11 +66,9 @@ pub(crate) fn resolve(state: &ReaderState, cmd: ZoomCommand, in_flight: Option<f
 }
 
 /// The scale the active fit mode wants, recorded as the reader's own choice.
-///
 /// `None` with no fit mode: a refit of a hand-picked zoom would resolve to the
 /// current scale AND clobber `desired`, resurrecting an old number as the
-/// ceiling. Callers post it only while a fit is active; this is what keeps the
-/// resolver safe on its own terms.
+/// ceiling. Callers post it only while a fit is active.
 fn fit_owned_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
     let fit = state.viewer.fit.get_untracked();
     if fit == FitMode::None {
@@ -89,13 +84,12 @@ fn fit_owned_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
 }
 
 /// The ceiling a hand-picked zoom resolves to: the reader's own `desired`,
-/// clamped. A manual zoom is authoritative rather than capped at the fit width,
-/// so a page the reader zoomed in on stays at that scale (and overflows with a
-/// scroll affordance). `desired` is deliberately left alone, which is what
-/// makes it stable: the same number governs a slide, a drag and the pause after
-/// one, and a container follow resolves to exactly what they chose. Computing
-/// from `desired` — never from the live scale times a container ratio — is also
-/// why a slide does not accumulate rounding and land somewhere the reader never
+/// clamped. A manual zoom is authoritative rather than capped at fit width, so
+/// a zoomed-in page stays at that scale and overflows with a scroll affordance.
+/// `desired` is deliberately left alone, which is what makes it stable: the
+/// same number governs a slide, a drag and the pause after one. Computing from
+/// `desired` — never from the live scale times a container ratio — is also why
+/// a slide does not accumulate rounding and land somewhere the reader never
 /// asked for.
 fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
     if state.viewer.fit.get_untracked() != FitMode::None {
@@ -103,12 +97,11 @@ fn ceiling_target(state: &ReaderState, profile: &ZoomProfile) -> Option<f64> {
     }
     // A hand-picked zoom is authoritative up to the profile's clamp; the old
     // shrink-to-fit ceiling (`min(desired, fit_width)`) quietly locked manual
-    // zoom at the page's fit-width scale, so a reader could never look at a
-    // page up close. Free zoom lets a too-wide page overflow and scroll — a
-    // deliberate affordance — instead of snapping back to the fit width. The
-    // reader's own `desired` is the ceiling, so the same number governs a
-    // slide, a drag and the pause after one, and a container follow resolves
-    // to exactly what they chose rather than a size the app picked.
+    // zoom at fit width, so a reader could never look at a page up close. Free
+    // zoom lets a too-wide page overflow and scroll — a deliberate affordance —
+    // instead of snapping back. The reader's own `desired` is the ceiling, so
+    // a follow resolves to exactly what they chose rather than a size the app
+    // picked.
     Some(profile.clamp(state.viewer.zoom.desired.get_untracked()))
 }
 
@@ -153,12 +146,12 @@ impl FitDims {
             (pw, ph),
         )?;
         // A reflowable page's own box already carries the column-width dial
-        // (the card grows with the column, and its published size says so),
-        // so its fits measure against the plain container. A PDF's page is
-        // the document's own and cannot grow — there the dial adjusts the
-        // fit BUDGET: fit-width resolves against the dialled share of the
-        // window, so a wider dial reads as a wider page on screen. Manual
-        // zoom never passes through here, and stays uncapped as ever.
+        // (the card grows with the column and its published size says so), so
+        // its fits measure against the plain container. A PDF's page is the
+        // document's own and cannot grow — there the dial adjusts the fit
+        // BUDGET: fit-width resolves against the dialled share of the window,
+        // so a wider dial reads as a wider page. Manual zoom never passes
+        // through here and stays uncapped.
         if !state.reflowable_untracked() {
             dims.cw_eff = fit_budget(dims.cw_eff, state.viewer.column_width_pct.get_untracked());
         }
@@ -169,9 +162,9 @@ impl FitDims {
     /// the ONE definition of what a fit measures against, shared by the live
     /// fit and the open flow's seed scale so the first frame and the first
     /// refit agree. The reader margin comes off the width, every mode keeps
-    /// the full height (the title bar is an overlay, not a band) and a
-    /// spread doubles the page width. `None` when either raw container
-    /// dimension is unmeasured.
+    /// the full height (the title bar is an overlay, not a band), and a spread
+    /// doubles the page width. `None` when either container dimension is
+    /// unmeasured.
     pub(crate) fn from_geometry(
         mode: ViewMode,
         (cw, ch): (f64, f64),
@@ -196,10 +189,9 @@ impl FitDims {
     }
 
     /// The scale a fit mode wants. The horizontal strip has one page per
-    /// virtual item: Fit Width therefore uses that page's width, while Fit
-    /// Page keeps the height-fit behaviour that makes the full page visible.
-    /// `None` is included for completeness even though callers only ask this
-    /// method to resolve an active fit.
+    /// virtual item: Fit Width uses that page's width, while Fit Page keeps
+    /// the height-fit behaviour that shows the full page. `None` is included
+    /// for completeness even though callers only resolve an active fit.
     pub fn fit(&self, fit: FitMode, current: f64) -> f64 {
         if self.horizontal && fit == FitMode::Page {
             return clamp_scale(self.ch_eff / self.ph_eff.max(1.0));
@@ -288,12 +280,12 @@ mod tests {
     #[test]
     fn a_manual_zoom_is_never_capped_at_fit_width() {
         // The ceiling a container follow applies to a hand-picked zoom is the
-        // reader's own choice, clamped into the range — not the fit width. A
-        // page fit to an 800px container at 612px wide sits at ~1.31, so
-        // zooming to 2.0 (well past that "fit width") must survive a follow
-        // and a constrain unchanged, so a reader can inspect a page up close.
-        // `ceiling_target` is the only place a follow/constrain with no active
-        // fit resolves, and it does `profile.clamp(desired)`.
+        // reader's own choice, clamped — not the fit width. A page fit to an
+        // 800px container at 612px wide sits at ~1.31, so zooming to 2.0 must
+        // survive a follow and a constrain unchanged: a reader can inspect a
+        // page up close. `ceiling_target` is the only place a follow/constrain
+        // with no active fit resolves, and it does
+        // `profile.clamp(desired)`.
         let profile = profile_for(ViewMode::ScrollVertical);
         assert_eq!(profile.clamp(2.0), 2.0);
         assert_eq!(profile.clamp(5.0), MAX_SCALE);

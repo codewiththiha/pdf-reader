@@ -38,25 +38,21 @@ export function paperInfo(pipeline: PipelineCache): PaperInfo {
 }
 
 // --- Baked backdrop paper ---------------------------------------------------
+// Re-deriving the document paper in CSS (filter + blend over --pdf-paper) is
+// only valid while the canvases are RAW: the compositor performs the same
+// operation on the same inputs, so page and gutter composite identically.
+// Once the baker has burned the pipeline into every raster, a page shows an
+// already-themed paper and the CSS pass would apply the pipeline TWICE.
+// multiply (light) and screen (dark) are identity on the paper, which is why
+// the double pass hid there; dim's soft-light is not, and re-applying it
+// moved the gutter away from the page.
 //
-// The blend backdrop re-derives the document paper by running the canvas
-// filter + blend over --pdf-paper. That re-derivation is only valid while
-// the canvases are RAW: under the live pipeline (and during a scrub) the
-// compositor performs the exact same operation on the exact same inputs, so
-// page and gutter composite identically. Once the baker has burned the
-// pipeline into every raster, though, a page shows an already-themed opaque
-// paper — and re-running the filter + blend in CSS applies the pipeline
-// TWICE. multiply (light) and screen (dark) are identity on the paper, so
-// the double pass hid there; dim's soft-light is not identity, and
-// re-applying it moved the gutter away from the page.
-//
-// The fix publishes the themed paper itself: the detected document paper run
-// through the SAME filter kernel + blend composite the baker uses, exposed
-// as --pdf-paper-baked for the gated backdrop rule in
-// styles/components/shell.css. Both stages reuse the baker's own
-// implementations (filterKernel + a canvas globalCompositeOperation blend),
-// so the backdrop and the baked rasters agree by construction, not by a
-// second copy of the maths.
+// So the engine publishes the themed paper itself: the detected paper run
+// through the SAME filter kernel + blend composite the baker uses, exposed as
+// --pdf-paper-baked for the backdrop rule in styles/components/shell.css.
+// Both stages reuse the baker's own implementations (filterKernel + a canvas
+// globalCompositeOperation blend), so backdrop and baked rasters agree by
+// construction, not by a second copy of the maths.
 
 /** Parse the `#rrggbb` the paper session publishes; null on anything else. */
 function parsePaperHex(hex: string): [number, number, number] | null {
@@ -121,19 +117,17 @@ function bakedPaperHex(pipeline: PipelineCache): string | null {
 
 /** Keep `--pdf-paper-baked` honest for the pipeline the reader is in NOW:
  *  the pre-themed paper when the baked pipeline owns the canvases, nothing
- *  when the live pipeline re-derives the paper in the compositor. Called at
- *  every moment one of the three inputs moves — the detected paper itself
- *  (`setPaper`), the theme (`rebakeTheme`), and the pipeline switch
- *  (`setPipelineModeInternal`) — so the settled backdrop can never lag the
- *  pages. A tint scrub is the one window whose ticks never reach here: the
- *  drag repaints the variables per frame, and per-tick engine work is
- *  exactly what the scrub scheduler refuses — so the backdrop tracks the
- *  drag from CSS alone (the SCRUB WINDOW cover in
- *  styles/components/shell.css), and the scrub exit republishes this before
- *  the class drops, making the handover same-value. Live mode removes the
- *  property: only the blend backdrop reads it, and blend forces the baked
- *  pipeline — but a stale themed value must not outlive the mode that
- *  justified it. */
+ *  when the live compositor re-derives the paper. Called whenever one of the
+ *  three inputs moves — the detected paper (`setPaper`), the theme
+ *  (`rebakeTheme`), the pipeline switch (`setPipelineModeInternal`) — so the
+ *  settled backdrop never lags the pages. A tint scrub is the one window
+ *  whose ticks never reach here: per-tick engine work is exactly what the
+ *  scrub scheduler refuses, so the backdrop tracks the drag from CSS alone
+ *  (the SCRUB WINDOW cover in styles/components/shell.css) and the scrub exit
+ *  republishes this before the class drops — a same-value handover. Live mode
+ *  removes the property: only the blend backdrop reads it and blend forces
+ *  the baked pipeline, but a stale themed value must not outlive the mode
+ *  that justified it. */
 export function publishBakedPaper(): void {
   let el: HTMLElement;
   try {
