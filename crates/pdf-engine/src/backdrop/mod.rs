@@ -135,6 +135,11 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: imp
 pub fn configure(blend_on: bool, mut config: PaperConfig) {
     config.sanitize();
     with(|s| {
+        if s.config.edge_width != config.edge_width {
+            let edge_slot = slot(PaperArea::Edges);
+            s.palettes[edge_slot].clear();
+            s.interim[edge_slot] = None;
+        }
         s.blend_on = blend_on;
         s.config = config;
     });
@@ -493,6 +498,36 @@ mod tests {
             },
         );
         assert_eq!(published().as_deref(), Some("#800000"));
+    }
+
+    #[test]
+    fn changing_edge_width_invalidates_only_the_edge_cache() {
+        reset_session(
+            PaperConfig {
+                area: PaperArea::Edges,
+                ..PaperConfig::default()
+            },
+            true,
+        );
+        document_open("/fake/book.pdf", 3);
+        feed_frame(&split(1));
+
+        let mut config = with(|s| s.config);
+        config.edge_width += 1;
+        configure(true, config);
+
+        with(|s| {
+            assert!(s.palettes[slot(PaperArea::WholePage)].contains(1));
+            assert!(s.interim[slot(PaperArea::WholePage)].is_some());
+            assert!(s.palettes[slot(PaperArea::Edges)].is_empty());
+            assert!(s.interim[slot(PaperArea::Edges)].is_none());
+            assert!(resolve(s).is_none());
+
+            // `configure` already queued these samples. Clear that bookkeeping
+            // to inspect the pure look-ahead decision against the new cache.
+            s.sampling.clear();
+            assert_eq!(lookahead_wants(s), vec![1, 2, 3]);
+        });
     }
 
     #[test]

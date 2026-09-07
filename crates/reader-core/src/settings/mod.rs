@@ -55,9 +55,8 @@ pub struct Settings {
     /// The live look. Edited directly by the appearance controls.
     pub appearance: Appearance,
     /// Id of the preset currently selected, if the live look still matches
-    /// it. Cleared as soon as the user nudges any slider, which is what lets
-    /// the menu show "Custom" honestly instead of claiming a modified preset
-    /// is active.
+    /// it. A manual edit selects another preset when the resulting appearance
+    /// matches it, and clears the selection only when no preset matches.
     pub active_preset: Option<String>,
     /// User-saved presets (built-ins are code, not storage).
     pub user_presets: Vec<Preset>,

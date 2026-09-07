@@ -236,7 +236,14 @@ export async function renderPageInternal(
     // Keep the unbaked `target` on the page. Slider scrub restores it and
     // lets live CSS filter/blend the raw pixels; dropping it made Dark
     // invert twice (flash to light) and Dim apply twice (go darker).
+    const bakeGen = pipeline.gen;
     const baked = await bakeRaster(target, pipeline);
+    if (readPipeline().gen !== bakeGen) {
+      if (baked !== target) releasePooledCanvas(baked);
+      if (target !== st.canvas) releaseCanvas(target);
+      try { page.cleanup(); } catch (_) { /* ignore */ }
+      return renderPageInternal(canvasId, scale, renderText);
+    }
     if (baked !== st.canvas) {
       showBaked(st.canvas, baked, "canvas-raw");
       if (baked !== target) releasePooledCanvas(baked);
