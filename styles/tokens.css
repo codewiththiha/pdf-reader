@@ -18,15 +18,6 @@
   --canvas-filter: none;
   --canvas-blend: multiply;
   --noise-opacity: 0;
-  /* Gate for the blend backdrop's scrub-window cover: --backdrop-filter
-     resolves to the live --canvas-filter ONLY once the engine has sampled
-     the document's paper into --pdf-paper (the flag rises next to that
-     write and drops when the session goes blank — crates/pdf-engine's
-     backdrop module). Before it, filtering would run the theme's invert
-     over the dark UI paper token and paint a white field. The settled
-     flat-paper backdrop needs no gate; the cover in components/shell.css
-     is this variable's one consumer. Undefined by default, so the cover's
-     var() fallback reads `none`. */
 
   /* Z-index scale — the one layering decision for floating UI, embedded as
      z-[var(--z-…)] utilities via the constants in
@@ -54,9 +45,6 @@
   --match-current: #f59e0b;
 }
 
-:root[data-paper-ready="true"] {
-  --backdrop-filter: var(--canvas-filter);
-}
 /* Lifted and warmed for the dark canvases, where screen washes a mid amber
    toward the paper colour. */
 :root.dark {

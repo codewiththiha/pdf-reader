@@ -161,36 +161,20 @@ body {
    page's ::before overhangs and paints the gutter (textures.css, BLEND
    BLEED), so page and gutter stay phase-locked by construction. No
    transitions anywhere in this block — a tint scrub repaints it in
-   lockstep with the canvases. */
+   lockstep with the canvases, per tick, through scrub.ts's republish. */
 .reader-bg.blend {
   background-color: var(--pdf-paper-baked, var(--color-paper));
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 
-/* SCRUB WINDOW — a tint drag exposes raw rasters that re-colour per frame
-   under the live CSS filter + blend, but --pdf-paper-baked only republishes
-   at the scrub exit (one bake per drag), which froze the gutter at the last
-   settled colour for the length of the drag. So while scrub.ts keeps
-   html.appearance-scrubbing up, the backdrop re-derives its paper in real
-   time — the compositor's own pass: base back to the un-blended
-   --color-paper, plus the old cover shape —
-   detected --pdf-paper through --backdrop-filter (the live --canvas-filter,
-   gated on data-paper-ready) and --canvas-blend. Pure compositor work per
-   frame; no engine call per tick. The handover back is pop-free: rebakeTheme
-   republishes --pdf-paper-baked before the class drops. */
-html.appearance-scrubbing .reader-bg.blend {
-  background-color: var(--color-paper);
-}
-html.appearance-scrubbing .reader-bg.blend::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1; /* above the base it blends against, below texture + pages */
-  pointer-events: none;
-  background-color: var(--pdf-paper, var(--color-paper));
-  filter: var(--backdrop-filter, none);
-  mix-blend-mode: var(--canvas-blend, multiply);
-}
+/* SCRUB WINDOW — a tint drag repaints the root tokens per frame and the
+   rasters composite live under the CSS filter + blend. The backdrop base
+   stays on --pdf-paper-baked through the window: scrub.ts republishes it
+   per tick (one 1px composite, no raster work), so the flat-paper contract
+   with the page hosts holds mid-drag and a fractional page edge keeps
+   mixing F with F — no seam for the length of the drag. The page hosts'
+   half of the window (the raw canvas' un-themed blend base) lives in
+   styles/page_host.css. */
 
 /* Reflowable single/two-page modes: drop the scroller's opaque bg-surface
    utility (correct for PDF gutters) so the --tx-paper backdrop shows

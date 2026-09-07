@@ -117,33 +117,6 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: imp
     }
 }
 
-/// The root attribute behind the blend backdrop's filter gate. The canvas
-/// filter — `invert(1)` in dark themes — is only correct over the engine's
-/// SAMPLED paper colour: while `--pdf-paper` still holds nothing, a
-/// backdrop fallback of the UI paper token (dark in dark mode) run through
-/// the filter paints a full-screen white field. So the attribute rises
-/// exactly when a colour publishes, and drops whenever the session goes
-/// deliberately blank. The gate lives in `styles/tokens.css`; the settled
-/// backdrop reads `--pdf-paper-baked` and needs no gate, but the cover that
-/// tracks a tint scrub live does (styles/components/shell.css), so both
-/// halves stay published as the session's paper state.
-fn set_paper_ready(on: bool) {
-    if !cfg!(target_arch = "wasm32") {
-        return;
-    }
-    let Some(root) = web_sys::window()
-        .and_then(|window| window.document())
-        .and_then(|document| document.document_element())
-    else {
-        return;
-    };
-    if on {
-        let _ = root.set_attribute("data-paper-ready", "true");
-    } else {
-        let _ = root.remove_attribute("data-paper-ready");
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -203,7 +176,6 @@ pub fn document_open(path: &str, num_pages: u32) {
         s.sampling.clear();
     });
     api::set_paper(None); // the previous book's colour must not linger
-    set_paper_ready(false); // ...and neither may its paper-ready gate
 }
 
 /// The document closed (or the app is tearing down): forget everything and
@@ -217,7 +189,6 @@ pub fn document_close() {
         };
     });
     api::set_paper(None); // the shelf shows the theme paper
-    set_paper_ready(false);
 }
 
 /// A live render of `canvas_id` just completed: drain its stashed raw frame
@@ -330,12 +301,10 @@ pub(super) fn publish() {
     match outcome {
         (Some(hex), _) => {
             api::set_paper(Some(hex.as_str()));
-            set_paper_ready(true);
         }
         // Deliberate blank: no book / blend off — clear the backdrop.
         (None, Some(_)) => {
             api::set_paper(None);
-            set_paper_ready(false);
         }
         _ => {}
     }

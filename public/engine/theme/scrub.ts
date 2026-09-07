@@ -22,6 +22,35 @@ function pipelineFingerprint(): string {
   return `${pipeline.filter}|${pipeline.blend}|${paperInfo(pipeline).color}`;
 }
 
+// The scrub window repaints the root tokens per tick and the rasters
+// composite live, but --pdf-paper-baked is a PUBLISHED value, and the
+// flat-paper contract (styles/components/shell.css, styles/page_host.css)
+// carries it on the backdrop base AND the page hosts: frozen for the length
+// of a drag, the fractional page edge shows the stale base against the live
+// gutter as a seam. Republish it per tick while the drag owns the tokens —
+// one 1px filter + blend composite, no raster work. The observer re-triggers
+// on its own write; the fingerprint (the composite's inputs only) dedupes
+// that.
+let rootStyleWatcher: MutationObserver | null = null;
+
+function watchRootStyleForPaper(): void {
+  // Environments without a compositor (the node smoke harness) have no
+  // MutationObserver and no seam to prevent: nothing to watch.
+  if (typeof MutationObserver === "undefined") return;
+  let last = pipelineFingerprint();
+  rootStyleWatcher = new MutationObserver(() => {
+    if (!session.themeScrubActive) return;
+    const fingerprint = pipelineFingerprint();
+    if (fingerprint === last) return;
+    last = fingerprint;
+    publishBakedPaper();
+  });
+  rootStyleWatcher.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["style"],
+  });
+}
+
 export async function rebakeTheme(force = false): Promise<void> {
   if (session.themeScrubActive) return;
   const pipeline = readPipeline();
@@ -119,6 +148,7 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     // changes asynchronously.
     document.documentElement.classList.add("appearance-scrubbing");
     session.setThemeScrubActive(true);
+    watchRootStyleForPaper();
     for (const st of session.stateByCanvasId.values()) {
       if (st.dead || !st.canvas || !st.rawCanvas || st.rawCanvas === st.canvas) continue;
       showRaw(st.canvas, st.rawCanvas, "canvas-raw");
@@ -140,6 +170,8 @@ export async function setScrubModeInternal(on: boolean): Promise<void> {
     (st) => !st.dead && !!st.canvas && (!st.rawCanvas || st.rawCanvas === st.canvas),
   );
   session.setThemeScrubActive(false);
+  rootStyleWatcher?.disconnect();
+  rootStyleWatcher = null;
   await rebakeTheme(true);
   if (needsRerender) await rerenderLivePages();
   // `needsRerender` was snapshotted before the flag cleared; a render landing
