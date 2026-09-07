@@ -114,14 +114,16 @@ pub(super) fn spawn_engine<F: std::future::Future<Output = ()> + 'static>(f: imp
     }
 }
 
-/// The root attribute the blend backdrop's filter gate reads. The canvas
-/// filter — `invert(1)` in dark themes — is only correct over the engine's
-/// SAMPLED paper colour: while `--pdf-paper` still holds nothing, the
-/// backdrop's fallback is the UI paper token (dark in dark mode), and
-/// running the filter over it paints a full-screen white field. So the
-/// attribute rises exactly when a colour publishes, and drops whenever the
-/// session goes deliberately blank — the gate itself lives in
-/// `styles/tokens.css`, read by `.reader-bg.blend::after`.
+/// The root attribute behind the blend backdrop's retired filter gate. The
+/// canvas filter — `invert(1)` in dark themes — was only correct over the
+/// engine's SAMPLED paper colour: while `--pdf-paper` still holds nothing,
+/// a backdrop fallback of the UI paper token (dark in dark mode) run
+/// through the filter paints a full-screen white field. So the attribute
+/// rises exactly when a colour publishes, and drops whenever the session
+/// goes deliberately blank. The gate itself still lives in
+/// `styles/tokens.css`, but the flat-paper backdrop that replaced the cover
+/// layer (styles/components/shell.css) reads `--pdf-paper-baked` and needs
+/// no gate; both halves stay published as the session's paper state.
 fn set_paper_ready(on: bool) {
     if !cfg!(target_arch = "wasm32") {
         return;

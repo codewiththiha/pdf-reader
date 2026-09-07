@@ -158,15 +158,17 @@ body {
 }
 
 .reader-bg {
-  /* Anchors the ::after blend paper layer below to THIS element; without a
-     positioning context the absolutely positioned pseudo resolves against
-     whichever ancestor happens to be positioned. The z-index makes us a
-     stacking context, so the z-index:-1 blend layer stays contained here:
-     above our own background, below the pages (whose own texture layers now
-     paint the gutter). */
+  /* The positioning context and stacking context the blend paper's retired
+     cover layer used to need; both stay load-bearing — the reader stacks
+     absolutely positioned chrome inside this element, and the z-index still
+     cages the pages' own stacking contexts (whose texture layers paint the
+     gutter in blend mode). */
   position: relative;
   z-index: 0;
-  background-color: var(--color-paper); /* the blend backdrop for ::after */
+  /* The un-blended app paper: what a raw canvas live-blends against during
+     a baked scrub, and the paper every non-blend mode shows. Blend mode
+     overrides it with the engine's computed colour further down. */
+  background-color: var(--color-paper);
 }
 /* TEXT PAPER — a reflowable document's page IS the whole surface: the
    `.reader-bg` backdrop is the paper (`--tx-paper`) and the `.tx-page`
@@ -180,61 +182,37 @@ body {
 }
 /* BLEND PAPER — the backdrop must equal the CANVAS background, and that is
    the PDF's own paper run through the theme pipeline, not any app colour.
-   The engine publishes the document's most-used raster colour as
-   --pdf-paper; we paint it raw and apply the exact same filter + blend the
-   raw canvases use, over the same app-paper backdrop they blend against.
-   Same inputs, same pipeline ⇒ identical composite at any slider position,
-   same frame. Deliberately NO transition — a tint scrub must repaint it in
-   lockstep with the canvases.
+   The engine publishes the detected paper run through the SAME filter
+   matrix + blend it bakes with as --pdf-paper-baked
+   (public/engine/theme/paper.ts); the backdrop base carries that computed
+   colour directly, with NO cover layer on top of it.
+
+   The cover this replaces — a pseudo-element over the un-blended
+   --color-paper base — could not stay seamless: a page edge landing on a
+   fractional device pixel half-exposes whatever sits under the canvas, and
+   the canvas blends against the HOST base, so the rim pixel mixed half a
+   page with half the un-blended base and read as a 1px hairline on
+   whichever edge was currently fractional. With base and host both F
+   (page_host.css carries the other half of this rule), an edge pixel mixes
+   F with F and the rim vanishes; there is no seam left to have a gap.
+
+   The flat colour is only honest while the baker owns the rasters, so
+   blend mode forces the baked pipeline while a PDF is open (the pipeline
+   effect in src/effects/app/theme.rs) — there is no live re-derivation
+   here left to keep in lockstep with the canvases. A baked scrub exposes
+   raw rasters that live-blend against the host's --color-paper (the
+   .canvas-raw marker and the scrub override in styles/page_host.css); for
+   exactly that window the pages preview against the true blend base while
+   the backdrop holds the last settled F. Deliberately NO transition — a
+   tint scrub must repaint it in lockstep with the canvases.
 
    The backdrop carries NO texture: each page's own ::before overhangs the
-   page box and paints the surrounding gutter (see textures.css, BLEND BLEED),
-   so page and gutter are literally the same layer — same pitch, same phase,
-   at every zoom and scroll — instead of a separate backdrop lattice that
-   could never stay phase-locked to the pages. */
-.reader-bg.blend::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1; /* above our own bg (the blend backdrop), below texture + pages */
-  pointer-events: none;
-  background-color: var(--pdf-paper, var(--color-paper));
-  /* The canvas filter — invert(1) in dark themes — is only correct over
-     the engine's SAMPLED paper colour, so it arrives through a gate:
-     --backdrop-filter is only defined once --pdf-paper is published
-     (data-paper-ready, raised beside the write — see tokens.css and
-     pdf_engine::backdrop). Before that, this layer's fallback is the UI
-     paper token — dark in dark mode — and filtering it would paint a
-     full-screen white field while the first sample is in flight. */
-  filter: var(--backdrop-filter, none);
-  mix-blend-mode: var(--canvas-blend, multiply);
-}
-/* BAKED PIPELINE — the re-application above is only correct while the
-   canvases are RAW (the live pipeline and, below, a scrub). Once the baker
-   has burned the filter + blend into every raster, a page shows an opaque,
-   already-themed paper; the backdrop must then show that same themed paper
-   DIRECTLY instead of running the pipeline a second time. multiply (light)
-   and screen (dark) happen to be identity on the paper, which is why the
-   double pass went unseen there; dim's soft-light is not, and re-applying
-   it moved the gutter away from the page. The engine publishes the
-   detected paper run through the SAME filter matrix + blend it bakes with
-   as --pdf-paper-baked (public/engine/theme/paper.ts); the fallbacks
-   mirror the live rule. The attribute rides on <html> next to the engine
-   switch that flips the pipeline (effects/app/theme.rs). */
-html[data-pipeline="baked"] .reader-bg.blend::after {
-  filter: none;
-  mix-blend-mode: normal;
-  background-color: var(--pdf-paper-baked, var(--pdf-paper, var(--color-paper)));
-}
-/* A slider scrub exposes the raw rasters even in baked mode (the raw
-   markers ride out the drag), so for exactly that long the backdrop
-   rejoins the live pipeline — the same filter + blend the raw canvases
-   are under, over the raw detected paper. scrub.ts raises and drops the
-   class around the raw window. */
-html[data-pipeline="baked"].appearance-scrubbing .reader-bg.blend::after {
-  filter: var(--backdrop-filter, none);
-  mix-blend-mode: var(--canvas-blend, multiply);
-  background-color: var(--pdf-paper, var(--color-paper));
+   page box and paints the surrounding gutter (see textures.css, BLEND
+   BLEED), so page and gutter are literally the same layer — same pitch,
+   same phase, at every zoom and scroll — instead of a separate backdrop
+   lattice that could never stay phase-locked to the pages. */
+.reader-bg.blend {
+  background-color: var(--pdf-paper-baked, var(--color-paper));
 }
 .reader-bg.blend .paginated-scroller { background-color: transparent; }
 

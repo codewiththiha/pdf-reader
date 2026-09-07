@@ -23,13 +23,17 @@
   --canvas-blend: multiply;
   --noise-opacity: 0;
   --app-radius: 8px;
-  /* The blend backdrop runs the canvas filter ONLY once the engine has
-     sampled the document's real paper colour into --pdf-paper — the flag
-     is raised next to that write and dropped when the session goes blank
-     (crates/pdf-engine's backdrop). Before it, filtering would run the
-     theme's invert over the dark UI paper token and paint a white field
-     (see .reader-bg.blend::after in components/shell.css). Undefined by
-     default: the backdrop's var() fallback reads `none`. */
+  /* Retired gate, kept in step with the engine: the blend backdrop's old
+     cover layer ran the canvas filter ONLY once the engine had sampled the
+     document's real paper colour into --pdf-paper — the flag is raised next
+     to that write and dropped when the session goes blank (crates/pdf-engine's
+     backdrop). Before it, filtering would run the theme's invert over the
+     dark UI paper token and paint a white field. The flat-paper backdrop
+     that replaced the cover (see .reader-bg.blend in
+     components/shell.css) reads the pre-themed --pdf-paper-baked instead
+     and needs no gate, so nothing consumes --backdrop-filter today; the
+     engine keeps publishing both halves as the session's paper state.
+     Undefined by default: the old rule's var() fallback read `none`. */
 
   /* Z-index scale — the ONE layering decision for floating UI. Components
      embed these as `z-[var(--z-…)]` utilities (primitives/floating/types.rs

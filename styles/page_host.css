@@ -73,6 +73,28 @@
   z-index: 0;
 }
 
+/* BLEND PAPER FLATNESS — the page-host half of the flat-paper contract in
+   styles/components/shell.css: in blend mode the host carries the SAME
+   computed colour as the backdrop base — --pdf-paper-baked, the detected
+   paper run through the filter matrix + blend the baker burns into every
+   raster, published by public/engine/theme/paper.ts. A page edge that
+   lands on a fractional device pixel half-exposes the host base under the
+   canvas (and a raw canvas live-blends against it), so when the base and
+   the host disagreed the rim pixel showed the un-blended app paper as a
+   1px hairline. With both F, an edge pixel mixes F with F and the rim
+   vanishes. Non-blend modes keep --color-paper: neither selector below
+   matches them. */
+.reader-bg.blend .pdf-page {
+  background-color: var(--pdf-paper-baked, var(--color-paper));
+}
+/* A baked scrub exposes raw rasters that live-blend against their base
+   (the .canvas-raw marker below), and that blend is only correct over the
+   UN-themed base — for exactly the scrub window the host drops back to
+   --color-paper while the backdrop holds the last settled F. */
+html.appearance-scrubbing .reader-bg.blend .pdf-page {
+  background-color: var(--color-paper);
+}
+
 .no-page-shadow .pdf-page {
   box-shadow: none;
 }

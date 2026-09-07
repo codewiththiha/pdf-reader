@@ -225,21 +225,32 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     // narrow effect: no other settings write may trigger it, and the engine
     // is told only when the reader actually flips it. The first run also
     // pushes the persisted choice into an engine that always boots live.
-    let pipeline: Memo<RenderPipeline> = Memo::new(move |_| state.settings.with(|st| st.render_pipeline));
+    let pipeline: Memo<(RenderPipeline, bool)> = Memo::new(move |_| {
+        state.settings.with(|st| (st.render_pipeline, st.layout.blend_mode))
+    });
 
     Effect::new(move || {
-        let p = pipeline.get();
-        raster::set_live_pipeline(p.is_live());
-        // CSS keys the blend backdrop off the same choice: under the live
-        // pipeline the backdrop re-derives the paper with the compositor's
-        // filter + blend, but a baked page already carries the themed
-        // paper, so the backdrop must paint it directly instead of running
-        // the pipeline twice (styles/components/shell.css). The attribute
-        // lands synchronously; the raster swap follows through the engine's
-        // serialized theme queue, and the scrub class keeps the backdrop on
-        // the live treatment for as long as raw pixels are actually shown.
+        let (p, blend_mode) = pipeline.get();
+        // Blend mode flattens every painter of paper onto ONE computed
+        // colour: the backdrop base and the page hosts both carry
+        // --pdf-paper-baked, so a page edge that lands on a fractional
+        // device pixel mixes F with F and the 1px rim the un-blended host
+        // base used to show there vanishes. That flatness is only honest
+        // while the baker owns the rasters — a LIVE canvas blends against
+        // its host's un-blended base, which is exactly the colour that
+        // leaked into the rim — so blend implies baked while a PDF is
+        // open. Reflowable formats paint their own paper and never raise
+        // `.reader-bg.blend` (src/features/reader/page.rs), so the setting
+        // must not cost them the pipeline they chose.
+        let blend = blend_mode && !state.reader.reflowable();
+        let live = p.is_live() && !blend;
+        raster::set_live_pipeline(live);
+        // CSS keys the blend backdrop off the EFFECTIVE choice, not the
+        // persisted one: the attribute lands synchronously, the raster swap
+        // follows through the engine's serialized theme queue, and the scrub
+        // class marks the window a baked scrub exposes raw pixels.
         if let Some(el) = document_element() {
-            let _ = el.set_attribute("data-pipeline", if p.is_live() { "live" } else { "baked" });
+            let _ = el.set_attribute("data-pipeline", if live { "live" } else { "baked" });
         }
     });
 
@@ -271,10 +282,10 @@ pub fn apply_theme(state: AppState, appearance: AppearanceSignal) {
     });
 
     // The reading surface resolves its paper from the OPEN FORMAT: the PDF
-    // blend backdrop paints --color-paper (see shell.css), text/Markdown
-    // pages paint the surface with --tx-paper. `data-format` is the one
-    // CSS switch, and it also gates the dim text pages' texture family —
-    // paint it here so it lands with the appearance it rides on.
+    // blend backdrop paints the engine's computed paper (see shell.css),
+    // text/Markdown pages paint the surface with --tx-paper. `data-format`
+    // is the one CSS switch, and it also gates the dim text pages' texture
+    // family — paint it here so it lands with the appearance it rides on.
     Effect::new(move || {
         let name = match state.reader.format() {
             Format::Pdf => "pdf",

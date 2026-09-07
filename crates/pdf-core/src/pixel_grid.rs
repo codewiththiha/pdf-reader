@@ -8,8 +8,9 @@
 //!
 //! Every page is a stack of independently rasterized compositor layers: the
 //! canvas (which carries `mix-blend-mode`, plus `filter` in live mode), the
-//! texture `::before` overlay, and the backdrop behind them (`.reader-bg`, or
-//! its blend `::after`). The compositor snaps each layer's paint rect to the
+//! texture `::before` overlay, and the backdrop behind them (`.reader-bg`,
+//! which in blend mode carries the engine's computed paper itself). The
+//! compositor snaps each layer's paint rect to the
 //! DEVICE pixel grid, but page geometry is `intrinsic_size × zoom_scale` — a
 //! product that is almost never a whole number of device pixels once the
 //! display's `devicePixelRatio` is fractional (125% / 150% / 175% scaling on

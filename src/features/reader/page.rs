@@ -258,12 +258,14 @@ pub fn ReaderPage(state: AppState) -> impl IntoView {
             <div
                 class="reader-bg relative flex h-full w-full flex-col overflow-hidden text-ink"
                 class=("blend", move || {
-                    // The blend ::after is the PDF paper pipeline (the
-                    // document's own paper through the canvas filter). A
+                    // The blend class swaps the backdrop AND the page hosts
+                    // onto the engine's one computed paper colour (see
+                    // styles/components/shell.css and styles/page_host.css),
+                    // which is what kills the fractional-edge rim a second
+                    // paper colour under the canvas used to show. A
                     // text/Markdown page is its OWN paper — the surface
-                    // paints --tx-paper (see shell.css) — so the layer
-                    // must not run for it, or a second (filtered) backdrop
-                    // stacks under the text page.
+                    // paints --tx-paper — so the class must not run for it,
+                    // or a second paper colour stacks under the text page.
                     state.settings.with(|st| st.layout.blend_mode)
                         && !state.reader.reflowable()
                 })
