@@ -126,11 +126,12 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
         // viewer will report a moment later — which turns the post-mount refit
         // into a no-op.
         //
-        // For a PDF the column-width dial scales the fit budget the way the
-        // live fit maths does (`crate::zoom::target`); a reflowable document's
-        // page box already carries the dial through the geometry it was cut
-        // with, so its container stays plain. The format is settled by the
-        // identity step that runs before this one.
+        // The column-width dial is a reflowable-only setting and stays out
+        // of this budget: a reflowable page box already carries it through
+        // the geometry it was cut with, and a PDF page IS the column — the
+        // same contract the live fit maths holds (`crate::zoom::target`).
+        // The format is settled by the identity step that runs before this
+        // one.
         const DOCKED_RAIL_W: f64 = 288.0;
         let (vw, vh) = app_chrome::hooks::use_viewport::viewport_size();
         let docked = !state.settings.with_untracked(|s| s.layout.sidebar_overlay)
@@ -142,15 +143,7 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
             state.reader.viewer.page_margin.get_untracked(),
             page_size,
         )
-        .map_or(1.0, |mut dims| {
-            if !state.reader.reflowable_untracked() {
-                dims.cw_eff = (dims.cw_eff
-                    * state.reader.viewer.column_width_pct.get_untracked()
-                    / 100.0)
-                    .max(1.0);
-            }
-            dims.fit(startup_fit, 1.0)
-        })
+        .map_or(1.0, |dims| dims.fit(startup_fit, 1.0))
     };
     (startup_fit, scale)
 }
