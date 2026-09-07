@@ -6,7 +6,7 @@
 //! The reader's one choice is the detection area:
 //!
 //! * [`PaperArea::WholePage`] — every pixel of the sampled raster votes.
-//! * [`PaperArea::Edges`] — only a thin strip along the left and right edges
+//! * [`PaperArea::Edges`] — only a thin band along the frame's four edges
 //!   votes: the margins, where a scanned or decorated page still shows its
 //!   honest paper even when the middle is full of artwork.
 //!

@@ -87,8 +87,8 @@ pub struct LayoutSettings {
     #[serde(default)]
     pub blend_mode: bool,
     /// Which pixels of a page raster the detector trusts: the whole page, or
-    /// just the thin left/right edge margins where artwork-heavy pages still
-    /// show honest paper.
+    /// just the thin edge margins around all four sides, where artwork-heavy
+    /// pages still show honest paper.
     #[serde(default)]
     pub blend_area: PaperArea,
     /// Horizontal inset around pages (CSS px). `0` removes the margin entirely.
