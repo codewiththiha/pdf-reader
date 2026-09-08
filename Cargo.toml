@@ -91,6 +91,11 @@ pdf-core = { path = "crates/pdf-core" }
 reflow-core = { path = "crates/reflow-core" }
 txt-core = { path = "crates/txt-core" }
 md-core = { path = "crates/md-core" }
+# The library's domain: the book and its fingerprint, shelves and watched
+# folders, the scan predicate, the rescan ledger, the sort and the persisted
+# blob. Shared with the Tauri shell, which does the IO and measures with the
+# same fingerprint this crate defines.
+library-core = { path = "crates/library-core" }
 
 [workspace]
 members = [
@@ -108,6 +113,7 @@ members = [
   "crates/reflow-core",
   "crates/txt-core",
   "crates/md-core",
+  "crates/library-core",
 ]
 
 [profile.release]

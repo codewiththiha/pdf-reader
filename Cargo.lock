@@ -2423,6 +2423,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "library-core"
+version = "0.1.0"
+dependencies = [
+ "reader-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "libredox"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2950,6 +2959,7 @@ dependencies = [
  "dotenvy",
  "fm-bridge",
  "futures",
+ "library-core",
  "objc2",
  "objc2-app-kit",
  "objc2-core-foundation",
@@ -3010,6 +3020,7 @@ dependencies = [
  "leptos",
  "leptos-md",
  "leptos_router",
+ "library-core",
  "md-core",
  "pdf-core",
  "pdf-engine",
