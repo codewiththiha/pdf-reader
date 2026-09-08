@@ -12,8 +12,11 @@
 //! from. Deriving the order once here is what makes a drag between the two views
 //! impossible to get wrong — there is only one order.
 
+use std::time::Duration;
+
 use leptos::prelude::*;
 
+use app_chrome::hooks::dom::by_id;
 use pdf_engine::types::DocStatus;
 use library_core::query;
 use library_core::shelf::ALL_SHELF;
@@ -26,6 +29,78 @@ use crate::features::library::empty_state::EmptyState;
 use crate::features::library::grid::GridView;
 use crate::features::library::list::ListView;
 use crate::state::AppState;
+
+/// How long a revealed card stays lit. Long enough to find with the eye after the
+/// scroll settles, short enough that it is a pointer and not a decoration.
+const REVEAL_MS: u64 = 1600;
+
+/// Take the reader to a revealed book: find its card, center it, light it, and
+/// stop lighting it.
+///
+/// Two animation frames before the lookup, not one. The reveal usually arrives
+/// with a shelf switch, and the grid it scrolls is the one the switch mounts —
+/// which does not exist yet in the frame the signal was written. The first frame
+/// lets Leptos flush the new shelf, the second is the one that can find the card.
+fn install_reveal(state: AppState) {
+    Effect::new(move |_| {
+        let Some((book_id, nonce)) = state.library.reveal.get() else {
+            return;
+        };
+        let dom_id = format!("book-{book_id}");
+        let smooth = scroll_may_animate(state);
+        request_animation_frame(move || {
+            request_animation_frame(move || {
+                let Some(node) = by_id(&dom_id) else {
+                    // Filtered out by a search, or on a shelf this is not: the
+                    // light goes on for nobody, and that is better than scrolling
+                    // to somewhere the book is not.
+                    return;
+                };
+                let options = web_sys::ScrollIntoViewOptions::new();
+                options.set_block(web_sys::ScrollLogicalPosition::Center);
+                options.set_behavior(if smooth {
+                    web_sys::ScrollBehavior::Smooth
+                } else {
+                    web_sys::ScrollBehavior::Auto
+                });
+                node.scroll_into_view_with_scroll_into_view_options(&options);
+            });
+        });
+        // Cleared on a timer rather than by the next reveal, so a card does not
+        // stay lit because the reader never asked for another one. The nonce guard
+        // is what lets a second reveal of the SAME book re-light it: without it the
+        // clear from the first would put out the second.
+        let handle = set_timeout_with_handle(
+            move || {
+                state.library.reveal.update(|at| {
+                    if at.as_ref().is_some_and(|(_, seen)| *seen == nonce) {
+                        *at = None;
+                    }
+                });
+            },
+            Duration::from_millis(REVEAL_MS),
+        )
+        .ok();
+        on_cleanup(move || {
+            if let Some(handle) = handle {
+                handle.clear();
+            }
+        });
+    });
+}
+
+/// Whether the scroll may animate. The reader's own master switch and the
+/// platform's answer are two different questions with the same answer shape, and
+/// either one saying no is enough: a smooth scroll under
+/// `prefers-reduced-motion` is exactly the motion the preference is about.
+fn scroll_may_animate(state: AppState) -> bool {
+    if !state.settings.with_untracked(|s| s.animations.enabled) {
+        return false;
+    }
+    web_sys::window()
+        .and_then(|window| window.match_media("(prefers-reduced-motion: reduce)").ok().flatten())
+        .is_some_and(|query| !query.matches())
+}
 
 /// The books the page shows, in the order it shows them.
 ///
@@ -64,6 +139,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     let order = Signal::derive(move || visible(state));
     provide_context(ShelfOrder(order));
     provide_context(DropTarget(RwSignal::new(None)));
+    install_reveal(state);
 
     let status = state.reader.document.status;
     let error = state.reader.document.error;

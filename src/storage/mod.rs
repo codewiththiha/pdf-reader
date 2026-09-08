@@ -233,6 +233,24 @@ fn save_gloss(all: &HashMap<String, Vec<GlossMark>>) -> Result<(), StorageError>
     set(GLOSS_KEY, &json)
 }
 
+/// Drop one document's marks.
+///
+/// A removal that leaves the highlights behind leaves the largest half of what a
+/// reader put into a book sitting in localStorage under a path nothing points at
+/// any more — and, worse, waiting to paint themselves over a DIFFERENT book if
+/// that path is ever reused. Read-modify-write like [`persist_gloss`], for the
+/// same reason: a second window's marks must not be clobbered by a removal in
+/// this one.
+pub fn remove_gloss(path: &str) {
+    let mut all = load_gloss();
+    if all.remove(path).is_none() {
+        return;
+    }
+    if let Err(e) = save_gloss(&all) {
+        e.report();
+    }
+}
+
 /// Replace one document's marks and write the whole map back.
 /// Read-modify-write rather than keeping the map in memory: marks change only
 /// when the reader explains a word (human-paced), and re-reading keeps a

@@ -58,6 +58,11 @@ web-sys = { version = "0.3", features = [
   "DataTransferItemList",
   "ScrollToOptions",
   "ScrollBehavior",
+  # The library's reveal: taking the reader to a book means centering its card in
+  # the scroller, and `scroll_into_view` with no options cannot say "centered" or
+  # "smoothly".
+  "ScrollIntoViewOptions",
+  "ScrollLogicalPosition",
   "Storage",
   "MediaQueryList",
   "CustomEvent",

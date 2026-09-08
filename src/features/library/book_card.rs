@@ -11,8 +11,9 @@ use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
 
 use crate::features::library::drag::{self, DropTarget, ShelfOrder};
+use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::document;
-use crate::services::library::{move_to_shelf, relink_dialog, remove_book};
+use crate::services::library::{move_to_shelf, relink_dialog};
 use crate::state::AppState;
 use crate::state::reader::DEFAULT_PAGE_ASPECT;
 
@@ -25,6 +26,7 @@ use crate::state::reader::DEFAULT_PAGE_ASPECT;
 pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let drop_target = use_context::<DropTarget>().expect("the library content provides the target");
+    let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
     // Owned copies so each closure below captures its own value: the card renders
     // a dozen closures that all outlive this function's frame.
@@ -69,10 +71,13 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         }
     };
 
+    // A removal asks first. The card does not know what a removal costs — the
+    // resume point, the placements, the highlights, the app's own copy — and the
+    // sheet that does is one context away.
     let remove_id = id.clone();
     let remove = move |ev: leptos::ev::MouseEvent| {
         ev.stop_propagation();
-        remove_book(state, remove_id.clone());
+        remove_sheet.ask(&remove_id);
     };
     let relink_id = id.clone();
     let relink = move |ev: leptos::ev::MouseEvent| {
@@ -80,6 +85,8 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         relink_dialog(state, relink_id.clone());
     };
 
+    let dom_id = format!("book-{}", id);
+    let reveal_id = id.clone();
     let drag_id = id.clone();
     let hover_id = id.clone();
     let leave_id = id.clone();
@@ -96,7 +103,14 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
 
     view! {
         <div
+            id=dom_id
             class="book group"
+            class=("book-reveal", move || {
+                state.library.reveal.with(|at| {
+                    at.as_ref()
+                        .is_some_and(|(id, _)| id == reveal_id.as_str())
+                })
+            })
             class=("book-drop-before", move || {
                 drop_target
                     .0

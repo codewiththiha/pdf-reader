@@ -219,6 +219,10 @@ pub struct LibraryState {
     pub shelf: RwSignal<String>,
     /// The import dock's cards, oldest first.
     pub tasks: RwSignal<Vec<ImportTask>>,
+    /// The book to scroll to and light up, with a nonce so revealing the same
+    /// book twice in a row re-triggers. Written by a "show it in its shelf"
+    /// action, cleared by the shelf that scrolled to it.
+    pub reveal: RwSignal<Option<(String, u64)>>,
 }
 
 impl Default for LibraryState {
@@ -236,6 +240,7 @@ impl Default for LibraryState {
             query: RwSignal::new(String::new()),
             shelf: RwSignal::new(ALL_SHELF.to_string()),
             tasks: RwSignal::new(Vec::new()),
+            reveal: RwSignal::new(None),
         }
     }
 }

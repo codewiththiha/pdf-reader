@@ -175,7 +175,7 @@ pub fn prune_tombstones(folder: &mut WatchedFolder, registry: &Registry) {
 /// The tombstone for `fp`, without taking it. A restore measures the file before
 /// it promises anything, and a removal that stays put when the measurement fails
 /// is the difference between "that file is gone" and a book quietly lost.
-pub fn find_tombstone(folder: &WatchedFolder, fp: &Fingerprint) -> Option<&Tombstone> {
+pub fn find_tombstone<'a>(folder: &'a WatchedFolder, fp: &Fingerprint) -> Option<&'a Tombstone> {
     folder.ignored.iter().find(|entry| &entry.fp == fp)
 }
 

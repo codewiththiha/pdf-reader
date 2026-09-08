@@ -64,6 +64,10 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
     });
     let fit = Signal::derive(move || state.library.view.with(|v| v.cover == CoverFit::Fit));
     let sort = Signal::derive(move || state.library.view.with(|v| v.sort));
+    let ascending = Signal::derive(move || state.library.view.with(|v| v.sort_asc));
+    // Manual order has no direction: it IS the order. Offering one would be a
+    // control that appears to do something and rearranges nothing.
+    let has_direction = Signal::derive(move || !sort.get().is_manual());
 
     view! {
         <div node_ref=root_ref class="relative inline-flex">
@@ -172,6 +176,36 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
 
                 <div class="my-1.5"><Separator /></div>
                 <SectionLabel text="Sort by" />
+                {move || {
+                    has_direction.get().then(|| {
+                        view! {
+                            <div class="mb-1 flex gap-1.5 px-1">
+                                <OptionButton
+                                    selected=Signal::derive(move || ascending.get())
+                                    on_click=move || {
+                                        set_view(state, |v| v.sort_asc = true);
+                                    }
+                                    variant_class="flex flex-1 items-center justify-center gap-1 px-2 py-1 text-xs"
+                                    title="Ascending"
+                                >
+                                    <Icon name=IconName::ChevronUp size=12 />
+                                    <span>"Ascending"</span>
+                                </OptionButton>
+                                <OptionButton
+                                    selected=Signal::derive(move || !ascending.get())
+                                    on_click=move || {
+                                        set_view(state, |v| v.sort_asc = false);
+                                    }
+                                    variant_class="flex flex-1 items-center justify-center gap-1 px-2 py-1 text-xs"
+                                    title="Descending"
+                                >
+                                    <Icon name=IconName::ChevronDown size=12 />
+                                    <span>"Descending"</span>
+                                </OptionButton>
+                            </div>
+                        }
+                    })
+                }}
                 {SORTS
                     .iter()
                     .copied()

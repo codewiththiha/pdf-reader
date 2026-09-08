@@ -17,8 +17,9 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::Origin;
+use library_core::folder::Tombstone;
 use library_core::ledger::tombstone;
-use library_core::shelf::{self, ALL_SHELF};
+use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
 use library_core::wire::StoreRequest;
 
 use crate::services::library as wire;
@@ -75,16 +76,41 @@ pub fn move_to_shelf(
     crate::storage::persist_library(state.library);
 }
 
-/// Remove a book from the library — not from the disk it lives on.
+/// What a removal is allowed to take with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PurgeOpts {
+    /// Delete the app's own copy of a stored book. Only ever offered for a book
+    /// the app copied; a linked book's bytes belong to the reader and are never
+    /// touched whatever this says.
+    pub delete_store_copy: bool,
+}
+
+impl Default for PurgeOpts {
+    /// On, because a copy the app made for a book that is no longer in the library
+    /// is a file nothing will ever read again — and the sheet that offers the
+    /// switch is the place to say otherwise.
+    fn default() -> Self {
+        Self {
+            delete_store_copy: true,
+        }
+    }
+}
+
+/// Remove a book, and everything the library holds about it.
 ///
-/// Four things have to happen together, and doing any of them alone leaves the
-/// library inconsistent: the row goes, the id comes off every shelf that held it,
-/// the folders that placed it take a tombstone so the next rescan stays quiet,
-/// and the cover goes with it. A book the app COPIED also loses its store file,
-/// because those bytes are the app's and nothing will ever read them again; a
-/// linked book loses nothing on disk, which is the whole promise of reading in
-/// place.
-pub fn remove_book(state: AppState, book_id: String) {
+/// Seven things have to happen together, and doing any of them alone leaves
+/// something behind that nothing will ever collect: the row (which is the resume
+/// point), every shelf membership, the cover, the highlights, the store copy when
+/// the app made one, and — in the folders that placed it — a tombstone. The
+/// tombstone is the one that is easy to forget and expensive to: without it the
+/// file is still on disk and still admitted by the folder's options, so the next
+/// focus rescan puts the book straight back.
+///
+/// Safe while the book is open in the reader. `close_document` and the
+/// reading-progress debounce both *update* an entry they find and do nothing when
+/// they do not, and `shelf::record` only runs on an open — so a purge never
+/// resurrects itself from the document it was purged under.
+pub fn purge_book(state: AppState, book_id: &str, opts: PurgeOpts) {
     let found = state
         .library
         .books
@@ -93,32 +119,47 @@ pub fn remove_book(state: AppState, book_id: String) {
         return;
     };
 
-    let id = book.id.clone();
+    // Read the world once, before anything is written: the tombstone needs the
+    // folder that placed this book and the shelf it was filed on, and both are
+    // about to change.
+    let shelves = state.library.shelves.get_untracked();
+    let folders = state.library.folders.get_untracked();
+    let placed_by = folders
+        .iter()
+        .find(|f| f.placed.contains(&book.fp))
+        .map(|f| f.id.clone());
+    let home = placed_by
+        .as_deref()
+        .and_then(|folder_id| folder_shelf_of(&shelves, folder_id, &book.id));
+    let entry = Tombstone::of(&book, home, js_sys::Date::now() as u64);
     let path = book.path().to_string();
-    let fingerprint = book.fp;
-    let stored = match &book.origin {
-        Origin::Stored { store, .. } => Some(store.clone()),
-        Origin::Linked { .. } => None,
+    let stored_copy = match &book.origin {
+        Origin::Stored { store, .. } if opts.delete_store_copy => Some(store.clone()),
+        _ => None,
     };
 
     state.library.books.update(|books| {
-        library_core::book::remove_book(books, &id);
+        library_core::book::remove_book(books, book_id);
     });
     state
         .library
         .shelves
-        .update(|shelves| shelf::forget_everywhere(shelves, &id));
-    // A removal the reader meant has to survive the file still being on disk,
-    // which is what the tombstone is for — and only in the folders that placed
-    // it, so removing a hand-added book poisons no watched folder.
+        .update(|shelves| shelf::forget_everywhere(shelves, book_id));
+    // Only the folders that placed it: removing a book the reader added by hand
+    // must not poison a watched folder that happens to hold the same file, and
+    // removing a book one folder placed must not stop a second folder from ever
+    // offering it.
     state
         .library
         .folders
-        .update(|folders| tombstone(folders, fingerprint));
+        .update(|folders| tombstone(folders, &entry));
     state.library.covers.update(|covers| {
         covers.remove(&path);
     });
-    if let Some(store) = stored {
+    // The highlights are the largest thing the library holds about a book besides
+    // its cover, and they are keyed by an address nothing points at any more.
+    crate::storage::remove_gloss(&path);
+    if let Some(store) = stored_copy {
         wire::delete_stored(&store);
     }
 
@@ -131,6 +172,48 @@ pub fn remove_book(state: AppState, book_id: String) {
     });
     crate::storage::persist_library(state.library);
     crate::storage::persist_covers(state.library);
+}
+
+/// The first of one folder's shelves a book is filed on, in shelf order.
+///
+/// One answer rather than every answer, because a removed book comes back to ONE
+/// shelf and a tombstone that listed three would have to choose at restore time
+/// with less information than it has now.
+fn folder_shelf_of(shelves: &[Shelf], folder_id: &str, book_id: &str) -> Option<String> {
+    shelves
+        .iter()
+        .find(|s| {
+            s.kind.folder_id() == Some(folder_id) && s.books.iter().any(|m| m == book_id)
+        })
+        .map(|s| s.id.clone())
+}
+
+/// File a book on a second shelf without moving it.
+///
+/// One book, two memberships, and nothing copied anywhere — a shelf holds ids, so
+/// "also show it here" is the cheapest thing in the app and the one that cannot go
+/// wrong on disk. The folder's ledger is untouched too: the book stays placed
+/// where it was placed, which is what keeps the next rescan quiet about it.
+pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
+    state.library.shelves.update(|shelves| {
+        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+            shelf_add(shelf, book_id);
+        }
+    });
+    crate::storage::persist_library(state.library);
+}
+
+/// The shelves a book is on, as `(id, name)` pairs in shelf order. What the
+/// folder's restore menu asks in order to tell a book that moved from one that is
+/// still where it was filed.
+pub fn memberships(state: AppState, book_id: &str) -> Vec<(String, String)> {
+    state.library.shelves.with_untracked(|shelves| {
+        shelves
+            .iter()
+            .filter(|s| s.books.iter().any(|m| m == book_id))
+            .map(|s| (s.id.clone(), s.name.clone()))
+            .collect()
+    })
 }
 
 /// Re-point a book whose address died at a file the reader picks.

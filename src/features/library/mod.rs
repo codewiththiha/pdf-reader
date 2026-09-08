@@ -9,6 +9,7 @@
 //!   * [`grid`] / [`list`] / [`shelf_tile`] / [`book_card`] — the shelf itself
 //!   * [`add_card`] / [`add_menu`] / [`empty_state`] — the two ways in
 //!   * [`import_modal`] — what a folder import is allowed to be
+//!   * [`remove_modal`] — what a removal costs, itemised
 //!   * [`progress_dock`] — the run's ring, in the corner
 //!   * [`view_menu`] / [`breadcrumb`] / [`titlebar_search`] — the bar's three jobs
 //!   * [`drag`] — what a card carries and what a target reads
@@ -29,6 +30,7 @@ pub mod import_modal;
 pub mod list;
 pub mod page;
 pub mod progress_dock;
+pub mod remove_modal;
 pub mod shelf_tile;
 pub mod titlebar_search;
 pub mod view_menu;

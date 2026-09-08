@@ -27,6 +27,7 @@ use crate::features::library::breadcrumb::Breadcrumb;
 use crate::features::library::content::LibraryContent;
 use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
 use crate::features::library::progress_dock::ProgressDock;
+use crate::features::library::remove_modal::{RemoveBookModal, RemoveSheet};
 use crate::features::library::titlebar_search::TitlebarSearch;
 use crate::features::library::view_menu::ViewMenu;
 use crate::state::AppState;
@@ -44,6 +45,9 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // open it (the add card, the empty state, a dropped folder) never have to
     // pass two signals through the grid to reach it.
     let sheet = ImportSheet::provide();
+    // The remove sheet's handles, for the same reason: a card and a list row both
+    // ask, and neither should have to be told where the sheet lives.
+    let remove_sheet = RemoveSheet::provide();
 
     // A picker that failed before the sheet could open has nowhere of its own to
     // put the error, and the page owns the app's one toast slot.
@@ -86,6 +90,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             </div>
             <SettingsModal state=state open=settings_open />
             <ImportModal state=state sheet=sheet />
+            <RemoveBookModal state=state sheet=remove_sheet />
             // Fixed, and mounted at the page rather than inside the content: an
             // import outlives the state the shelf is in, and a card that unmounted
             // with an "Opening…" would take its progress with it.

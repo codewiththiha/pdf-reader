@@ -32,6 +32,15 @@ pub fn MenuItem(
     /// Selected/pressed state (checked rows, active options).
     #[prop(optional)]
     selected: Option<Signal<bool>>,
+    /// A muted second line under the label, for a row that has something to say
+    /// about itself beyond its name. Opt-in and additive: a row without one
+    /// renders exactly the single span it always did, so no existing menu moves.
+    #[prop(optional, into)]
+    sublabel: Option<String>,
+    /// A tooltip, for the rows where the label and its second line still leave
+    /// something worth saying that does not fit on either.
+    #[prop(optional, into)]
+    title: Option<String>,
     /// Row geometry override (denser/larger rows). Defaults to the shared
     /// menu-row look (`rounded-md px-2 py-1.5`).
     #[prop(optional)]
@@ -67,6 +76,7 @@ pub fn MenuItem(
         <button
             type="button"
             role="menuitem"
+            title=title
             disabled=disabled
             aria-disabled=disabled.to_string()
             on:click=move |_| on_click()
@@ -81,7 +91,20 @@ pub fn MenuItem(
                     }
                 })}
             </span>
-            <span>{label}</span>
+            {match sublabel {
+                Some(sub) => {
+                    view! {
+                        <span class="min-w-0 flex-1 text-left">
+                            <span class="block truncate">{label}</span>
+                            <span class="block truncate text-[11px] font-normal text-muted">
+                                {sub}
+                            </span>
+                        </span>
+                    }
+                        .into_any()
+                }
+                None => view! { <span>{label}</span> }.into_any(),
+            }}
             {children.map(|c| c())}
         </button>
     }

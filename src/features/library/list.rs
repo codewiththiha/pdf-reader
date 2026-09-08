@@ -15,8 +15,9 @@ use library_core::book::Book;
 use library_core::view::CoverFit;
 
 use crate::features::library::drag::{self, DropTarget, ShelfOrder};
+use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::document;
-use crate::services::library::{move_to_shelf, remove_book};
+use crate::services::library::move_to_shelf;
 use crate::state::AppState;
 
 #[component]
@@ -37,6 +38,7 @@ pub(crate) fn ListView(state: AppState) -> impl IntoView {
 fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let drop_target = use_context::<DropTarget>().expect("the library content provides the target");
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
+    let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
     let id = book.id.clone();
     let path = book.path().to_string();
@@ -52,6 +54,8 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let percent = book.progress().map(|p| format!("{:.0}%", p * 100.0));
 
     let click_path = path.clone();
+    let dom_id = format!("book-{}", id);
+    let reveal_id = id.clone();
     let remove_id = id.clone();
     let drag_id = id.clone();
     let over_id = id.clone();
@@ -65,7 +69,14 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
 
     view! {
         <div
+            id=dom_id
             class="library-row group"
+            class=("row-reveal", move || {
+                state.library.reveal.with(|at| {
+                    at.as_ref()
+                        .is_some_and(|(id, _)| id == reveal_id.as_str())
+                })
+            })
             class=("row-drop-before", move || {
                 drop_target
                     .0
@@ -152,7 +163,7 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                 aria-label="Remove from library"
                 on:click=move |ev: leptos::ev::MouseEvent| {
                     ev.stop_propagation();
-                    remove_book(state, remove_id.clone());
+                    remove_sheet.ask(&remove_id);
                 }
             >
                 <Icon name=IconName::Close size=12 />

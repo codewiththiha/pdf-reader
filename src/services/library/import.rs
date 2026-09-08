@@ -29,7 +29,7 @@ use library_core::folder::{FolderOpts, WatchedFolder};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
-use library_core::shelf::{Shelf, ShelfKind};
+use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
@@ -315,6 +315,16 @@ async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpt
     folder.opts = opts;
 
     let registry = ledger::registry_of(&books);
+
+    // A fingerprint can rejoin the library by any route — a hand-open, a second
+    // folder's import, a restore — and a tombstone left behind for a book that
+    // exists is a restore row offering something the reader already has.
+    ledger::prune_tombstones(&mut folder, &registry);
+    // Written on every scan, including one that changes nothing: the restore
+    // menu's "did this book move out of my folder" answer is only as fresh as the
+    // last walk, and a walk that found nothing to do still saw every file.
+    folder.record_seen(&found);
+
     let mut adds: Vec<FoundFile> = Vec::new();
     let mut relinks: Vec<(String, String)> = Vec::new();
     for action in ledger::diff_folder(&folder, &registry, &found) {
@@ -517,6 +527,152 @@ async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpt
         t.done = total;
         t.finish();
     });
+}
+
+/// Put a removed book back, from the folder's own import menu.
+///
+/// Not a rescan with the tombstone lifted: an explicit restore is an explicit
+/// choice, so it honours the folder's read-in-place-or-copy answer and ignores the
+/// format and size filters that a passive scan applies — a reader who removed a
+/// 12 KB text file and then asks for it back is not asking to be told it is too
+/// small. The file is measured first, and a measurement that comes back empty
+/// leaves the tombstone exactly where it was, because losing it would lose the
+/// only record the book was ever there.
+pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint) {
+    // The folder's options decide read-in-place-or-copy; its root does not appear,
+    // because a restore measures the address the tombstone recorded rather than
+    // assuming the file is still where the folder put it.
+    let taken = state.library.folders.with_untracked(|folders| {
+        folders.iter().find(|f| f.id == folder_id).and_then(|f| {
+            ledger::find_tombstone(f, &fp)
+                .map(|entry| (f.opts.clone(), entry.clone()))
+        })
+    });
+    let Some((opts, entry)) = taken else {
+        return;
+    };
+
+    let task = task_id();
+    push_task(state, ImportTask::new(task.clone(), entry.label()));
+    spawn_local(async move {
+        let checks = match wire::verify_paths(vec![entry.last_path.clone()]).await {
+            Ok(checks) => checks,
+            Err(message) => return fail(state, &task, message, false),
+        };
+        let Some(found) = checks.first().and_then(found_from_check) else {
+            return fail(
+                state,
+                &task,
+                format!("{} is not there any more.", entry.label()),
+                false,
+            );
+        };
+
+        let now = now_ms();
+        let seq = state.library.books.with_untracked(|books| books.len() as u32);
+        let book_id = id::new_id(now, seq);
+        let origin = if opts.in_place {
+            Origin::Linked {
+                src: found.path.clone(),
+            }
+        } else {
+            let requests = [StoreRequest {
+                path: found.path.clone(),
+                id: book_id.clone(),
+            }];
+            match wire::store_books(&task, &requests).await {
+                Ok(results) => match results.into_iter().next() {
+                    Some(result) if result.is_ok() => Origin::Stored {
+                        src: Some(found.path.clone()),
+                        store: result.store,
+                    },
+                    Some(result) => {
+                        let message = result
+                            .error
+                            .unwrap_or_else(|| "Could not copy that file.".to_string());
+                        return fail(state, &task, message, false);
+                    }
+                    None => {
+                        return fail(state, &task, "Could not copy that file.".to_string(), false)
+                    }
+                },
+                Err(message) => return fail(state, &task, message, false),
+            }
+        };
+
+        let book = Book {
+            id: book_id,
+            // The file's fingerprint as it is NOW, which is not necessarily the
+            // one the tombstone carries: a book can be edited between being
+            // removed and being asked for back.
+            fp: found.fp,
+            title: entry.title.clone(),
+            author: None,
+            format: found.format().unwrap_or(Format::Pdf),
+            origin,
+            added_ms: now,
+            last_read_ms: 0,
+            page: 1,
+            num_pages: 0,
+            fraction: None,
+            missing: false,
+            fp_pending: false,
+        };
+        let mut placed_id = String::new();
+        state.library.books.update(|books| {
+            placed_id = add_book(books, book);
+        });
+
+        // The removal comes out only now that the book is back, and `placed` goes
+        // in at the same moment: a fingerprint the ledger skips with no book
+        // behind it is the one state a folder cannot recover from on its own.
+        let stale = entry.fp;
+        state.library.folders.update(|folders| {
+            let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) else {
+                return;
+            };
+            ledger::restore_deleted(folder, &stale);
+            folder.mark_placed(found.fp);
+            if found.fp != stale {
+                // The file changed while it was gone, so the old fingerprint's
+                // tombstone describes a file that no longer exists. Drop it rather
+                // than leave a restore row that measures nothing.
+                folder.ignored.retain(|t| t.fp != found.fp);
+            }
+        });
+
+        // Back on the shelf it was filed on, or on the folder's root shelf if that
+        // shelf has since gone: a restored book should not come back somewhere new.
+        state.library.shelves.update(|shelves| {
+            let known = entry
+                .shelf_id
+                .as_deref()
+                .filter(|id| shelves.iter().any(|s| s.id == **id));
+            let target = known
+                .map(str::to_string)
+                .or_else(|| root_shelf_of(shelves, &folder_id));
+            let Some(shelf_id) = target else {
+                return;
+            };
+            if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+                shelves_ops::shelf_add(shelf, &placed_id);
+            }
+        });
+        crate::storage::persist_library(state.library);
+        update_task(state, &task, |t| {
+            t.total = 1;
+            t.done = 1;
+            t.finish();
+        });
+    });
+}
+
+/// The shelf a folder's root files onto, if it has one.
+fn root_shelf_of(shelves: &[Shelf], folder_id: &str) -> Option<String> {
+    shelves
+        .iter()
+        .find(|s| s.kind.is_folder_root() && s.kind.folder_id() == Some(folder_id))
+        .map(|s| s.id.clone())
 }
 
 /// Copy one batch into the store, answering with the stored address per book id.

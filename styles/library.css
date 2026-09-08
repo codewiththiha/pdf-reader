@@ -756,3 +756,62 @@
 .import-card-failed .import-ring-value {
   color: var(--color-red-400);
 }
+
+/* ---------------------------------------------------------------------------
+   The reveal: a card the reader was taken to.
+
+   The ring is a STATIC property of the class and the pulse is the animation, so
+   the two reduced-motion nets — which collapse every animation-duration in the
+   document — take the movement and leave the mark. A reveal that vanished under
+   prefers-reduced-motion would leave a reader who asked to be shown a book
+   looking at a shelf with nothing indicated on it.
+   --------------------------------------------------------------------------- */
+.book-reveal .book-cover {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent),
+    0 8px 18px -8px rgb(0 0 0 / 0.45);
+  animation: book-reveal-pulse 1.6s ease-out both;
+}
+@keyframes book-reveal-pulse {
+  from {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 16px color-mix(in srgb, var(--color-accent) 40%, transparent),
+      0 8px 18px -8px rgb(0 0 0 / 0.45);
+  }
+  to {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent),
+      0 8px 18px -8px rgb(0 0 0 / 0.45);
+  }
+}
+.row-reveal {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+/* The remove sheet's cover thumbnail: the book being talked about, at a size that
+   fits a receipt line rather than a shelf. */
+.remove-cover {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  width: 40px;
+  aspect-ratio: 210 / 297;
+  overflow: hidden;
+  border-radius: 2px 5px 5px 2px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--color-accent) 22%, var(--color-paper)),
+    var(--color-paper) 74%
+  );
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.22);
+}
+.remove-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

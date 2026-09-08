@@ -25,9 +25,14 @@
 
 pub mod arrange;
 pub mod import;
+pub mod reveal;
 
-pub use arrange::{move_to_shelf, relink_dialog, remove_book};
-pub use import::{dismiss_task, import_files, import_folder, rescan_watched, verify_library, verify_one};
+pub use arrange::{PurgeOpts, also_show, memberships, move_to_shelf, purge_book, relink_dialog};
+pub use reveal::reveal_book;
+pub use import::{
+    dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book, verify_library,
+    verify_one,
+};
 
 /// The last segment of a path, on either separator, with no trailing separator.
 /// Empty only for a path that is nothing but separators — which is why the
@@ -167,6 +172,25 @@ pub async fn pick_documents() -> Result<Vec<String>, String> {
         directory: false,
         multiple: true,
         filter: true,
+        default_path: None,
+    })
+    .await
+    .map(|paths| paths.unwrap_or_default())
+}
+
+/// The native multi-file picker, rooted at a folder the library already knows.
+///
+/// "Open file picker here": the reader is looking at a watched folder's shelf and
+/// wants one file out of it, without the sheet and without its filters. An
+/// explicit pick is an explicit choice, so it bypasses the format set and the
+/// size threshold — the format gate stays, because a file the reader cannot open
+/// is not a book whatever they meant.
+pub async fn pick_documents_in(default_path: String) -> Result<Vec<String>, String> {
+    pick(Options {
+        directory: false,
+        multiple: true,
+        filter: true,
+        default_path: Some(default_path),
     })
     .await
     .map(|paths| paths.unwrap_or_default())
@@ -178,6 +202,7 @@ pub async fn pick_folder() -> Result<Option<String>, String> {
         directory: true,
         multiple: false,
         filter: false,
+        default_path: None,
     })
     .await?;
     Ok(paths.and_then(|p| p.into_iter().next()))
@@ -187,6 +212,9 @@ struct Options {
     directory: bool,
     multiple: bool,
     filter: bool,
+    /// Where the picker opens. The shell's own dialog option, and the difference
+    /// between "pick a file" and "pick a file from the folder you are looking at".
+    default_path: Option<String>,
 }
 
 /// One `__TAURI__.dialog.open` call. Returns `None` on cancel.
@@ -197,6 +225,9 @@ async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
     let opts = JsValue::from(js_sys::Object::new());
     set(&opts, "multiple", &JsValue::from(options.multiple));
     set(&opts, "directory", &JsValue::from(options.directory));
+    if let Some(default_path) = options.default_path.as_deref() {
+        set(&opts, "defaultPath", &JsValue::from_str(default_path));
+    }
     if options.filter {
         // One filter row naming every extension the registry knows, rather than
         // a row per format: the picker's job is "documents", not "which of the
