@@ -70,12 +70,13 @@ fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
     state.0.lock().ok().and_then(|mut g| g.take())
 }
 
-/// The gate the `read_file_*` commands apply before touching the filesystem:
+/// The gate the `read_file_*` and `commands::library` commands apply before
+/// touching the filesystem:
 /// they are exposed to a webview that parses untrusted documents, so
 /// requiring an absolute path with a known document suffix keeps them from
 /// being a general file-read primitive. Every real open path (dialog,
 /// drag-drop, OS handoff) already supplies exactly that.
-fn ensure_readable_document(path: &str) -> Result<(), String> {
+pub(crate) fn ensure_readable_document(path: &str) -> Result<(), String> {
     let looks_absolute = path.starts_with('/')          // POSIX
         || path.starts_with("\\\\")                      // Windows UNC share
         || path.as_bytes().get(1) == Some(&b':');       // Windows drive letter
@@ -165,7 +166,11 @@ pub fn run() {
             read_file_bytes,
             read_file_text,
             set_traffic_lights,
-            commands::ai::explain_word
+            commands::ai::explain_word,
+            commands::library::scan_folder,
+            commands::library::verify_paths,
+            commands::library::store_books,
+            commands::library::delete_stored
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {
