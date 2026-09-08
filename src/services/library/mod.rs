@@ -28,8 +28,8 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    PurgeOpts, also_show, delete_shelf, memberships, move_to_shelf, new_shelf, purge_book,
-    relink_dialog, rename_shelf,
+    PurgeOpts, also_show, create_shelf, delete_shelf, file_many, memberships, move_to_shelf,
+    new_shelf, purge_books, relink_dialog, rename_shelf,
 };
 pub use reveal::reveal_book;
 pub use import::{

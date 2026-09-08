@@ -16,7 +16,7 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::Origin;
+use library_core::book::{Book, Origin};
 use library_core::folder::Tombstone;
 use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
@@ -96,32 +96,59 @@ impl Default for PurgeOpts {
     }
 }
 
-/// Remove a book, and everything the library holds about it.
+/// Remove books, and everything the library holds about each of them. One book is
+/// a batch of one: the sheet is the only caller and it always holds a list.
 ///
-/// Seven things have to happen together, and doing any of them alone leaves
-/// something behind that nothing will ever collect: the row (which is the resume
-/// point), every shelf membership, the cover, the highlights, the store copy when
-/// the app made one, and — in the folders that placed it — a tombstone. The
-/// tombstone is the one that is easy to forget and expensive to: without it the
-/// file is still on disk and still admitted by the folder's options, so the next
-/// focus rescan puts the book straight back.
+/// Seven things have to happen together per book, and doing any of them alone
+/// leaves something behind that nothing will ever collect: the row (which is the
+/// resume point), every shelf membership, the cover, the highlights, the store copy
+/// when the app made one, and — in the folders that placed it — a tombstone. The
+/// tombstone is the one that is easy to forget and expensive to: without it the file
+/// is still on disk and still admitted by the folder's options, so the next focus
+/// rescan puts the book straight back. It is per book and per folder for the same
+/// reason a batch is not one tombstone: two of a removed ten may have come from
+/// different watched folders, and each has to be kept out of its own.
 ///
-/// Safe while the book is open in the reader. `close_document` and the
+/// One persist for the batch rather than one per book. A bulk removal writes the
+/// whole blob, and writing it nine times for ten books is nine chances for the
+/// reader to close the window mid-way through them.
+///
+/// Safe while one of the books is open in the reader. `close_document` and the
 /// reading-progress debounce both *update* an entry they find and do nothing when
 /// they do not, and `shelf::record` only runs on an open — so a purge never
 /// resurrects itself from the document it was purged under.
-pub fn purge_book(state: AppState, book_id: &str, opts: PurgeOpts) {
-    let found = state
-        .library
-        .books
-        .with_untracked(|books| books.iter().find(|b| b.id == book_id).cloned());
-    let Some(book) = found else {
+pub fn purge_books(state: AppState, book_ids: &[String], opts: PurgeOpts) {
+    let doomed: Vec<Book> = state.library.books.with_untracked(|books| {
+        books
+            .iter()
+            .filter(|b| book_ids.contains(&b.id))
+            .cloned()
+            .collect()
+    });
+    if doomed.is_empty() {
         return;
-    };
+    }
+    for book in &doomed {
+        purge_one(state, book, opts);
+    }
 
-    // Read the world once, before anything is written: the tombstone needs the
-    // folder that placed this book and the shelf it was filed on, and both are
-    // about to change.
+    // The cover cap only holds if an eviction takes its art with it, and the blob
+    // is written once for the batch.
+    state.library.books.with_untracked(|books| {
+        state
+            .library
+            .covers
+            .update(|covers| prune_covers(books, covers));
+    });
+    crate::storage::persist_library(state.library);
+    crate::storage::persist_covers(state.library);
+}
+
+/// One book's half of a removal. Reads the world before writing any of it, because
+/// the tombstone needs the folder that placed this book and the shelf it was filed
+/// on, and both are about to change.
+fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
+    let book_id = book.id.as_str();
     let shelves = state.library.shelves.get_untracked();
     let folders = state.library.folders.get_untracked();
     let placed_by = folders
@@ -131,7 +158,7 @@ pub fn purge_book(state: AppState, book_id: &str, opts: PurgeOpts) {
     let home = placed_by
         .as_deref()
         .and_then(|folder_id| folder_shelf_of(&shelves, folder_id, &book.id));
-    let entry = Tombstone::of(&book, home, js_sys::Date::now() as u64);
+    let entry = Tombstone::of(book, home, js_sys::Date::now() as u64);
     let path = book.path().to_string();
     let stored_copy = match &book.origin {
         Origin::Stored { store, .. } if opts.delete_store_copy => Some(store.clone()),
@@ -162,16 +189,6 @@ pub fn purge_book(state: AppState, book_id: &str, opts: PurgeOpts) {
     if let Some(store) = stored_copy {
         wire::delete_stored(&store);
     }
-
-    // The cover cap only holds if an eviction takes its art with it.
-    state.library.books.with_untracked(|books| {
-        state
-            .library
-            .covers
-            .update(|covers| prune_covers(books, covers));
-    });
-    crate::storage::persist_library(state.library);
-    crate::storage::persist_covers(state.library);
 }
 
 /// The first of one folder's shelves a book is filed on, in shelf order.
@@ -210,6 +227,17 @@ pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
 /// they were asking for, and the breadcrumb's rename is one keystroke away and
 /// shows the shelf it is naming.
 pub fn new_shelf(state: AppState) -> String {
+    let id = create_shelf(state);
+    state.library.shelf.set(id.clone());
+    crate::storage::persist_library(state.library);
+    id
+}
+
+/// Make a shelf and stay where you are. What a bulk "file onto a new shelf" wants:
+/// the reader picked books on one shelf and asked for them to be on another, and
+/// navigating them away from the shelf they were looking at is an answer to a
+/// question they did not ask.
+pub fn create_shelf(state: AppState) -> String {
     let now = js_sys::Date::now() as u64;
     let seq = state
         .library
@@ -225,9 +253,27 @@ pub fn new_shelf(state: AppState) -> String {
             books: Vec::new(),
         });
     });
-    state.library.shelf.set(id.clone());
-    crate::storage::persist_library(state.library);
     id
+}
+
+/// File several books on one shelf at once.
+///
+/// Membership only, so the same rule covers a bulk filing as covers a drag: a
+/// shelf holds ids, nothing here touches a filesystem, and a book already on the
+/// shelf is not moved to the end of it for being named twice.
+pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
+    if book_ids.is_empty() {
+        return;
+    }
+    state.library.shelves.update(|shelves| {
+        let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {
+            return;
+        };
+        for book_id in book_ids {
+            shelf_add(shelf, book_id);
+        }
+    });
+    crate::storage::persist_library(state.library);
 }
 
 /// Rename a shelf. A blank name is refused rather than stored: a crumb with

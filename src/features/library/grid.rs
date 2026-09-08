@@ -47,6 +47,10 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
     view! {
         <div
             class="library-grid"
+            // One class on the container rather than one per card: the books not in
+            // the set all step back by the same amount, and a shelf of three hundred
+            // should not run three hundred derivations to agree on that.
+            class=("library-grid-selecting", move || state.library.selecting.get())
             style=move || format!("--lib-cols:{}", columns.get())
             on:dragover=move |ev| {
                 // Empty space is a target too: dropping there appends, and

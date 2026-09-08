@@ -27,11 +27,13 @@ use crate::state::AppState;
 
 pub use crate::events::GLOSS_CONTEXT_EVENT;
 
-/// How long a press must hold before it becomes a selection gesture.
-pub const LONG_PRESS_MS: i32 = 450;
-
-/// Pointer may drift this far (px) during a long-press without cancelling it.
-pub const LONG_PRESS_SLOP_PX: f64 = 8.0;
+/// How long a press must hold before it becomes a selection gesture, and how far
+/// it may drift. Re-exported from the primitive that owns them, so the library's
+/// shelf and a page's highlights answer "how long is a long press?" with one
+/// number rather than two that happen to match.
+pub use crate::components::primitives::interactions::long_press::{
+    SELECT_PRESS_MS as LONG_PRESS_MS, SELECT_SLOP_PX as LONG_PRESS_SLOP_PX,
+};
 
 /// How long the undo toast stays up before the removal is final.
 pub const UNDO_WINDOW_MS: i32 = 6000;

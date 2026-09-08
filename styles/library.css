@@ -842,3 +842,94 @@
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
+
+/* --- Multi-select (long-press). The gesture, its tuning and the bar it raises
+   are the ones the gloss mark layer already uses, so a shelf answers a hold the
+   way a page does: an instant tint while the press counts, then the set. The
+   tint is a static paint change, not a transition — the feedback has to arrive
+   on the frame the finger arrives. --- */
+.book-pressing,
+.library-row-pressing {
+  opacity: 0.82;
+}
+
+/* While choosing, the books not in the set step back, and come forward again
+   under the pointer: the reader is about to tap one of them. */
+/* `.book-add` wears the `.book` class for its shape and is not a book: dimming it
+   would advertise a choice it does not offer. */
+.library-grid-selecting .book:not(.book-selected):not(.book-add),
+.library-list-selecting .library-row:not(.library-row-selected) {
+  opacity: 0.62;
+}
+.library-grid-selecting .book:not(.book-selected):not(.book-add):hover,
+.library-list-selecting .library-row:not(.library-row-selected):hover {
+  opacity: 0.95;
+}
+
+/* Membership. An outline on the art for a card, a tint plus a rule for a row —
+   the row has no art to outline that would not also outline its thumbnail twice. */
+.book-selected .book-cover {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.library-row-selected {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+/* The mark that says which ones you have already tapped. Empty it is a ring on
+   the art; filled it is the accent with a check, so the set is legible without
+   reading the bar's count. */
+.lib-check {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgb(255 255 255 / 0.78);
+  border-radius: 9999px;
+  background: rgb(0 0 0 / 0.34);
+  color: transparent;
+  pointer-events: none;
+}
+/* Bottom-left rather than top-left: the top-left corner is the missing-file
+   badge's, and a book can be both missing and selected. */
+.book-cover > .lib-check {
+  bottom: 6px;
+  left: 6px;
+}
+.book-selected .book-cover > .lib-check {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-paper);
+}
+/* A row's thumbnail is 2.6rem across, so the mark covers it rather than sitting
+   in a corner of it. */
+.library-row-cover > .lib-check {
+  inset: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}
+.library-row-selected .library-row-cover > .lib-check {
+  color: var(--color-paper);
+}
+
+/* The bar arrives the way the gloss bar does: lifted into place, once. */
+@keyframes library-bar-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.library-select-bar {
+  animation: library-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Off rather than shortened: the global net in animations.css would leave the
+     bar parked at its starting offset for the length of a 0.01ms animation, and
+     a bar that arrives is a bar the reader can find. */
+  .library-select-bar {
+    animation: none;
+  }
+}

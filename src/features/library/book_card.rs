@@ -2,6 +2,13 @@
 //! library needs that a recents list never did — a drag handle, and a way back
 //! when the address the book points at dies.
 //!
+//! Three gestures share the card. A click opens the book, or toggles it once the
+//! shelf is in multi-select. A long-press starts that multi-select with this book
+//! already in it. A right-click asks for the removal receipt. All three are the
+//! gestures a highlighted stroke on a page already answers to, from the same
+//! primitive with the same tuning, so holding a book and holding a highlight are
+//! one idea rather than two that happen to feel alike.
+//!
 //! Feature-local on purpose: it understands [`Book`], cover persistence, the open
 //! flow and the drag payload, and none of those belong in a primitive.
 
@@ -11,8 +18,12 @@ use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
 use reader_core::format::Format;
 
+use crate::components::primitives::interactions::long_press::{
+    LongPressOptions, SELECT_PRESS_MS, SELECT_SLOP_PX, use_long_press,
+};
 use crate::features::library::drag::{self, DropTarget, ShelfOrder};
 use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::selection::{enter_selection, toggle_selected};
 use crate::services::document;
 use crate::services::library::{move_to_shelf, relink_dialog};
 use crate::state::AppState;
@@ -28,6 +39,13 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let drop_target = use_context::<DropTarget>().expect("the library content provides the target");
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+
+    // Selection is a page-wide mode, so every card asks the same two signals rather
+    // than being told about itself.
+    let selecting = state.library.selecting;
+    let selected_set = state.library.selected;
+    let selected_id = book.id.clone();
+    let is_selected = Signal::derive(move || selected_set.with(|s| s.contains(&selected_id)));
 
     // Owned copies so each closure below captures its own value: the card renders
     // a dozen closures that all outlive this function's frame.
@@ -71,14 +89,75 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         })
     };
 
+    // The hold that starts a selection. Disabled once one is running: inside
+    // selection mode a tap already toggles, and a second gesture per card would be
+    // a second way to do the thing a tap now does.
+    let press_id = id.clone();
+    let lp = use_long_press(LongPressOptions {
+        press_ms: SELECT_PRESS_MS,
+        slop_px: SELECT_SLOP_PX,
+        // Capture so the hold survives drifting off a narrow spine, and so starting
+        // a drag arrives here as `pointercancel` and cancels the press instead of
+        // letting it complete behind the drag.
+        capture_pointer: true,
+        enabled: Signal::derive(move || !selecting.get_untracked()),
+        on_press: Callback::new(move |_| enter_selection(state, &press_id)),
+    });
+
     let click_path = path.clone();
-    let open = move |_| document::open_path(state, click_path.clone());
+    let click_id = id.clone();
+    let on_click = move |ev: leptos::ev::MouseEvent| {
+        // The click a completed hold generates is the gesture's exhaust, not an
+        // intention to open the book.
+        if (lp.swallow_click)() {
+            return;
+        }
+        if selecting.get_untracked() {
+            ev.stop_propagation();
+            toggle_selected(state, &click_id);
+            return;
+        }
+        document::open_path(state, click_path.clone());
+    };
+
+    // A right-click is the shelf's answer to a stroke's remove menu: it asks, and
+    // the sheet that answers is the same one the card's own ✕ opens. Inside
+    // selection mode the same button toggles instead, because a reader who is
+    // picking books out is not asking to remove one of them.
+    let context_id = id.clone();
+    let on_context = move |ev: leptos::ev::MouseEvent| {
+        ev.prevent_default();
+        if (lp.swallow_context)() {
+            return;
+        }
+        ev.stop_propagation();
+        if selecting.get_untracked() {
+            toggle_selected(state, &context_id);
+            return;
+        }
+        remove_sheet.ask(&context_id);
+    };
 
     let key_path = path.clone();
+    let key_id = id.clone();
+    let select_key_id = id.clone();
     let on_key = move |ev: leptos::ev::KeyboardEvent| {
-        if ev.key() == "Enter" {
-            document::open_path(state, key_path.clone());
+        if ev.key() != "Enter" {
+            return;
         }
+        // A keyboard has no hold to make, so it gets the gesture's two halves as
+        // two keys: Shift+Enter enters selection the way a long-press does, and
+        // once inside, Enter toggles instead of opening.
+        if ev.shift_key() && !selecting.get_untracked() {
+            ev.prevent_default();
+            enter_selection(state, &select_key_id);
+            return;
+        }
+        if selecting.get_untracked() {
+            toggle_selected(state, &key_id);
+            return;
+        }
+        document::open_path(state, key_path.clone());
     };
 
     // A removal asks first. The card does not know what a removal costs — the
@@ -97,6 +176,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
 
     let dom_id = format!("book-{}", id);
     let reveal_id = id.clone();
+    let aria_id = id.clone();
     let drag_id = id.clone();
     let hover_id = id.clone();
     let leave_id = id.clone();
@@ -127,11 +207,42 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                     .with(|t| t.as_deref() == Some(over_id.as_str()))
             })
             class=("book-missing", missing)
+            class=("book-selected", move || is_selected.get())
+            class=("book-pressing", move || lp.pressing.get())
             role="button"
             tabindex="0"
-            draggable="true"
-            aria-label=move || format!("Open {aria_title}")
-            on:click=open
+            // Dragging files one card on a shelf; while a set is selected the
+            // pointer is choosing, not filing.
+            draggable=move || if selecting.get() { "false" } else { "true" }
+            aria-label=move || {
+                if selecting.get() {
+                    format!("Select {aria_title}")
+                } else {
+                    format!("Open {aria_title}")
+                }
+            }
+            aria-pressed=move || {
+                selecting.get().then(|| {
+                    if selected_set.with(|s| s.contains(&aria_id)) {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                })
+            }
+            on:pointerdown=move |ev| {
+                // Only the primary button starts a hold — the right one owns the
+                // receipt.
+                if ev.button() != 0 {
+                    return;
+                }
+                (lp.on_pointerdown)(&ev);
+            }
+            on:pointermove=move |ev| (lp.on_pointermove)(&ev)
+            on:pointerup=move |ev| (lp.on_pointerup)(&ev)
+            on:pointercancel=move |ev| (lp.on_pointercancel)(&ev)
+            on:click=on_click
+            on:contextmenu=on_context
             on:keydown=on_key
             on:dragstart=move |ev| drag::begin(&ev, &drag_id)
             on:dragend=move |_| drop_target.0.set(None)
@@ -188,6 +299,22 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             >
                 // Fore-edge: stacked page sheets peeking past the right side.
                 <div class="book-pages"></div>
+                // The set membership, printed on the cover while the shelf is
+                // choosing: an outline alone asks the reader to remember which
+                // cards they have already tapped.
+                {move || {
+                    selecting.get().then(|| {
+                        view! {
+                            <span class="lib-check" aria-hidden="true">
+                                {move || {
+                                    is_selected.get().then(|| {
+                                        view! { <Icon name=IconName::Check size=11 /> }
+                                    })
+                                }}
+                            </span>
+                        }
+                    })
+                }}
                 {move || {
                     match state
                         .library

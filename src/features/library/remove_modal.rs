@@ -3,13 +3,18 @@
 //! A removal here is not a dismissal. It takes the resume point, every shelf
 //! placement, the cached cover and the highlights with it, and for a book the app
 //! copied it can take the bytes too — so the sheet reads as a receipt of what is
-//! about to go rather than as a warning, and a row for something the book does not
-//! have is simply not there. A reader who removed a book they never opened sees
-//! one line, not four empty ones.
+//! about to go rather than as a warning, and a row for something the books do not
+//! have is simply not there. A reader who removed a book they never opened sees one
+//! line, not four empty ones.
 //!
-//! There is no undo toast, deliberately. The sheet IS the safety, and the real
-//! undo path is the folder's import menu, which keeps a tombstone and can offer
-//! the book back; a toast would promise a second mechanism and then have to
+//! One sheet for one book and for a selection, because the alternative is a bulk
+//! delete that skips the itemisation — the one place in the app where "remove"
+//! would not tell you what it takes. The rows aggregate; the questions do not
+//! change.
+//!
+//! There is no undo toast, deliberately. The sheet IS the safety, and the real undo
+//! path is the folder's import menu, which keeps a tombstone per removal and can
+//! offer the book back; a toast would promise a second mechanism and then have to
 //! expire.
 
 use leptos::prelude::*;
@@ -24,20 +29,22 @@ use crate::components::primitives::controls::button::{Button, ButtonTone, Button
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 use crate::components::settings::common::Row;
-use crate::services::library::{PurgeOpts, memberships, purge_book};
+use crate::services::library::{PurgeOpts, memberships, purge_books};
 use crate::state::AppState;
 
 /// The sheet's two handles, provided by the library page: whether it is open and
-/// which book it is asking about.
+/// which books it is asking about.
 ///
 /// A context for the same reason the import sheet is one — a remove affordance
-/// lives on a grid card and on a list row, and threading two signals from the page
-/// down through the grid to reach a card would put the sheet's plumbing in every
-/// component between.
+/// lives on a grid card, on a list row and on the selection bar, and threading two
+/// signals from the page down through the grid to reach a card would put the
+/// sheet's plumbing in every component between.
 #[derive(Clone, Copy)]
 pub(crate) struct RemoveSheet {
     pub open: RwSignal<bool>,
-    pub book: RwSignal<Option<String>>,
+    /// The books under question. One id for a card's ✕, several for a selection;
+    /// empty means the sheet has nothing to ask about and closes itself.
+    pub books: RwSignal<Vec<String>>,
 }
 
 impl RemoveSheet {
@@ -45,74 +52,165 @@ impl RemoveSheet {
     pub fn provide() -> Self {
         let sheet = Self {
             open: RwSignal::new(false),
-            book: RwSignal::new(None),
+            books: RwSignal::new(Vec::new()),
         };
         provide_context(sheet);
         sheet
     }
 
-    /// Ask about a book. The sheet shows the receipt and waits.
+    /// Ask about one book.
     pub fn ask(&self, book_id: &str) {
-        self.book.set(Some(book_id.to_string()));
+        self.books.set(vec![book_id.to_string()]);
+        self.open.set(true);
+    }
+
+    /// Ask about a selection. An empty selection is not a question, and opening
+    /// onto one would show a receipt for nothing.
+    pub fn ask_many(&self, book_ids: Vec<String>) {
+        if book_ids.is_empty() {
+            return;
+        }
+        self.books.set(book_ids);
         self.open.set(true);
     }
 }
 
 /// Everything the receipt lines are made of, read once per open.
 struct Receipt {
-    book: Book,
-    /// Highlight marks stored against this address.
+    books: Vec<Book>,
+    /// Highlight marks stored against these addresses.
     marks: usize,
-    has_cover: bool,
-    /// The names of the shelves this book is filed on.
+    covers: usize,
+    /// The names of the shelves any of these books is filed on, deduped: ten books
+    /// on one shelf is one placement to name, not ten.
     placements: Vec<String>,
-    /// The book came from a folder that is still being watched, so the removal has
-    /// a consequence worth one sentence: it will stay out.
+    /// At least one of them came from a folder that is still being watched, so the
+    /// removal has a consequence worth one sentence: it will stay out.
     watched: bool,
+    /// The app's own copies among them, and what they occupy.
+    stored_count: usize,
+    stored_bytes: u64,
 }
 
-/// Build the receipt. `None` when the book is already gone, which is what makes a
-/// sheet left open across a removal harmless rather than a panic.
-fn receipt(state: AppState, book_id: &str) -> Option<Receipt> {
-    let book = state
-        .library
-        .books
-        .with_untracked(|books| books.iter().find(|b| b.id == book_id).cloned())?;
-    let path = book.path().to_string();
-    let marks = crate::storage::load_gloss()
-        .get(&path)
-        .map(Vec::len)
-        .unwrap_or(0);
-    let has_cover = state
-        .library
-        .covers
-        .with_untracked(|covers| covers.contains_key(&path));
-    let placements = memberships(state, book_id)
-        .into_iter()
-        .map(|(_, name)| name)
-        .collect();
-    let fingerprint = book.fp;
-    let measured = !book.fp_pending;
+impl Receipt {
+    fn many(&self) -> bool {
+        self.books.len() != 1
+    }
+
+    /// The heading: one book's title, or a count.
+    fn heading(&self) -> String {
+        match self.books.first() {
+            Some(book) if !self.many() => book.title(),
+            _ => {
+                let n = self.books.len();
+                if n == 1 {
+                    "1 book".to_string()
+                } else {
+                    format!("{n} books")
+                }
+            }
+        }
+    }
+
+    /// The line under the heading: the format, and a size the library has actually
+    /// measured. A book never measured has no honest size, and a placeholder's
+    /// "size" is the length of its path — a number on a receipt that would mean
+    /// nothing.
+    fn subtitle(&self) -> String {
+        let measured: Vec<u64> = self
+            .books
+            .iter()
+            .filter(|b| !b.fp_pending)
+            .map(|b| b.fp.size)
+            .collect();
+        let formats: Vec<&str> = {
+            let mut seen: Vec<&str> = Vec::new();
+            for book in &self.books {
+                let label = book.format.label();
+                if !seen.contains(&label) {
+                    seen.push(label);
+                }
+            }
+            seen
+        };
+        let kinds = formats.join(" · ");
+        if measured.is_empty() {
+            kinds
+        } else {
+            let total: u64 = measured.iter().sum();
+            format!("{kinds} · {}", human_size(total))
+        }
+    }
+}
+
+/// Build the receipt. `None` when none of the books are there any more, which is
+/// what makes a sheet left open across a removal harmless rather than a panic.
+fn receipt(state: AppState, ids: &[String]) -> Option<Receipt> {
+    let gloss = crate::storage::load_gloss();
+    let books = state.library.books.with_untracked(|books| {
+        books
+            .iter()
+            .filter(|b| ids.contains(&b.id))
+            .cloned()
+            .collect::<Vec<Book>>()
+    });
+    if books.is_empty() {
+        return None;
+    }
+    let mut marks = 0usize;
+    let mut covers = 0usize;
+    let mut stored_count = 0usize;
+    let mut stored_bytes = 0u64;
+    let mut placement_names: Vec<String> = Vec::new();
+    for book in &books {
+        let path = book.path();
+        marks += gloss.get(path).map(Vec::len).unwrap_or(0);
+        if state
+            .library
+            .covers
+            .with_untracked(|covers| covers.contains_key(path))
+        {
+            covers += 1;
+        }
+        if let library_core::book::Origin::Stored { .. } = &book.origin {
+            stored_count += 1;
+            if !book.fp_pending {
+                stored_bytes += book.fp.size;
+            }
+        }
+        for (_, name) in memberships(state, &book.id) {
+            if !placement_names.contains(&name) {
+                placement_names.push(name);
+            }
+        }
+    }
+    let fingerprints: Vec<_> = books.iter().map(|b| b.fp).collect();
+    let measured = books.iter().all(|b| !b.fp_pending);
     let watched = measured
         && state.library.folders.with_untracked(|folders| {
             folders.iter().any(|f| {
-                f.opts.watch && (f.placed.contains(&fingerprint) || f.is_ignored(&fingerprint))
+                f.opts.watch
+                    && fingerprints
+                        .iter()
+                        .any(|fp| f.placed.contains(fp) || f.is_ignored(fp))
             })
         });
     Some(Receipt {
-        book,
+        books,
         marks,
-        has_cover,
-        placements,
+        covers,
+        placements: placement_names,
         watched,
+        stored_count,
+        stored_bytes,
     })
 }
 
 #[component]
 pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoView {
     use_overlay_lane(sheet.open, OverlayPolicy::MODAL);
-    // On by default: a copy the app made for a book that is leaving the library is
-    // a file nothing will ever read again, and this switch is where a reader says
+    // On by default: copies the app made for books that are leaving the library are
+    // files nothing will ever read again, and this switch is where a reader says
     // otherwise.
     let delete_copy = RwSignal::new(true);
 
@@ -134,20 +232,19 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
         on_cleanup(move || handle.remove());
     });
 
-    // A book removed by any other route while the sheet is open closes it. Done in
-    // an effect rather than in the view, because a view that writes a signal is a
-    // view that can be asked to render and mutate in the same pass.
+    // Books removed by any other route while the sheet is open close it. Done in an
+    // effect rather than in the view, because a view that writes a signal is a view
+    // that can be asked to render and mutate in the same pass.
     Effect::new(move |_| {
         if !sheet.open.get() {
             return;
         }
-        let alive = match sheet.book.get() {
-            None => false,
-            Some(id) => state
+        let ids = sheet.books.get();
+        let alive = !ids.is_empty()
+            && state
                 .library
                 .books
-                .with(|books| books.iter().any(|b| b.id == id)),
-        };
+                .with(|books| books.iter().any(|b| ids.contains(&b.id)));
         if !alive {
             sheet.open.set(false);
         }
@@ -160,17 +257,24 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                 on:click=move |_| sheet.open.set(false)
             >
                 {move || {
-                    sheet.book.get().and_then(|id| {
-                        let info = receipt(state, &id)?;
-                        Some(view! {
-                            <Sheet
-                                state=state
-                                sheet=sheet
-                                delete_copy=delete_copy
-                                info=info
-                                remove_id=id
-                            />
-                        })
+                    let ids = sheet.books.get();
+                    let info = receipt(state, &ids)?;
+                    let cover_path = info
+                        .books
+                        .first()
+                        .map(|b| b.path().to_string())
+                        .unwrap_or_default();
+                    let alt = info.heading();
+                    Some(view! {
+                        <Sheet
+                            state=state
+                            sheet=sheet
+                            delete_copy=delete_copy
+                            info=info
+                            ids=ids
+                            cover_path=cover_path
+                            alt=alt
+                        />
                     })
                 }}
             </div>
@@ -178,8 +282,8 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
     }
 }
 
-/// The sheet's body, split out so it can take the book by value: the outer view
-/// answers "is there still a book to talk about?" on every run, and this one is
+/// The sheet's body, split out so it can take the receipt by value: the outer view
+/// answers "is there still anything to talk about?" on every run, and this one is
 /// built once per open with an answer it can keep.
 #[component]
 fn Sheet(
@@ -187,41 +291,73 @@ fn Sheet(
     sheet: RemoveSheet,
     delete_copy: RwSignal<bool>,
     info: Receipt,
-    remove_id: String,
+    ids: Vec<String>,
+    cover_path: String,
+    alt: String,
 ) -> impl IntoView {
     // Everything the view prints, worked out once. A `view!` body is a builder, not
     // a place to compute: an attribute and a child that need the same string each
-    // need their own copy, and finding that out from a compiler is a slow way to
-    // learn it.
-    let title = info.book.title();
-    let tooltip = info.book.title();
-    let alt = info.book.title();
-    let cover_path = info.book.path().to_string();
-    let format_line = match (!info.book.fp_pending).then(|| human_size(info.book.fp.size)) {
-        // A book the library has never measured has no honest size to show, and a
-        // placeholder's "size" is the length of its path — a number on a receipt
-        // that would mean nothing.
-        Some(size) => format!("{} · {}", info.book.format.label(), size),
-        None => info.book.format.label().to_string(),
+    // need their own copy, and learning that from a compiler is a slow way to learn
+    // it.
+    let heading = info.heading();
+    let tooltip = heading.clone();
+    let subtitle = info.subtitle();
+    let many = info.many();
+    let marks = info.marks;
+    let covers = info.covers;
+    let placements = info.placements.clone();
+    let placements_line = placements.join(", ");
+    let has_placements = !placements.is_empty();
+    let watched = info.watched;
+    let stored_count = info.stored_count;
+    let stored_bytes = info.stored_bytes;
+    let page_line = match info.books.first() {
+        Some(book) if !many && book.num_pages > 0 => {
+            format!("Page {} of {}", book.page, book.num_pages)
+        }
+        Some(book) if !many => format!("Page {}", book.page),
+        _ => String::new(),
     };
-    let page_line = if info.book.num_pages > 0 {
-        format!("Page {} of {}", info.book.page, info.book.num_pages)
-    } else {
-        format!("Page {}", info.book.page)
-    };
-    let started = info.book.page > 1 || info.book.fraction.is_some();
-    let marks_line = match info.marks {
+    let started = !many
+        && info
+            .books
+            .first()
+            .is_some_and(|b| b.page > 1 || b.fraction.is_some());
+    let marks_line = match marks {
         1 => "1 mark".to_string(),
         n => format!("{n} marks"),
     };
-    let placements_line = info.placements.join(", ");
-    let stored = info.book.origin.is_stored();
-    let copy_size = human_size(info.book.fp.size);
-    let copy_label = format!("Delete the app's own copy ({copy_size})");
-    let marks = info.marks;
-    let has_cover = info.has_cover;
-    let has_placements = !info.placements.is_empty();
-    let watched = info.watched;
+    // Hoisted out of the view: an `if` in attribute position is an expression the
+    // macro has to guess the end of, and a label is a string either way.
+    let covers_label = if many { "Cached covers" } else { "Cached cover" };
+    let covers_line = match covers {
+        1 => "1 image".to_string(),
+        n => format!("{n} images"),
+    };
+    let books_line = match info.books.len() {
+        1 => "1 book".to_string(),
+        n => format!("{n} books"),
+    };
+    let copy_label = match stored_count {
+        1 => format!("Delete the app's own copy ({})", human_size(stored_bytes)),
+        n => format!("Delete the app's {n} copies ({})", human_size(stored_bytes)),
+    };
+    let copy_note_on = match stored_count {
+        1 => format!(
+            "The copy the app made ({}) goes with the book. The file it was copied from is never touched.",
+            human_size(stored_bytes)
+        ),
+        n => format!(
+            "The {n} copies the app made ({}) go with the books. The files they were copied from are never touched.",
+            human_size(stored_bytes)
+        ),
+    };
+    let remove_label = if many {
+        format!("Remove {} books", ids.len())
+    } else {
+        "Remove everything".to_string()
+    };
+    let show_cover = !many;
 
     view! {
         <div
@@ -229,31 +365,35 @@ fn Sheet(
             style="width:min(92vw, 420px)"
             on:click=move |ev| ev.stop_propagation()
             role="dialog"
-            aria-label="Remove this book"
+            aria-label="Remove from the library"
         >
             <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
-                <span class="remove-cover">
-                    {move || {
-                        state
-                            .library
-                            .covers
-                            .with(|covers| covers.get(&cover_path).cloned())
-                            .map(|cover| {
-                                view! {
-                                    <img
-                                        class="remove-cover-img"
-                                        src=cover.data_url.clone()
-                                        alt=alt.clone()
-                                    />
-                                }
-                            })
-                    }}
-                </span>
+                {show_cover.then(|| {
+                    view! {
+                        <span class="remove-cover">
+                            {move || {
+                                state
+                                    .library
+                                    .covers
+                                    .with(|covers| covers.get(&cover_path).cloned())
+                                    .map(|cover| {
+                                        view! {
+                                            <img
+                                                class="remove-cover-img"
+                                                src=cover.data_url.clone()
+                                                alt=alt.clone()
+                                            />
+                                        }
+                                    })
+                            }}
+                        </span>
+                    }
+                })}
                 <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
-                        {title}
+                        {heading}
                     </span>
-                    <span class="mt-0.5 block text-xs text-muted">{format_line}</span>
+                    <span class="mt-0.5 block text-xs text-muted">{subtitle}</span>
                 </span>
                 <IconButton
                     icon=IconName::Close
@@ -265,6 +405,15 @@ fn Sheet(
 
             <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
                 <div class="divide-y divide-line rounded-xl border border-line">
+                    {many.then(|| {
+                        view! {
+                            <ReceiptRow
+                                icon=IconName::Library
+                                label="Books"
+                                value=books_line.clone()
+                            />
+                        }
+                    })}
                     {started.then(|| {
                         view! {
                             <ReceiptRow
@@ -283,12 +432,12 @@ fn Sheet(
                             />
                         }
                     })}
-                    {has_cover.then(|| {
+                    {(covers > 0).then(|| {
                         view! {
                             <ReceiptRow
                                 icon=IconName::Thumbs
-                                label="Cached cover"
-                                value="1 image".to_string()
+                                label=covers_label
+                                value=covers_line.clone()
                             />
                         }
                     })}
@@ -303,10 +452,10 @@ fn Sheet(
                     })}
                 </div>
 
-                {stored.then(|| {
+                {(stored_count > 0).then(|| {
                     view! {
                         <div class="mt-3 rounded-xl border border-line">
-                            <Row label="Delete the copied file">
+                            <Row label="Delete the copied files">
                                 <Switch
                                     checked=Signal::derive(move || delete_copy.get())
                                     on_change=Callback::new(move |on| delete_copy.set(on))
@@ -316,12 +465,9 @@ fn Sheet(
                             <p class="px-4 pb-3 text-xs text-muted">
                                 {move || {
                                     if delete_copy.get() {
-                                        format!(
-                                            "The copy the app made ({copy_size}) goes with the book. \
-                                             The file it was copied from is never touched."
-                                        )
+                                        copy_note_on.clone()
                                     } else {
-                                        "The copy stays in the app's store, with nothing left to read it."
+                                        "The copies stay in the app's store, with nothing left to read them."
                                             .to_string()
                                     }
                                 }}
@@ -333,8 +479,8 @@ fn Sheet(
                 {watched.then(|| {
                     view! {
                         <p class="mt-3 text-xs text-muted">
-                            "This folder is watched. Removing keeps the book out of future
-                             auto-imports; the folder's import menu can offer it back."
+                            "A watched folder placed at least one of these. Removing keeps them out of
+                             future auto-imports; the folder's import menu can offer them back."
                         </p>
                     }
                 })}
@@ -344,16 +490,16 @@ fn Sheet(
                 <Button
                     on_click=move |_| sheet.open.set(false)
                     variant=ButtonVariant::Ghost
-                    title="Keep this book"
+                    title="Keep these books"
                 >
                     <span>"Cancel"</span>
                 </Button>
                 <Button
                     on_click=move |_| {
                         sheet.open.set(false);
-                        purge_book(
+                        purge_books(
                             state,
-                            &remove_id,
+                            &ids,
                             PurgeOpts {
                                 delete_store_copy: delete_copy.get_untracked(),
                             },
@@ -361,10 +507,10 @@ fn Sheet(
                     }
                     variant=ButtonVariant::Toolbar
                     tone=ButtonTone::Danger
-                    title="Remove this book and everything the library holds about it"
+                    title="Remove these books and everything the library holds about them"
                 >
                     <Icon name=IconName::Close size=16 />
-                    <span>"Remove everything"</span>
+                    <span>{remove_label}</span>
                 </Button>
             </footer>
         </div>

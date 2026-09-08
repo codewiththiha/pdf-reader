@@ -1,12 +1,15 @@
 //! The list: one row per book, for a library the reader is scanning rather than
 //! browsing.
 //!
-//! Same books, same order, same drag rules as the grid — the only thing that
-//! changes is the shape of a row, which is why the order arrives from the same
-//! context signal rather than being derived a second time here. A row shows the
-//! author when the book has one and the resume point when it does not: at this
-//! density there is room for one line of prose and the reader gets to choose
-//! which by opening the book.
+//! Same books, same order, same drag rules and the same three gestures as the grid
+//! — the only thing that changes is the shape of a row, which is why the order
+//! arrives from the same context signal rather than being derived a second time
+//! here. A reader who switched to the denser layout has not thereby lost the way
+//! in, the way out, or the hold that starts a selection.
+//!
+//! A row shows the author when the book has one and the resume point when it does
+//! not: at this density there is room for one line of prose and the reader gets to
+//! choose which by opening the book.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -17,9 +20,13 @@ use library_core::shelf::ALL_SHELF;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
 
+use crate::components::primitives::interactions::long_press::{
+    LongPressOptions, SELECT_PRESS_MS, SELECT_SLOP_PX, use_long_press,
+};
 use crate::features::library::add_menu::AddMenu;
 use crate::features::library::drag::{self, DropTarget, ShelfOrder};
 use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::selection::{enter_selection, toggle_selected};
 use crate::services::document;
 use crate::services::library::move_to_shelf;
 use crate::state::AppState;
@@ -30,7 +37,10 @@ pub(crate) fn ListView(state: AppState) -> impl IntoView {
     let crop = Signal::derive(move || state.library.view.with(|v| v.cover == CoverFit::Crop));
 
     view! {
-        <div class="library-list divide-y divide-line rounded-xl border border-line">
+        <div
+            class="library-list divide-y divide-line rounded-xl border border-line"
+            class=("library-list-selecting", move || state.library.selecting.get())
+        >
             <For each=move || order.0.get() key=|b| b.id.clone() let:book>
                 <ListRow state=state book=book crop=crop />
             </For>
@@ -77,6 +87,11 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
+    let selecting = state.library.selecting;
+    let selected_set = state.library.selected;
+    let selected_id = book.id.clone();
+    let is_selected = Signal::derive(move || selected_set.with(|s| s.contains(&selected_id)));
+
     let id = book.id.clone();
     let path = book.path().to_string();
     let title = book.title();
@@ -95,7 +110,21 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
     let path_hint = book.path().to_string();
 
+    let press_id = id.clone();
+    let lp = use_long_press(LongPressOptions {
+        press_ms: SELECT_PRESS_MS,
+        slop_px: SELECT_SLOP_PX,
+        capture_pointer: true,
+        enabled: Signal::derive(move || !selecting.get_untracked()),
+        on_press: Callback::new(move |_| enter_selection(state, &press_id)),
+    });
+
     let click_path = path.clone();
+    let click_id = id.clone();
+    let context_id = id.clone();
+    let key_id = id.clone();
+    let aria_id = id.clone();
+    let select_key_id = id.clone();
     let dom_id = format!("book-{}", id);
     let reveal_id = id.clone();
     let remove_id = id.clone();
@@ -108,6 +137,7 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let alt_title = title.clone();
     let row_title = title.clone();
     let row_tooltip = title.clone();
+    let row_label = title.clone();
 
     view! {
         <div
@@ -125,14 +155,74 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                     .with(|t| t.as_deref() == Some(over_id.as_str()))
             })
             class=("row-missing", missing)
+            class=("library-row-selected", move || is_selected.get())
+            class=("library-row-pressing", move || lp.pressing.get())
             role="button"
             tabindex="0"
-            draggable="true"
-            on:click=move |_| document::open_path(state, click_path.clone())
-            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                if ev.key() == "Enter" {
-                    document::open_path(state, path.clone());
+            draggable=move || if selecting.get() { "false" } else { "true" }
+            aria-label=move || {
+                if selecting.get() {
+                    format!("Select {row_label}")
+                } else {
+                    format!("Open {row_label}")
                 }
+            }
+            aria-pressed=move || {
+                selecting.get().then(|| {
+                    if selected_set.with(|s| s.contains(&aria_id)) {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                })
+            }
+            on:pointerdown=move |ev| {
+                if ev.button() != 0 {
+                    return;
+                }
+                (lp.on_pointerdown)(&ev);
+            }
+            on:pointermove=move |ev| (lp.on_pointermove)(&ev)
+            on:pointerup=move |ev| (lp.on_pointerup)(&ev)
+            on:pointercancel=move |ev| (lp.on_pointercancel)(&ev)
+            on:click=move |ev: leptos::ev::MouseEvent| {
+                if (lp.swallow_click)() {
+                    return;
+                }
+                if selecting.get_untracked() {
+                    ev.stop_propagation();
+                    toggle_selected(state, &click_id);
+                    return;
+                }
+                document::open_path(state, click_path.clone());
+            }
+            on:contextmenu=move |ev: leptos::ev::MouseEvent| {
+                ev.prevent_default();
+                if (lp.swallow_context)() {
+                    return;
+                }
+                ev.stop_propagation();
+                if selecting.get_untracked() {
+                    toggle_selected(state, &context_id);
+                    return;
+                }
+                remove_sheet.ask(&context_id);
+            }
+            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                if ev.key() != "Enter" {
+                    return;
+                }
+                // Shift+Enter is the keyboard's long-press; see `book_card`.
+                if ev.shift_key() && !selecting.get_untracked() {
+                    ev.prevent_default();
+                    enter_selection(state, &select_key_id);
+                    return;
+                }
+                if selecting.get_untracked() {
+                    toggle_selected(state, &key_id);
+                    return;
+                }
+                document::open_path(state, path.clone());
             }
             on:dragstart=move |ev| drag::begin(&ev, &drag_id)
             on:dragend=move |_| drop_target.0.set(None)
@@ -170,6 +260,19 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                 class="library-row-cover"
                 class=("book-cover-crop", move || crop.get())
             >
+                {move || {
+                    selecting.get().then(|| {
+                        view! {
+                            <span class="lib-check" aria-hidden="true">
+                                {move || {
+                                    is_selected.get().then(|| {
+                                        view! { <Icon name=IconName::Check size=11 /> }
+                                    })
+                                }}
+                            </span>
+                        }
+                    })
+                }}
                 {move || {
                     state
                         .library

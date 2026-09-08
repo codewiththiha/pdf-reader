@@ -11,6 +11,19 @@ use leptos::prelude::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
+/// How long a press must hold before it becomes a SELECTION gesture.
+///
+/// Owned here rather than by either feature that uses it, because the two — a
+/// highlight on a page and a book on a shelf — are the same gesture to a reader,
+/// and two constants with the same meaning in two feature directories are two
+/// numbers that eventually stop matching.
+pub const SELECT_PRESS_MS: i32 = 450;
+
+/// How far the pointer may drift during that hold without cancelling it. A touch
+/// drag is never perfectly still, and a slop tight enough to demand stillness is a
+/// gesture that feels broken on a trackpad.
+pub const SELECT_SLOP_PX: f64 = 8.0;
+
 /// What the gesture needs from the caller.
 pub struct LongPressOptions {
     /// How long a press must hold before it completes (ms).

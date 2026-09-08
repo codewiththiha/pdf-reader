@@ -7,10 +7,12 @@
 //! open: an "Opening…" that only the reader page could draw is an "Opening…"
 //! nobody sees.
 //!
-//! This is also where the two things the grid and the list share are provided:
-//! the order both render, and the one drop-target signal both draw their markers
-//! from. Deriving the order once here is what makes a drag between the two views
-//! impossible to get wrong — there is only one order.
+//! This is also where the things the grid and the list share are provided: the
+//! order both render, the one drop-target signal both draw their markers from, and
+//! the selection mode both toggle into. Deriving the order once here is what makes
+//! a drag between the two views impossible to get wrong — there is only one order —
+//! and it is what lets the selection bar's "All" mean everything on screen rather
+//! than everything in the library.
 
 use std::time::Duration;
 
@@ -28,6 +30,7 @@ use crate::features::library::drag::{DropTarget, ShelfOrder};
 use crate::features::library::empty_state::EmptyState;
 use crate::features::library::grid::GridView;
 use crate::features::library::list::ListView;
+use crate::features::library::selection::{LibrarySelectBar, use_select_mode};
 use crate::state::AppState;
 
 /// How long a revealed card stays lit. Long enough to find with the eye after the
@@ -140,6 +143,11 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     provide_context(ShelfOrder(order));
     provide_context(DropTarget(RwSignal::new(None)));
     install_reveal(state);
+    // The exit paths for a selection a card started: Escape, a click on empty
+    // shelf, and leaving the page. Installed here rather than per card because
+    // those are facts about the shelf, and one listener per card would be N
+    // listeners racing to leave the same mode.
+    use_select_mode(state);
 
     let status = state.reader.document.status;
     let error = state.reader.document.error;
@@ -219,6 +227,11 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
                     </div>
                 </Show>
             </Show>
+            // Fixed to the viewport, and mounted whatever the shelf is doing: a
+            // selection outlives the "Opening…" that can cover the grid, and a bar
+            // that vanished mid-open would leave the reader in a mode with no way
+            // out of it on screen.
+            <LibrarySelectBar state=state />
         </div>
     }
 }

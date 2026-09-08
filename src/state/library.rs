@@ -198,10 +198,10 @@ impl ImportTask {
 ///
 /// Four of these persist together as one [`LibraryBlob`] and are separate
 /// signals anyway: the shelf re-renders when a book's resume point moves, and
-/// nothing else should. The three that do not persist (`query`, `shelf`,
-/// `tasks`) are the page's own — a search that survived a restart would be a
-/// search the reader did not type, and a dock card that survived one would
-/// report an import that finished last week.
+/// nothing else should. The rest are the page's own and a restart forgets them — a
+/// search that survived would be one the reader did not type, a dock card that
+/// survived would report an import that finished last week, and a selection that
+/// survived would be a set of books the reader cannot see selected.
 #[derive(Clone, Copy)]
 pub struct LibraryState {
     /// Every book, in the order the "All" shelf shows them. This list IS the
@@ -223,6 +223,14 @@ pub struct LibraryState {
     /// book twice in a row re-triggers. Written by a "show it in its shelf"
     /// action, cleared by the shelf that scrolled to it.
     pub reveal: RwSignal<Option<(String, u64)>>,
+    /// Whether a long-press has put the shelf into multi-select. While it is on a
+    /// click toggles instead of opening, and the action bar owns the bottom-right
+    /// corner.
+    pub selecting: RwSignal<bool>,
+    /// The selected book ids. A set rather than a list because toggling is the
+    /// high-frequency operation and "is this one selected" is asked by every card
+    /// on every repaint.
+    pub selected: RwSignal<HashSet<String>>,
 }
 
 impl Default for LibraryState {
@@ -241,6 +249,8 @@ impl Default for LibraryState {
             shelf: RwSignal::new(ALL_SHELF.to_string()),
             tasks: RwSignal::new(Vec::new()),
             reveal: RwSignal::new(None),
+            selecting: RwSignal::new(false),
+            selected: RwSignal::new(HashSet::new()),
         }
     }
 }
