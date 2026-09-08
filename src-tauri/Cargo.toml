@@ -33,6 +33,13 @@ dotenvy = "0.15"      # Loads the .env file (FM_BRIDGE_BIN) before Tauri boots
 futures = "0.3"       # Handles fm-bridge's async streams
 async-stream = "0.3"  # Wraps the AI output chunks into a stream
 tokio = { version = "1", features = ["time"] } # Drives the mock provider's simulated delays
+# The library's catalog. `bundled` compiles SQLite from source rather than linking
+# a system library, so the three platforms ship the same engine and the same
+# feature set — the bundled build turns on FTS5, which the catalog's search index
+# is, and a system SQLite that happens to lack it would fail a migration on one
+# machine and not on another. Roughly a megabyte of binary against a localStorage
+# quota measured in the same units that a cover map alone will find.
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 # macOS-only: hide/show the native traffic lights (titlebar-less overlay mode).
 #

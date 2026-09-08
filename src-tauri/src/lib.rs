@@ -25,6 +25,10 @@ use tauri::{Emitter, Manager, RunEvent};
 
 mod ai;
 mod commands;
+// Public because the catalog is this crate's second half: `db::repo` is the SQL,
+// `db::migrate` is the schema's version history, and both are exercised by host
+// tests that reach them through the crate root.
+pub mod db;
 mod macos;
 
 /// Every extension the reader opens (lower-case, dot included). The shell's
@@ -161,6 +165,16 @@ pub fn run() {
             }
         }))
         .manage(PendingFile(Mutex::new(None)))
+        // The library's catalog, opened before the webview mounts so a migration
+        // has run by the time the first command asks for a book — and so a database
+        // that will not open is decided once, at boot, rather than re-discovered on
+        // every shelf render. `db::open` does not fail: a corrupt or locked catalog
+        // yields a handle with nothing behind it, every command answers that the
+        // library is unavailable, and the reader still reads (see `db`).
+        .setup(|app| {
+            app.manage(db::open(app.handle()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             take_pending_file,
             read_file_bytes,

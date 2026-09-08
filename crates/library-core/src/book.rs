@@ -200,6 +200,15 @@ impl Book {
             .unwrap_or_else(|| self.path().to_string())
     }
 
+    /// The file stem of the address — the name a book is searchable by when its
+    /// document carries no title of its own.
+    ///
+    /// A column in the catalog rather than a derivation at query time, because the
+    /// search index is built by a trigger on write and a trigger cannot call this.
+    pub fn stem(&self) -> String {
+        stem_of(self.path())
+    }
+
     /// The author line, when there is one to show.
     pub fn author(&self) -> Option<String> {
         self.author.clone().filter(|a| !a.trim().is_empty())
@@ -251,6 +260,13 @@ impl ReadPoint {
             fraction: self.fraction.filter(|f| (0.0..=1.0).contains(f)),
         }
     }
+}
+
+/// The human-readable stem of an address, or the address when it has none. Never
+/// empty, because it is the last fallback a search index and a shelf card both
+/// rely on.
+pub fn stem_of(path: &str) -> String {
+    reader_core::filename::file_stem_from_path(path).unwrap_or_else(|| path.to_string())
 }
 
 /// Record a read: the book at `path` moves to `now_ms` with the resume point

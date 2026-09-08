@@ -45,6 +45,12 @@ pub mod text;
 pub mod view;
 pub mod wire;
 
+// Re-exported because the Tauri shell stores a format in a column and reads one
+// back, and the shell deliberately does not name `reader-core` directly: the
+// format registry is the frontend's, and `tools/check-formats.ts` keeps the
+// shell's own copy of the extension list honest. One re-export is cheaper than a
+// second dependency edge and cannot drift.
+pub use reader_core::format::Format;
 pub use blob::{LibraryBlob, RecentBook, migrate_v1};
 pub use book::{BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, apply_check, record_read};
 pub use folder::{FolderOpts, Tombstone, WatchedFolder};
@@ -57,4 +63,7 @@ pub use shelf::{Shelf, ShelfKind, ALL_SHELF, shelf_add};
 pub use sort::{SortKey, sort_books};
 pub use text::{human_age, human_size};
 pub use view::{CoverFit, LibraryLayout, LibraryView};
-pub use wire::{ImportPhase, ImportProgress, PathCheck, StoreRequest, StoreResult};
+pub use wire::{
+    Cover, GlossRow, ImportPhase, ImportProgress, LibrarySnapshot, PathCheck, SearchHit,
+    StoreRequest, StoreResult,
+};
