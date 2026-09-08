@@ -424,6 +424,20 @@ folders that *placed* the book, so removing a hand-added book poisons no watched
 A relink rewrites the address and clears `missing`; it does not touch the id, the resume point or a
 single shelf membership. That is what makes "the file moved" and "the book was re-filed" orthogonal.
 
+A tombstone is a record and not a fingerprint, because it has a second job. Keeping a file out of every
+later rescan needs one hash; offering the book back needs the name the shelf showed, the address it
+lived at, the shelf it was filed on and when it went. Beside the tombstones each folder keeps what its
+last scan saw, restricted to the fingerprints it placed — and `recoverables` answers both halves of
+"what could this folder give back?" from those two lists plus the library's memberships, with no
+filesystem involved. That is what lets the menu open on a click: a restore re-measures the single file
+it is about to import, which is the only place freshness actually matters.
+
+Two rules keep a restore from lying. It measures before it promises, and a measurement that comes back
+empty leaves the tombstone exactly where it was — losing it would lose the only record the book was ever
+there. And it takes the tombstone out without touching `placed`, which the import that follows writes
+when the book actually lands: a fingerprint the ledger skips with no book behind it is the one state a
+folder cannot recover from on its own.
+
 ### Where the work happens
 
 The split is IO on one side and decisions on the other, and the wire between them is declared once:

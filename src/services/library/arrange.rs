@@ -203,6 +203,69 @@ pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
     crate::storage::persist_library(state.library);
 }
 
+/// Make a shelf the reader owns, and drill into it. Returns its id.
+///
+/// Named "New shelf" and left there on purpose: a modal that asks for a name
+/// before the shelf exists is a modal the reader has to answer to find out what
+/// they were asking for, and the breadcrumb's rename is one keystroke away and
+/// shows the shelf it is naming.
+pub fn new_shelf(state: AppState) -> String {
+    let now = js_sys::Date::now() as u64;
+    let seq = state
+        .library
+        .shelves
+        .with_untracked(|shelves| shelves.len() as u32);
+    let id = library_core::id::new_shelf_id(now, seq);
+    let made = id.clone();
+    state.library.shelves.update(|shelves| {
+        shelves.push(Shelf {
+            id: made,
+            name: "New shelf".to_string(),
+            kind: library_core::shelf::ShelfKind::Virtual,
+            books: Vec::new(),
+        });
+    });
+    state.library.shelf.set(id.clone());
+    crate::storage::persist_library(state.library);
+    id
+}
+
+/// Rename a shelf. A blank name is refused rather than stored: a crumb with
+/// nothing on it is a crumb the reader cannot click, and a shelf tile with no name
+/// is a strip of covers with no way in.
+pub fn rename_shelf(state: AppState, shelf_id: &str, name: &str) {
+    let name = name.trim();
+    if name.is_empty() {
+        return;
+    }
+    let name = name.to_string();
+    state.library.shelves.update(|shelves| {
+        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+            shelf.name = name;
+        }
+    });
+    crate::storage::persist_library(state.library);
+}
+
+/// Take a shelf apart. The books stay in the library — a shelf is a list of ids
+/// and never held a byte — and the page steps back out to the root, because the
+/// thing it was looking at is gone.
+///
+/// Only offered for a shelf the reader made. A folder's shelf is derived from the
+/// tree, so removing one would be undone by the next file that lands in it, and a
+/// control that appears to work and then does not is worse than no control.
+pub fn delete_shelf(state: AppState, shelf_id: &str) {
+    state.library.shelves.update(|shelves| {
+        shelves.retain(|s| s.id != shelf_id);
+    });
+    state.library.shelf.update(|at| {
+        if at == shelf_id {
+            *at = ALL_SHELF.to_string();
+        }
+    });
+    crate::storage::persist_library(state.library);
+}
+
 /// The shelves a book is on, as `(id, name)` pairs in shelf order. What the
 /// folder's restore menu asks in order to tell a book that moved from one that is
 /// still where it was filed.

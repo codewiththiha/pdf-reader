@@ -8,12 +8,16 @@
 //! density there is room for one line of prose and the reader gets to choose
 //! which by opening the book.
 
+use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
+use library_core::shelf::ALL_SHELF;
 use library_core::view::CoverFit;
+use reader_core::format::Format;
 
+use crate::features::library::add_menu::AddMenu;
 use crate::features::library::drag::{self, DropTarget, ShelfOrder};
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::document;
@@ -30,6 +34,39 @@ pub(crate) fn ListView(state: AppState) -> impl IntoView {
             <For each=move || order.0.get() key=|b| b.id.clone() let:book>
                 <ListRow state=state book=book crop=crop />
             </For>
+            // The grid ends in an add card, so the list ends in an add row: the two
+            // layouts are the same library, and a reader who switched to the denser
+            // one has not thereby lost the way in.
+            <AddRow state=state />
+        </div>
+    }
+}
+
+/// The list's last row: the same two sources the grid's add card offers, in the
+/// shape of a row rather than the shape of a cover.
+#[component]
+fn AddRow(state: AppState) -> impl IntoView {
+    let open = RwSignal::new(false);
+    let anchor: NodeRef<html::Div> = NodeRef::new();
+    let target = Signal::derive(move || {
+        let id = state.library.shelf.get();
+        (id != ALL_SHELF).then_some(id)
+    });
+    view! {
+        <div node_ref=anchor class="relative">
+            <button
+                type="button"
+                aria-label="Add books"
+                aria-haspopup="menu"
+                aria-expanded=move || open.get().to_string()
+                title="Add books"
+                on:click=move |_| open.set(!open.get_untracked())
+                class="library-add-row"
+            >
+                <Icon name=IconName::Plus size=15 />
+                <span>"Add books"</span>
+            </button>
+            <AddMenu state=state open=open anchor=anchor target=target />
         </div>
     }
 }
@@ -52,6 +89,11 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     });
     let missing = book.missing;
     let percent = book.progress().map(|p| format!("{:.0}%", p * 100.0));
+    // The list has room for the format on every row, and at this density a reader
+    // is scanning names rather than looking at art — so the kind of thing a row is
+    // earns its place here in a way a chip on a cover would not.
+    let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
+    let path_hint = book.path().to_string();
 
     let click_path = path.clone();
     let dom_id = format!("book-{}", id);
@@ -149,8 +191,11 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                 <span class="block truncate text-sm font-semibold text-ink" title=row_tooltip.clone()>
                     {row_title}
                 </span>
-                <span class="block truncate text-xs text-muted">{author}</span>
+                <span class="block truncate text-xs text-muted" title=path_hint.clone()>
+                    {author}
+                </span>
             </span>
+            {chip.map(|label| view! { <span class="library-row-format">{label}</span> })}
             {percent.map(|p| {
                 view! {
                     <span class="shrink-0 text-xs tabular-nums text-muted">{p}</span>

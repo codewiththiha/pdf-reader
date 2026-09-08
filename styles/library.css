@@ -815,3 +815,30 @@
   height: 100%;
   object-fit: cover;
 }
+
+/* The list's add row: the grid's add card in the shape of a row. Same dashed
+   intent and the same accent on hover, so the two layouts read as one library at
+   two densities rather than as two features. */
+.library-add-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed transparent;
+  background: transparent;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.library-add-row:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: var(--color-accent);
+}
+.library-add-row:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

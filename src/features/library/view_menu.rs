@@ -20,6 +20,7 @@ use library_core::sort::SortKey;
 use library_core::view::{CoverFit, LibraryLayout, LibraryView};
 
 use crate::components::primitives::controls::option_button::OptionButton;
+use crate::services::library::new_shelf;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
@@ -84,6 +85,17 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                 coordinate_space="toolbar-row"
                 class="p-2".to_string()
             >
+                <MenuItem
+                    icon=IconName::Plus
+                    label="New shelf"
+                    on_click=move || {
+                        // Drills straight in, so the reader is looking at the shelf
+                        // they just made and the breadcrumb is offering its name.
+                        open.set(false);
+                        new_shelf(state);
+                    }
+                />
+                <div class="my-1.5"><Separator /></div>
                 <MenuItem
                     label="List"
                     selected=Signal::derive(move || is_list.get())

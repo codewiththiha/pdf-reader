@@ -27,7 +27,10 @@ pub mod arrange;
 pub mod import;
 pub mod reveal;
 
-pub use arrange::{PurgeOpts, also_show, memberships, move_to_shelf, purge_book, relink_dialog};
+pub use arrange::{
+    PurgeOpts, also_show, delete_shelf, memberships, move_to_shelf, new_shelf, purge_book,
+    relink_dialog, rename_shelf,
+};
 pub use reveal::reveal_book;
 pub use import::{
     dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book, verify_library,

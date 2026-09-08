@@ -321,6 +321,24 @@ the filesystem.
 - **A missing book stays on the shelf.** An address that stops resolving is a badge and a Relink
   affordance, never a silent removal: the row keeps its resume point and every shelf it is on, so
   finding the file again puts you back on the page you were on.
+- **Shelves you make yourself.** The view menu's *New shelf* row creates one and drills into it, and
+  the breadcrumb's shelf crumb is its handle: *Rename…* swaps the crumb for a field in place, and
+  *Remove shelf* takes the shelf apart while every book on it stays in the library. Removing is only
+  offered for a shelf you made — a folder's shelf comes from its tree, so removing that one would be
+  undone by the next file that lands in it.
+- **Removing a book shows you the receipt first.** The sheet itemises what goes with it — the resume
+  point, the highlights, the cached cover, every shelf it was filed on — and leaves out the rows for
+  things the book does not have. For a book the app copied there is a switch for the copy, on by
+  default; the file it was copied from is never touched either way. There is no undo toast, because
+  the sheet is the safety and the folder's import menu is the undo.
+- **A watched folder can give a book back.** Its import menu keeps a tombstone per removal — the name
+  the shelf showed, how long ago it went, how big it is — and offers the book back after measuring the
+  file to check it is still there. An explicit restore ignores the folder's format and size filters,
+  because an explicit ask is an explicit choice. The same menu answers the other question without
+  walking anything: a book still inside the folder on disk but no longer on any shelf the folder owns
+  is offered as a move, with two answers — file it here as well, which is a second membership and no
+  second copy, or go and look at where it went, which closes the menu, moves the breadcrumb and lights
+  up the card it scrolled to.
 - **An import reports from the corner.** One card per run in the bottom-left, with a ring that spins
   while the folder is walked and fills while files are copied. It stays put when you open a book,
   because the run outlives the page that started it.
@@ -362,6 +380,11 @@ member that names no book is a hole in the grid. It is deliberately *not* part o
 because a resume point moves on every page turn while settings repaint the theme on every write. The
 cover cache stays on its own key for the same reason: a cover is a base64 JPEG, and putting the art in
 the same blob would make turning a page re-serialise the whole shelf's covers.
+
+A watched folder's blob also carries its ledger: the fingerprints it has placed, a tombstone per
+deliberate removal, and what its last scan saw. That is what lets a rescan be honest and a restore menu
+open without walking a directory tree, and it is bounded by the library's own cap — a folder cannot have
+placed more books than the library holds.
 
 A previous build's recent-books list (`pdfreader.library.v1`) is migrated on first load rather than
 discarded: every row becomes a book read in place, in the order the reader had it, with its resume
