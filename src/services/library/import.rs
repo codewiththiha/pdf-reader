@@ -526,6 +526,10 @@ async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpt
     folder.scanned_ms = now;
     write_folder(state, folder);
     crate::storage::persist_library(state.library);
+    // A folder import is the case this matters most: it is the one way a shelf
+    // arrives with dozens of books at once, and a plate of fallbacks is not a
+    // shelf the reader can scan.
+    super::covers::backfill_missing(state);
 
     let total = placed + (relink_count + healed) as u32;
     update_task(state, &task, move |t| {
@@ -665,6 +669,9 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
             }
         });
         crate::storage::persist_library(state.library);
+        // A removed book took its cover with it; a restored one gets it back
+        // without asking to be opened first.
+        super::covers::backfill_missing(state);
         update_task(state, &task, |t| {
             t.total = 1;
             t.done = 1;
@@ -779,6 +786,10 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         });
     }
     crate::storage::persist_library(state.library);
+    // The shelf should look like its books the moment they are on it, not the
+    // first time each of them is opened. One render at a time, behind the
+    // reader, however many arrived — see `covers`.
+    super::covers::backfill_missing(state);
     update_task(state, &task, move |t| {
         t.total = placed;
         t.done = placed;

@@ -28,7 +28,7 @@ use library_core::wire::ImportProgress;
 
 use crate::components::primitives::hooks::use_custom_event::use_typed_event;
 use crate::events::IMPORT_PROGRESS_EVENT;
-use crate::services::library::{rescan_watched, verify_library};
+use crate::services::library::{backfill_missing, rescan_watched, verify_library};
 use crate::state::AppState;
 
 /// The shortest gap between two rescans, in milliseconds. Focus events are not
@@ -46,6 +46,11 @@ static LAST_RESCAN: AtomicU64 = AtomicU64::new(0);
 pub(crate) fn library_effects(state: AppState) {
     install_progress_sink(state);
     verify_library(state);
+    // A library restored from storage holds books whose covers were never
+    // rendered, or were rendered by a build that kept fewer of them: the shelf
+    // catches up in the background rather than staying a shelf of fallbacks
+    // until every book has been opened once.
+    backfill_missing(state);
 
     if !tauri_bridge::has_tauri() {
         return;

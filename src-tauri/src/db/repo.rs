@@ -1649,12 +1649,15 @@ mod tests {
     fn the_stem_column_is_the_fallback_a_search_needs() {
         assert_eq!(stem_of("/books/Dune.pdf"), "Dune");
         assert_eq!(stem_of("C:\\books\\Dune.PDF"), "Dune");
-        // The stem rule is reader-core's, and it strips the office and print
-        // extensions rather than the formats this app opens, because a title like
-        // "Rust 1.75" has to keep its ".75". A name with no extension at all keeps
-        // its own name.
+        // The stem rule is reader-core's, and it strips every extension the
+        // format registry opens plus the office and print kinds, because a shelf
+        // that said "notes.markdown" would be reading the file system's business
+        // out loud. A title like "Rust 1.75" has to keep its ".75", and a name
+        // with no extension at all keeps its own name.
         assert_eq!(stem_of("/books/Makefile"), "Makefile");
-        assert_eq!(stem_of("/books/notes.markdown"), "notes.markdown");
+        assert_eq!(stem_of("/books/notes.markdown"), "notes");
+        assert_eq!(stem_of("/books/log.txt"), "log");
+        assert_eq!(stem_of("/books/Rust 1.75"), "Rust 1.75");
         assert_eq!(stem_of("/"), "/");
     }
 

@@ -29,7 +29,6 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
-use reader_core::format::Format;
 
 use crate::components::primitives::interactions::draggable_item::{
     DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
@@ -74,11 +73,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     } else {
         format!("Page {}", book.page)
     };
-    // A chip for the formats that are NOT the default. A shelf of PDFs is a shelf
-    // of covers and a chip on every one of them would be noise; a Markdown file has
-    // no cover to be recognised by, so the one thing that says what a reader is
-    // about to open is worth printing.
-    let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
     // Where the book lives, on the line that has room for it and nothing better to
     // say. A card whose title came from the document gives the reader no way to
     // tell two books called "Report" apart; the address does.
@@ -373,7 +367,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                             </span>
                         }
                     })}
-                    {chip.map(|label| view! { <span class="book-format">{label}</span> })}
                 </div>
                 // Reading progress, flush with the bottom of the art rather than
                 // under the title: it is a fact about the cover the reader is

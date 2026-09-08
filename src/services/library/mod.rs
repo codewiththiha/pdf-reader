@@ -24,6 +24,7 @@
 //! [`arrange`]: crate::services::library::arrange
 
 pub mod arrange;
+pub mod covers;
 pub mod import;
 pub mod reveal;
 
@@ -31,6 +32,7 @@ pub use arrange::{
     PurgeOpts, also_show, create_shelf, delete_shelf, file_many, memberships, move_to_shelf,
     nest_many, nest_shelf, new_shelf, purge_books, relink_dialog, rename_shelf,
 };
+pub use covers::backfill_missing;
 pub use reveal::reveal_book;
 pub use import::{
     dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book, verify_library,

@@ -49,7 +49,6 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     // out of the state by id, and the prop supplies only the identity plus the
     // two facts a rescan owns and a reader cannot change from here.
     let id = shelf.id.clone();
-    let from_folder = shelf.is_folder();
     let watched_folder = shelf.kind.folder_id().map(str::to_string);
 
     let name_id = id.clone();
@@ -102,11 +101,9 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         (books, inside)
     });
 
-    // Two different facts, and the card shows both: that a shelf was cut from a
-    // folder on disk (the glyph, so a reader knows where these books live), and
-    // that the folder is still being watched (the dot, so a reader knows the
-    // shelf may fill itself). The second needs the folder row, so it is a
-    // reactive read rather than a copy taken at mount.
+    // Whether the folder this shelf was cut from is still being watched: the
+    // breathing dot that says "this shelf may fill itself". It needs the folder
+    // row, so it is a reactive read rather than a copy taken at mount.
     let watched = Signal::derive(move || {
         let Some(folder_id) = watched_folder.clone() else {
             return false;
@@ -333,13 +330,6 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                 <span class="folder-count">{move || summary(counts.get())}</span>
             </div>
             <div class="folder-badges">
-                {from_folder.then(|| {
-                    view! {
-                        <span class="folder-from-disk" title="Cut from a folder on disk">
-                            <Icon name=IconName::Open size=11 />
-                        </span>
-                    }
-                })}
                 {move || {
                     watched.get().then(|| {
                         view! {

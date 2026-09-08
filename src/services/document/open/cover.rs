@@ -1,14 +1,11 @@
 //! The shelf cover: page 1 of the book, as a small JPEG.
 
-use std::sync::Arc;
-
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use pdf_engine::api as engine;
 
 use crate::services::document::session;
-use crate::state::library::CoverImage;
 use crate::state::AppState;
 
 /// Width the shelf renders a cover at.
@@ -39,16 +36,16 @@ pub(super) fn ensure(state: AppState, path: String, stamp: u64) {
             // Stylised fallback cover; nothing to store.
             return;
         };
-        state.library.covers.update(|covers| {
-            covers.insert(
-                path,
-                Arc::new(CoverImage {
-                    data_url: c.data_url,
-                    width: c.width,
-                    height: c.height,
-                }),
-            );
-        });
+        // Filed through the same door the import queue uses, so the cache's
+        // quota cap is enforced by whoever crosses it rather than by whoever
+        // happens to prune next.
+        crate::services::library::covers::file_cover(
+            state,
+            path,
+            c.data_url,
+            c.width,
+            c.height,
+        );
         if let Err(e) = state
             .library
             .covers

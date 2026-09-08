@@ -289,29 +289,10 @@
   white-space: nowrap;
 }
 
-/* The format chip: a label for the kinds that have no cover to be recognised by.
-   Bottom-right of the art, because the cover's top-left is the missing-file
-   badge's, its bottom-left is the selection mark's and its bottom edge is the
-   progress bar's — the one corner left. */
-.book-format {
-  position: absolute;
-  right: 6px;
-  bottom: 8px;
-  z-index: 3;
-  padding: 1px 5px;
-  border: 1px solid var(--color-line);
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-muted);
-  pointer-events: none;
-}
-/* The list has room for the chip inline, and at that density a reader is
-   scanning names rather than looking at art, so the kind of thing a row is earns
-   its place in the row rather than on a thumbnail. */
+/* The format chip lives on the row only: at list density a reader is scanning
+   names rather than looking at art, so the kind of thing a row is earns its
+   place there. On a cover it was a third statement of what the fallback art and
+   the file's own name already said, in the one corner the eye lands on. */
 .library-row-format {
   flex: 0 0 auto;
   padding: 1px 5px;
@@ -526,8 +507,11 @@
   display: none;
 }
 
-/* The two markers a folder-derived shelf carries, over the plate's top-right:
-   where these books live on disk, and whether that directory is still watched. */
+/* The one marker a folder-derived shelf carries, over the plate's top-right:
+   whether the directory it was cut from is still watched. Where the books live
+   on disk needs no badge of its own — the breadcrumb above the shelf already
+   says which folder the reader is inside, and saying it twice more on the card
+   was chrome the plate did not need. */
 .folder-badges {
   position: absolute;
   top: 14px;
@@ -538,18 +522,6 @@
   gap: 4px;
   pointer-events: none;
 }
-.folder-from-disk {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1px solid var(--color-line);
-  border-radius: 9999px;
-  background: var(--color-surface);
-  color: var(--color-accent);
-}
-
 /* --- The folder's three states. Pressing is the instant tint before the hold
    decides anything; selected is membership of the set; drag-over is the drop
    this folder is about to accept, and it is the loudest of the three because it

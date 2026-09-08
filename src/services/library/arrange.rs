@@ -472,6 +472,9 @@ pub fn relink_book(state: AppState, book_id: String, path: String) {
         });
         crate::storage::persist_library(state.library);
         crate::storage::persist_covers(state.library);
+        // The old address's cover belongs to nobody now, and the new one has
+        // never been rendered: queue it rather than waiting for an open.
+        super::covers::backfill_missing(state);
     });
 }
 
