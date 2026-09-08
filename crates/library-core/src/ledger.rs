@@ -36,8 +36,8 @@
 
 use std::collections::HashMap;
 
-use crate::book::Fingerprint;
-use crate::folder::WatchedFolder;
+use crate::book::{Book, Fingerprint};
+use crate::folder::{Tombstone, WatchedFolder};
 use crate::scan::FoundFile;
 
 /// What the ledger needs to know about a book that is already in the library:
@@ -113,7 +113,7 @@ pub fn decide(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> 
     // The tombstone wins over everything, including a fingerprint this folder
     // has never seen: the reader removed this file from the library, and it is
     // still on disk and still admitted by the folder's options.
-    if folder.ignored.contains(&file.fp) {
+    if folder.is_ignored(&file.fp) {
         return ScanAction::Skip;
     }
     match registry.get(&file.fp) {
@@ -149,17 +149,139 @@ pub fn decide(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> 
 
 /// Record a deliberate removal, so the next rescan stays quiet about the file.
 ///
-/// Only the folders that PLACED the book take the tombstone: removing a book
-/// the reader added by hand must not poison a watched folder that happens to
-/// contain the same file, and removing a book one folder placed must not stop
-/// a second folder from ever offering it. Both fall out of asking `placed`
-/// rather than passing a folder id in from the UI.
-pub fn tombstone(folders: &mut [WatchedFolder], fp: Fingerprint) {
+/// Only the folders that PLACED the book take the tombstone: removing a book the
+/// reader added by hand must not poison a watched folder that happens to contain
+/// the same file, and removing a book one folder placed must not stop a second
+/// folder from ever offering it. Both fall out of asking `placed` rather than
+/// passing a folder id in from the UI.
+pub fn tombstone(folders: &mut [WatchedFolder], entry: &Tombstone) {
     for folder in folders.iter_mut() {
-        if folder.placed.contains(&fp) {
-            folder.ignored.insert(fp);
+        if folder.placed.contains(&entry.fp) && !folder.is_ignored(&entry.fp) {
+            folder.ignored.push(entry.clone());
         }
     }
+}
+
+/// Drop the tombstones whose books came back.
+///
+/// Run inside every scan, before the diff: a fingerprint can rejoin the library
+/// by any route — a hand-open, a second folder's import, a restore — and a
+/// tombstone left behind for a book that exists is a restore row offering
+/// something the reader already has.
+pub fn prune_tombstones(folder: &mut WatchedFolder, registry: &Registry) {
+    folder.ignored.retain(|entry| !registry.contains_key(&entry.fp));
+}
+
+/// The tombstone for `fp`, without taking it. A restore measures the file before
+/// it promises anything, and a removal that stays put when the measurement fails
+/// is the difference between "that file is gone" and a book quietly lost.
+pub fn find_tombstone(folder: &WatchedFolder, fp: &Fingerprint) -> Option<&Tombstone> {
+    folder.ignored.iter().find(|entry| &entry.fp == fp)
+}
+
+/// Take the tombstone for `fp` out of the folder and hand it back, so the caller
+/// can put the book back.
+///
+/// Does NOT touch `placed`: the import that follows marks the placement when the
+/// book actually lands, and marking it here would leave a fingerprint the ledger
+/// skips with no book behind it — the one state that cannot be recovered from
+/// without a rescan of the folder's options.
+pub fn restore_deleted(folder: &mut WatchedFolder, fp: &Fingerprint) -> Option<Tombstone> {
+    let at = folder.ignored.iter().position(|entry| &entry.fp == fp)?;
+    Some(folder.ignored.remove(at))
+}
+
+/// Fingerprint to book, for the questions that start from a file rather than from
+/// an address. Borrowed rather than cloned: the menu that asks these opens on a
+/// click, and copying a whole library to answer one question about it is the kind
+/// of cost that turns a click into a frame drop.
+pub fn index_by_fp(books: &[Book]) -> HashMap<Fingerprint, &Book> {
+    let mut out = HashMap::with_capacity(books.len());
+    for book in books {
+        out.entry(book.fp).or_insert(book);
+    }
+    out
+}
+
+/// A book this folder could give the reader back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Recovered {
+    /// Removed by the reader, and still not in the library. The file may or may
+    /// not still be on disk — a restore measures before it promises.
+    Deleted(Tombstone),
+    /// Still in the library, still inside this folder on disk, but no longer on
+    /// any shelf this folder owns: the reader moved it somewhere else in the app.
+    /// Nothing is wrong, and nothing is re-imported — the offer is to show it here
+    /// as well, or to go and look at where it went.
+    Moved {
+        book_id: String,
+        /// The document's own title, when it had one. `None` is common (a book
+        /// imported and never opened), and the menu falls back to the file stem.
+        title: Option<String>,
+        path: String,
+        /// The first shelf the book is on, by name, for the "now in Fiction" half
+        /// of the row. `None` for a book that is in the library and on no shelf.
+        home_shelf: Option<String>,
+    },
+}
+
+/// What this folder's import menu can offer to give back.
+///
+/// Pure and synchronous, and that is the design: the menu opens on a click and
+/// answers from the last scan's `last_seen` plus the folder's tombstones, so it
+/// costs a walk over two short lists rather than a walk over a directory tree.
+/// A restore re-measures the one file it is about to import, which is where the
+/// freshness actually matters.
+///
+/// `membership` answers, for a book id, the shelves it is on as
+/// `(id, name)` pairs in shelf order — the order is what makes "first membership"
+/// a deterministic answer rather than whichever the map happened to yield.
+pub fn recoverables(
+    folder: &WatchedFolder,
+    books_by_fp: &HashMap<Fingerprint, &Book>,
+    membership: &impl Fn(&str) -> Vec<(String, String)>,
+    folder_shelf_ids: &[String],
+) -> Vec<Recovered> {
+    let mut out = Vec::new();
+
+    // Removed books first: a row that offers something back is worth more than a
+    // row that offers to show you something you already have.
+    for entry in &folder.ignored {
+        // A book that came back by another route is not a recovery, and the next
+        // scan's `prune_tombstones` will say so properly.
+        if books_by_fp.contains_key(&entry.fp) {
+            continue;
+        }
+        out.push(Recovered::Deleted(entry.clone()));
+    }
+
+    let on_a_folder_shelf = |shelves: &[(String, String)]| {
+        shelves
+            .iter()
+            .any(|(id, _)| folder_shelf_ids.iter().any(|own| own == id))
+    };
+    for (fp, path) in &folder.last_seen {
+        let Some(book) = books_by_fp.get(fp) else {
+            continue;
+        };
+        // A book whose address died is a RELINK, and the card already offers one:
+        // listing it here too would be a second door to the same room, and this
+        // one would not know the address is bad.
+        if book.missing {
+            continue;
+        }
+        let shelves = membership(&book.id);
+        if on_a_folder_shelf(&shelves) {
+            continue;
+        }
+        out.push(Recovered::Moved {
+            book_id: book.id.clone(),
+            title: book.title.clone(),
+            path: path.clone(),
+            home_shelf: shelves.first().map(|(_, name)| name.clone()),
+        });
+    }
+    out
 }
 
 /// Apply an `Add` to the folder's ledger. One call per placed file, so the
@@ -195,7 +317,7 @@ pub fn relink(books: &mut [crate::book::Book], book_id: &str, to: &str) -> bool 
 mod tests {
     use super::*;
     use crate::book::{Book, Origin};
-    use crate::folder::FolderOpts;
+    use crate::folder::{FolderOpts, Tombstone};
     use reader_core::format::Format;
     use std::collections::{BTreeMap, HashSet};
 
@@ -223,9 +345,21 @@ mod tests {
             root: "/books".into(),
             opts: FolderOpts::default(),
             placed: placed.iter().copied().map(fp).collect::<HashSet<_>>(),
-            ignored: ignored.iter().copied().map(fp).collect::<HashSet<_>>(),
+            ignored: ignored.iter().copied().map(stone).collect(),
             shelf_map: BTreeMap::new(),
+            last_seen: Vec::new(),
             scanned_ms: 0,
+        }
+    }
+
+    fn stone(n: u32) -> Tombstone {
+        Tombstone {
+            fp: fp(n),
+            title: Some(format!("Book {n}")),
+            format: reader_core::format::Format::Pdf,
+            last_path: format!("/books/{n}.pdf"),
+            shelf_id: None,
+            removed_ms: 5,
         }
     }
 
@@ -350,12 +484,12 @@ mod tests {
         let mut folders = vec![folder(&[1], &[]), folder(&[2], &[]), folder(&[], &[])];
         folders[1].id = "f2".into();
         folders[2].id = "f3".into();
-        tombstone(&mut folders, fp(1));
-        assert!(folders[0].ignored.contains(&fp(1)));
+        tombstone(&mut folders, &stone(1));
+        assert!(folders[0].is_ignored(&fp(1)));
         assert!(folders[1].ignored.is_empty());
         assert!(folders[2].ignored.is_empty());
         // A book no folder placed (added by hand) poisons nothing.
-        tombstone(&mut folders, fp(9));
+        tombstone(&mut folders, &stone(9));
         assert!(folders.iter().all(|f| f.ignored.len() <= 1));
     }
 
@@ -414,6 +548,264 @@ mod tests {
         assert!(relink(&mut books, "b1", "/downloads/a.pdf"));
         assert_eq!(books[0].path(), "/app/store/pdf/a_b1.pdf");
         assert_eq!(books[0].origin.source(), Some("/downloads/a.pdf"));
+    }
+
+
+    /// A book with its own fingerprint, so a test can hold two of them.
+    fn sized_book(id: &str, n: u32, path: &str, missing: bool) -> Book {
+        Book {
+            fp: fp(n),
+            origin: Origin::Linked {
+                src: path.to_string(),
+            },
+            missing,
+            ..book(id, Origin::Linked { src: path.to_string() }, false)
+        }
+    }
+
+    const NO_SHELVES: fn(&str) -> Vec<(String, String)> = |_| Vec::new();
+
+    #[test]
+    fn a_removed_book_is_offered_back_with_enough_to_recognise_it() {
+        let f = folder(&[1], &[2]);
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let out = recoverables(&f, &index, &NO_SHELVES, &["s1".to_string()]);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            Recovered::Deleted(entry) => {
+                assert_eq!(entry.fp, fp(2));
+                assert_eq!(entry.label(), "Book 2");
+                assert_eq!(entry.last_path, "/books/2.pdf");
+            }
+            other => panic!("expected a removal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_book_that_came_back_by_another_route_is_not_a_recovery() {
+        // The next scan's prune says so properly; the menu must not offer a book
+        // the reader already has.
+        let f = folder(&[1], &[1]);
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        assert!(recoverables(&f, &index, &NO_SHELVES, &[]).is_empty());
+    }
+
+    #[test]
+    fn pruning_drops_the_tombstone_of_a_book_that_returned() {
+        // Pruning runs inside a scan, so it reads the scan's own registry rather
+        // than a second index built for the menu.
+        let mut f = folder(&[1], &[1, 2]);
+        let reg = registry(&[(1, "b1", "/books/1.pdf", false)]);
+        prune_tombstones(&mut f, &reg);
+        let left: Vec<Fingerprint> = f.ignored.iter().map(|t| t.fp).collect();
+        assert_eq!(left, vec![fp(2)], "only the book that is really gone stays");
+    }
+
+    #[test]
+    fn a_book_moved_off_every_folder_shelf_is_offered_as_a_move() {
+        let mut f = folder(&[1], &[]);
+        f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
+        assert_eq!(
+            recoverables(&f, &index, &elsewhere, &["s1".to_string()]),
+            vec![Recovered::Moved {
+                book_id: "b1".into(),
+                title: Some("Dune".into()),
+                path: "/books/1.pdf".into(),
+                home_shelf: Some("Fiction".into()),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_book_still_on_one_of_the_folders_shelves_is_not_a_move() {
+        // The rule that keeps "also show it here" from ever double-placing.
+        let mut f = folder(&[1], &[]);
+        f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let here = |_: &str| vec![("s1".to_string(), "Books".to_string())];
+        assert!(recoverables(&f, &index, &here, &["s1".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn a_book_on_a_shelf_the_folder_does_not_own_is_a_move() {
+        let mut f = folder(&[1], &[]);
+        f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
+        let out = recoverables(&f, &index, &elsewhere, &["s1".to_string(), "s2".to_string()]);
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn a_missing_book_is_a_relink_and_not_a_move() {
+        // The card already offers a relink; a second door to the same room would
+        // be one that does not know the address is bad.
+        let mut f = folder(&[1], &[]);
+        f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", true)];
+        let index = index_by_fp(&books);
+        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
+        assert!(recoverables(&f, &index, &elsewhere, &["s1".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn a_file_no_longer_in_the_tree_is_neither_a_move_nor_a_removal() {
+        let mut f = folder(&[1, 2], &[]);
+        // The last scan saw only fp(2); fp(1) has left the folder on disk.
+        f.last_seen = vec![(fp(2), "/books/2.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        assert!(recoverables(&f, &index, &NO_SHELVES, &["s1".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn removals_are_listed_before_moves() {
+        let mut f = folder(&[1, 2], &[2]);
+        f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
+        let out = recoverables(&f, &index, &elsewhere, &["s1".to_string()]);
+        assert_eq!(out.len(), 2);
+        assert!(matches!(out[0], Recovered::Deleted(_)));
+        assert!(matches!(out[1], Recovered::Moved { .. }));
+    }
+
+    #[test]
+    fn a_home_shelf_is_the_first_one_in_shelf_order() {
+        // Deterministic rather than whichever a map happened to yield, because
+        // the row's label is a sentence and a sentence cannot change per open.
+        let mut f = folder(&[1], &[]);
+        f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let two = |_: &str| {
+            vec![
+                ("s8".to_string(), "Fiction".to_string()),
+                ("s3".to_string(), "Classics".to_string()),
+            ]
+        };
+        let out = recoverables(&f, &index, &two, &["s1".to_string()]);
+        match &out[0] {
+            Recovered::Moved { home_shelf, .. } => {
+                assert_eq!(home_shelf.as_deref(), Some("Fiction"))
+            }
+            other => panic!("expected a move, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_book_on_no_shelf_at_all_has_no_home_to_name() {
+        let mut f = folder(&[1], &[]);
+        f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let out = recoverables(&f, &index, &NO_SHELVES, &["s1".to_string()]);
+        match &out[0] {
+            Recovered::Moved { home_shelf, .. } => assert_eq!(home_shelf, &None),
+            other => panic!("expected a move, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_restore_takes_the_tombstone_and_leaves_the_placement_to_the_import() {
+        let mut f = folder(&[1], &[2]);
+        assert!(find_tombstone(&f, &fp(2)).is_some());
+        assert!(find_tombstone(&f, &fp(9)).is_none());
+        // Peeking must not consume: a restore measures the file before it
+        // promises anything, and a removal that stays put when the measurement
+        // fails is the difference between "that file is gone" and a lost book.
+        assert!(find_tombstone(&f, &fp(2)).is_some());
+        let taken = restore_deleted(&mut f, &fp(2)).expect("present");
+        assert_eq!(taken.fp, fp(2));
+        assert!(!f.is_ignored(&fp(2)));
+        assert!(
+            !f.placed.contains(&fp(2)),
+            "the import marks the placement, not the restore"
+        );
+        assert!(restore_deleted(&mut f, &fp(2)).is_none());
+    }
+
+    #[test]
+    fn a_tombstone_is_the_record_a_restore_row_needs() {
+        let b = book(
+            "b1",
+            Origin::Linked {
+                src: "/books/dune.pdf".into(),
+            },
+            false,
+        );
+        let entry = Tombstone::of(&b, Some("s2".into()), 999);
+        assert_eq!(entry.fp, b.fp);
+        assert_eq!(entry.title.as_deref(), Some("Dune"));
+        assert_eq!(entry.format, reader_core::format::Format::Pdf);
+        assert_eq!(entry.last_path, "/books/dune.pdf");
+        assert_eq!(entry.shelf_id.as_deref(), Some("s2"));
+        assert_eq!(entry.removed_ms, 999);
+        assert_eq!(entry.label(), "Dune");
+    }
+
+    #[test]
+    fn a_tombstone_of_a_book_never_opened_labels_itself_from_the_file() {
+        let mut b = book(
+            "b1",
+            Origin::Linked {
+                src: "/books/rust-book.pdf".into(),
+            },
+            false,
+        );
+        b.title = None;
+        assert_eq!(Tombstone::of(&b, None, 1).label(), "rust-book");
+    }
+
+    #[test]
+    fn a_tombstone_crosses_the_wire_with_its_camel_case_names() {
+        let entry = stone(3);
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"lastPath\""), "{json}");
+        assert!(json.contains("\"removedMs\""), "{json}");
+        assert!(json.contains("\"shelfId\""), "{json}");
+        assert!(!json.contains('_'), "{json}");
+        let back: Tombstone = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, entry);
+        // A blob from before the shelf id existed still loads.
+        let older: Tombstone = serde_json::from_str(
+            r#"{"fp":{"size":1,"mtimeMs":1,"headHash":1},"format":"pdf",
+                "lastPath":"/a.pdf","removedMs":2}"#,
+        )
+        .unwrap();
+        assert_eq!(older.shelf_id, None);
+        assert_eq!(older.title, None);
+    }
+
+    #[test]
+    fn the_last_scan_is_remembered_only_for_books_this_folder_placed() {
+        let mut f = folder(&[1], &[]);
+        let found = vec![file(1, "/books/1.pdf"), file(2, "/books/2.pdf")];
+        f.record_seen(&found);
+        assert_eq!(f.last_seen, vec![(fp(1), "/books/1.pdf".to_string())]);
+        // A second scan REPLACES the first rather than adding to it: the menu
+        // answers "where is it now", not "where has it ever been".
+        f.record_seen(&[]);
+        assert!(f.last_seen.is_empty());
+    }
+
+    #[test]
+    fn a_scan_that_changed_nothing_still_refreshes_what_was_seen() {
+        // The common case, and the reason `record_seen` is not behind the
+        // "did anything change" check: a book moved out of the folder between two
+        // quiet scans is exactly what the menu has to be able to see.
+        let mut f = folder(&[1], &[]);
+        f.record_seen(&[file(1, "/books/1.pdf")]);
+        f.record_seen(&[file(1, "/books/moved/1.pdf")]);
+        assert_eq!(f.last_seen, vec![(fp(1), "/books/moved/1.pdf".to_string())]);
     }
 
     #[test]

@@ -104,6 +104,18 @@ pub fn place(members: &mut Vec<String>, id: &str, index: Option<usize>) {
     members.insert(at, id.to_string());
 }
 
+/// Put `id` on a shelf, unless it is already on it.
+///
+/// Not [`place`]: a restore and a "show it here as well" both add a book that may
+/// already be a member, and appending it again would move a book the reader can
+/// see to the end of a shelf for no reason. `place` is for a drag, which is an
+/// instruction about position; this is for a filing, which is not.
+pub fn shelf_add(shelf: &mut Shelf, book_id: &str) {
+    if !shelf.books.iter().any(|member| member == book_id) {
+        shelf.books.push(book_id.to_string());
+    }
+}
+
 /// Take `id` off a member list. True when it was there.
 pub fn forget(members: &mut Vec<String>, id: &str) -> bool {
     let before = members.len();
@@ -207,6 +219,20 @@ mod tests {
         assert_eq!(ids(&m), vec!["c", "a", "b"], "a book stays where it is dropped");
         place(&mut m, "c", Some(3));
         assert_eq!(ids(&m), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn filing_a_book_that_is_already_filed_moves_nothing() {
+        // A restore and an "also show it here" both add a book that may already
+        // be a member; appending it again would reshuffle a shelf the reader can
+        // see, for an instruction that was not about position.
+        let mut s = shelf("s1", "One", &["a", "b"]);
+        shelf_add(&mut s, "b");
+        assert_eq!(ids(&s.books), vec!["a", "b"]);
+        shelf_add(&mut s, "c");
+        assert_eq!(ids(&s.books), vec!["a", "b", "c"]);
+        shelf_add(&mut s, "a");
+        assert_eq!(ids(&s.books), vec!["a", "b", "c"]);
     }
 
     #[test]

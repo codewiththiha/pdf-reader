@@ -306,8 +306,9 @@ async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpt
             root: root.clone(),
             opts: opts.clone(),
             placed: HashSet::new(),
-            ignored: HashSet::new(),
+            ignored: Vec::new(),
             shelf_map: BTreeMap::new(),
+            last_seen: Vec::new(),
             scanned_ms: 0,
         });
     // The sheet's answers are this import's truth, and the next scan's.

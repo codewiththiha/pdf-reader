@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use reader_core::format::Format;
 
-use crate::book::Fingerprint;
+use crate::book::{Book, Fingerprint};
 use crate::scan::{FoundFile, admits, selectable_formats};
 
 /// The default size threshold the import sheet opens on, in bytes: 30 KB. A
@@ -135,12 +135,26 @@ pub struct WatchedFolder {
     /// skips it instead of putting it back.
     #[serde(default)]
     pub placed: HashSet<Fingerprint>,
-    /// Fingerprints the reader deliberately removed from the library. A
-    /// tombstone: the file is still on disk and still admitted by `opts`, so
-    /// without this the next rescan would re-add exactly what was just
-    /// deleted. Only written for books this folder placed.
+    /// The books the reader deliberately removed from the library. A tombstone
+    /// per removal: the file is still on disk and still admitted by `opts`, so
+    /// without one the next rescan would re-add exactly what was just deleted.
+    /// Only written for books this folder placed.
+    ///
+    /// A list of records rather than a set of fingerprints, because a tombstone
+    /// has a second job: it is what the folder's import menu reads to offer the
+    /// book back. A set could say "not this one again" and nothing more.
     #[serde(default)]
-    pub ignored: HashSet<Fingerprint>,
+    pub ignored: Vec<Tombstone>,
+    /// What the latest scan saw, restricted to the fingerprints this folder has
+    /// placed: fingerprint to the address it was found at.
+    ///
+    /// The import menu's other half. "Did a book I filed here move somewhere
+    /// else?" is answerable from this and the library's membership lists alone,
+    /// which is what lets the menu open instantly instead of walking the tree
+    /// again — and the restriction to placed fingerprints is what bounds it: a
+    /// folder cannot have placed more books than the library holds.
+    #[serde(default)]
+    pub last_seen: Vec<(Fingerprint, String)>,
     /// Subfolder (relative, `/`-separated, `""` for the root) to the shelf its
     /// books were placed on. Persisted so a rescan adds to the shelf the last
     /// one created rather than making a second shelf with the same name.
@@ -189,11 +203,88 @@ impl WatchedFolder {
         self.placed.insert(fp);
     }
 
+    /// Whether this folder is holding a removal against `fp`.
+    pub fn is_ignored(&self, fp: &Fingerprint) -> bool {
+        self.ignored.iter().any(|entry| &entry.fp == fp)
+    }
+
     /// Whether a rescan may place this fingerprint. A tombstone wins over
     /// everything: the reader said no, and the file being unchanged since is
     /// not a new argument.
     pub fn may_place(&self, fp: &Fingerprint) -> bool {
-        !self.ignored.contains(fp)
+        !self.is_ignored(fp)
+    }
+
+    /// Remember what this scan saw, for the fingerprints this folder placed.
+    ///
+    /// Written on every scan, including one that changed nothing: the menu's
+    /// "moved out of this folder" answer is only as fresh as the last walk, and a
+    /// walk that found nothing to do is still a walk that saw every file.
+    pub fn record_seen(&mut self, found: &[FoundFile]) {
+        let seen: Vec<(Fingerprint, String)> = found
+            .iter()
+            .filter(|file| self.placed.contains(&file.fp))
+            .map(|file| (file.fp, file.path.clone()))
+            .collect();
+        self.last_seen = seen;
+    }
+}
+
+/// A book the reader removed from the library, remembered by the folder that
+/// placed it.
+///
+/// Two jobs, and the second is why it carries more than a fingerprint: it keeps
+/// the file out of every later rescan, and it is the record the folder's import
+/// menu reads to offer the book back — with a name, a size and an address to
+/// re-measure before it promises anything.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tombstone {
+    /// The fingerprint the book carried when it was removed. What a rescan
+    /// matches against, and what a restore looks up by.
+    pub fp: Fingerprint,
+    /// The name the shelf showed. `None` for a book that was imported and never
+    /// opened, which is most of them; the menu falls back to the file's stem.
+    #[serde(default)]
+    pub title: Option<String>,
+    pub format: Format,
+    /// Where the file lived when it was removed. A restore re-measures this
+    /// address first: a file that has since moved is a relink, not a restore, and
+    /// the menu says so rather than importing a path that is not there.
+    pub last_path: String,
+    /// The shelf it was filed on, when it was filed on one. A restore puts it
+    /// back there if the shelf still exists, and on the folder's root shelf if it
+    /// does not — a removed book should not come back somewhere new.
+    #[serde(default)]
+    pub shelf_id: Option<String>,
+    /// When it was removed, in milliseconds since the epoch.
+    #[serde(default)]
+    pub removed_ms: u64,
+}
+
+impl Tombstone {
+    /// The record for a book about to be removed. `shelf_id` is the first of the
+    /// folder's shelves the book was on, if any — one answer, deterministically
+    /// chosen, because a book on three of a folder's shelves still comes back to
+    /// one.
+    pub fn of(book: &Book, shelf_id: Option<String>, now_ms: u64) -> Self {
+        Self {
+            fp: book.fp,
+            title: book.title.clone(),
+            format: book.format,
+            last_path: book.path().to_string(),
+            shelf_id,
+            removed_ms: now_ms,
+        }
+    }
+
+    /// What a restore row calls the book: its own title, else the file's stem.
+    pub fn label(&self) -> String {
+        self.title
+            .clone()
+            .filter(|t| !t.trim().is_empty())
+            .or_else(|| reader_core::filename::file_stem_from_path(&self.last_path))
+            .unwrap_or_else(|| self.last_path.clone())
     }
 }
 
@@ -218,6 +309,13 @@ pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
         // (the source may gain a file worth copying), so it is left alone; the
         // sheet simply does not offer it there.
         f.shelf_map.retain(|k, v| !v.trim().is_empty() && !k.contains('\\'));
+        // One tombstone per fingerprint: a book removed twice (it can happen —
+        // restore it, then remove it again) must not leave two rows offering the
+        // same file back, and the newest is the one that knows where it last was.
+        let mut stones = HashSet::new();
+        f.ignored.retain(|t| !t.last_path.trim().is_empty() && stones.insert(t.fp));
+        let mut seen = HashSet::new();
+        f.last_seen.retain(|(fp, path)| !path.trim().is_empty() && seen.insert(*fp));
     }
 }
 
@@ -239,9 +337,21 @@ mod tests {
             root: root.into(),
             opts: FolderOpts::default(),
             placed: HashSet::new(),
-            ignored: HashSet::new(),
+            ignored: Vec::new(),
             shelf_map: BTreeMap::new(),
+            last_seen: Vec::new(),
             scanned_ms: 0,
+        }
+    }
+
+    fn stone(n: u32) -> Tombstone {
+        Tombstone {
+            fp: fp(n),
+            title: Some(format!("Book {n}")),
+            format: Format::Pdf,
+            last_path: format!("/books/{n}.pdf"),
+            shelf_id: None,
+            removed_ms: 5,
         }
     }
 
@@ -301,7 +411,9 @@ mod tests {
         // Placing is not a tombstone: the book is on a shelf, so a rescan
         // skips it through `placed`, and removing it later still has to stick.
         assert!(f.may_place(&fp(1)));
-        f.ignored.insert(fp(1));
+        assert!(!f.is_ignored(&fp(1)));
+        f.ignored.push(stone(1));
+        assert!(f.is_ignored(&fp(1)));
         assert!(!f.may_place(&fp(1)), "a removal outranks everything");
     }
 

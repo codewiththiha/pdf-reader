@@ -41,15 +41,20 @@ pub mod query;
 pub mod scan;
 pub mod shelf;
 pub mod sort;
+pub mod text;
 pub mod view;
 pub mod wire;
 
 pub use blob::{LibraryBlob, RecentBook, migrate_v1};
 pub use book::{BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, apply_check, record_read};
-pub use folder::{FolderOpts, WatchedFolder};
-pub use ledger::{KnownBook, ScanAction, diff_folder, tombstone};
+pub use folder::{FolderOpts, Tombstone, WatchedFolder};
+pub use ledger::{
+    KnownBook, Recovered, ScanAction, diff_folder, find_tombstone, index_by_fp, prune_tombstones,
+    recoverables, restore_deleted, tombstone,
+};
 pub use scan::{FoundFile, admits};
-pub use shelf::{Shelf, ShelfKind, ALL_SHELF};
+pub use shelf::{Shelf, ShelfKind, ALL_SHELF, shelf_add};
 pub use sort::{SortKey, sort_books};
+pub use text::{human_age, human_size};
 pub use view::{CoverFit, LibraryLayout, LibraryView};
 pub use wire::{ImportPhase, ImportProgress, PathCheck, StoreRequest, StoreResult};
