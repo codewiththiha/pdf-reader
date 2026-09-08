@@ -1,10 +1,14 @@
-//! The titlebar search: which books a query keeps.
+//! The titlebar search: which books a query keeps, and which shelves.
 //!
 //! Client-side and over three fields, because that is all a library is: the
 //! name the document gave (or the file stem, when it gave none), the author,
 //! and the address. Nothing here is indexed — a few thousand string comparisons
 //! per keystroke is well inside a frame, and an index would be a second thing
 //! to keep in step with the list it describes.
+//!
+//! Shelves are searched by name through the same rule ([`matches_terms`]),
+//! because a page showing books a query kept and shelves it did not is two
+//! searches wearing one text box.
 
 use crate::book::Book;
 
@@ -23,7 +27,22 @@ pub fn is_active(query: &str) -> bool {
 /// either half. Comparison is case-insensitive; a library search that cared
 /// about case would be a grep, not a search.
 pub fn matches(book: &Book, query: &str) -> bool {
-    let hay = haystack(book);
+    matches_terms(&haystack(book), query)
+}
+
+/// Whether one already-lower-cased-or-not string survives `query` — the rule
+/// [`matches`] applies, without the book.
+///
+/// Split out because a shelf on the page is searched by the same bar as the
+/// books on it, and the two have to agree: a query that hid a shelf whose name
+/// it matched would be a search that quietly drops results, and one that kept a
+/// shelf whose name it did not match would be a shelf the reader cannot explain
+/// being there. One rule, spelled once.
+pub fn matches_terms(text: &str, query: &str) -> bool {
+    if !is_active(query) {
+        return true;
+    }
+    let hay = text.to_lowercase();
     query
         .split_whitespace()
         .map(|term| term.to_lowercase())
@@ -131,6 +150,16 @@ mod tests {
         let mut b = book("ignored", None, "/books/Foundation.pdf");
         b.title = None;
         assert!(matches(&b, "foundation"), "the stem is the title when there is none");
+    }
+
+    #[test]
+    fn a_name_is_searched_by_the_same_rule_as_a_book() {
+        assert!(matches_terms("Science Fiction", "sci"), "a prefix is enough");
+        assert!(matches_terms("Science Fiction", "fiction science"));
+        assert!(matches_terms("Science Fiction", "SCIENCE"));
+        assert!(!matches_terms("Science Fiction", "science crime"));
+        // A blank bar keeps everything, shelves included.
+        assert!(matches_terms("Science Fiction", "   "));
     }
 
     #[test]

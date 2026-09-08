@@ -1,22 +1,23 @@
 //! Multi-select on the shelf: the gesture that starts it, the set it fills, and
 //! the bar that acts on it.
 //!
-//! The gesture is the app's one long-press primitive with the app's one set of
-//! tuning constants, so holding a book feels exactly like holding a highlight —
-//! same delay, same slop, same swallowed click afterwards. The bar is the
-//! `ActionBar` primitive, which has named library item selection as a consumer
-//! since before there was a library to select from.
+//! The gesture is the app's one card wrapper at the app's one hold tuning, so
+//! holding a book feels exactly like holding a highlight — same delay, same
+//! swallowed click afterwards — and holding a folder feels exactly like holding a
+//! book. See `crate::components::primitives::interactions::draggable_item` for why
+//! one wrapper decides between the hold, the tap and the drag rather than three
+//! listeners racing. The bar is the `ActionBar` primitive, which has named library
+//! item selection as a consumer since before there was a library to select from.
 //!
-//! What a selection can DO is narrower than what it can hold, deliberately. Filing
-//! books on a shelf is membership and cannot touch a file. Removing them goes
-//! through the same receipt sheet a single removal uses, because a bulk delete that
-//! skipped the itemisation would be the one place in the app where "remove" does
-//! not tell you what it takes — and the sheet already knows how to aggregate, so
-//! the honest version costs nothing extra.
-//!
-//! Pointer capture is on, which is also what makes this coexist with dragging a
-//! card: starting a drag fires `pointercancel` on the captured element, the press
-//! is cancelled, and the drag proceeds. A hold that never moves completes instead.
+//! The set holds ids and does not care which kind they are: a selection of books
+//! and folders is one selection, because that is what the reader sees on screen.
+//! What a selection can DO is narrower than what it can hold, deliberately, and the
+//! two halves are different operations on the same shelf list. Filing a book is
+//! membership; filing a folder is nesting, which `library_core::shelf::can_nest`
+//! refuses when it would close a loop. Removing goes through the receipt sheet a
+//! single removal uses, and the sheet is about BOOKS — a folder's removal costs
+//! nothing itemisable (its books stay in the library and its children move up a
+//! level), so it stays where it has always been, on the crumb that names it.
 //!
 //! A keyboard cannot hold anything down, so it gets the same two halves as two
 //! keys: Shift+Enter on a card enters selection with that card in it, and Enter
@@ -31,7 +32,7 @@ use leptos::prelude::*;
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::floating::types::PlacementSide;
 use app_chrome::icon::IconName;
-use library_core::shelf::{ALL_SHELF, Shelf};
+use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
 use crate::components::primitives::menu::menu_item::MenuItem;
@@ -39,15 +40,18 @@ use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::overlay::action_bar::ActionBar;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
-use crate::features::library::drag::ShelfOrder;
+use crate::features::library::drag::{FolderOrder, ShelfOrder};
 use crate::features::library::remove_modal::RemoveSheet;
-use crate::services::library::{create_shelf, file_many};
+use crate::services::library::{create_shelf, file_many, nest_many};
 use crate::state::AppState;
 
-/// Enter selection with the pressed book already in it, which is what a long-press
+/// Enter selection with the pressed card already in it, which is what a hold
 /// means: not "start selecting" and then a second gesture to select this one.
-pub(crate) fn enter_selection(state: AppState, book_id: &str) {
-    let id = book_id.to_string();
+///
+/// The id is a book's or a shelf's; the set does not tell them apart and nothing
+/// below needs it to.
+pub(crate) fn enter_selection(state: AppState, item_id: &str) {
+    let id = item_id.to_string();
     state.library.selecting.set(true);
     state.library.selected.update(|selected| {
         selected.insert(id);
@@ -62,13 +66,13 @@ pub(crate) fn exit_selection(state: AppState) {
     state.library.selected.set(HashSet::new());
 }
 
-/// Toggle one book. The high-frequency operation, and the reason the set is a set:
+/// Toggle one card. The high-frequency operation, and the reason the set is a set:
 /// "is this one in it" is asked by every card on every repaint, and a list would
 /// answer it by walking.
-pub(crate) fn toggle_selected(state: AppState, book_id: &str) {
+pub(crate) fn toggle_selected(state: AppState, item_id: &str) {
     state.library.selected.update(|selected| {
-        if !selected.remove(book_id) {
-            selected.insert(book_id.to_string());
+        if !selected.remove(item_id) {
+            selected.insert(item_id.to_string());
         }
     });
 }
@@ -80,6 +84,54 @@ pub(crate) fn selected_ids(state: AppState) -> Vec<String> {
         .library
         .selected
         .with_untracked(|selected| selected.iter().cloned().collect())
+}
+
+/// The selected ids that are books. What the receipt sheet is handed: it itemises
+/// what a removal costs, and only a book has a resume point, placements,
+/// highlights and maybe a store copy to itemise.
+fn selected_books(state: AppState) -> Vec<String> {
+    let folders = selected_folders(state);
+    selected_ids(state)
+        .into_iter()
+        .filter(|id| !folders.contains(id))
+        .collect()
+}
+
+/// The selected ids that are shelves. Filing these on a shelf is a nesting rather
+/// than a membership, so the two halves of one action are two calls.
+fn selected_folders(state: AppState) -> Vec<String> {
+    let ids = selected_ids(state);
+    state.library.shelves.with_untracked(|shelves| {
+        ids.into_iter()
+            .filter(|id| shelves.iter().any(|s| &s.id == id))
+            .collect()
+    })
+}
+
+/// How many of the selected ids are books, reactively — the number the removal
+/// button prints, because it is the number of things the receipt will list.
+///
+/// Counted as "everything selected that is not a shelf" rather than by walking the
+/// book list per id: a selection of the whole of a three-thousand-book shelf is the
+/// common worst case, and this is asked on every toggle.
+fn selected_book_count(state: AppState) -> usize {
+    let selected = state.library.selected.get();
+    let folders: HashSet<String> = state
+        .library
+        .shelves
+        .with(|shelves| shelves.iter().map(|s| s.id.clone()).collect());
+    selected.iter().filter(|id| !folders.contains(*id)).count()
+}
+
+/// File the selection on one shelf: the books become members and the folders are
+/// filed inside it. One action from the reader's side, two operations on the same
+/// list, and a folder that cannot be nested there (because it would end up inside
+/// itself) is simply left where it is rather than failing the batch.
+fn file_selection(state: AppState, shelf_id: &str) {
+    let books = selected_books(state);
+    file_many(state, &books, shelf_id);
+    let folders = selected_folders(state);
+    nest_many(state, &folders, shelf_id);
 }
 
 /// The selection-mode wiring the page owns: the exit paths, and dropping the
@@ -95,11 +147,12 @@ pub(crate) fn use_select_mode(state: AppState) {
         DismissPolicy {
             escape: true,
             outside: Some(DismissTrigger::Click),
-            // A card or a row handles its own click (it toggles), the bar is the
-            // thing being reached for, and a shelf menu opened from the bar is a
-            // continuation of the action rather than a click outside it.
+            // A card, a folder or a row handles its own click (it toggles), the
+            // bar is the thing being reached for, and a shelf menu opened from the
+            // bar is a continuation of the action rather than a click outside it.
             exclude_selectors: vec![
-                ".book",
+                ".book-card",
+                ".folder-card",
                 ".library-row",
                 ".library-select-bar",
                 ".menu-popover",
@@ -119,12 +172,23 @@ pub(crate) fn use_select_mode(state: AppState) {
 ///
 /// "All books" is not one of them: it is the pseudo-shelf the root breadcrumb
 /// stands for, and filing onto it would be a way of filing nowhere at all.
+///
+/// Neither is a shelf the selection could not be filed onto. With only books
+/// selected that is none of them, but a selection holding a folder cannot be filed
+/// inside that folder or inside one of its own children — and a menu row that
+/// silently does nothing is worse than no row.
 fn shelf_choices(state: AppState) -> Signal<Vec<Shelf>> {
     Signal::derive(move || {
+        let selected = state.library.selected.get();
         state.library.shelves.with(|shelves| {
             shelves
                 .iter()
                 .filter(|s| s.id != ALL_SHELF)
+                .filter(|s| {
+                    selected
+                        .iter()
+                        .all(|id| can_nest(shelves, id, &s.id))
+                })
                 .cloned()
                 .collect()
         })
@@ -134,10 +198,15 @@ fn shelf_choices(state: AppState) -> Signal<Vec<Shelf>> {
 #[component]
 pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
+    let folders = use_context::<FolderOrder>().expect("the library content provides the folders");
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
     let selecting = state.library.selecting;
     let count = Signal::derive(move || state.library.selected.with(|s| s.len()));
+    // The receipt lists books, so the button that opens it counts books: a set of
+    // two books and one folder is "3 selected" and "Remove (2)", and the difference
+    // is the honest one — the folder is not going anywhere from here.
+    let books = Signal::derive(move || selected_book_count(state));
     let choices = shelf_choices(state);
     let shelf_menu = RwSignal::new(false);
     let shelf_anchor: NodeRef<html::Div> = NodeRef::new();
@@ -146,7 +215,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
         <ActionBar
             visible=Signal::derive(move || selecting.get())
             role="toolbar"
-            aria_label="Book selection"
+            aria_label="Library selection"
             class="library-select-bar"
         >
             <span class="mr-1.5 text-xs font-medium tabular-nums text-muted">
@@ -157,16 +226,18 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                 on_click=move |_| {
                     // Everything on screen, not everything in the library: a
                     // search or a drilled shelf narrows what "All" can mean, and
-                    // selecting books the reader cannot see is how a bulk action
-                    // becomes a surprise.
-                    let visible: Vec<String> = order
+                    // selecting cards the reader cannot see is how a bulk action
+                    // becomes a surprise. Both halves of the page — the books and
+                    // the folders at this level — because both are on it.
+                    let on_screen: Vec<String> = order
                         .0
                         .get_untracked()
                         .into_iter()
                         .map(|book| book.id)
+                        .chain(folders.0.get_untracked().into_iter().map(|s| s.id))
                         .collect();
                     state.library.selected.update(|selected| {
-                        selected.extend(visible);
+                        selected.extend(on_screen);
                     });
                 }
                 variant=ButtonVariant::Ghost
@@ -208,8 +279,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                                     label=label
                                     on_click=move || {
                                         shelf_menu.set(false);
-                                        let ids = selected_ids(state);
-                                        file_many(state, &ids, &shelf_id);
+                                        file_selection(state, &shelf_id);
                                         exit_selection(state);
                                     }
                                 />
@@ -223,12 +293,13 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                         on_click=move || {
                             shelf_menu.set(false);
                             // Created without drilling into it: the reader picked
-                            // books on one shelf and asked for them to be on
+                            // cards on one shelf and asked for them to be on
                             // another, and navigating away is an answer to a
-                            // question they did not ask.
+                            // question they did not ask. Created at this level, so
+                            // the shelf the selection just went into is one the
+                            // reader can still see.
                             let shelf_id = create_shelf(state);
-                            let ids = selected_ids(state);
-                            file_many(state, &ids, &shelf_id);
+                            file_selection(state, &shelf_id);
                             exit_selection(state);
                         }
                     />
@@ -237,7 +308,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
 
             <Button
                 on_click=move |_| {
-                    let ids = selected_ids(state);
+                    let ids = selected_books(state);
                     if ids.is_empty() {
                         return;
                     }
@@ -248,9 +319,10 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                 tone=ButtonTone::Danger
                 compact=true
                 class="rounded-full px-3"
-                disabled=Signal::derive(move || count.get() == 0)
+                disabled=Signal::derive(move || books.get() == 0)
+                title="Remove the selected books from the library"
             >
-                {move || format!("Remove ({})", count.get())}
+                {move || format!("Remove ({})", books.get())}
             </Button>
 
             <Button

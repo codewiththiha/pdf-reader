@@ -59,7 +59,7 @@ pub use ledger::{
     recoverables, restore_deleted, tombstone,
 };
 pub use scan::{FoundFile, admits};
-pub use shelf::{Shelf, ShelfKind, ALL_SHELF, shelf_add};
+pub use shelf::{ALL_SHELF, Shelf, ShelfKind, ancestors, can_nest, children_of, shelf_add};
 pub use sort::{SortKey, sort_books};
 pub use text::{human_age, human_size};
 pub use view::{CoverFit, LibraryLayout, LibraryView};

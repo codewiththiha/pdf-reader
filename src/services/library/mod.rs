@@ -17,8 +17,8 @@
 //! The deciding is NOT here. Which files a scan adds, where they land and what
 //! a rescan skips is `library_core`'s ledger; [`import`] runs it against the
 //! shell's answers and writes the result to the library state, and [`arrange`]
-//! holds the moves a reader makes by hand (a drag between shelves, a removal, a
-//! relink).
+//! holds the moves a reader makes by hand (a drag between shelves, a shelf filed
+//! inside another, a removal, a relink).
 //!
 //! [`import`]: crate::services::library::import
 //! [`arrange`]: crate::services::library::arrange
@@ -29,7 +29,7 @@ pub mod reveal;
 
 pub use arrange::{
     PurgeOpts, also_show, create_shelf, delete_shelf, file_many, memberships, move_to_shelf,
-    new_shelf, purge_books, relink_dialog, rename_shelf,
+    nest_many, nest_shelf, new_shelf, purge_books, relink_dialog, rename_shelf,
 };
 pub use reveal::reveal_book;
 pub use import::{

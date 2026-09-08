@@ -515,9 +515,12 @@ src/
   app/                    bootstrap, routes, the shell that hosts the sidebar
   components/
     primitives/           button, switch, popover, floating positioning,
-                          motion and interaction hooks (the chrome's own
-                          primitives — icon, icon button, tooltip, the
-                          generic DOM/timer hooks — live in app-chrome)
+                          motion and interaction hooks (the long-press, the
+                          pointer-drag stream, and the card wrapper that
+                          decides between a tap, a hold and a drag; the
+                          chrome's own primitives — icon, icon button,
+                          tooltip, the generic DOM/timer hooks — live in
+                          app-chrome)
     shell/                the unified application shell: the ShellController
                           (one source of truth for layout), the titlebar
                           family, the sidebar rail family
@@ -555,9 +558,9 @@ src/
   features/
     library/              the library page: its three-slot bar (breadcrumb,
                           search, view menu), the grid and the list, book cards
-                          and shelf tiles, the two ways in (add card, empty
-                          state) and the sheet they open, the import dock, and
-                          the drag payload both views share
+                          and the folder cards a shelf nests in, the two ways in
+                          (add card, empty state) and the sheet they open, the
+                          import dock, and the drag payloads both views share
     reader/               the reader page and its two virtualizers
   state/                  the reactive state tree: app (chrome + UI), reader
                           (document, viewer, zoom, search, gloss, AI selection),
@@ -649,9 +652,10 @@ styles/
   page_host.css           the .pdf-page host, its canvas and the zoom snapshot
   text.css                the reflowable page host and the continuous stream
   textures.css, noise.css texture modes, and the grain overlay + its crawl
-  library.css             the bookshelf: cards and covers, shelf tiles and their
-                          strips, the list rows, the import dock's ring, the
-                          drag markers and the drag overlay
+  library.css             the bookshelf: book cards and their frames, folder
+                          cards and their cover plates, the list rows, the
+                          import dock's ring, the drag markers and the drag
+                          overlay
   components/             shell, title bar, animations, ai, gloss, appearance,
                           thumbnails, pdf.js's text layer, and the search-hit
                           box both format families share

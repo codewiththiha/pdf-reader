@@ -8,11 +8,11 @@
 //! nobody sees.
 //!
 //! This is also where the things the grid and the list share are provided: the
-//! order both render, the one drop-target signal both draw their markers from, and
-//! the selection mode both toggle into. Deriving the order once here is what makes
-//! a drag between the two views impossible to get wrong — there is only one order —
-//! and it is what lets the selection bar's "All" mean everything on screen rather
-//! than everything in the library.
+//! order both render, the folders at this level, the one drop-target signal both
+//! draw their markers from, and the selection mode both toggle into. Deriving the
+//! order once here is what makes a drag between the two views impossible to get
+//! wrong — there is only one order — and it is what lets the selection bar's "All"
+//! mean everything on screen rather than everything in the library.
 
 use std::time::Duration;
 
@@ -21,12 +21,12 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::by_id;
 use pdf_engine::types::DocStatus;
 use library_core::query;
-use library_core::shelf::ALL_SHELF;
+use library_core::shelf::{ALL_SHELF, Shelf, children_of};
 use library_core::sort::{self, SortKey};
 use library_core::book::Book;
 
 use crate::components::primitives::feedback::CenteredLoader;
-use crate::features::library::drag::{DropTarget, ShelfOrder};
+use crate::features::library::drag::{DropTarget, FolderOrder, ShelfOrder};
 use crate::features::library::empty_state::EmptyState;
 use crate::features::library::grid::GridView;
 use crate::features::library::list::ListView;
@@ -133,6 +133,33 @@ fn visible(state: AppState) -> Vec<Book> {
     query::filter(&list, &state.library.query.get())
 }
 
+/// The folders the page shows at this level, in the order it shows them.
+///
+/// Two steps, and the same sequence as [`visible`]: the level narrows the list to
+/// the shelves filed directly inside it, and the query filters what is left — by
+/// name, through the same rule the books go through, so one text box is not two
+/// searches wearing one field.
+///
+/// The view's sort key is NOT applied. It sorts books (title, author, how far in
+/// they were read) and a shelf has none of those; folders render in the order the
+/// library stores them, which is the order the reader made them in and the order a
+/// drag between them can rewrite.
+fn visible_folders(state: AppState) -> Vec<Shelf> {
+    let at = state.library.shelf.get();
+    let terms = state.library.query.get();
+    // "All" is not a shelf, so the root level is the shelves with no parent
+    // rather than the shelves whose parent is named "all".
+    let parent = (at != ALL_SHELF).then_some(at.as_str());
+    state.library.shelves.with(|shelves| {
+        children_of(shelves, parent)
+            .into_iter()
+            .filter(|s| s.id != ALL_SHELF)
+            .filter(|s| query::matches_terms(&s.name, &terms))
+            .cloned()
+            .collect()
+    })
+}
+
 #[component]
 pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     // Provided before anything below can ask: both views and every card read
@@ -141,6 +168,8 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     // "nothing here" line below all agree about what is on screen.
     let order = Signal::derive(move || visible(state));
     provide_context(ShelfOrder(order));
+    let folders = Signal::derive(move || visible_folders(state));
+    provide_context(FolderOrder(folders));
     provide_context(DropTarget(RwSignal::new(None)));
     install_reveal(state);
     // The exit paths for a selection a card started: Escape, a click on empty
@@ -153,11 +182,15 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     let error = state.reader.document.error;
     let is_list = Signal::derive(move || state.library.view.with(|v| v.is_list()));
     let has_books = Signal::derive(move || state.library.books.with(|b| !b.is_empty()));
+    // The page is worth drawing when there is anything on it, and a folder with no
+    // books in it yet is something: an empty library that still had shelves would
+    // otherwise be an empty state covering the folders the reader just made.
+    let has_anything = Signal::derive(move || has_books.get() || !folders.get().is_empty());
     // A library with books in it and nothing on screen means the reader narrowed
     // it away — which is a different sentence from an empty library, and one that
     // should not offer an import button.
     let quiet = Signal::derive(move || {
-        if !order.get().is_empty() || !has_books.get() {
+        if !order.get().is_empty() || !folders.get().is_empty() || !has_books.get() {
             return None;
         }
         let searching = state.library.query.with(|q| !q.trim().is_empty());
@@ -204,7 +237,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
             </Show>
             <Show when=move || status.get() == DocStatus::Idle fallback=|| ()>
                 <Show
-                    when=move || has_books.get()
+                    when=move || has_anything.get()
                     fallback=move || view! { <EmptyState state=state /> }
                 >
                     <div class="min-h-0 flex-1 overflow-y-auto pt-12">

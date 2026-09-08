@@ -237,6 +237,10 @@ pub fn new_shelf(state: AppState) -> String {
 /// the reader picked books on one shelf and asked for them to be on another, and
 /// navigating them away from the shelf they were looking at is an answer to a
 /// question they did not ask.
+///
+/// Filed at the level the reader is looking at, because a shelf made from inside a
+/// folder is a folder being subdivided and one made from the root is a new top
+/// level; "All" is not a shelf, so it is the root.
 pub fn create_shelf(state: AppState) -> String {
     let now = js_sys::Date::now() as u64;
     let seq = state
@@ -245,15 +249,58 @@ pub fn create_shelf(state: AppState) -> String {
         .with_untracked(|shelves| shelves.len() as u32);
     let id = library_core::id::new_shelf_id(now, seq);
     let made = id.clone();
+    let at = state.library.shelf.get_untracked();
+    let parent = (at != ALL_SHELF).then_some(at);
     state.library.shelves.update(|shelves| {
         shelves.push(Shelf {
             id: made,
             name: "New shelf".to_string(),
             kind: library_core::shelf::ShelfKind::Virtual,
             books: Vec::new(),
+            parent,
         });
     });
     id
+}
+
+/// File one shelf inside another, or back out to the level `parent` names when it
+/// is `None`. True when the shelf moved.
+///
+/// The cycle check is `library_core::shelf::reparent`'s and not the caller's: a
+/// folder filed inside itself renders on no level at all and can never be opened
+/// again, so the rule has to hold for every caller rather than for every caller
+/// that remembered. A refusal writes nothing and persists nothing, which is what
+/// lets a drop answer "no" by doing nothing.
+pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> bool {
+    let mut moved = false;
+    state.library.shelves.update(|shelves| {
+        moved = shelf::reparent(shelves, folder_id, parent);
+    });
+    if moved {
+        crate::storage::persist_library(state.library);
+    }
+    moved
+}
+
+/// File several shelves inside one at once. What a bulk "add to shelf" does with
+/// the folders in the set: the books are memberships and the folders are nestings,
+/// and one persist covers the batch.
+pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
+    if folder_ids.is_empty() {
+        return;
+    }
+    let mut moved = false;
+    state.library.shelves.update(|shelves| {
+        for folder_id in folder_ids {
+            // Each one is asked separately: a batch that contained a folder and
+            // one of its own children must file the first and refuse the second,
+            // and a single all-or-nothing answer would lose one of the two.
+            moved |= shelf::reparent(shelves, folder_id, Some(parent));
+        }
+    });
+    if moved {
+        crate::storage::persist_library(state.library);
+    }
 }
 
 /// File several books on one shelf at once.
@@ -294,21 +341,38 @@ pub fn rename_shelf(state: AppState, shelf_id: &str, name: &str) {
 }
 
 /// Take a shelf apart. The books stay in the library — a shelf is a list of ids
-/// and never held a byte — and the page steps back out to the root, because the
-/// thing it was looking at is gone.
+/// and never held a byte — and the page steps back out a level, because the thing
+/// it was looking at is gone.
+///
+/// The shelves inside it move up to the level it was on, for the same reason the
+/// books stay: a child left pointing at a parent that is gone renders on no level
+/// at all, and a reader who removed one folder did not ask to lose the folders
+/// filed in it. Stepping out goes to the removed shelf's own parent rather than
+/// always to the root, so removing a folder three levels down leaves the reader
+/// two levels down and not at the top of the library.
 ///
 /// Only offered for a shelf the reader made. A folder's shelf is derived from the
 /// tree, so removing one would be undone by the next file that lands in it, and a
 /// control that appears to work and then does not is worse than no control.
 pub fn delete_shelf(state: AppState, shelf_id: &str) {
+    let was_inside = state.library.shelf.get_untracked() == shelf_id;
+    let stepped_out = state
+        .library
+        .shelves
+        .with_untracked(|shelves| {
+            shelves
+                .iter()
+                .find(|s| s.id == shelf_id)
+                .and_then(|gone| gone.parent.clone())
+        })
+        .unwrap_or_else(|| ALL_SHELF.to_string());
     state.library.shelves.update(|shelves| {
+        shelf::lift_children(shelves, shelf_id);
         shelves.retain(|s| s.id != shelf_id);
     });
-    state.library.shelf.update(|at| {
-        if at == shelf_id {
-            *at = ALL_SHELF.to_string();
-        }
-    });
+    if was_inside {
+        state.library.shelf.set(stepped_out);
+    }
     crate::storage::persist_library(state.library);
 }
 

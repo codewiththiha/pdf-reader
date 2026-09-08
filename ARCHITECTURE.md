@@ -473,3 +473,59 @@ card" therefore asks the same signal the grid rendered from.
 A drag is only offered while the order is the manual one (`library_core::view::LibraryView::drag_reorders`),
 because a shelf sorted by title re-sorts on the next render and would undo the drop before the
 reader saw it land.
+
+### A shelf is a level, not a row
+
+`Shelf::parent` makes the shelves a forest: the root level is the shelves with no parent, and a level
+inside one is `library_core::shelf::children_of` on its id. `features::library::content` derives both
+halves of the page once — `ShelfOrder` for the books and `FolderOrder` for the shelves at this level —
+and provides them beside the single `DropTarget` both views draw their markers from.
+
+The grid renders a folder as a cell of the same grid the books are cells of, which is the whole of
+what makes nesting drawable: the shelf tile this replaced spanned the grid to read as a row *of*
+books, and a row cannot be inside a row. The dense list still shows books only, as it did before.
+
+One relationship in this model can be wrong in a way no single row shows — a shelf filed inside
+itself, or inside one of its own children, is a folder that renders on no level and can never be
+opened again. So the graph is guarded twice, and the two guards are not redundant:
+`library_core::shelf::can_nest` refuses the drop before it is written, and
+`library_core::shelf::sanitize` cuts any cycle a restored or hand-edited blob carries, because a rule
+enforced only on the way in is a rule one backup can break. Sanitising the shelves LAST in
+`library_core::blob::sanitize` is what makes the second guard enough: a folder shelf whose watched
+folder is gone is dropped there, and a shelf nested inside it would otherwise be left pointing at a
+parent that no longer exists.
+
+Removing a shelf lifts the shelves inside it to the level it was on (`shelf::lift_children`, and the
+same rule in SQL in `src-tauri/src/db/repo.rs`), for the same reason its books stay in the library:
+a reader who took one folder apart did not ask to lose the folders filed in it.
+
+Nesting is not `ShelfKind::Folder`'s `rel`. `rel` is a subfolder's address inside a watched
+directory's tree — a rescan key, written by the filesystem's shape. `parent` is where the reader
+filed the shelf inside the library, and no scan ever writes it: a rescan that derived one from the
+other would rearrange the reader's folders on every window focus.
+
+### One gesture, decided once
+
+A card answers to three pointers that all arrive as the same `pointerdown`: a tap opens, a hold
+starts a multi-select, a movement files the card somewhere else. Handled as three listeners they
+race — the hold completes and the click it generates opens the book it was meant to select, or the
+press drifts two pixels and cancels a gesture the reader was still making.
+
+`components::primitives::interactions::draggable_item` decides instead. The mode is chosen once per
+press and locked until the pointer is released: the hold timer firing wins, or the pointer
+travelling past a 6px threshold wins, or neither happening before release means it was a tap.
+Travelling past the threshold while nothing is draggable is its own fourth answer rather than a tap,
+because on a touch surface that movement is a scroll and opening the card the reader scrolled past is
+exactly the surprise the wrapper exists to prevent. `DraggableItemOptions` is the policy — which of
+the two a card allows, and what each means — and `DraggableItemHandle` is the four pointer handlers,
+the two flags a card paints itself from, and the one-shot probes that swallow the `click` and the
+synthetic `contextmenu` a completed hold generates.
+
+The wrapper decides the *pointer* half only. Filing still travels over the browser's own
+drag-and-drop, because that is what carries a payload between windows and what the app's file-drop
+overlay already knows how to stand aside for. One consequence is worth knowing: a `dragover` runs
+with the drag data store protected, so `getData` answers with an empty string until the drop. A
+target that read the payload to decide whether to claim the dragover would decide "not mine" on
+every engine that enforces that, and an unclaimed dragover is a `drop` that never fires — so
+`features::library::drag` asks the type list, which is not protected, and reads the payload on the
+drop where it can.

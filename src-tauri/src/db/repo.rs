@@ -86,9 +86,17 @@ fn book_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
 }
 
 /// Every shelf, in order, with its members resolved.
+///
+/// Ordered by position and not by depth: a child can come out before the parent it
+/// is filed in, which is fine because the nesting is a column on the row rather
+/// than a shape in the result, and `library_core::shelf::children_of` is what
+/// turns one into the other.
 pub fn shelves(conn: &Connection) -> Result<Vec<Shelf>, String> {
     let mut stmt = conn
-        .prepare("SELECT id, name, kind, folder_id, rel, position FROM shelves ORDER BY position, id")
+        .prepare(
+            "SELECT id, name, kind, folder_id, rel, position, parent \
+             FROM shelves ORDER BY position, id",
+        )
         .map_err(|e| format!("could not prepare the shelf query: {e}"))?;
     let rows = stmt
         .query_map([], |row| {
@@ -105,6 +113,7 @@ pub fn shelves(conn: &Connection) -> Result<Vec<Shelf>, String> {
                 // Filled in below: membership is its own table, and reading it per
                 // shelf would be one query per shelf for no benefit.
                 books: Vec::new(),
+                parent: row.get(6)?,
             })
         })
         .map_err(|e| format!("could not query the shelves: {e}"))?;
@@ -415,18 +424,52 @@ pub fn purge(conn: &Connection, id: &str) -> Result<Option<String>, String> {
 // Shelves and membership.
 // ---------------------------------------------------------------------------
 
-/// Add a shelf.
+/// Add a shelf, at the level its `parent` names.
+///
+/// The parent is written as the value it is rather than checked against the table:
+/// there is no foreign key on the column (see `migrations/0003_shelf_parent.sql`),
+/// so shelves can be restored in any order and a dangling parent is
+/// `library_core::shelf::sanitize`'s to collapse back to the root.
 pub fn shelf_insert(conn: &Connection, shelf: &Shelf, position: i64) -> Result<(), String> {
     let (kind, folder_id, rel) = match &shelf.kind {
         ShelfKind::Virtual => ("virtual", None, None),
         ShelfKind::Folder { folder_id, rel } => ("folder", Some(folder_id.as_str()), rel.as_deref()),
     };
     conn.execute(
-        "INSERT INTO shelves (id, name, kind, folder_id, rel, position) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![shelf.id, shelf.name, kind, folder_id, rel, position],
+        "INSERT INTO shelves (id, name, kind, folder_id, rel, position, parent) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            shelf.id,
+            shelf.name,
+            kind,
+            folder_id,
+            rel,
+            position,
+            shelf.parent
+        ],
     )
     .map_err(|e| format!("could not create shelf {}: {e}", shelf.id))?;
     Ok(())
+}
+
+/// File one shelf inside another, or back out to the top level when `parent` is
+/// `None`. True when the row's parent was not already that.
+///
+/// The cycle rule is NOT here. It is `library_core::shelf::can_nest`, asked by the
+/// caller before it gets to this: a graph walk rewritten as a recursive CTE would
+/// be a second answer to the same question in the one language the other cannot
+/// read, and the two would disagree silently.
+pub fn shelf_reparent(conn: &Connection, id: &str, parent: Option<&str>) -> Result<bool, String> {
+    // `IS NOT` rather than `<>`, because the top level is a NULL and `NULL <> x`
+    // is NULL — an UPDATE guarded by it would never fire on a shelf being lifted
+    // out of a folder, and would report "changed" for one that had not moved.
+    let changed = conn
+        .execute(
+            "UPDATE shelves SET parent = ?2 WHERE id = ?1 AND parent IS NOT ?2",
+            params![id, parent],
+        )
+        .map_err(|e| format!("could not re-file shelf {id}: {e}"))?;
+    Ok(changed > 0)
 }
 
 /// Rename a shelf. A blank name is refused rather than stored: a crumb with
@@ -447,10 +490,27 @@ pub fn shelf_rename(conn: &Connection, id: &str, name: &str) -> Result<bool, Str
 
 /// Take a shelf apart. Its memberships cascade; its books do not, because a shelf
 /// is a list of ids and never held a byte.
+///
+/// The shelves inside it move up to the level it was on, which is
+/// `library_core::shelf::lift_children` in SQL and for the same reason: a child
+/// left pointing at a parent that is gone renders on no level at all, and a reader
+/// who removed one folder did not ask to lose the folders filed in it. One
+/// transaction, because the lift and the delete are one rule — a lift that ran
+/// after the delete would have nothing to read the inherited level from.
 pub fn shelf_delete(conn: &Connection, id: &str) -> Result<bool, String> {
-    let removed = conn
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("could not begin removing shelf {id}: {e}"))?;
+    tx.execute(
+        "UPDATE shelves SET parent = (SELECT parent FROM shelves WHERE id = ?1) WHERE parent = ?1",
+        params![id],
+    )
+    .map_err(|e| format!("could not lift the shelves inside {id}: {e}"))?;
+    let removed = tx
         .execute("DELETE FROM shelves WHERE id = ?1", params![id])
         .map_err(|e| format!("could not remove shelf {id}: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("could not commit removing shelf {id}: {e}"))?;
     Ok(removed > 0)
 }
 
@@ -1181,6 +1241,7 @@ mod tests {
                 rel: Some("scifi".into()),
             },
             books: Vec::new(),
+            parent: None,
         };
         shelf_insert(&conn, &virtual_shelf("s1", "Mine"), 0).unwrap();
         shelf_insert(&conn, &folder_shelf, 1).unwrap();
@@ -1203,6 +1264,80 @@ mod tests {
         // reader can see.
         shelf_add(&conn, "s1", "b1").unwrap();
         assert_eq!(shelves(&conn).unwrap()[0].books.len(), 1);
+    }
+
+    #[test]
+    fn a_shelf_keeps_the_level_it_was_filed_in() {
+        let conn = db();
+        shelf_insert(&conn, &virtual_shelf("s1", "Fiction"), 0).unwrap();
+        shelf_insert(&conn, &nested_shelf("s2", "Sci-fi", "s1"), 1).unwrap();
+        shelf_insert(&conn, &nested_shelf("s3", "Space", "s2"), 2).unwrap();
+
+        let back = shelves(&conn).unwrap();
+        assert_eq!(back[0].parent, None);
+        assert_eq!(back[1].parent.as_deref(), Some("s1"));
+        assert_eq!(back[2].parent.as_deref(), Some("s2"));
+        assert_eq!(
+            library_core::shelf::children_of(&back, Some("s1"))
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["s2"]
+        );
+        assert_eq!(
+            library_core::shelf::ancestors(&back, "s3")
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["s1", "s2"],
+            "the way out of a shelf is the column, read back as a chain"
+        );
+    }
+
+    #[test]
+    fn re_filing_a_shelf_moves_one_column_and_reports_whether_it_moved() {
+        let conn = db();
+        shelf_insert(&conn, &virtual_shelf("s1", "Fiction"), 0).unwrap();
+        shelf_insert(&conn, &virtual_shelf("s2", "Sci-fi"), 1).unwrap();
+
+        assert!(shelf_reparent(&conn, "s2", Some("s1")).unwrap());
+        assert_eq!(shelves(&conn).unwrap()[1].parent.as_deref(), Some("s1"));
+        assert!(
+            !shelf_reparent(&conn, "s2", Some("s1")).unwrap(),
+            "filing a shelf where it already is changed nothing"
+        );
+        // Back out to the top level, which is a NULL and not an empty string:
+        // `children_of(None)` is the root, and a root shelf whose parent reads
+        // back as Some("") is a shelf on no level at all.
+        assert!(shelf_reparent(&conn, "s2", None).unwrap());
+        assert_eq!(shelves(&conn).unwrap()[1].parent, None);
+        assert!(!shelf_reparent(&conn, "s2", None).unwrap());
+        // A shelf that is not there is not a move.
+        assert!(!shelf_reparent(&conn, "nope", Some("s1")).unwrap());
+    }
+
+    #[test]
+    fn removing_a_shelf_lifts_the_shelves_inside_it_to_its_own_level() {
+        let conn = db();
+        shelf_insert(&conn, &virtual_shelf("s1", "Fiction"), 0).unwrap();
+        shelf_insert(&conn, &nested_shelf("s2", "Sci-fi", "s1"), 1).unwrap();
+        shelf_insert(&conn, &nested_shelf("s3", "Space", "s2"), 2).unwrap();
+
+        assert!(shelf_delete(&conn, "s2").unwrap());
+        let back = shelves(&conn).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(
+            back.iter().find(|s| s.id == "s3").unwrap().parent.as_deref(),
+            Some("s1"),
+            "s3 inherits the level s2 was on, not the top of the library"
+        );
+
+        // Removing a root shelf puts what was inside it at the root.
+        assert!(shelf_delete(&conn, "s1").unwrap());
+        let back = shelves(&conn).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].id, "s3");
+        assert_eq!(back[0].parent, None);
     }
 
     #[test]
@@ -1574,6 +1709,14 @@ mod tests {
             name: name.to_string(),
             kind: ShelfKind::Virtual,
             books: Vec::new(),
+            parent: None,
+        }
+    }
+
+    fn nested_shelf(id: &str, name: &str, parent: &str) -> Shelf {
+        Shelf {
+            parent: Some(parent.to_string()),
+            ..virtual_shelf(id, name)
         }
     }
 }

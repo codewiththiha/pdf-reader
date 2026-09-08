@@ -4,7 +4,12 @@
 //! It is a card and not a toolbar button because the shelf is where the reader is
 //! looking when they decide to add to it, and because a grid with a hole at the
 //! end reads as unfinished. The shape is the affordance: same box as a cover,
-//! dashed instead of painted, plus instead of a spine.
+//! dashed instead of painted, plus instead of art.
+//!
+//! It wears the book card's classes for that shape and is not a book, so the
+//! selection dimming in `styles/library.css` names it as an exception — an add
+//! affordance that stepped back with the unselected books would be advertising a
+//! choice it does not offer.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -27,7 +32,7 @@ pub(crate) fn AddCard(state: AppState) -> impl IntoView {
     });
 
     view! {
-        <div class="book book-add" node_ref=anchor>
+        <div class="book-card book-add" node_ref=anchor>
             <button
                 class="book-cover book-add-cover"
                 type="button"

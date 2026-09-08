@@ -10,6 +10,13 @@
 //! A row shows the author when the book has one and the resume point when it does
 //! not: at this density there is room for one line of prose and the reader gets to
 //! choose which by opening the book.
+//!
+//! Folders are NOT here, and were not before either: the shelf tile only ever
+//! rendered in the grid, so the dense layout has always been the books and the way
+//! in. The breadcrumb is the way around a folder from here, and a reader who wants
+//! to see the folders is a reader who wants the grid.
+
+use std::rc::Rc;
 
 use leptos::html;
 use leptos::prelude::*;
@@ -20,9 +27,10 @@ use library_core::shelf::ALL_SHELF;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
 
-use crate::components::primitives::interactions::long_press::{
-    LongPressOptions, SELECT_PRESS_MS, SELECT_SLOP_PX, use_long_press,
+use crate::components::primitives::interactions::draggable_item::{
+    DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
 };
+use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::add_menu::AddMenu;
 use crate::features::library::drag::{self, DropTarget, ShelfOrder};
 use crate::features::library::remove_modal::RemoveSheet;
@@ -110,17 +118,41 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
     let path_hint = book.path().to_string();
 
+    // One wrapper, three gestures, and the mode is decided once per press — the
+    // same wrapper the grid's cards use, so a row and a card answer a hold, a tap
+    // and a movement alike at two densities.
     let press_id = id.clone();
-    let lp = use_long_press(LongPressOptions {
+    let tap_id = id.clone();
+    let tap_path = path.clone();
+    let item = use_draggable_item(DraggableItemOptions {
         press_ms: SELECT_PRESS_MS,
-        slop_px: SELECT_SLOP_PX,
-        capture_pointer: true,
-        enabled: Signal::derive(move || !selecting.get_untracked()),
-        on_press: Callback::new(move |_| enter_selection(state, &press_id)),
+        drag_threshold_px: DRAG_THRESHOLD_PX,
+        // While a set is selected the pointer is choosing, not filing.
+        draggable: Signal::derive(move || !selecting.get()),
+        selectable: Signal::derive(move || !selecting.get()),
+        on_tap: Callback::new(move |_| {
+            if selecting.get_untracked() {
+                toggle_selected(state, &tap_id);
+                return;
+            }
+            document::open_path(state, tap_path.clone());
+        }),
+        on_long_press: Callback::new(move |_| enter_selection(state, &press_id)),
+        on_drag_start: Callback::new(move |_| drop_target.0.set(None)),
+        // The browser's own drag carries the payload and the coordinates; this
+        // half only decided that a movement meant "drag" and not "hold".
+        on_drag_move: Callback::new(move |_| {}),
+        on_drag_end: Callback::new(move |_| drop_target.0.set(None)),
     });
+    let pressing = item.pressing;
+    let dragging = item.dragging;
+    let on_down = Rc::clone(&item.on_pointerdown);
+    let on_move = Rc::clone(&item.on_pointermove);
+    let on_up = Rc::clone(&item.on_pointerup);
+    let on_cancel = Rc::clone(&item.on_pointercancel);
+    let swallow_click = Rc::clone(&item.swallow_click);
+    let swallow_context = Rc::clone(&item.swallow_context);
 
-    let click_path = path.clone();
-    let click_id = id.clone();
     let context_id = id.clone();
     let key_id = id.clone();
     let aria_id = id.clone();
@@ -142,7 +174,7 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     view! {
         <div
             id=dom_id
-            class="library-row group"
+            class="library-row"
             class=("row-reveal", move || {
                 state.library.reveal.with(|at| {
                     at.as_ref()
@@ -156,7 +188,8 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
             })
             class=("row-missing", missing)
             class=("library-row-selected", move || is_selected.get())
-            class=("library-row-pressing", move || lp.pressing.get())
+            class=("library-row-pressing", move || pressing.get())
+            class=("library-row-dragging", move || dragging.get())
             role="button"
             tabindex="0"
             draggable=move || if selecting.get() { "false" } else { "true" }
@@ -176,29 +209,21 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                     }
                 })
             }
-            on:pointerdown=move |ev| {
-                if ev.button() != 0 {
-                    return;
-                }
-                (lp.on_pointerdown)(&ev);
-            }
-            on:pointermove=move |ev| (lp.on_pointermove)(&ev)
-            on:pointerup=move |ev| (lp.on_pointerup)(&ev)
-            on:pointercancel=move |ev| (lp.on_pointercancel)(&ev)
+            on:pointerdown=move |ev| (on_down)(&ev)
+            on:pointermove=move |ev| (on_move)(&ev)
+            on:pointerup=move |ev| (on_up)(&ev)
+            on:pointercancel=move |ev| (on_cancel)(&ev)
             on:click=move |ev: leptos::ev::MouseEvent| {
-                if (lp.swallow_click)() {
-                    return;
-                }
-                if selecting.get_untracked() {
+                // The hold's exhaust and nothing else: the wrapper already
+                // decided what this press meant, and the click that follows a
+                // completed hold is not an intention to open the book.
+                if (swallow_click)() {
                     ev.stop_propagation();
-                    toggle_selected(state, &click_id);
-                    return;
                 }
-                document::open_path(state, click_path.clone());
             }
             on:contextmenu=move |ev: leptos::ev::MouseEvent| {
                 ev.prevent_default();
-                if (lp.swallow_context)() {
+                if (swallow_context)() {
                     return;
                 }
                 ev.stop_propagation();
@@ -227,17 +252,13 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
             on:dragstart=move |ev| drag::begin(&ev, &drag_id)
             on:dragend=move |_| drop_target.0.set(None)
             on:dragover=move |ev| {
-                if drag::accept(&ev) {
+                // A book only: the line this row draws is an index in a list of
+                // books, and the list has no folders in it to nest anything into.
+                if drag::accepts_book(&ev) {
                     drop_target.0.set(Some(hover_id.clone()));
                 }
             }
-            on:dragleave=move |_| {
-                drop_target.0.update(|at| {
-                    if at.as_deref() == Some(leave_id.as_str()) {
-                        *at = None;
-                    }
-                });
-            }
+            on:dragleave=move |_| drop_target.release(&leave_id)
             on:drop=move |ev| {
                 ev.prevent_default();
                 ev.stop_propagation();

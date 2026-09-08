@@ -4,9 +4,9 @@
 //! Grouped by what a reader does rather than by file count:
 //!
 //!   * [`page`] — the route: the title bar's three slots and the modal hosts
-//!   * [`content`] — the state the page is in (opening, failed, shelf) and the
-//!     one order every view below it renders
-//!   * [`grid`] / [`list`] / [`shelf_tile`] / [`book_card`] — the shelf itself
+//!   * [`content`] — the state the page is in (opening, failed, shelf) and the one
+//!     order every view below it renders
+//!   * [`grid`] / [`list`] / [`folder_card`] / [`book_card`] — the shelf itself
 //!   * [`add_card`] / [`add_menu`] / [`empty_state`] — the two ways in
 //!   * [`import_modal`] — what a folder import is allowed to be
 //!   * [`remove_modal`] — what a removal costs, itemised
@@ -15,6 +15,11 @@
 //!   * [`progress_dock`] — the run's ring, in the corner
 //!   * [`view_menu`] / [`breadcrumb`] / [`titlebar_search`] — the bar's three jobs
 //!   * [`drag`] — what a card carries and what a target reads
+//!
+//! A level of the library is the same shape at every depth: [`grid`] renders the
+//! folders filed at this level and then the books on it, and a folder card is one
+//! cell of the grid exactly like a book's — which is what lets a shelf be filed
+//! inside another one. [`content`] derives the level once and provides both halves.
 //!
 //! None of these decides anything: the rules live in `library_core` and the
 //! operations in `crate::services::library`, so a view here can be replaced
@@ -27,6 +32,7 @@ pub mod breadcrumb;
 pub mod content;
 pub mod drag;
 pub mod empty_state;
+pub mod folder_card;
 pub mod grid;
 pub mod import_modal;
 pub mod list;
@@ -34,7 +40,6 @@ pub mod page;
 pub mod progress_dock;
 pub mod remove_modal;
 pub mod selection;
-pub mod shelf_tile;
 pub mod titlebar_search;
 pub mod view_menu;
 

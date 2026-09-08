@@ -11,6 +11,23 @@
 //! sync forever; [`ALL_SHELF`] is the id the UI uses for that pseudo-shelf and
 //! [`find`] answers `None` for it, which is how a caller tells the two
 //! apart.
+//!
+//! ## Nesting
+//!
+//! [`Shelf::parent`] makes the shelves a forest rather than a list: the root
+//! level is the shelves whose parent is `None`, and a level inside a shelf is
+//! [`children_of`] on that shelf's id. Nesting is the one relationship in this
+//! module that can be wrong in a way no single row shows — a shelf filed inside
+//! itself, or inside one of its own children, is a folder that renders nowhere
+//! and can never be opened again. So the graph is guarded twice: [`can_nest`]
+//! refuses the drop before it is written, and [`sanitize`] cuts any cycle a
+//! hand-edited blob carries, because a rule only enforced on the way in is a
+//! rule one restored backup can break.
+//!
+//! Nesting is NOT the same thing as [`ShelfKind::Folder`]'s `rel`. `rel` is a
+//! subfolder's address inside a watched directory's tree — a rescan key, owned
+//! by the filesystem. `parent` is where the reader filed the shelf inside the
+//! library, and no scan ever writes it.
 
 use serde::{Deserialize, Serialize};
 
@@ -67,6 +84,13 @@ pub struct Shelf {
     /// the point: a shelf is a list, not a set, and a drop writes an index.
     #[serde(default)]
     pub books: Vec<String>,
+    /// The shelf this one is filed inside, or `None` at the library's root.
+    ///
+    /// `#[serde(default)]` because a blob written before shelves could nest has
+    /// no `parent` key at all, and every shelf in it is a root shelf — which is
+    /// the right reading of it rather than a migration.
+    #[serde(default)]
+    pub parent: Option<String>,
 }
 
 impl Shelf {
@@ -89,6 +113,107 @@ pub fn find<'a>(shelves: &'a [Shelf], id: &str) -> Option<&'a Shelf> {
 /// them — the order the grid renders bookshelves in.
 pub fn real(shelves: &[Shelf]) -> Vec<&Shelf> {
     shelves.iter().filter(|s| s.id != ALL_SHELF).collect()
+}
+
+/// The shelves filed directly inside `parent_id`, in the order the library
+/// stores them. `None` asks for the root level, which is what the page shows
+/// while it is drilled out of every shelf.
+///
+/// Direct children only: a level is a page, and a view that flattened the whole
+/// subtree would be showing the reader shelves they have not opened.
+pub fn children_of<'a>(shelves: &'a [Shelf], parent_id: Option<&str>) -> Vec<&'a Shelf> {
+    shelves
+        .iter()
+        .filter(|s| s.parent.as_deref() == parent_id)
+        .collect()
+}
+
+/// The chain above `id`, root first and excluding `id` itself — what a
+/// breadcrumb walks to draw the way back out.
+///
+/// The walk stops on a shelf it has already seen. [`sanitize`] makes a cycle
+/// unreachable in a loaded blob, but this answers a signal that can be read
+/// between two writes, and a breadcrumb that looped would hang the render
+/// rather than show one crumb too many.
+pub fn ancestors<'a>(shelves: &'a [Shelf], id: &str) -> Vec<&'a Shelf> {
+    let mut chain: Vec<&'a Shelf> = Vec::new();
+    let mut next = find(shelves, id).and_then(|s| s.parent.as_deref());
+    while let Some(parent_id) = next {
+        if chain.iter().any(|seen| seen.id == parent_id) {
+            break;
+        }
+        let Some(parent) = shelves.iter().find(|s| s.id == parent_id) else {
+            break;
+        };
+        chain.push(parent);
+        next = parent.parent.as_deref();
+    }
+    chain.reverse();
+    chain
+}
+
+/// Whether `folder_id` may be filed inside `target_id`.
+///
+/// Two refusals, and both are about the same failure: a shelf inside itself is
+/// not a shelf the reader can reach. `folder_id == target_id` is the drop on
+/// itself; the walk up from the target is the drop into one of its own
+/// descendants, which is the same cycle one level down.
+pub fn can_nest(shelves: &[Shelf], folder_id: &str, target_id: &str) -> bool {
+    if folder_id == target_id {
+        return false;
+    }
+    let mut current = Some(target_id.to_string());
+    // Bounded by the list rather than by the walk finding its own tail: a blob
+    // that already carries a cycle would otherwise spin here forever, and the
+    // honest answer about a broken graph is "no".
+    for _ in 0..=shelves.len() {
+        let Some(id) = current else {
+            return true;
+        };
+        if id == folder_id {
+            return false;
+        }
+        current = shelves
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.parent.clone());
+    }
+    false
+}
+
+/// File `folder_id` inside `parent`, or at the root when `parent` is `None`.
+/// True when the shelf moved.
+///
+/// Refuses the move [`can_nest`] refuses, and leaves the list exactly as it
+/// was: a drop that would close a cycle is a drop that never happened, which is
+/// what lets the caller answer a refusal by doing nothing at all.
+pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) -> bool {
+    if let Some(target) = parent
+        && !can_nest(shelves, folder_id, target)
+    {
+        return false;
+    }
+    let Some(shelf) = shelves.iter_mut().find(|s| s.id == folder_id) else {
+        return false;
+    };
+    shelf.parent = parent.map(str::to_string);
+    true
+}
+
+/// Move a shelf's children up to the level it was on. What taking a shelf apart
+/// owes the shelves inside it: a child left pointing at a parent that is gone
+/// renders on no level at all, and the reader who removed one folder did not ask
+/// to lose the ones filed in it.
+pub fn lift_children(shelves: &mut [Shelf], folder_id: &str) {
+    let inherited = shelves
+        .iter()
+        .find(|s| s.id == folder_id)
+        .and_then(|s| s.parent.clone());
+    for shelf in shelves.iter_mut() {
+        if shelf.parent.as_deref() == Some(folder_id) {
+            shelf.parent = inherited.clone();
+        }
+    }
 }
 
 /// Put `id` on a member list at `index`, or move it there when it is already a
@@ -143,11 +268,11 @@ pub fn containing<'a>(shelves: &'a [Shelf], book_id: &str) -> Vec<&'a Shelf> {
 }
 
 /// Make a persisted shelf list internally valid: drop shelves with no id or no
-/// name, dedupe by id (first wins), drop members that are blank, and drop a
-/// duplicate member keeping its first position. Idempotent. Members that name
-/// a book the library no longer has are NOT dropped here — that needs the book
-/// list, and [`blob::sanitize`](crate::blob::sanitize) does it with both in
-/// hand.
+/// name, dedupe by id (first wins), drop members that are blank, drop a
+/// duplicate member keeping its first position, and cut the nesting graph back
+/// to a forest. Idempotent. Members that name a book the library no longer has
+/// are NOT dropped here — that needs the book list, and
+/// [`blob::sanitize`](crate::blob::sanitize) does it with both in hand.
 pub fn sanitize(shelves: &mut Vec<Shelf>) {
     let mut seen = std::collections::HashSet::new();
     shelves.retain(|s| !s.id.trim().is_empty() && !s.name.trim().is_empty());
@@ -155,6 +280,53 @@ pub fn sanitize(shelves: &mut Vec<Shelf>) {
     for s in shelves.iter_mut() {
         let mut members = std::collections::HashSet::new();
         s.books.retain(|m| !m.trim().is_empty() && members.insert(m.clone()));
+    }
+
+    // A parent that is the shelf itself, or that names no shelf, is a folder no
+    // level renders: the row survives the load and vanishes from the page. Both
+    // collapse to the root, which is where the reader can see it again.
+    for s in shelves.iter_mut() {
+        if s.parent.as_deref() == Some(s.id.as_str()) {
+            s.parent = None;
+        }
+    }
+    // Owned ids rather than borrowed ones: the pass below writes to the same list
+    // it is reading the names out of, and a set of `&str` into it would hold the
+    // borrow open across the write.
+    let ids: std::collections::HashSet<String> =
+        shelves.iter().map(|s| s.id.clone()).collect();
+    for s in shelves.iter_mut() {
+        if s.parent.as_deref().is_some_and(|p| !ids.contains(p)) {
+            s.parent = None;
+        }
+    }
+
+    // Then the cycles, which no single row shows. Only the shelves ON a loop are
+    // cut: a shelf that merely leads into one keeps its parent, and becomes a
+    // root shelf's child once the loop below it is open. Cutting on a walk that
+    // fails to come back instead would empty a whole branch for one bad edge,
+    // and would not be idempotent — the second pass would find nothing to cut.
+    let mut on_a_cycle: Vec<String> = Vec::new();
+    for s in shelves.iter() {
+        let mut current = s.parent.clone();
+        for _ in 0..=shelves.len() {
+            let Some(parent_id) = current else {
+                break;
+            };
+            if parent_id == s.id {
+                on_a_cycle.push(s.id.clone());
+                break;
+            }
+            current = shelves
+                .iter()
+                .find(|p| p.id == parent_id)
+                .and_then(|p| p.parent.clone());
+        }
+    }
+    for s in shelves.iter_mut() {
+        if on_a_cycle.contains(&s.id) {
+            s.parent = None;
+        }
     }
 }
 
@@ -168,7 +340,20 @@ mod tests {
             name: name.to_string(),
             kind: ShelfKind::Virtual,
             books: books.iter().map(|b| b.to_string()).collect(),
+            parent: None,
         }
+    }
+
+    /// One shelf filed inside another: the shape a nest produces.
+    fn nested(id: &str, name: &str, parent: &str) -> Shelf {
+        Shelf {
+            parent: Some(parent.to_string()),
+            ..shelf(id, name, &[])
+        }
+    }
+
+    fn ids_of<'a>(shelves: &[&'a Shelf]) -> Vec<&'a str> {
+        shelves.iter().map(|s| s.id.as_str()).collect()
     }
 
     fn ids(members: &[String]) -> Vec<&str> {
@@ -318,5 +503,164 @@ mod tests {
         let s: Shelf = serde_json::from_str(r#"{"id":"s1","name":"One"}"#).unwrap();
         assert_eq!(s.kind, ShelfKind::Virtual);
         assert!(s.books.is_empty());
+        assert_eq!(s.parent, None, "a blob from before nesting has no parent");
+    }
+
+    #[test]
+    fn a_level_is_the_shelves_filed_directly_inside_it() {
+        let shelves = vec![
+            shelf("s1", "Fiction", &[]),
+            nested("s2", "Sci-fi", "s1"),
+            nested("s3", "Crime", "s1"),
+            nested("s4", "Space", "s2"),
+        ];
+        assert_eq!(ids_of(&children_of(&shelves, None)), vec!["s1"]);
+        assert_eq!(ids_of(&children_of(&shelves, Some("s1"))), vec!["s2", "s3"]);
+        assert_eq!(ids_of(&children_of(&shelves, Some("s2"))), vec!["s4"]);
+        assert!(children_of(&shelves, Some("nope")).is_empty());
+    }
+
+    #[test]
+    fn the_way_out_of_a_shelf_is_the_chain_above_it() {
+        let shelves = vec![
+            shelf("s1", "Fiction", &[]),
+            nested("s2", "Sci-fi", "s1"),
+            nested("s3", "Space", "s2"),
+        ];
+        assert!(ancestors(&shelves, "s1").is_empty());
+        assert_eq!(ids_of(&ancestors(&shelves, "s2")), vec!["s1"]);
+        assert_eq!(ids_of(&ancestors(&shelves, "s3")), vec!["s1", "s2"]);
+        // "All" is not a shelf, so it has no chain either.
+        assert!(ancestors(&shelves, ALL_SHELF).is_empty());
+        assert!(ancestors(&shelves, "nope").is_empty());
+    }
+
+    #[test]
+    fn a_shelf_cannot_be_filed_inside_itself_or_its_own_children() {
+        // s3 is inside s2 and both sit at the root, so s1 is the one shelf that is
+        // nobody's ancestor: it may go anywhere, and the other two may not go down
+        // their own branch.
+        let shelves = vec![
+            shelf("s1", "Fiction", &[]),
+            shelf("s2", "Sci-fi", &[]),
+            nested("s3", "Space", "s2"),
+        ];
+        assert!(can_nest(&shelves, "s1", "s3"), "s1 is above nothing, so it can go deepest");
+        assert!(can_nest(&shelves, "s2", "s1"));
+        assert!(can_nest(&shelves, "s3", "s1"), "and a shelf may be lifted out of its branch");
+        assert!(!can_nest(&shelves, "s2", "s2"), "a shelf is not inside itself");
+        assert!(!can_nest(&shelves, "s1", "s1"));
+        assert!(!can_nest(&shelves, "s2", "s3"), "s3 is already inside s2");
+        assert!(!can_nest(&shelves, "s2", "s2"));
+        // A shelf that is not in the list is not a cycle, so the graph rule
+        // allows it; `reparent` is the half that refuses a shelf it cannot find.
+        assert!(can_nest(&shelves, "s9", "s1"));
+        let mut none: Vec<Shelf> = Vec::new();
+        assert!(!reparent(&mut none, "s9", Some("s1")));
+    }
+
+    #[test]
+    fn a_nest_writes_one_parent_and_a_refusal_writes_nothing() {
+        let mut shelves = vec![
+            shelf("s1", "Fiction", &[]),
+            shelf("s2", "Sci-fi", &[]),
+            nested("s3", "Space", "s2"),
+        ];
+        assert!(reparent(&mut shelves, "s2", Some("s1")));
+        assert_eq!(shelves[1].parent.as_deref(), Some("s1"));
+        assert_eq!(ids_of(&children_of(&shelves, Some("s1"))), vec!["s2"]);
+        // s2 now holds s3, so filing s1 inside s3 closes the loop and is refused
+        // with the list untouched.
+        assert!(!can_nest(&shelves, "s1", "s3"));
+        assert!(!reparent(&mut shelves, "s1", Some("s3")));
+        assert_eq!(shelves[0].parent, None);
+        // Back out to the root.
+        assert!(reparent(&mut shelves, "s2", None));
+        assert_eq!(shelves[1].parent, None);
+    }
+
+    #[test]
+    fn taking_a_shelf_apart_lifts_the_shelves_inside_it() {
+        let mut shelves = vec![
+            shelf("s1", "Fiction", &[]),
+            nested("s2", "Sci-fi", "s1"),
+            nested("s3", "Space", "s2"),
+            shelf("s4", "Unrelated", &[]),
+        ];
+        lift_children(&mut shelves, "s2");
+        assert_eq!(
+            shelves[2].parent.as_deref(),
+            Some("s1"),
+            "s3 inherits the level s2 was on, not the top of the library"
+        );
+        assert_eq!(shelves[3].parent, None, "a shelf elsewhere is not touched");
+        lift_children(&mut shelves, "s1");
+        assert_eq!(shelves[1].parent, None, "a root shelf's children become roots");
+        assert_eq!(
+            shelves[2].parent, None,
+            "including the one that just moved up into it"
+        );
+    }
+
+    #[test]
+    fn sanitize_collapses_a_parent_that_names_no_shelf() {
+        let mut shelves = vec![nested("s1", "Orphan", "gone"), nested("s2", "Filed", "s1")];
+        sanitize(&mut shelves);
+        assert_eq!(shelves[0].parent, None, "an orphan is a root, not a hole");
+        assert_eq!(shelves[1].parent.as_deref(), Some("s1"), "its child is untouched");
+        assert_eq!(ids_of(&children_of(&shelves, None)), vec!["s1"]);
+    }
+
+    #[test]
+    fn sanitize_opens_a_cycle_and_leaves_the_branch_above_it_alone() {
+        // s1 is filed in s2, and s2 and s3 are filed in each other: the loop is
+        // the pair, and s1 only leads into it.
+        let mut shelves = vec![
+            nested("s1", "Leads in", "s2"),
+            nested("s2", "Loop a", "s3"),
+            nested("s3", "Loop b", "s2"),
+            shelf("s4", "Unrelated", &[]),
+        ];
+        sanitize(&mut shelves);
+        assert_eq!(shelves[1].parent, None, "both edges of the loop are cut");
+        assert_eq!(shelves[2].parent, None);
+        assert_eq!(
+            shelves[0].parent.as_deref(),
+            Some("s2"),
+            "a shelf that leads into the loop keeps the parent it had"
+        );
+        assert_eq!(shelves[3].parent, None);
+        // Nothing is unreachable: every shelf is on some level again.
+        let mut on_a_level: Vec<&str> = [None, Some("s1"), Some("s2"), Some("s3")]
+            .iter()
+            .flat_map(|at| children_of(&shelves, *at))
+            .map(|s| s.id.as_str())
+            .collect();
+        on_a_level.sort_unstable();
+        assert_eq!(on_a_level, vec!["s1", "s2", "s3", "s4"]);
+        // Idempotent: a second pass finds a forest and changes nothing.
+        let before = shelves.clone();
+        sanitize(&mut shelves);
+        assert_eq!(shelves, before);
+    }
+
+    #[test]
+    fn a_shelf_filed_inside_itself_is_put_back_at_the_root() {
+        let mut shelves = vec![Shelf {
+            parent: Some("s1".into()),
+            ..shelf("s1", "Self", &[])
+        }];
+        sanitize(&mut shelves);
+        assert_eq!(shelves[0].parent, None);
+        assert_eq!(ids_of(&children_of(&shelves, None)), vec!["s1"]);
+    }
+
+    #[test]
+    fn a_parent_persists_with_the_shelf() {
+        let s = nested("s2", "Sci-fi", "s1");
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"parent\":\"s1\""), "{json}");
+        let back: Shelf = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, s);
     }
 }

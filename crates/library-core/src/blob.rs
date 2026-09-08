@@ -138,13 +138,19 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
 }
 
 /// Make a persisted library internally valid, with every half in hand:
-/// the per-list rules ([`crate::book::sanitize`], [`crate::shelf::sanitize`],
-/// [`crate::folder::sanitize`], [`crate::view::sanitize`]) plus the two that
+/// the per-list rules ([`crate::book::sanitize`], [`crate::folder::sanitize`],
+/// [`crate::view::sanitize`], [`crate::shelf::sanitize`]) plus the two that
 /// only make sense across lists — a shelf member that names no book, and a
 /// folder shelf whose folder is gone. Idempotent.
+///
+/// The shelves go LAST, and the order is the point. A folder shelf whose folder
+/// is gone is dropped here, and a shelf nested inside it is then pointing at a
+/// parent that no longer exists — which is [`crate::shelf::sanitize`]'s to
+/// collapse back to the root. Sanitising the shelves first would leave that
+/// dangling parent in place, and the shelf it belongs to would render on no
+/// level at all: a folder the reader can never open again.
 pub fn sanitize(blob: &mut LibraryBlob) {
     crate::book::sanitize(&mut blob.books);
-    crate::shelf::sanitize(&mut blob.shelves);
     crate::folder::sanitize(&mut blob.folders);
     crate::view::sanitize(&mut blob.view);
 
@@ -169,6 +175,8 @@ pub fn sanitize(blob: &mut LibraryBlob) {
         ShelfKind::Virtual => true,
         ShelfKind::Folder { folder_id, .. } => folders.contains(folder_id.as_str()),
     });
+
+    crate::shelf::sanitize(&mut blob.shelves);
 }
 
 #[cfg(test)]
@@ -193,6 +201,7 @@ mod tests {
             name: name.to_string(),
             kind,
             books: books.iter().map(|b| b.to_string()).collect(),
+            parent: None,
         }
     }
 
@@ -351,6 +360,35 @@ mod tests {
         sanitize(&mut blob);
         let ids: Vec<&str> = blob.shelves.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, vec!["s2"]);
+    }
+
+    #[test]
+    fn a_shelf_nested_in_a_stale_folder_shelf_survives_at_the_root() {
+        let mut blob = LibraryBlob {
+            shelves: vec![
+                shelf(
+                    "s1",
+                    "Books",
+                    ShelfKind::Folder {
+                        folder_id: "gone".into(),
+                        rel: None,
+                    },
+                    &[],
+                ),
+                Shelf {
+                    parent: Some("s1".into()),
+                    ..shelf("s2", "Mine", ShelfKind::Virtual, &[])
+                },
+            ],
+            ..LibraryBlob::default()
+        };
+        sanitize(&mut blob);
+        assert_eq!(blob.shelves.len(), 1);
+        assert_eq!(blob.shelves[0].id, "s2");
+        assert_eq!(
+            blob.shelves[0].parent, None,
+            "a parent that went with its folder is not a parent any more"
+        );
     }
 
     #[test]

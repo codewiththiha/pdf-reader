@@ -490,6 +490,12 @@ async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpt
                         rel: rel_of(&key),
                     },
                     books: Vec::new(),
+                    // Flat, on purpose. `rel` is this shelf's address inside the
+                    // watched directory's tree and `parent` is where the READER
+                    // filed it inside the library: a scan that wrote `parent`
+                    // from the tree would move a folder the reader had arranged,
+                    // on every rescan, back to a shape they did not choose.
+                    parent: None,
                 });
             }
             placements.push((placed_id, shelf_id));
