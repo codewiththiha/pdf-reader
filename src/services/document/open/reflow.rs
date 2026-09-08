@@ -262,5 +262,18 @@ fn ready(
     // rather than an omission: both are page-1 rasters out of the pdf.js
     // engine (`super::cover`, `super::warmup`), and a reflowable document has
     // no raster to hand them — its shelf card keeps the stylised fallback.
-    super::shelf::record(state, &path, name, resume, cut.num_pages);
+    super::shelf::record(
+        state,
+        &path,
+        name,
+        // The saved fraction is carried across the open rather than dropped:
+        // this session's first scroll overwrites it with the truth of this read,
+        // but a document closed before that first scroll must not lose the
+        // position the last one reached.
+        library_core::book::ReadPoint {
+            page: resume,
+            num_pages: cut.num_pages,
+            fraction: saved_fraction,
+        },
+    );
 }

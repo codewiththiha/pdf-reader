@@ -15,11 +15,14 @@ use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
 use wasm_bindgen::JsValue;
 
-use crate::state::library::sanitize as sanitize_library;
-use crate::state::library::{CoverImage, CoverMap, LibraryState, RecentBook};
+use crate::state::library::{CoverImage, CoverMap, LibraryState};
+// The library's key names, its persisted shape and the migration from the shape
+// it replaced all live in `library_core::blob`, so the schema and the rules that
+// keep it valid are one crate's business rather than two.
+use library_core::blob::{LEGACY_KEY, LIBRARY_KEY, LibraryBlob, RecentBook, migrate_v1};
+use library_core::blob::sanitize as sanitize_library;
 use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
 
-const LIBRARY_KEY: &str = "pdfreader.library.v1";
 const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// Gloss highlights, keyed by document path.
 ///
@@ -115,17 +118,37 @@ pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
     set(SETTINGS_KEY, &json)
 }
 
-/// Load the recent-books list; invalid values fall back to empty + sanitize.
-pub fn load_library() -> Vec<RecentBook> {
-    let mut recent = get(LIBRARY_KEY)
-        .map(|raw| parse("library", &raw))
+/// Load the library: the current blob when there is one, else the previous
+/// schema's recent-books list migrated on the spot. Invalid values fall back to
+/// empty rather than bricking the page, and every load is sanitised — a blob can
+/// arrive with a shelf member naming no book, and the grid would render a hole.
+///
+/// The migration is one-way in effect but leaves the old key alone: a reader who
+/// downgrades should still find the library that build wrote, and the first save
+/// after this load is what puts the new blob under its own key.
+pub fn load_library() -> LibraryBlob {
+    if let Some(raw) = get(LIBRARY_KEY) {
+        let mut blob: LibraryBlob = parse("library", &raw);
+        sanitize_library(&mut blob);
+        return blob;
+    }
+    let legacy: Vec<RecentBook> = get(LEGACY_KEY)
+        .map(|raw| parse("library v1", &raw))
         .unwrap_or_default();
-    sanitize_library(&mut recent);
-    recent
+    if legacy.is_empty() {
+        return LibraryBlob::default();
+    }
+    let count = legacy.len();
+    let mut blob = migrate_v1(legacy, js_sys::Date::now() as u64);
+    sanitize_library(&mut blob);
+    web_sys::console::info_1(&JsValue::from_str(&format!(
+        "[storage] migrated {count} books from {LEGACY_KEY}"
+    )));
+    blob
 }
 
-pub fn save_library(recent: &[RecentBook]) -> Result<(), StorageError> {
-    let json = serde_json::to_string(recent).map_err(|e| StorageError {
+pub fn save_library(blob: &LibraryBlob) -> Result<(), StorageError> {
+    let json = serde_json::to_string(blob).map_err(|e| StorageError {
         op: "save_library",
         detail: format!("serialize failed: {e}"),
     })?;
@@ -159,7 +182,7 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
     set(COVERS_KEY, &json)
 }
 
-/// Write the shelf's current books, reporting a failure instead of returning
+/// Write the library's current blob, reporting a failure instead of returning
 /// it.
 ///
 /// The shelf is written from four moments and three want exactly this: a
@@ -181,13 +204,14 @@ pub fn save_covers(covers: &CoverMap) -> Result<(), StorageError> {
 /// the last thing before a teardown or window close, and a debounced save is a
 /// save that may never land.
 pub fn persist_library(library: LibraryState) {
-    if let Err(e) = library.books.with_untracked(|books| save_library(books)) {
+    if let Err(e) = save_library(&library.snapshot()) {
         e.report();
     }
 }
 
-/// [`persist_library`] for the cover cache, which travels with the shelf: the
-/// recent-book cap is only a memory cap if covers are evicted with their books.
+/// [`persist_library`] for the cover cache, which is budgeted on its own key:
+/// the cap in `crate::state::library::COVER_CAP` is only a real quota if the
+/// images are written back after a prune, not just dropped from memory.
 pub fn persist_covers(library: LibraryState) {
     if let Err(e) = library.covers.with_untracked(|covers| save_covers(covers)) {
         e.report();

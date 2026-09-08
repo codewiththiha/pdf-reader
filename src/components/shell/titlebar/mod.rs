@@ -8,7 +8,6 @@
 //! `app_chrome::window`).
 
 pub mod app_title_bar;
-pub mod constants;
 pub mod document_title;
 pub mod floating_document_title;
 pub mod toolbar_popover;

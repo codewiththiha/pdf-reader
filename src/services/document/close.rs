@@ -33,7 +33,7 @@ pub fn close_document(state: AppState) {
         let page = state.reader.viewer.page.get_untracked();
         let mut changed = false;
         state.library.books.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path == path)
+            if let Some(b) = books.iter_mut().find(|b| b.path() == path)
                 && b.page != page
             {
                 b.page = page;

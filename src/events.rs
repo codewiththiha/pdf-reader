@@ -16,6 +16,10 @@ use serde::Serialize;
 
 /// AI chunk stream, bridged from the Tauri backend by `services::ai`.
 pub const AI_CHUNK_EVENT: &str = "pdfreader:ai-chunk";
+/// One library import progress beat, bridged from the shell's folder scan and
+/// store copy by `services::library`. Carries an `ImportProgress`
+/// (`library_core::wire`) as its detail.
+pub const IMPORT_PROGRESS_EVENT: &str = "pdfreader:import-progress";
 /// Open the gloss card for a mark (carries the `GlossMark` as detail).
 pub const GLOSS_OPEN_EVENT: &str = "pdfreader:gloss-open";
 /// Ask for a mark's remove menu (carries the `ContextTarget` as detail).
@@ -28,6 +32,13 @@ pub const SELECTION_PAGES_EVENT: &str = "pdfreader:selection-pages";
 pub const SELECTION_DETAIL_EVENT: &str = "pdfreader:selection-detail";
 /// One-shot "scroll the sidebar to where the reader is" gesture.
 pub const REVEAL_ACTIVE_EVENT: &str = "pdfreader:reveal-active";
+/// Ask the library's title-bar search to take focus. Dispatched by the global
+/// Cmd/Ctrl+F when no document is open — the shortcut means "search what you are
+/// looking at", and on the library page that is the shelf, not a document. A
+/// window event rather than a signal because the bar owns its own input node and
+/// the shortcut layer must not know the library page exists
+/// (`crate::effects::app::shortcuts::window`).
+pub const FOCUS_LIBRARY_SEARCH_EVENT: &str = "pdfreader:focus-library-search";
 
 /// Dispatch a typed CustomEvent on `window` with `payload` as its detail.
 pub fn dispatch_typed_event<T: Serialize>(name: &str, payload: &T) {

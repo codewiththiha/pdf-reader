@@ -34,7 +34,8 @@ use reader_core::format::{Format, format_of};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
-use crate::state::{AppState, Toast, library};
+use library_core::book::{ReadPoint, find_fraction, find_page};
+use crate::state::{AppState, Toast};
 
 use super::session;
 
@@ -124,7 +125,10 @@ pub fn open_path(state: AppState, path: String) {
     // The reflowable tail also takes the fractional stream position, when the
     // last session left one.
     let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
-        (library::find_page(books, &path).unwrap_or(1), library::find_fraction(books, &path))
+        (
+            find_page(books, &path).unwrap_or(1),
+            find_fraction(books, &path),
+        )
     });
 
     match format_of(&path) {
@@ -182,7 +186,19 @@ fn ready(
         _ = engine::build_search_index(search_pages).await;
     });
 
-    shelf::record(state, &path, seeded.name, seeded.resume, seeded.num_pages);
+    shelf::record(
+        state,
+        &path,
+        seeded.name,
+        // A PDF's resume point is a page and nothing else: there is no stream
+        // position to carry, so the fraction stays None rather than inheriting
+        // whatever a reflowable book last left in this slot.
+        ReadPoint {
+            page: seeded.resume,
+            num_pages: seeded.num_pages,
+            fraction: None,
+        },
+    );
     cover::ensure(state, path, stamp);
     warmup::prewarm_thumbs(seeded.num_pages);
 }

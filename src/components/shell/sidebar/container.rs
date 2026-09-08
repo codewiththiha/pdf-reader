@@ -42,12 +42,6 @@ use leptos::prelude::*;
 
 use crate::state::SidebarMode;
 
-/// Selector for the sliding aside itself. The toolbar's title measurement
-/// observes this element (its width changes every frame of the slide, unlike
-/// the row, which only changes inset at the end of the close hold) — the
-/// selector lives next to the class it targets so they cannot drift apart.
-pub(crate) const SIDEBAR_ASIDE_SELECTOR: &str = "aside.sidebar-aside";
-
 /// Ask the visible panel to scroll to wherever the reader currently is.
 ///
 /// A CustomEvent rather than a signal in `AppState`: this is a one-shot

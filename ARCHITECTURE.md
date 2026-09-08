@@ -357,3 +357,105 @@ generalised instead of the feature being forked per format.
   stream window — already paints them instead of gaining them a frame later. Dedup
   compares spots rather than pixels (`same_glossed_spot`), which is what stops a
   re-gloss after a scroll from stacking a second stroke on the same word.
+
+## The library: addresses, shelves and the rescan ledger
+
+The library's invariants are subtler than the reader's, because the thing it describes is a
+filesystem the app does not own. Everything that decides anything is in `crates/library-core`,
+which is pure — no filesystem, no wasm, no DOM — so the rules below are host tests rather than
+behaviour you discover by pointing the app at a real folder.
+
+### A book is an address
+
+`library_core::book::Origin` has two variants and the first one is the app's whole history:
+
+- `Origin::Linked { src }` — read in place. The book *is* that path. Nothing in the workspace
+  moves, renames, copies or deletes it, and a path that stops resolving makes the book `missing`
+  rather than gone: the row keeps its resume point and every shelf it is on, because a reader who
+  moved a folder wants the page they were on back, not an empty shelf.
+- `Origin::Stored { src, store }` — the app copied the bytes into its own data directory. `src`
+  survives as provenance, which is what a relink offers to copy from again. `Origin::path` answers
+  `store`, never `src`: repointing a stored book at its source would quietly turn "the app keeps
+  its own copy" back into "the app reads your folder again".
+
+The corollary runs through every layer. A shelf holds book *ids* and nothing else, so a drag
+between shelves edits an ordered list of ids and cannot touch a file — which is what makes filing a
+read-in-place book safe by construction rather than by care. `services::library::arrange` is the
+only module that deletes a byte, and only one the app wrote.
+
+### Identity is a fingerprint, not a path
+
+`library_core::book::Fingerprint` is `{size, mtime_ms, head_hash}`: FNV-1a over the first 8 KiB
+(`library_core::hash`), not over the file. Size and stamp are what a *move* preserves, so a file
+dragged to another folder inside a watched tree still resolves to the book it already is; the head
+hash separates the collision that matters, which is two different books of the same length touched
+in the same millisecond. Reading 8 KiB rather than 2 GB is what makes a rescan on every window
+focus affordable.
+
+A row migrated from the previous schema carries no measurement, so it carries
+`Fingerprint::placeholder` — derived from the address, so two migrated books can never share one —
+and the `fp_pending` mark. `library_core::blob::LibraryBlob::awaiting_check` is the gate: a rescan
+that diffed real fingerprints against placeholders would match nothing and add a second copy of
+every book the folder already held.
+
+### The ledger
+
+`library_core::ledger::diff_folder` is the module the edge cases live in. It takes a folder's
+ledger, the global fingerprint registry and the files a walk found, and answers one `ScanAction`
+per file. The decision table is the test suite:
+
+| Scan finds a fingerprint… | Book exists? | This folder placed it? | Removed from it? | Action |
+|---|---|---|---|---|
+| not seen before | – | – | – | `ScanAction::Add` |
+| known, at the address already stored | yes | yes | – | `ScanAction::Skip` |
+| known, at a different address | yes | yes | – | `ScanAction::Relink` |
+| known, but the book is missing | yes | no | – | `ScanAction::Relink` |
+| known, placed by another folder | yes | no | – | `ScanAction::Skip` |
+| seen here, but the row is gone | no | yes | – | `ScanAction::Skip` |
+| anything | – | – | yes | `ScanAction::Skip` |
+
+Row six is the rule the whole design exists for: a book the reader dragged off a folder's shelf is
+still in the library, its fingerprint is still in `WatchedFolder::placed`, and the next rescan
+leaves it where the reader put it. Row seven is the tombstone in `WatchedFolder::ignored`, checked
+before every other row, because a file the reader deleted from the library is still on disk and
+still admitted by the folder's options. `library_core::ledger::tombstone` writes it only into the
+folders that *placed* the book, so removing a hand-added book poisons no watched folder.
+
+A relink rewrites the address and clears `missing`; it does not touch the id, the resume point or a
+single shelf membership. That is what makes "the file moved" and "the book was re-filed" orthogonal.
+
+### Where the work happens
+
+The split is IO on one side and decisions on the other, and the wire between them is declared once:
+
+- `src-tauri/src/commands/library.rs` walks, measures, copies and deletes. It filters during the
+  walk with `library_core::folder::FolderOpts::admits_file` so a folder of forty thousand
+  screenshots never crosses the wire, refuses symlinks and hidden directories, caps the depth and
+  the result count, and gates every path through the crate's existing document gate. Its delete
+  command only removes a path that canonicalises inside the app's own store directory.
+- `library_core::wire` holds the four types that cross (`ImportProgress`, `PathCheck`,
+  `StoreRequest`, `StoreResult`). Both sides depend on `library-core`, so there is one declaration
+  and no contract test needed to prove the halves agree — which is an improvement on the AI chunk
+  envelope, written twice and held together by a test.
+- `services::library::import` runs the ledger and writes the answer. Nothing is committed until the
+  whole answer is known: the scan, the diff and the copies all run against local copies of the
+  three lists, and the state is set once. A shelf that filled in file by file would repaint per
+  file, and a failure half way through would leave the library holding books whose bytes never
+  arrived. A copy failure is per-file, so one locked file costs the reader that file and not the
+  batch.
+- `effects::app::library` installs the three app-lifetime pieces: the sink that folds progress beats
+  into `state::library`'s task list (a run outlives the page that started it, so a listener mounted
+  on the page would stop counting at the route flip), the startup measurement pass, and the rescan
+  on `tauri://focus` behind a cooldown.
+
+### Order, in one place
+
+`features::library::content` derives the visible list once — shelf narrows, sort orders, query
+filters last — and provides it as `ShelfOrder`, alongside the one `DropTarget` signal both views
+draw their insertion markers from. A card cannot work out its own index from the DOM without
+counting siblings, which would be a second definition of the order; a drop that lands "before this
+card" therefore asks the same signal the grid rendered from.
+
+A drag is only offered while the order is the manual one (`library_core::view::LibraryView::drag_reorders`),
+because a shelf sorted by title re-sorts on the next render and would undo the drop before the
+reader saw it land.

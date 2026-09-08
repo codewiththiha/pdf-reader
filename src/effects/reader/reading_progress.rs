@@ -80,7 +80,7 @@ pub fn reading_progress(state: AppState) {
         // the debounce would coalesce anyway.
         let mut changed = false;
         state.library.books.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path == path) {
+            if let Some(b) = books.iter_mut().find(|b| b.path() == path) {
                 let page_moved = b.page != page;
                 let fraction_moved = match (b.fraction, fraction) {
                     (Some(old), Some(new)) => (new - old).abs() > 0.005,
@@ -109,7 +109,7 @@ pub fn reading_progress(state: AppState) {
         if let Some(h) = timer.get_value() {
             h.clear();
         }
-        let snapshot = state.library.books.with_untracked(|books| books.clone());
+        let snapshot = state.library.snapshot();
         let handle = set_timeout_with_handle(
             move || {
                 if let Err(e) = save_library(&snapshot) {

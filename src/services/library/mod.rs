@@ -1,0 +1,270 @@
+//! The frontend half of the library's filesystem wire.
+//!
+//! This file is the phone line and nothing else:
+//!
+//!   * [`install_import_bridge`] — ONE Tauri listener for the app's life, which
+//!     re-broadcasts the shell's progress beats as a window
+//!     [`IMPORT_PROGRESS_EVENT`]. Same shape as `services::ai`'s chunk bridge
+//!     and for the same reason: a per-mount listener would stack handlers whose
+//!     closures die with their owner, and the import dock mounts and unmounts
+//!     with the page.
+//!   * the `invoke` wrappers — one per shell command, each turning a typed
+//!     request into the wire types `library_core::wire` declares and parsing the
+//!     answer back. Nothing above this module ever sees a `JsValue`.
+//!   * the two native pickers, filtered to the format registry's own extension
+//!     list.
+//!
+//! The deciding is NOT here. Which files a scan adds, where they land and what
+//! a rescan skips is `library_core`'s ledger; [`import`] runs it against the
+//! shell's answers and writes the result to the library state, and [`arrange`]
+//! holds the moves a reader makes by hand (a drag between shelves, a removal, a
+//! relink).
+//!
+//! [`import`]: crate::services::library::import
+//! [`arrange`]: crate::services::library::arrange
+
+pub mod arrange;
+pub mod import;
+
+pub use arrange::{move_to_shelf, relink_dialog, remove_book};
+pub use import::{dismiss_task, import_files, import_folder, rescan_watched, verify_library, verify_one};
+
+/// The last segment of a path, on either separator, with no trailing separator.
+/// Empty only for a path that is nothing but separators — which is why the
+/// callers that turn it into a label have a fallback.
+pub(super) fn file_name(path: &str) -> String {
+    path.trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .to_string()
+}
+
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use wasm_bindgen::JsValue;
+
+use library_core::folder::FolderOpts;
+use library_core::scan::FoundFile;
+use library_core::wire::{ImportProgress, PathCheck, StoreRequest, StoreResult};
+
+pub use crate::events::IMPORT_PROGRESS_EVENT;
+
+/// The Tauri channel the shell emits progress on. Mirrors
+/// `PROGRESS_EVENT` in `src-tauri/src/commands/library.rs`; the payload it
+/// carries is [`ImportProgress`], which both sides get from `library_core::wire`
+/// and so cannot drift.
+const PROGRESS_CHANNEL: &str = "library://progress";
+
+/// The shell command names. One table, so a rename on either side is a diff in
+/// one file rather than a string that stops matching.
+const CMD_SCAN: &str = "scan_folder";
+const CMD_VERIFY: &str = "verify_paths";
+const CMD_STORE: &str = "store_books";
+const CMD_DELETE: &str = "delete_stored";
+
+/// What every command here answers when there is no shell to answer: the same
+/// wording the open dialog uses, because from the reader's side it is the same
+/// situation.
+fn desktop_only() -> String {
+    "Importing folders is only available in the desktop app.".to_string()
+}
+
+/// One `invoke`, typed at both ends.
+///
+/// `A` is serialized to the argument object the command expects and `T` parsed
+/// back out of its answer, so the wire shape lives in `library_core::wire` and
+/// the reflection lives here — the two things that used to be spread across
+/// every call site.
+async fn call<A: Serialize, T: DeserializeOwned>(cmd: &str, args: &A) -> Result<T, String> {
+    if !tauri_bridge::has_tauri() {
+        return Err(desktop_only());
+    }
+    let args = serde_wasm_bindgen::to_value(args)
+        .map_err(|e| format!("{cmd}: could not encode the request ({e})"))?;
+    let value = tauri_bridge::invoke(cmd, args)
+        .await
+        .map_err(|e| e.as_string().unwrap_or_else(|| format!("{cmd} failed: {e:?}")))?;
+    serde_wasm_bindgen::from_value(value)
+        .map_err(|e| format!("{cmd}: the shell answered something unparseable ({e})"))
+}
+
+#[derive(Serialize)]
+struct ScanArgs<'a> {
+    task: &'a str,
+    root: &'a str,
+    opts: &'a FolderOpts,
+}
+
+#[derive(Serialize)]
+struct PathsArgs {
+    paths: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct StoreArgs<'a> {
+    task: &'a str,
+    requests: &'a [StoreRequest],
+}
+
+#[derive(Serialize)]
+struct PathArgs<'a> {
+    path: &'a str,
+}
+
+/// Walk `root` and measure every file `opts` admits. `task` is the caller's id
+/// for the run; it comes back on every progress beat.
+pub async fn scan_folder(
+    task: &str,
+    root: &str,
+    opts: &FolderOpts,
+) -> Result<Vec<FoundFile>, String> {
+    call(CMD_SCAN, &ScanArgs { task, root, opts }).await
+}
+
+/// Re-measure addresses the library already holds. One row per path, in order.
+pub async fn verify_paths(paths: Vec<String>) -> Result<Vec<PathCheck>, String> {
+    call(CMD_VERIFY, &PathsArgs { paths }).await
+}
+
+/// Copy files into the app's store. One result per request, so a single locked
+/// file costs the reader that file and not the batch.
+pub async fn store_books(
+    task: &str,
+    requests: &[StoreRequest],
+) -> Result<Vec<StoreResult>, String> {
+    call(CMD_STORE, &StoreArgs { task, requests }).await
+}
+
+/// Delete a copy the app made, when the book it belonged to is removed. Fire
+/// and forget: a store file that outlives its book wastes disk and nothing
+/// else, and there is no version of this where the reader should see an error.
+pub fn delete_stored(path: &str) {
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
+    let args = match serde_wasm_bindgen::to_value(&PathArgs { path }) {
+        Ok(args) => args,
+        Err(_) => return,
+    };
+    let path = path.to_string();
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(e) = tauri_bridge::invoke(CMD_DELETE, args).await {
+            let detail = e.as_string().unwrap_or_else(|| format!("{e:?}"));
+            web_sys::console::warn_1(&format!("[library] could not delete {path}: {detail}").into());
+        }
+    });
+}
+
+/// The native multi-file picker, filtered to the formats the library holds.
+///
+/// The filter is the format registry's own extension list — the same source the
+/// open dialog and the drag-drop admission read — so a fourth format appears in
+/// all three at once. A cancel answers with an empty list rather than an error:
+/// "the reader changed their mind" is not a failure and must not raise a toast.
+pub async fn pick_documents() -> Result<Vec<String>, String> {
+    pick(Options {
+        directory: false,
+        multiple: true,
+        filter: true,
+    })
+    .await
+    .map(|paths| paths.unwrap_or_default())
+}
+
+/// The native directory picker, for an import's folder.
+pub async fn pick_folder() -> Result<Option<String>, String> {
+    let paths = pick(Options {
+        directory: true,
+        multiple: false,
+        filter: false,
+    })
+    .await?;
+    Ok(paths.and_then(|p| p.into_iter().next()))
+}
+
+struct Options {
+    directory: bool,
+    multiple: bool,
+    filter: bool,
+}
+
+/// One `__TAURI__.dialog.open` call. Returns `None` on cancel.
+async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
+    if !tauri_bridge::has_tauri() {
+        return Err(desktop_only());
+    }
+    let opts = JsValue::from(js_sys::Object::new());
+    set(&opts, "multiple", &JsValue::from(options.multiple));
+    set(&opts, "directory", &JsValue::from(options.directory));
+    if options.filter {
+        // One filter row naming every extension the registry knows, rather than
+        // a row per format: the picker's job is "documents", not "which of the
+        // three did you mean".
+        let filter = JsValue::from(js_sys::Object::new());
+        set(&filter, "name", &JsValue::from_str("Documents"));
+        let exts = js_sys::Array::new();
+        for ext in reader_core::format::extensions() {
+            exts.push(&JsValue::from_str(ext));
+        }
+        set(&filter, "extensions", &exts);
+        let filters = js_sys::Array::new();
+        filters.push(&filter);
+        set(&opts, "filters", &filters);
+    }
+
+    let value = tauri_bridge::open(opts)
+        .await
+        .map_err(|e| format!("Dialog failed: {}", describe(e)))?;
+    if value.is_null() || value.is_undefined() {
+        return Ok(None);
+    }
+    if let Some(one) = value.as_string() {
+        return Ok(Some(vec![one]));
+    }
+    if js_sys::Array::is_array(&value) {
+        let paths = js_sys::Array::from(&value)
+            .iter()
+            .filter_map(|v| v.as_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+        return Ok(Some(paths));
+    }
+    Ok(None)
+}
+
+fn set(target: &JsValue, key: &str, value: &JsValue) {
+    _ = js_sys::Reflect::set(target, &JsValue::from_str(key), value);
+}
+
+fn describe(error: JsValue) -> String {
+    error
+        .as_string()
+        .unwrap_or_else(|| format!("{error:?}"))
+}
+
+/// Register the ONE Tauri progress listener for the app's life and re-broadcast
+/// every beat as a window [`IMPORT_PROGRESS_EVENT`].
+///
+/// Must be called inside the app reactive owner (the app root installs it next
+/// to the AI bridge): `tauri_listen` parks its closure in that owner, and a
+/// dropped closure would free the wasm function-table entry Tauri's JS still
+/// holds. Outside Tauri this is a no-op — there is no shell to import from, and
+/// the wasm-bindgen shim would throw on a missing global.
+pub fn install_import_bridge() {
+    if !tauri_bridge::has_tauri() {
+        return;
+    }
+    crate::services::tauri_listen(PROGRESS_CHANNEL, move |ev: web_sys::Event| {
+        let value: &JsValue = ev.as_ref();
+        let Ok(payload) = js_sys::Reflect::get(value, &"payload".into()) else {
+            return;
+        };
+        match serde_wasm_bindgen::from_value::<ImportProgress>(payload) {
+            Ok(beat) => crate::events::dispatch_typed_event(IMPORT_PROGRESS_EVENT, &beat),
+            Err(e) => {
+                web_sys::console::warn_1(&format!("[library] bad progress payload: {e}").into());
+            }
+        }
+    });
+}

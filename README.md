@@ -24,6 +24,7 @@ optional paper textures and film grain, all persisted between sessions.
   - [Appearance system](#appearance-system)
   - [Presets](#presets)
   - [Opening documents](#opening-documents)
+  - [Library](#library)
   - [Interface](#interface)
   - [Persistence](#persistence)
   - [Accessibility and motion](#accessibility-and-motion)
@@ -290,17 +291,57 @@ The toolbar title measures the live geometry of the surrounding controls and tru
 genuine collision, adapting as the window resizes. Only widths are measured, never positions, so
 there is no feedback loop between the label and the layout.
 
+### Library
+
+The `/` route is a library, not a list of the last twenty things you opened. A book is an
+**address**: nothing is copied into the app unless you ask for it, and no in-app move ever touches
+the filesystem.
+
+- **Two ways to hold a book.** *Read in place* is the default and the only mode the app ever had —
+  the book is the path it was opened from, and the app never moves, renames or deletes it. *Copy
+  into the store* puts the bytes under the app's own data directory, so a book survives its source
+  folder being renamed or deleted, and keeps the source path as provenance for a relink.
+- **Import a folder.** The sheet asks five questions and nothing else: which formats (as an include
+  or an exclude list), how large a file has to be to count as a book, whether to read in place or
+  copy, whether to watch for new books, and whether subfolders become shelves. Every answer is
+  stored with the folder, so a later rescan honours the import it came from.
+- **Watched folders rescan when the app opens or returns to the foreground**, not through a
+  filesystem watcher — a watcher fires while you are still copying files in, which is exactly when a
+  half-written PDF is most likely to be measured. Only genuinely new files are ever added: a book
+  you dragged to another shelf keeps its fingerprint in that folder's ledger, and a book you removed
+  leaves a tombstone, so neither comes back on the next pass.
+- **Shelves are bookshelves.** In the grid a shelf is a strip of overlapping covers standing on a
+  board, with the subfolder's name above it and a count beside it; clicking drills in, and the
+  breadcrumb is the way back. Filing a book is a drag from a card to a shelf or to another card, and
+  the only thing a drop edits is an ordered list of ids.
+- **The view is a set of knobs, not a set of modes.** Grid or list, Auto or two to ten columns,
+  covers fitted to their own aspect ratio or cropped to A4, and a sort by manual order, title,
+  author, date added or last read. Titles sort with their volume numbers as numbers, so "Volume 2"
+  comes before "Volume 10".
+- **A missing book stays on the shelf.** An address that stops resolving is a badge and a Relink
+  affordance, never a silent removal: the row keeps its resume point and every shelf it is on, so
+  finding the file again puts you back on the page you were on.
+- **An import reports from the corner.** One card per run in the bottom-left, with a ring that spins
+  while the folder is walked and fills while files are copied. It stays put when you open a book,
+  because the run outlives the page that started it.
+- **Dropping files on the library files them**; dropping them anywhere else still opens one. Both go
+  through the same admission, which is the format registry.
+
 ### Interface
 
 - Glass toolbar with sidebar toggle, open button, document title, centred page navigation, zoom
   popover, view-mode switch, search and an overflow menu.
+- A library bar of its own: a breadcrumb on the left, a shelf filter in the centre slot, and a view
+  menu, appearance menu and settings on the right. No Open button — adding books is a shelf
+  affordance ([Library](#library)), and a bar button would hide the door that is already on screen.
 - Overflow menu with fullscreen and a keyboard shortcut reference.
 - Animated sidebar with an outline and thumbnails rail. Panels stay mounted while the sidebar is
   collapsed, so thumbnails survive a toggle without re-rendering.
 - Status bar showing the current page position, rendered as a click-through overlay.
 - Toast notifications for errors, auto-dismissed after about 3.5 seconds.
 - Tooltips on the icon controls.
-- A placeholder view with drag-and-drop affordance when no document is open.
+- The library is what is on screen when no document is open, and it keeps the drag-and-drop
+  affordance: a drop there files the documents rather than opening the first of them.
 
 ### Persistence
 
@@ -314,6 +355,20 @@ computed tint plus presets, but the storage key was deliberately not bumped. A n
 silently reset every reader's last-opened file and zoom as well. Instead the retired fields are
 retained as optional values, migrated on load to the preset that reproduces the theme previously
 in use, and dropped when writing, so the migration runs at most once.
+
+The library is a separate blob under `pdfreader.library.v2`, holding the books, their shelves, the
+watched folders and their ledgers, and the view — one key because they are one invariant: a shelf
+member that names no book is a hole in the grid. It is deliberately *not* part of the settings blob,
+because a resume point moves on every page turn while settings repaint the theme on every write. The
+cover cache stays on its own key for the same reason: a cover is a base64 JPEG, and putting the art in
+the same blob would make turning a page re-serialise the whole shelf's covers.
+
+A previous build's recent-books list (`pdfreader.library.v1`) is migrated on first load rather than
+discarded: every row becomes a book read in place, in the order the reader had it, with its resume
+point intact. The migrated rows carry a placeholder fingerprint until the startup pass measures
+them, and a watched folder will not rescan against a placeholder — a real fingerprint matches none,
+so every book the folder already held would be added a second time. The old key is left in place, so
+a downgrade still finds the library it wrote.
 
 Writes are debounced by 350 milliseconds so dragging a slider does not hammer local storage.
 
@@ -358,7 +413,7 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Action | Shortcut |
 |--------|----------|
 | Open document | `Cmd/Ctrl` + `O` |
-| Search | `Cmd/Ctrl` + `F` |
+| Search — the document while one is open, the library's shelf filter while it is not | `Cmd/Ctrl` + `F` |
 | Fit width | `Cmd/Ctrl` + `0` |
 | Single page view | `Cmd/Ctrl` + `1` |
 | Continuous view | `Cmd/Ctrl` + `2` |
@@ -371,7 +426,7 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Screen up / down | `Page Up` / `Page Down` |
 | Screen down / up | `Space` / `Shift` + `Space` |
 | Auto-scroll on or off (the two scrolling modes) | `Shift` + `A` |
-| Dismiss overlay or search | `Escape` |
+| Dismiss overlay or search; clear the library's search | `Escape` |
 
 In continuous mode the reader owns the arrow keys and scrolls the page list directly. Leaving them
 to the browser meant scrolling whatever held focus, which was usually a text-layer span; when
@@ -467,17 +522,28 @@ src/
                           appearance section of the settings modal
     app_overlays/         drag-and-drop feedback, toast host
   effects/
-    app/                  window title, shortcuts, persistence wiring
+    app/                  window title, shortcuts, persistence wiring,
+                          drag-and-drop admission, and the library's
+                          app-lifetime wiring (startup measurement, focus
+                          rescan, the progress sink)
     reader/               fit and zoom follow, page tracking
     appearance/           the appearance-to-CSS bridge (shared, raster,
                           reflow)
   features/
-    library/              the shelf: book cards, empty state, sorting
+    library/              the library page: its three-slot bar (breadcrumb,
+                          search, view menu), the grid and the list, book cards
+                          and shelf tiles, the two ways in (add card, empty
+                          state) and the sheet they open, the import dock, and
+                          the drag payload both views share
     reader/               the reader page and its two virtualizers
   state/                  the reactive state tree: app (chrome + UI), reader
                           (document, viewer, zoom, search, gloss, AI selection),
                           library
-  services/               the document open pipeline, the AI chunk bridge
+  services/               the document open pipeline, the AI chunk bridge, and
+                          the library's filesystem wire (the shell's invoke
+                          wrappers and progress bridge, the import orchestration
+                          that runs the ledger, and the moves a reader makes by
+                          hand)
   storage/                loads and saves over localStorage (settings,
                           library, covers, gloss marks)
   zoom/                   the zoom pipeline: posted commands, target
@@ -515,6 +581,13 @@ crates/
                           line-bounded subdivision a tight page pack needs
   md-core/                Markdown: construct classification, prose subdivision,
                           front-matter metadata and the heading outline
+  library-core/           the library's domain: the book and its fingerprint,
+                          the two origins (read in place, copied into the
+                          store), shelves and watched folders, the scan
+                          predicate, the rescan ledger that answers
+                          add/relink/skip, the sort, the persisted blob and its
+                          migration, and the wire types the shell and the
+                          frontend share
   pdf-engine/             wasm-bindgen bridge to the imperative engine
   pdf-paper/              the blend backdrop's colour brain: the detection
                           area, dominant-colour detection (whole page or edge
@@ -544,14 +617,18 @@ public/
   vendor/pdfjs/           vendored pdf.js build, worker, viewer CSS, cmaps
   samples/                five fixture PDFs for manual testing (the smoke test
                           runs against stubs, not these)
-src-tauri/                native shell, AI providers, capabilities, icons
+src-tauri/                native shell, AI providers, the library's filesystem
+                          commands (folder walk, path check, store copy and
+                          delete), capabilities, icons
 styles/
   input.css               Tailwind v4 entry point assembling the design system
   tokens.css              the @theme block, base palettes and runtime vars
   page_host.css           the .pdf-page host, its canvas and the zoom snapshot
   text.css                the reflowable page host and the continuous stream
   textures.css, noise.css texture modes, and the grain overlay + its crawl
-  library.css             the bookshelf and its drag overlay
+  library.css             the bookshelf: cards and covers, shelf tiles and their
+                          strips, the list rows, the import dock's ring, the
+                          drag markers and the drag overlay
   components/             shell, title bar, animations, ai, gloss, appearance,
                           thumbnails, pdf.js's text layer, and the search-hit
                           box both format families share
