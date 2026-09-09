@@ -346,11 +346,14 @@ the filesystem.
   `SHOW_SHELF_CRUMB_MENU` in `src/features/library/breadcrumb.rs` while the bar's crumb shapes
   settle; flipping that one constant restores it, and until then renaming a shelf is not reachable
   from the UI.
-- **The breadcrumb keeps four crumbs and folds the rest.** A chain has no end and a title bar does,
-  so past four levels the oldest crumbs fold into a menu hung off the oldest one still shown — opened
-  by hovering it, closed one beat after the pointer leaves, and the same width whatever shelf you are
-  in so it never moves under the pointer. Every crumb and every folded row is a drop target, which is
-  what makes a deep level reachable with a hand full of books.
+- **The breadcrumb keeps three crumbs and elides the rest behind `…`.** A chain has no end and a title
+  bar does. The ellipsis is its own affordance rather than an arrow on a crumb, because an arrow on the
+  third level whose panel lists the first and second reads as "deeper than three" when those levels are
+  shallower. Hovering it opens the elided levels drawn the way the bar draws them — `2 > 3 > 4 >`
+  wrapping to `5 > 6` — in a rectangle whose width the window sets, so a resized window re-wraps the
+  chain with nothing measured and nothing listening. ArrowDown opens it too, since those levels are on
+  no other surface. Every crumb is a drop target, which is what makes a deep level reachable with a
+  hand full of books; the ellipsis itself is a place to rest and not a place to drop.
 - **Removing a book shows you the receipt first.** The sheet itemises what goes with it — the resume
   point, the highlights, the cached cover, every shelf it was filed on — and leaves out the rows for
   things the book does not have. For a book the app copied there is a switch for the copy, on by

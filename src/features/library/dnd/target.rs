@@ -29,6 +29,17 @@ pub enum DropTargetKind {
     /// file whatever is held onto that level from anywhere in the library,
     /// including from inside a folder the reader has not left yet.
     Shelf,
+    /// The ellipsis that stands for the levels the bar has folded away.
+    ///
+    /// A target and not a drop: resting on it during a drag opens the panel,
+    /// because a captured pointer raises no `mouseenter` for the bar to hear, and
+    /// releasing on it does nothing — it is not a level, and filing onto a place
+    /// whose name the reader cannot see is a filing they cannot check. It does not
+    /// take the sink either, for the same reason: the ghost shrinking INTO a gap
+    /// would be a picture of the held items going somewhere they cannot go. What it
+    /// is, is a door, and the ghost stays in the reader's hand until the panel
+    /// offers them a level to sink into.
+    Ellipsis,
     /// The empty space of the level the page is on. WHICH shelf that is belongs
     /// to the page rather than to the target, so this kind carries no id and the
     /// controller fills one in.

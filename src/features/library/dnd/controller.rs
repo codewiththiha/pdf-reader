@@ -451,6 +451,21 @@ impl DragController {
             .with(|at| at.as_ref().and_then(|each| each.nest_into()) == Some(id))
     }
 
+    /// Whether the pointer is over the bar's ellipsis — the folded levels'
+    /// affordance, which is a place to rest and not a place to drop.
+    ///
+    /// Asked by the breadcrumb while a drag is live, because a drag cannot raise
+    /// a `mouseenter`: the card the press began on holds the pointer capture, and
+    /// a captured pointer reports its boundary events to the capture target
+    /// alone. The registry's geometry is the one thing under a capture that still
+    /// tells the truth, so the fold opens from this instead.
+    pub fn over_ellipsis(&self) -> bool {
+        self.hot.with(|at| {
+            at.as_ref()
+                .is_some_and(|target| target.0 == DropTargetKind::Ellipsis)
+        })
+    }
+
     /// Whether the pointer is over the crumb for `id`. An empty id is the root's
     /// `All`, which is a crumb and not a shelf.
     pub fn over_shelf(&self, id: &str) -> bool {

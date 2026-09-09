@@ -607,24 +607,38 @@ gliding there.
 
 ### A bar that can go deep
 
-A chain of levels has no end and a title bar does, so `features::library::breadcrumb` keeps four
-crumbs and folds the rest into a menu hung off the oldest one kept. The arrow sits on the crumb that
-carries the fold and nowhere else, so a shallow chain has no affordance it does not need. The menu is
-the `MenuPopover` every other anchored menu in the app uses — which matters more than it looks,
-because that primitive is the one place that knows the glass toolbar row's `backdrop-filter` makes it
-a containing block for `position: fixed`, and a hand-rolled panel anchored in the bar would be
-positioned against the row and not the viewport.
+A chain of levels has no end and a title bar does, so `features::library::breadcrumb` keeps three
+crumbs and elides the rest behind an ellipsis — never just one, because a single elided level costs a
+hover to reach and costs the bar the width showing it would have. The panel is the `MenuPopover` every
+other anchored menu in the app uses, which matters more than it looks: that primitive is the one place
+that knows the glass toolbar row's `backdrop-filter` makes it a containing block for `position: fixed`,
+and a hand-rolled panel anchored in the bar would be positioned against the row and not the viewport.
+
+The ellipsis is its own element and not an arrow on a crumb, and that is the whole of the fix for a
+confusion worth naming. An arrow on the THIRD level whose panel lists the first and second reads as
+"deeper than three", because a disclosure hangs below the thing it discloses — and the elided levels
+are shallower. An affordance standing for them must not itself be a level, so it claims to be nothing
+but a gap. Inside, the levels are drawn in the bar's own grammar rather than as a list of rows: name,
+chevron, name, wrapping into a rectangle whose width the window sets. The chevron trails its crumb and
+shares its flex item, so a wrapped line ends on `4 >` and the next begins on `5`; a leading chevron
+would put a stray `>` at the head of every line but the first. Wrapping is `flex-wrap` against a
+`max-width` of `calc(100vw - 1.5rem)`, so the panel answers a resized window with no measurement and
+no resize listener — the layout is already asking the question the moment the window does.
 
 It opens on hover and closes one beat after the pointer leaves, because a click is already taken by
 the crumb it lands on. The beat is owned by an effect on "is the pointer over it" rather than by a
 parked timer, so arming and cancelling the close are the same write and there is exactly one timer.
+ArrowDown opens it too, which is not a nicety: the elided levels are on no other surface, so without a
+keyboard path a chain deeper than the bar keeps would be navigable by mouse only.
 
-Every crumb and every folded row is a drop target, which is the only way to reach a deep level with a
-hand full of books — and the reason the menu has to be openable DURING a drag. A drag cannot raise a
-`mouseenter`: the card the press began on holds the pointer capture, and a captured pointer reports
-its boundary events to the capture target alone. So while a drag is live the trigger opens from the
-session's hot target instead, which is the same geometry the drop is decided by and the one thing
-under a capture that still tells the truth.
+Every crumb, elided ones included, is a drop target, which is the only way to reach a deep level with
+a hand full of books — and the reason the panel has to be openable DURING a drag. A drag cannot raise
+a `mouseenter`: the card the press began on holds the pointer capture, and a captured pointer reports
+its boundary events to the capture target alone. So while a drag is live the ellipsis opens from the
+session's hot target instead, which is the same geometry the drop is decided by and the one thing under
+a capture that still tells the truth. The ellipsis is a target and not a drop: it stands for several
+levels and names none of them, so resting on it opens the panel and releasing on it does nothing —
+filing onto a level whose name the reader cannot see is a filing they cannot check.
 
 The current shelf's crumb used to carry the rename and remove popover, and that popover is now parked
 behind `SHOW_SHELF_CRUMB_MENU` while the crumb's shapes settle. It is parked rather than deleted for a

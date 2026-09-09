@@ -8,29 +8,42 @@
 //! now because that is what a forest's path is.
 //!
 //! A list has no end, and a title bar does. Past [`CRUMB_KEEP`] levels the oldest
-//! crumbs fold into a menu hung off the oldest one still shown, which is the same
-//! trade every bar that can go deep makes: the reader keeps the LAST few — the ones
-//! nearest where they are — and gets the rest one hover away. The arrow sits on the
-//! crumb that carries the fold and on nothing else, so a shallow chain has no
-//! affordance it does not need and `All` never grows one.
+//! crumbs are elided behind an ellipsis, which is the same trade every bar that can
+//! go deep makes: the reader keeps the LAST few — the ones nearest where they are —
+//! and gets the rest one hover away.
 //!
-//! The menu opens on hover rather than on click, and stays open while the pointer
-//! is on the trigger or the panel: it is a way of SEEING the levels above, and a
-//! click is already taken by the crumb it lands on. Leaving both closes it one beat
-//! later, which is the beat the pointer needs to cross the gap between them.
+//! The ellipsis is its own affordance and not an arrow on a crumb, and that is not
+//! cosmetics. An arrow on the third level whose panel lists the FIRST and the
+//! second reads as "deeper than three", because a disclosure hangs below the thing
+//! it discloses; the elided levels are shallower, so the affordance standing for
+//! them must not itself be a level. `…` claims to be nothing but a gap, which is
+//! what it is, and the chain inside it is drawn in the bar's own grammar —
+//! `2 > 3 > 4 >` wrapping to `5 > 6` — so a reader who has understood the bar has
+//! already understood the panel.
 //!
+//! The panel opens on hover rather than on click, and stays open while the pointer
+//! is on the ellipsis or on the panel: it is a way of SEEING the levels above, and
+//! a click is already taken by the crumb it lands on. Leaving both closes it one
+//! beat later, which is the beat the pointer needs to cross the gap between them.
+//!
+
 //! ## Crumbs are drop targets
 //!
-//! Every crumb and every row of the fold menu is a target the drag can land on, so
-//! a book can be filed onto a level the reader is not standing on — including one
-//! that is folded away, which is the only way to reach a deep level with a hand
-//! full of books without first putting them down. The fold menu therefore has to be
-//! openable DURING a drag, and a drag cannot raise a `mouseenter`: the card the
-//! press began on holds the pointer capture, and a captured pointer reports its
-//! boundary events to the capture target alone. So while a drag is live the trigger
-//! opens from the session's own hot target instead — the same geometry the drop is
-//! decided by, which is the one thing under a capture that still tells the truth.
+//! Every crumb — elided ones included — is a target the drag can land on, so a book
+//! can be filed onto a level the reader is not standing on, including one the bar
+//! has elided, which is the only way to reach a deep level with a hand full of
+//! books without first putting them down. The ellipsis is a target as well and a
+//! drop on it is not: it stands for several levels and names none of them, so
+//! resting on it opens the panel and releasing on it does nothing.
 //!
+//! Which means the panel has to be openable DURING a drag, and a drag cannot raise
+//! a `mouseenter`: the card the press began on holds the pointer capture, and a
+//! captured pointer reports its boundary events to the capture target alone. So
+//! while a drag is live the ellipsis opens from the session's own hot target
+//! instead — the same geometry the drop is decided by, and the one thing under a
+//! capture that still tells the truth.
+//!
+
 //! ## The parked shelf menu
 //!
 //! The LAST crumb used to be a button for a second reason: it is where a shelf the
@@ -65,19 +78,28 @@ use crate::services::library::{delete_shelf, rename_shelf};
 use crate::state::AppState;
 
 /// How many crumbs the bar keeps once a chain is deeper than this. Everything
-/// older folds into the menu hung off the oldest one kept.
+/// older goes behind the ellipsis.
 ///
-/// Four, because the bar's left cluster shares a row with a search box that has to
-/// stay usable and a window that can be 640px wide: at four crumbs of `max-w-40`
-/// the cluster is already asking for more room than a narrow window has, and a
-/// fifth crumb is a fifth of the bar spent on where you have been.
-const CRUMB_KEEP: usize = 4;
+/// Three, because the bar's left cluster shares a row with a search box that has to
+/// stay usable and a window that can be 640px wide — and because the ellipsis takes
+/// a slot of its own, so three kept plus one elided is the four the bar used to
+/// show. A fifth element is a fifth of the bar spent on where you have been.
+const CRUMB_KEEP: usize = 3;
 
-/// The fold menu's width. Fixed so a long shelf name ellipsises instead of
-/// stretching the panel, and so the panel is the same box whatever shelf the
-/// reader is standing in — a menu that resized between levels would move under the
-/// pointer that is hovering it.
-const OVERFLOW_WIDTH: u32 = 224;
+/// The panel's preferred width, in CSS px.
+///
+/// Wide enough for the chain to read as a chain — three crumbs and their chevrons
+/// on a line — rather than as the vertical list it replaces, and a CEILING rather
+/// than a size: `.lib-elided-panel` caps it against the window, so a narrow one
+/// gets a narrower panel and the chain re-wraps into a taller rectangle instead of
+/// overflowing. What it must not be is content-sized, or the panel would change
+/// width between levels and move under the pointer that is hovering it.
+const ELIDED_WIDTH: u32 = 384;
+
+/// The element id of the ellipsis. Deliberately not a `crumb-` id: it is a target
+/// the drag can rest on but it stands for no level, and sharing the crumbs' scheme
+/// would let a reader of the registry mistake it for one.
+const ELLIPSIS_DOM_ID: &str = "crumb-elided";
 
 /// The beat between leaving the trigger and closing, so the pointer can cross the
 /// gap between the crumb and the panel.
@@ -168,6 +190,23 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
 // ---------------------------------------------------------------------------
 // Drop targets
 // ---------------------------------------------------------------------------
+
+/// How many of the chain's oldest levels the bar elides.
+///
+/// Never one. A single elided level costs the reader a hover to reach and costs the
+/// bar the same width as showing it would have, so the ellipsis earns its slot from
+/// two levels up — which is why a chain of four shows all four crumbs and a chain of
+/// five shows three plus the ellipsis.
+fn elide_at(len: usize) -> usize {
+    let split = len.saturating_sub(CRUMB_KEEP);
+    // `split == 1` is the one depth where eliding costs more than it saves.
+    if split == 1 {
+        0
+    } else {
+        split
+    }
+}
+
 
 /// The element id a crumb's box is read from.
 fn crumb_dom_id(shelf_id: &str) -> String {
@@ -304,35 +343,35 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
             {move || {
                 let levels = chain.get();
                 let len = levels.len();
-                // Nothing is folded until the chain is deeper than the bar keeps,
-                // and the oldest KEPT crumb is the one that carries the fold.
-                let split = len.saturating_sub(CRUMB_KEEP);
-                let (folded, shown) = levels.split_at(split);
+                let split = elide_at(len);
+                let (elided, shown) = levels.split_at(split);
                 let last = len.saturating_sub(1);
-                shown
-                    .iter()
-                    .enumerate()
-                    .map(|(at, crumb)| {
-                        let crumb = crumb.clone();
-                        if split + at == last {
-                            view! { <CurrentCrumb state=state ctrl=ctrl crumb=crumb /> }.into_any()
-                        } else if at == 0 && split > 0 {
-                            view! {
-                                <OverflowCrumb
-                                    state=state
-                                    ctrl=ctrl
-                                    crumb=crumb
-                                    folded=folded.to_vec()
-                                    intent=intent
-                                />
-                            }
-                                .into_any()
-                        } else {
-                            view! { <LevelCrumb state=state ctrl=ctrl crumb=crumb /> }.into_any()
-                        }
-                    })
-                    .collect_view()
+                // The ellipsis first, because the levels behind it are the OLDEST:
+                // left to right has to stay root to leaf, in the bar and in the
+                // panel alike, or a chain the reader has just learned to read means
+                // something else in one place.
+                let gap = (!elided.is_empty()).then(|| {
+                    view! {
+                        <EllipsisCrumb
+                            state=state
+                            ctrl=ctrl
+                            elided=elided.to_vec()
+                            intent=intent
+                        />
+                    }
+                        .into_any()
+                });
+                let crumbs = shown.iter().enumerate().map(|(at, crumb)| {
+                    let crumb = crumb.clone();
+                    if split + at == last {
+                        view! { <CurrentCrumb state=state ctrl=ctrl crumb=crumb /> }.into_any()
+                    } else {
+                        view! { <LevelCrumb state=state ctrl=ctrl crumb=crumb /> }.into_any()
+                    }
+                });
+                gap.into_iter().chain(crumbs).collect_view()
             }}
+        
         </nav>
     }
 }
@@ -429,47 +468,41 @@ fn CurrentCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl Int
         .into_any()
 }
 
-/// The oldest crumb still shown, with the folded ones behind it.
+/// The ellipsis: the bar's one admission that it is not showing everything.
 ///
-/// The arrow is the affordance and the hover is the gesture: a click still goes to
-/// the crumb's own level, because a crumb that opened a menu instead of navigating
-/// would be a way back that is not a way back. ArrowDown is the gesture a keyboard
-/// gets, and it is not a nicety — the folded levels are on no other surface, so
-/// without it a chain deeper than the bar keeps would be navigable by mouse only.
+/// Not an arrow on a crumb, and the reason is the confusion an arrow makes — see
+/// the module docs. It is a button, so a keyboard reaches the panel the way a
+/// pointer does, and it is a target the drag can rest on but never drop on.
 #[component]
-fn OverflowCrumb(
+fn EllipsisCrumb(
     state: AppState,
     ctrl: DragController,
-    crumb: Crumb,
-    folded: Vec<Crumb>,
+    elided: Vec<Crumb>,
     intent: HoverIntent,
 ) -> impl IntoView {
-    let id = crumb.id.clone();
-    let label = crumb.name.clone();
-    let tooltip = crumb.name.clone();
-    let aria = format!("Go back to {}, and see the levels above it", crumb.name);
-    let dom_id = register_crumb(&ctrl, &id);
+    ctrl.registry.register(DropTargetEntry {
+        id: DropTargetId(DropTargetKind::Ellipsis, String::new()),
+        dom_id: ELLIPSIS_DOM_ID.to_string(),
+    });
     let anchor: NodeRef<html::Div> = NodeRef::new();
     let live = ctrl.live();
-    // Parked in a `StoredValue` rather than captured: a component's children are
-    // an `Fn`, and a children closure that owned the folded list would be an
-    // `FnOnce` the first time it built a row. A Copy handle to a plain scoped cell
-    // is the same fix `crate::components::primitives::floating::popover` uses for
-    // its panel class.
-    let rows: StoredValue<Vec<Crumb>, LocalStorage> = StoredValue::new_local(folded);
-    // One clone per closure that outlives this frame: the click, the class and the
-    // drag effect each need the id, and a `move` closure takes what it captures.
-    let click_id = id.clone();
-    let hot_id = id.clone();
-    let drag_id = id;
+    // `elide_at` never answers one, so this is always the plural.
+    let tooltip = format!("{} levels above, folded", elided.len());
+    let aria = tooltip.clone();
+    // Parked in a `StoredValue` rather than captured: a component's children are an
+    // `Fn`, and a children closure that owned the list would be an `FnOnce` the
+    // first time it built a crumb. A Copy handle to a plain scoped cell is the same
+    // fix `crate::components::primitives::floating::popover` uses for its panel
+    // class.
+    let folded: StoredValue<Vec<Crumb>, LocalStorage> = StoredValue::new_local(elided);
 
     // A drag cannot raise a `mouseenter` — the card the press began on holds the
     // pointer capture, and a captured pointer reports its boundary events to the
-    // capture target alone. So while a drag is live the menu opens from the
+    // capture target alone. So while a drag is live the panel opens from the
     // session's hot target instead, which is the same geometry the drop itself is
     // decided by and the one thing under a capture that still tells the truth.
     Effect::new(move |_| {
-        if live.get() && ctrl.over_shelf(&drag_id) {
+        if live.get() && ctrl.over_ellipsis() {
             intent.enter();
         }
     });
@@ -477,62 +510,69 @@ fn OverflowCrumb(
     view! {
         <div
             node_ref=anchor
-            class="relative flex min-w-0 items-center gap-0.5"
+            class="relative flex shrink-0 items-center"
             on:mouseenter=move |_| intent.enter()
             on:mouseleave=move |_| intent.leave()
         >
             <Icon name=IconName::Next size=13 class="shrink-0 text-muted" />
             <button
-                id=dom_id
+                id=ELLIPSIS_DOM_ID
                 type="button"
                 title=tooltip
                 aria-label=aria
-                aria-haspopup="menu"
                 aria-expanded=move || intent.open.get().to_string()
-                on:click=move |_| state.library.shelf.set(click_id.clone())
                 on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                    // A keyboard cannot hover, and the levels behind this crumb are
-                    // nowhere else on the page — so the key that means "show me what
-                    // is under this" opens the fold. Enter still navigates, which is
-                    // what the crumb's own label promises.
+                    // A keyboard cannot hover, and the levels behind this are on no
+                    // other surface — so the key that means "show me what is under
+                    // this" opens the panel.
                     if ev.key() == "ArrowDown" {
                         ev.prevent_default();
                         intent.enter();
                     }
                 }
-                class=move || crumb_class(false, ctrl.over_shelf(&hot_id))
+                class="flex shrink-0 items-center rounded-md px-1 py-0.5 text-muted \
+                       transition-colors hover:bg-line hover:text-ink focus:outline-none \
+                       focus-visible:ring-2 focus-visible:ring-accent"
             >
-                <span class="truncate">{label}</span>
-                <Icon name=IconName::ChevronDown size=11 class="shrink-0 text-muted" />
+                <Icon name=IconName::More size=14 />
             </button>
-            // The panel is a DOM descendant of the trigger, so the pointer crossing
-            // into it never leaves the surface the hover is counted on — except for
-            // the gap between the two, which is what the grace beat is for. The
-            // rows carry the same two handlers so entering the panel cancels the
-            // close that crossing the gap started.
-            //
-            // The rows are built inside the popover's reactive child rather than
-            // before the markup, because each one registers a drop target that
-            // leaves the registry when the row unmounts: built here, that owner is
-            // the popover's, so closing the menu is what unregisters the rows, and
-            // a menu that has gone is not a set of targets the drag can still hit.
+            // The chain is built inside the popover's reactive child rather than
+            // before the markup, because each crumb in it registers a drop target
+            // that leaves the registry when the crumb unmounts: built here, that
+            // owner is the popover's, so closing the panel is what unregisters them,
+            // and a panel that has gone is not a set of targets the drag can hit.
             <MenuPopover
                 open=intent.open
                 anchor=anchor
-                width=OVERFLOW_WIDTH
+                width=ELIDED_WIDTH
                 coordinate_space="toolbar-row"
-                class="max-h-80 overflow-y-auto p-1".to_string()
+                class="lib-elided-panel max-h-80 overflow-y-auto p-1.5".to_string()
             >
                 <div
+                    class="lib-elided-chain"
                     on:mouseenter=move |_| intent.enter()
                     on:mouseleave=move |_| intent.leave()
                 >
                     {move || {
-                        rows.get_value()
+                        let levels = folded.get_value();
+                        let last = levels.len().saturating_sub(1);
+                        levels
                             .into_iter()
-                            .map(|each| {
+                            .enumerate()
+                            .map(|(at, crumb)| {
+                                // Hoisted out of the markup: the last crumb in the
+                                // chain trails nothing, and a comparison in an
+                                // attribute is one more thing the macro has to
+                                // agree with the reader about.
+                                let trails = at != last;
                                 view! {
-                                    <OverflowRow state=state ctrl=ctrl crumb=each intent=intent />
+                                    <ElidedCrumb
+                                        state=state
+                                        ctrl=ctrl
+                                        crumb=crumb
+                                        trails=trails
+                                        intent=intent
+                                    />
                                 }
                             })
                             .collect_view()
@@ -543,47 +583,70 @@ fn OverflowCrumb(
     }
 }
 
-/// One folded level in the menu.
+
+/// One elided level, in the panel: a chip in a chain rather than a row in a list.
 ///
-/// A row and not `crate::components::primitives::menu::menu_item`: the primitive
-/// computes its own class and has no element id to offer, and this row needs both —
-/// an id for the drag to read its box from, and the hot state a target under a drag
-/// wears. It is a level to go to and a place to put things, not an action.
+/// The chain is the point. Drawn the way the bar draws it — name, chevron, name — a
+/// reader who has understood the breadcrumb has already understood the panel, and
+/// the panel can be three levels wide where a list of rows would have been three
+/// levels tall. The chevron TRAILS its crumb and lives in the same flex item, so a
+/// wrapped line ends on `4 >` and the next begins on `5`, which is how a chain reads
+/// when it has to break; a leading chevron would put a stray `>` at the head of
+/// every line but the first.
+///
+/// A chip and not `crate::components::primitives::menu::menu_item`: the primitive
+/// computes its own class, has no element id to offer, and is a full-width row by
+/// construction. This needs an id for the drag to read its box from, the hot state
+/// a target under a drag wears, and a width that is its content's. It is a level to
+/// go to and a place to put things, not an action.
 #[component]
-fn OverflowRow(state: AppState, ctrl: DragController, crumb: Crumb, intent: HoverIntent) -> impl IntoView {
+fn ElidedCrumb(
+    state: AppState,
+    ctrl: DragController,
+    crumb: Crumb,
+    trails: bool,
+    intent: HoverIntent,
+) -> impl IntoView {
     let id = crumb.id.clone();
     // Two names for one string: the markup's children are built before its
-    // attributes, so a `title` and a text node that shared a variable would be a
-    // borrow of a value the child had already moved.
+    // attributes, so a `title` and a text node sharing a variable would be a borrow
+    // of a value the child had already moved.
     let label = crumb.name.clone();
-    let tooltip = crumb.name.clone();
+    let tooltip = crumb.name;
     let dom_id = register_crumb(&ctrl, &id);
     let hot_id = id.clone();
+    let click_id = id;
 
     view! {
-        <button
-            id=dom_id
-            type="button"
-            role="menuitem"
-            title=tooltip
-            on:click=move |_| state.library.shelf.set(id.clone())
-            on:mouseenter=move |_| intent.enter()
-            on:mouseleave=move |_| intent.leave()
-            class=move || {
-                let base = "flex w-full min-w-0 items-center rounded-md px-2 py-1.5 text-left \
-                            text-sm text-muted transition-colors hover:bg-line hover:text-ink \
-                            focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-                if ctrl.over_shelf(&hot_id) {
-                    format!("{base} crumb-drop")
-                } else {
-                    base.to_string()
+        <span class="lib-elided-crumb">
+            <button
+                id=dom_id
+                type="button"
+                title=tooltip
+                on:click=move |_| state.library.shelf.set(click_id.clone())
+                on:mouseenter=move |_| intent.enter()
+                on:mouseleave=move |_| intent.leave()
+                class=move || {
+                    let base = "flex min-w-0 max-w-32 items-center rounded-md px-1.5 py-0.5 \
+                                text-sm text-muted transition-colors hover:bg-line \
+                                hover:text-ink focus:outline-none focus-visible:ring-2 \
+                                focus-visible:ring-accent";
+                    if ctrl.over_shelf(&hot_id) {
+                        format!("{base} crumb-drop")
+                    } else {
+                        base.to_string()
+                    }
                 }
-            }
-        >
-            <span class="truncate">{label}</span>
-        </button>
+            >
+                <span class="truncate">{label}</span>
+            </button>
+            {trails.then(|| {
+                view! { <Icon name=IconName::Next size=13 class="shrink-0 text-muted" /> }
+            })}
+        </span>
     }
 }
+
 
 /// The current shelf's own popover: rename in place, or take the shelf apart.
 /// Parked behind [`SHOW_SHELF_CRUMB_MENU`]; see the module docs.
@@ -705,5 +768,46 @@ fn RenameField(
                 })
             />
         </span>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_shallow_chain_elides_nothing() {
+        for len in 0..=CRUMB_KEEP {
+            assert_eq!(elide_at(len), 0, "a chain of {len} fits the bar whole");
+        }
+    }
+
+    #[test]
+    fn one_elided_crumb_is_not_worth_an_affordance() {
+        // Four levels with three kept is one hidden crumb, and the ellipsis costs
+        // the bar the same width the crumb would have — so the bar shows all four
+        // and the ellipsis first earns its slot at five.
+        assert_eq!(elide_at(CRUMB_KEEP + 1), 0);
+        assert_eq!(elide_at(CRUMB_KEEP + 2), 2);
+    }
+
+    #[test]
+    fn past_the_first_fold_the_bar_stays_the_same_width() {
+        // However deep the chain goes, the bar keeps CRUMB_KEEP crumbs plus the
+        // ellipsis, and everything older is in the panel.
+        for len in (CRUMB_KEEP + 2)..=(CRUMB_KEEP * 4) {
+            let split = elide_at(len);
+            assert_eq!(len - split, CRUMB_KEEP, "a chain of {len} shows only {kept}", kept = CRUMB_KEEP);
+            assert!(split >= 2, "and never hides just one");
+        }
+    }
+
+    #[test]
+    fn the_elided_and_the_shown_are_one_chain_and_never_overlap() {
+        for len in 0..12 {
+            let split = elide_at(len);
+            assert!(split <= len);
+            assert_eq!(split + (len - split), len);
+        }
     }
 }

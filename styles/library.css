@@ -1094,6 +1094,41 @@
   box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
+/* ---------------------------------------------------------------------------
+   The elided levels: the chain behind the breadcrumb's ellipsis.
+
+   A chain and not a list, in the bar's own grammar — name, chevron, name — so a
+   reader who has understood the breadcrumb has already understood the panel, and
+   so three levels cost one line of height instead of three. Wrapping is what makes
+   it a rectangle rather than a strip: the panel's width is a ceiling the window
+   sets, the chain fills it, and whatever does not fit goes to the next line. No
+   measurement and no resize listener, because flex-wrap is already answering the
+   question the moment the window does.
+   --------------------------------------------------------------------------- */
+.lib-elided-panel {
+  /* A ceiling under the popover's own width, so a window too narrow for it gets a
+     narrower panel and a taller chain rather than a panel hanging off the edge. */
+  max-width: calc(100vw - 1.5rem);
+}
+.lib-elided-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  /* Row gap only; the column gap is the chevron, which is a glyph rather than
+     spacing so the chain reads the same wrapped as unwrapped. */
+  gap: 2px 0;
+}
+/* One crumb and the chevron that trails it, in ONE flex item: a wrapped line ends
+   on `4 >` and the next begins on `5`, which is how a chain reads when it breaks.
+   Split them and every line but the first starts with a stray chevron. */
+.lib-elided-crumb {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.125rem;
+}
+
 /* While choosing, the cards not in the set step back, and come forward again
    under the pointer: the reader is about to tap one of them. */
 /* `.book-add` wears the book card's classes for its shape and is not a book:

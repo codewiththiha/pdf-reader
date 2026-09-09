@@ -157,6 +157,11 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
         DropTargetKind::Shelf | DropTargetKind::Level => DropEffect::FileToShelf {
             shelf_id: query.target_id.to_string(),
         },
+        // The ellipsis stands for levels, and is not one. Opening the fold is the
+        // controller's answer to a rest here; the table's answer to a RELEASE is
+        // that there is nothing to do, which is the honest one — the reader
+        // cannot see which level they would be filing onto.
+        DropTargetKind::Ellipsis => DropEffect::Refused,
     }
 }
 
@@ -283,6 +288,19 @@ mod tests {
                 shelf_id: String::new()
             }
         );
+    }
+
+    #[test]
+    fn the_ellipsis_opens_and_never_accepts() {
+        assert_eq!(
+            drop_effect(query(DropTargetKind::Ellipsis, "", 2, 1)),
+            DropEffect::Refused
+        );
+        // …and no dwell changes that: a fold is made out of a BOOK the pointer is
+        // resting on, and the ellipsis is not a book.
+        let mut rested = query(DropTargetKind::Ellipsis, "", 2, 1);
+        rested.dwell_armed = true;
+        assert_eq!(drop_effect(rested), DropEffect::Refused);
     }
 
     #[test]
