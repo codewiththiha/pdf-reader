@@ -460,7 +460,13 @@
   aspect-ratio: 3 / 4;
   overflow: hidden;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-surface) 80%, var(--color-line));
+  /* The joinery is the theme's line, pushed two fifths of the way toward the
+     theme's ink: the same two tokens the rest of the app's edges are cut from,
+     only darkened by the one thing in the base that is darker than the line. A
+     plain line-on-surface mix was invisible in the light base, where those two
+     are neighbours (#e5e7eb against #f3f4f6), and a hardcoded grey would have
+     been a fifth colour in a four-colour theme. */
+  background: color-mix(in srgb, var(--color-line) 60%, var(--color-ink) 40%);
 }
 .folder-card > .folder-thumb-grid {
   box-shadow:
@@ -492,7 +498,7 @@
 .folder-thumb-cell {
   position: relative;
   overflow: hidden;
-  background: color-mix(in srgb, var(--color-line) 40%, transparent);
+  background: var(--color-surface);
 }
 .folder-thumb-img {
   display: block;
@@ -501,18 +507,11 @@
   object-fit: cover;
 }
 
-/* A cell with no cover in it is not a hole: it is a hatched quarter, so a folder
-   of two books reads as a folder of two books rather than as a broken plate. */
+/* A cell with no cover in it is a flat quarter in the line's own lighter tone:
+   no texture, just a panel plainly emptier than the covers beside it, held in
+   place by the darker joinery around it. */
 .folder-thumb-empty {
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      transparent,
-      transparent 3px,
-      color-mix(in srgb, var(--color-line) 22%, transparent) 3px,
-      color-mix(in srgb, var(--color-line) 22%, transparent) 4px
-    ),
-    color-mix(in srgb, var(--color-surface) 70%, transparent);
+  background: color-mix(in srgb, var(--color-line) 55%, var(--color-surface));
 }
 
 /* A folder deeper than the preview recurses: a few pixels of something is a
@@ -523,7 +522,7 @@
   display: grid;
   place-items: center;
   color: var(--color-muted);
-  background: color-mix(in srgb, var(--color-surface) 60%, var(--color-line));
+  background: color-mix(in srgb, var(--color-line) 70%, var(--color-surface));
 }
 
 /* The one marker a folder-derived shelf carries, over the plate's top-right:
