@@ -465,21 +465,23 @@ The split is IO on one side and decisions on the other, and the wire between the
 ### Order, in one place
 
 `features::library::content` derives the visible list once — shelf narrows, sort orders, query
-filters last — and provides it as `ShelfOrder`, alongside the one `DropTarget` signal both views
-draw their insertion markers from. A card cannot work out its own index from the DOM without
-counting siblings, which would be a second definition of the order; a drop that lands "before this
-card" therefore asks the same signal the grid rendered from.
+filters last — and provides it as `ShelfOrder`. A card cannot work out its own index from the DOM
+without counting siblings, which would be a second definition of the order; a drop that lands
+"before this card" therefore asks the same function the grid rendered from, and the two layouts
+cannot disagree about where "here" is because neither of them owns the answer.
 
-A drag is only offered while the order is the manual one (`library_core::view::LibraryView::drag_reorders`),
-because a shelf sorted by title re-sorts on the next render and would undo the drop before the
-reader saw it land.
+A drop is only given a position while the order is the manual one
+(`library_core::view::LibraryView::drag_reorders`), because a shelf sorted by title re-sorts on the
+next render and would undo the drop before the reader saw it land. A sorted shelf still accepts the
+drop; it appends rather than promising a slot it cannot keep.
 
 ### A shelf is a level, not a row
 
 `Shelf::parent` makes the shelves a forest: the root level is the shelves with no parent, and a level
 inside one is `library_core::shelf::children_of` on its id. `features::library::content` derives both
 halves of the page once — `ShelfOrder` for the books and `FolderOrder` for the shelves at this level —
-and provides them beside the single `DropTarget` both views draw their markers from.
+and provides them to both layouts, so the grid, the list, the selection bar's "All" and the drop that
+lands among them are all counting the same level.
 
 The grid renders a folder as a cell of the same grid the books are cells of, which is the whole of
 what makes nesting drawable: the shelf tile this replaced spanned the grid to read as a row *of*
@@ -516,16 +518,54 @@ press and locked until the pointer is released: the hold timer firing wins, or t
 travelling past a 6px threshold wins, or neither happening before release means it was a tap.
 Travelling past the threshold while nothing is draggable is its own fourth answer rather than a tap,
 because on a touch surface that movement is a scroll and opening the card the reader scrolled past is
-exactly the surprise the wrapper exists to prevent. `DraggableItemOptions` is the policy — which of
-the two a card allows, and what each means — and `DraggableItemHandle` is the four pointer handlers,
-the two flags a card paints itself from, and the one-shot probes that swallow the `click` and the
-synthetic `contextmenu` a completed hold generates.
+exactly the surprise the wrapper exists to prevent — which is why a finger is never a drag at all,
+whatever the caller allows. `DraggableItemOptions` is the policy — which of the two a card allows,
+and what each means — and `DraggableItemHandle` is the four pointer handlers, the one flag a card
+paints itself from, and the one-shot probes that swallow the `click` and the synthetic `contextmenu`
+a completed hold generates.
 
-The wrapper decides the *pointer* half only. Filing still travels over the browser's own
-drag-and-drop, because that is what carries a payload between windows and what the app's file-drop
-overlay already knows how to stand aside for. One consequence is worth knowing: a `dragover` runs
-with the drag data store protected, so `getData` answers with an empty string until the drop. A
-target that read the payload to decide whether to claim the dragover would decide "not mine" on
-every engine that enforces that, and an unclaimed dragover is a `drop` that never fires — so
-`features::library::drag` asks the type list, which is not protected, and reads the payload on the
-drop where it can.
+The wrapper decides *which* gesture a press was and stops there. What a movement then does belongs to
+the caller, and on the shelf that is a session rather than a browser drag.
+
+### What a drop means
+
+Nothing in the library rides the browser's own drag-and-drop, and the reason is not taste. Once the
+engine takes a drag over, `pointerup` never reaches the element the press began on, so the card's own
+"being held" flag had no release to clear it and the card stayed faded until a click somewhere else
+dismissed the selection it had turned on. Two more things a browser drag cannot do at any price
+decided it as well: it will not report how *long* a drag has hovered a target, which is the whole of
+the fold gesture, and its image is one bitmap of the one element the press started on, so a set of
+four books drags as whichever was pressed.
+
+`features::library::dnd` is the replacement, in four pieces that each answer one question:
+
+- `features::library::dnd::controller` owns the session: the `DragPayload` a press picked up, the
+  pointer's coordinates, the target under it, and the single `end` that a release, a cancellation and
+  an Escape all arrive at. A drag that cannot be stuck is a drag whose every exit goes through one
+  function. Its listeners live on `window` and only while a session is live, which is what lets a
+  card unmount mid-drag — a focus rescan filing it elsewhere — without taking the drag's release with
+  it.
+- `features::library::dnd::target` is the registry. Targets register themselves on mount and leave on
+  unmount, and a move hit-tests the registry against coordinates instead of counting `dragenter` and
+  `dragleave` boundaries. Boxes are read at hit-test time, so a shelf that scrolled between two moves
+  is hit where it is rather than where it was.
+- `features::library::dnd::effect` is the decision table: what is held, what is under the pointer and
+  how long it has been there go in, and one `DropEffect` comes out. It has no DOM and no signals in
+  it, which is why it is the piece with the unit tests and why a refusal is a value rather than an
+  absence — a folder that would close a loop says no before the pointer arrives, so the ring that
+  would have promised the drop is never drawn.
+- `features::library::dnd::commit` is the only place an effect touches state, and it touches it
+  through the services a menu row uses, so a dragged book persists and keeps its cover exactly as a
+  filed one does.
+
+What a press picks up is the set's business rather than the gesture's: `features::library::selection`'s
+`payload_for` answers "the whole selection when this card is in it, this card alone when it is not",
+which is the rule that makes a bulk move one gesture. The visible half of that is a fade on every held
+card and a ghost of their covers — four tiles at most, fanned, with a count badge for the rest — drawn
+by `features::library::dnd::layer` above the content and below the sheets.
+
+Resting over a book while holding two or more items arms a fold after 650ms, and the drag's ghost
+becomes a folder card's own plate filling in: one lit cell per item the new shelf would hold and a `+`
+in the next. The dwell is longer than the hold that starts a selection on purpose — a reader crossing
+a shelf rests over cards, and a fold that armed at the hold's tuning would offer a new shelf on every
+drag that happened to slow down.

@@ -20,8 +20,16 @@
 //! stroke on a page answers to, so holding a book and holding a highlight are one
 //! idea rather than two that happen to feel alike.
 //!
+//! The movement is the one the card does not own. It hands the press to
+//! `crate::features::library::dnd` and takes its two visible halves back from
+//! there: a fade while it is one of the items being held, and either an insertion
+//! line or a fold's ring while it is the thing under the pointer. Registering as a
+//! target is one call and leaving is the card's own unmount, so a shelf the reader
+//! scrolled or drilled through carries no targets that are not on screen.
+//!
 //! Feature-local on purpose: it understands [`Book`], cover persistence, the open
-//! flow and the drag payload, and none of those belong in a primitive.
+//! flow and what a press on this card picks up, and none of those belong in a
+//! primitive.
 
 use std::rc::Rc;
 
@@ -34,11 +42,12 @@ use crate::components::primitives::interactions::draggable_item::{
     DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
 };
 use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
-use crate::features::library::drag::{self, DropTarget, ShelfOrder};
+use crate::features::library::dnd::controller::DragController;
+use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::remove_modal::RemoveSheet;
-use crate::features::library::selection::{enter_selection, toggle_selected};
+use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
 use crate::services::document;
-use crate::services::library::{move_to_shelf, relink_dialog};
+use crate::services::library::relink_dialog;
 use crate::state::AppState;
 use crate::state::reader::DEFAULT_PAGE_ASPECT;
 
@@ -49,9 +58,8 @@ use crate::state::reader::DEFAULT_PAGE_ASPECT;
 /// view separately.
 #[component]
 pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
-    let order = use_context::<ShelfOrder>().expect("the library content provides the order");
-    let drop_target = use_context::<DropTarget>().expect("the library content provides the target");
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
     // Selection is a page-wide mode, so every card asks the same two signals rather
     // than being told about itself.
@@ -103,13 +111,17 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     let press_id = id.clone();
     let tap_id = id.clone();
     let tap_path = path.clone();
+    let lift_id = id.clone();
     let item = use_draggable_item(DraggableItemOptions {
         press_ms: SELECT_PRESS_MS,
         drag_threshold_px: DRAG_THRESHOLD_PX,
-        // While a set is selected the pointer is choosing, not filing.
-        draggable: Signal::derive(move || !selecting.get()),
-        // And a hold inside a selection would be a second way to do the thing a
-        // tap now does.
+        // A movement is always a drag here. It used to be off while a set was
+        // selected, on the reasoning that the pointer was choosing rather than
+        // filing — which is the reasoning that made a selection undraggable, and
+        // lifting one of three held books is the whole of what a multi-drag is.
+        draggable: Signal::derive(|| true),
+        // A hold inside a selection would be a second way to do the thing a tap
+        // now does.
         selectable: Signal::derive(move || !selecting.get()),
         on_tap: Callback::new(move |_| {
             if selecting.get_untracked() {
@@ -119,24 +131,38 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             document::open_path(state, tap_path.clone());
         }),
         on_long_press: Callback::new(move |_| enter_selection(state, &press_id)),
-        on_drag_start: Callback::new(move |_| {
-            // The pointer has committed to a move, so the insertion line under
-            // it belongs to the drag that has just ended rather than to this one.
-            drop_target.0.set(None);
+        on_drag_start: Callback::new(move |(x, y)| {
+            // What the press picks up: the whole set when this card is already in
+            // it, and this card alone when it is not.
+            drag.begin(payload_for(state, &lift_id), x, y);
         }),
-        // The browser's own drag carries the payload and the coordinates; this
-        // half only decided that a movement meant "drag" and not "hold".
+        // The session owns the move. Its listeners are on the window rather than
+        // on this element, so a card that unmounts mid-drag — a focus rescan
+        // filing this book somewhere else while the reader is holding it — leaves
+        // a drag that can still end.
         on_drag_move: Callback::new(move |_| {}),
-        on_drag_end: Callback::new(move |_| drop_target.0.set(None)),
+        // Both halves end the session and the first one there wins: this release
+        // bubbles ahead of the window's own.
+        on_drag_end: Callback::new(move |(x, y)| drag.release(x, y)),
+        on_drag_cancel: Callback::new(move |_| drag.cancel()),
     });
     let pressing = item.pressing;
-    let dragging = item.dragging;
     let on_down = Rc::clone(&item.on_pointerdown);
     let on_move = Rc::clone(&item.on_pointermove);
     let on_up = Rc::clone(&item.on_pointerup);
     let on_cancel = Rc::clone(&item.on_pointercancel);
     let swallow_click = Rc::clone(&item.swallow_click);
     let swallow_context = Rc::clone(&item.swallow_context);
+
+    // A target as well as a payload: a drop here lands the held items at this
+    // book's place in the level, and a rest here while holding two or more offers
+    // to fold them into a new shelf beside it. Registered for the life of the
+    // card, which is the life of its box on screen.
+    let dom_id = format!("book-{}", id);
+    drag.registry.register(DropTargetEntry {
+        id: DropTargetId(DropTargetKind::Book, id.clone()),
+        dom_id: dom_id.clone(),
+    });
 
     // A right-click is the shelf's answer to a stroke's remove menu: it asks, and
     // the sheet that answers is the same one the card's own ✕ opens. Inside
@@ -192,14 +218,11 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         relink_dialog(state, relink_id.clone());
     };
 
-    let dom_id = format!("book-{}", id);
     let reveal_id = id.clone();
     let aria_id = id.clone();
-    let drag_id = id.clone();
-    let hover_id = id.clone();
-    let leave_id = id.clone();
+    let held_id = id.clone();
     let over_id = id.clone();
-    let drop_id = id.clone();
+    let fold_id = id.clone();
     let cover_title = title.clone();
     let alt_title = title.clone();
     let meta_title = title.clone();
@@ -220,20 +243,17 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                         .is_some_and(|(id, _)| id == reveal_id.as_str())
                 })
             })
-            class=("book-drop-before", move || {
-                drop_target
-                    .0
-                    .with(|t| t.as_deref() == Some(over_id.as_str()))
-            })
+            class=("book-drop-before", move || drag.inserts_before(&over_id))
+            class=("book-fold-here", move || drag.folds_with(&fold_id))
             class=("book-missing", missing)
             class=("book-selected", move || is_selected.get())
             class=("book-pressing", move || pressing.get())
-            class=("book-dragging", move || dragging.get())
+            // Every held card fades, not only the one the press began on: the set
+            // the reader picked up has to stay readable as a set while the pointer
+            // carries it, and only the session knows which cards that is.
+            class=("book-dragging", move || drag.holds(&held_id))
             role="button"
             tabindex="0"
-            // Dragging files one card on a shelf; while a set is selected the
-            // pointer is choosing, not filing.
-            draggable=move || if selecting.get() { "false" } else { "true" }
             aria-label=move || {
                 if selecting.get() {
                     format!("Select {aria_title}")
@@ -264,44 +284,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             }
             on:contextmenu=on_context
             on:keydown=on_key
-            on:dragstart=move |ev| drag::begin(&ev, &drag_id)
-            on:dragend=move |_| drop_target.0.set(None)
-            on:dragover=move |ev| {
-                // A book only: the line this card draws is an index in a list of
-                // books, and offering it to a shelf being nested would promise a
-                // position this drop does not honour.
-                if drag::accepts_book(&ev) {
-                    drop_target.0.set(Some(hover_id.clone()));
-                }
-            }
-            on:dragleave=move |_| {
-                // Only clear our own line: the card being entered has already
-                // written itself, and undoing that here would leave no marker at
-                // all for the frame between the two events.
-                drop_target.release(&leave_id);
-            }
-            on:drop=move |ev| {
-                ev.prevent_default();
-                ev.stop_propagation();
-                drop_target.0.set(None);
-                let Some(dragged) = drag::dragged(&ev) else {
-                    return;
-                };
-                // Dropping on a card means "put it here", which is an index in
-                // the order the reader is looking at — and only means anything
-                // while that order is the manual one.
-                let manual = state.library.view.with_untracked(|v| v.drag_reorders());
-                let index = manual.then(|| {
-                    order
-                        .0
-                        .with_untracked(|list| {
-                            list.iter().position(|b| b.id == drop_id)
-                        })
-                        .unwrap_or(0)
-                });
-                let shelf = state.library.shelf.get_untracked();
-                move_to_shelf(state, dragged, Some(shelf.clone()), shelf, index);
-            }
         >
             <div class="book-cover-wrap">
                 <div
@@ -341,11 +323,18 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                         {
                             Some(c) => {
                                 view! {
+                                    // Not draggable, and the reason is the whole
+                                    // of this card's gesture: an image is natively
+                                    // draggable, so a press on the cover would hand
+                                    // the pointer to the engine's own drag, which
+                                    // is the drag this shelf no longer uses and the
+                                    // one that used to swallow the release.
                                     <img
                                         class="book-cover-img"
                                         src=c.data_url.clone()
                                         alt=alt_title.clone()
                                         loading="lazy"
+                                        draggable="false"
                                     />
                                 }
                                     .into_any()

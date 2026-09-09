@@ -314,6 +314,13 @@ the filesystem.
   board, with the subfolder's name above it and a count beside it; clicking drills in, and the
   breadcrumb is the way back. Filing a book is a drag from a card to a shelf or to another card, and
   the only thing a drop edits is an ordered list of ids.
+- **One drag, and it is the app's own.** Nothing on the shelf rides the browser's drag-and-drop: a
+  press that moves becomes a session that knows what it is holding, where the pointer is and which
+  target is under it, so a drag can carry a whole selection at once with a ghost of their covers,
+  can be dropped on a breadcrumb crumb to file onto a level you are not looking at, and can be
+  folded into a new shelf by resting over a book for a moment — which is a gesture the browser's
+  drag cannot report, because it never says how long a hover lasted. Escape puts everything back,
+  and a card that fades while held always fades back.
 - **The view is a set of knobs, not a set of modes.** Grid or list, Auto or two to ten columns,
   covers fitted to their own aspect ratio or cropped to A4, and a sort by manual order, title,
   author, date added or last read. Titles sort with their volume numbers as numbers, so "Volume 2"
@@ -560,7 +567,9 @@ src/
                           search, view menu), the grid and the list, book cards
                           and the folder cards a shelf nests in, the two ways in
                           (add card, empty state) and the sheet they open, the
-                          import dock, and the drag payloads both views share
+                          import dock, and the drag both views share (the
+                          session, its targets, the table that decides what a
+                          drop means, and the layer that draws it)
     reader/               the reader page and its two virtualizers
   state/                  the reactive state tree: app (chrome + UI), reader
                           (document, viewer, zoom, search, gloss, AI selection),
@@ -654,8 +663,8 @@ styles/
   textures.css, noise.css texture modes, and the grain overlay + its crawl
   library.css             the bookshelf: book cards and their frames, folder
                           cards and their cover plates, the list rows, the
-                          import dock's ring, the drag markers and the drag
-                          overlay
+                          import dock's ring, the drop markers and the drag
+                          layer a held set is carried in
   components/             shell, title bar, animations, ai, gloss, appearance,
                           thumbnails, pdf.js's text layer, and the search-hit
                           box both format families share

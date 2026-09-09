@@ -16,12 +16,18 @@
 //! Three gestures share the card and one wrapper decides between them — see
 //! `crate::components::primitives::interactions::draggable_item`. A tap opens
 //! the shelf, a hold starts a multi-select with this shelf already in it, and a
-//! drag files a book dropped on it or nests a shelf dropped on it.
+//! movement hands the press to `crate::features::library::dnd`, which is what
+//! files a book dropped on it or nests a shelf dropped on it.
 //!
 //! The one card that does not drag is a shelf cut from a watched folder: its rung
 //! in the library is the rung its directory has on disk, re-hung on every scan, so
 //! a hand-move would be a promise the next rescan breaks. It still opens, still
 //! selects, and still takes the books and virtual shelves dropped on it.
+//!
+//! A drop this folder refuses — a shelf that would end up inside itself — wears no
+//! ring at all, which is the honest half of the gesture: the decision table says
+//! no before the pointer gets there, so the reader is never offered a drop that
+//! the commit step would then quietly decline.
 
 use std::rc::Rc;
 
@@ -29,15 +35,15 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
-use library_core::shelf::{ALL_SHELF, Shelf, can_nest, children_of};
+use library_core::shelf::{Shelf, children_of};
 
 use crate::components::primitives::interactions::draggable_item::{
     DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
 };
 use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
-use crate::features::library::drag::{self, DropTarget};
-use crate::features::library::selection::{enter_selection, toggle_selected};
-use crate::services::library::{move_to_shelf, nest_shelf};
+use crate::features::library::dnd::controller::DragController;
+use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
+use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
 use crate::state::AppState;
 
 /// How many cells a plate has, and the most it fills. Two by two: a folder is
@@ -45,7 +51,12 @@ use crate::state::AppState;
 /// nobody reads — the line under the name is the answer to "how much". Always
 /// four cells whatever the folder holds, so one book is one cover and three
 /// hatched quarters rather than one big rectangle that reads as a book card.
-const THUMB_CAP: usize = 4;
+///
+/// Shared with the fold preview a drag draws
+/// (`crate::features::library::dnd::layer`), because that preview is a promise
+/// about this plate and a promise drawn with a different number of cells is a
+/// promise about a folder the library does not have.
+pub(crate) const THUMB_CAP: usize = 4;
 
 /// The deepest plate the preview recurses to: the folder's own plate, the plates
 /// of the folders inside it, and the plates of the folders inside those. Deeper
@@ -54,7 +65,7 @@ const PLATE_DEPTH: usize = 2;
 
 #[component]
 pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
-    let drop_target = use_context::<DropTarget>().expect("the library content provides the target");
+    let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
     // The prop is the shelf the `For` keyed this row on, and a keyed row is not
     // re-created when the shelf's CONTENTS change — a book filed into it, a
@@ -125,14 +136,16 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     // One wrapper, three gestures, and the mode is decided once per press.
     let hold_id = id.clone();
     let tap_id = id.clone();
+    let lift_id = id.clone();
     let item = use_draggable_item(DraggableItemOptions {
         press_ms: SELECT_PRESS_MS,
         drag_threshold_px: DRAG_THRESHOLD_PX,
-        // While a set is selected the pointer is choosing, not filing; and a
-        // shelf the disk places is not one the pointer gets to place.
-        draggable: Signal::derive(move || !selecting.get() && !disk_bound.get()),
-        // And a hold inside a selection would be a second way to do the thing a
-        // tap now does.
+        // A shelf the disk places is not one the pointer gets to place. A set
+        // being selected is not a reason to refuse: lifting one of three held
+        // folders is the whole of what a multi-drag is.
+        draggable: Signal::derive(move || !disk_bound.get()),
+        // A hold inside a selection would be a second way to do the thing a tap
+        // now does.
         selectable: Signal::derive(move || !selecting.get()),
         on_tap: Callback::new(move |_| {
             if selecting.get_untracked() {
@@ -142,18 +155,16 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             state.library.shelf.set(tap_id.clone());
         }),
         on_long_press: Callback::new(move |_| enter_selection(state, &hold_id)),
-        on_drag_start: Callback::new(move |_| {
-            // The pointer has committed to a move, so the marker under it
-            // belongs to the drag that has just ended rather than to this one.
-            drop_target.0.set(None);
+        on_drag_start: Callback::new(move |(x, y)| {
+            drag.begin(payload_for(state, &lift_id), x, y);
         }),
-        // The browser's own drag carries the payload and the coordinates; this
-        // half only decided that a movement meant "drag" and not "hold".
+        // The session owns the move; see `crate::features::library::book_card`
+        // for why its listeners are on the window rather than on the card.
         on_drag_move: Callback::new(move |_| {}),
-        on_drag_end: Callback::new(move |_| drop_target.0.set(None)),
+        on_drag_end: Callback::new(move |(x, y)| drag.release(x, y)),
+        on_drag_cancel: Callback::new(move |_| drag.cancel()),
     });
     let pressing = item.pressing;
-    let dragging = item.dragging;
     let on_down = Rc::clone(&item.on_pointerdown);
     let on_move = Rc::clone(&item.on_pointermove);
     let on_up = Rc::clone(&item.on_pointerup);
@@ -161,18 +172,22 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let swallow_click = Rc::clone(&item.swallow_click);
     let swallow_context = Rc::clone(&item.swallow_context);
 
-    let over_marker = DropTarget::folder(&id);
-    let drag_marker = over_marker.clone();
-    let leave_marker = over_marker.clone();
-    let start_id = id.clone();
+    // A target as well as a payload: a drop here files the held books on this
+    // shelf and nests the held folders inside it, unless doing that would close a
+    // loop — which the session asks `library_core::shelf::can_nest` before the
+    // pointer ever arrives, so a refused drop wears no ring.
+    let dom_id = format!("folder-{}", id);
+    drag.registry.register(DropTargetEntry {
+        id: DropTargetId(DropTargetKind::Folder, id.clone()),
+        dom_id: dom_id.clone(),
+    });
+
     let context_id = id.clone();
     let over_id = id.clone();
-    let nest_id = id.clone();
-    let drop_id = id.clone();
+    let held_id = id.clone();
     let key_id = id.clone();
     let hold_key_id = id.clone();
     let pressed_id = id.clone();
-    let dom_id = format!("folder-{}", id);
 
     view! {
         <div
@@ -180,22 +195,10 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             class="folder-card"
             class=("folder-selected", move || is_selected.get())
             class=("folder-pressing", move || pressing.get())
-            class=("folder-dragging", move || dragging.get())
-            class=("folder-drag-over", move || {
-                drop_target.0.with(|at| at.as_deref() == Some(over_marker.as_str()))
-            })
+            class=("folder-dragging", move || drag.holds(&held_id))
+            class=("folder-drag-over", move || drag.nests_into(&over_id))
             role="button"
             tabindex="0"
-            // Dragging files this shelf one level deeper; while a set is selected
-            // the pointer is choosing, and a shelf the disk places is not one the
-            // pointer gets to place.
-            draggable=move || {
-                if selecting.get() || disk_bound.get() {
-                    "false"
-                } else {
-                    "true"
-                }
-            }
             aria-label=move || {
                 let shown = name.get();
                 if selecting.get() {
@@ -257,53 +260,6 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                     return;
                 }
                 state.library.shelf.set(key_id.clone());
-            }
-            on:dragstart=move |ev| drag::begin_folder(&ev, &start_id)
-            on:dragend=move |_| drop_target.0.set(None)
-            on:dragover=move |ev| {
-                // A book is always welcome. A shelf is welcome unless filing it
-                // here would put it inside itself — and while the drag data
-                // store is protected the payload cannot be read, so the drop is
-                // the half that refuses what the cursor could not.
-                if drag::accepts_book(&ev) {
-                    drop_target.0.set(Some(drag_marker.clone()));
-                    return;
-                }
-                let refused = drag::dragged_folder(&ev).is_some_and(|moved| {
-                    let shelves = state.library.shelves.get_untracked();
-                    // A shelf the disk places is not offered a drop here: the nest
-                    // would be refused, and a cursor that promises what the drop
-                    // cannot do is a lie with a drag image.
-                    let disk_bound = shelves
-                        .iter()
-                        .find(|s| s.id == moved)
-                        .is_none_or(|s| s.is_folder());
-                    disk_bound || !can_nest(&shelves, &moved, &over_id)
-                });
-                if refused {
-                    return;
-                }
-                if drag::accepts_folder(&ev) {
-                    drop_target.0.set(Some(drag_marker.clone()));
-                }
-            }
-            on:dragleave=move |_| drop_target.release(&leave_marker)
-            on:drop=move |ev| {
-                ev.prevent_default();
-                ev.stop_propagation();
-                drop_target.0.set(None);
-                let from = state.library.shelf.get_untracked();
-                let source = (from != ALL_SHELF).then_some(from);
-                if let Some(book_id) = drag::dragged(&ev) {
-                    move_to_shelf(state, book_id, source, drop_id.clone(), None);
-                    return;
-                }
-                // `nest_shelf` asks `can_nest` again: the dragover could not
-                // always read the payload, and a drop that closed a loop would
-                // leave a folder no level renders.
-                if let Some(moved) = drag::dragged_folder(&ev) {
-                    nest_shelf(state, &moved, Some(nest_id.as_str()));
-                }
             }
         >
             <div class="folder-thumb-grid">
@@ -472,11 +428,15 @@ fn CoverCell(state: AppState, book: Book) -> impl IntoView {
                 {
                     Some(cover) => {
                         view! {
+                            // Not natively draggable; see `book_card`. A plate is
+                            // four of these, and any one of them taking the pointer
+                            // would take it away from the folder's own gesture.
                             <img
                                 class="folder-thumb-img"
                                 src=cover.data_url.clone()
                                 alt=alt.clone()
                                 loading="lazy"
+                                draggable="false"
                             />
                         }
                             .into_any()

@@ -26,6 +26,12 @@
 //! keys: Shift+Enter on a card enters selection with that card in it, and Enter
 //! inside selection toggles. The mode is reachable without a pointer, which is the
 //! only reason a bulk action on this shelf is not a mouse-only feature.
+//!
+//! A drag picks the set up rather than starting one — see [`payload_for`]. The
+//! bar's "Add to shelf" is the deliberate half of a bulk move and a drag is the
+//! quick half, and the two have to agree about what "the selection" is holding or
+//! a reader who lifts three books and drops them on a folder gets something other
+//! than what the bar said they had.
 
 use std::collections::HashSet;
 
@@ -43,7 +49,8 @@ use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::overlay::action_bar::ActionBar;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
-use crate::features::library::drag::{FolderOrder, ShelfOrder};
+use crate::features::library::content::{FolderOrder, ShelfOrder, visible};
+use crate::features::library::dnd::controller::DragPayload;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::library::{create_shelf, file_many, nest_many};
 use crate::state::AppState;
@@ -109,6 +116,74 @@ fn selected_folders(state: AppState) -> Vec<String> {
             .filter(|id| shelves.iter().any(|s| &s.id == id))
             .collect()
     })
+}
+
+/// What a press on `item_id` picks up: the whole set when the card is already in
+/// it, and that card alone when it is not.
+///
+/// The rule a file manager teaches and the one that makes a selection worth
+/// having — holding three books and lifting one of them lifts all three, while
+/// lifting a book nobody selected lifts that book and leaves the set the reader
+/// built alone. Telling the two apart is a question about the set rather than about
+/// the gesture, so it lives here with the rest of the set's rules and both layouts
+/// get the same answer.
+///
+/// Split into books and shelves on the way out, because the two halves of every
+/// move are different operations on one list: a book becomes a member and a shelf
+/// is nested.
+pub(crate) fn payload_for(state: AppState, item_id: &str) -> DragPayload {
+    if state
+        .library
+        .selected
+        .with_untracked(|selected| selected.contains(item_id))
+    {
+        return DragPayload {
+            books: in_page_order(state, selected_books(state)),
+            folders: selected_folders(state),
+        };
+    }
+    let folder = state
+        .library
+        .shelves
+        .with_untracked(|shelves| shelves.iter().any(|s| s.id == item_id));
+    if folder {
+        DragPayload {
+            books: Vec::new(),
+            folders: vec![item_id.to_string()],
+        }
+    } else {
+        DragPayload {
+            books: vec![item_id.to_string()],
+            folders: Vec::new(),
+        }
+    }
+}
+
+/// A set of books in the order the page is showing them.
+///
+/// The set is a set, and a set has no order — but a drop does: three books put
+/// down before a card land in whatever order the payload names them, and an order
+/// a hash iteration chose is an order the reader cannot predict. So the payload is
+/// sorted into the level's own order on the way out, which is the same order the
+/// drop counts its index in.
+///
+/// A book the page is NOT showing keeps its place at the end rather than being
+/// dropped: a search can narrow the level under a set that was picked before it,
+/// and a drag that silently lost a book would be a drag that removed one.
+fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
+    let mut ordered: Vec<String> = visible(state)
+        .into_iter()
+        .map(|book| book.id)
+        .filter(|id| ids.contains(id))
+        .collect();
+    // Collected before it is appended: a filter that read `ordered` while
+    // `extend` held it mutably would be two borrows of one list.
+    let rest: Vec<String> = ids
+        .into_iter()
+        .filter(|id| !ordered.contains(id))
+        .collect();
+    ordered.extend(rest);
+    ordered
 }
 
 /// File the selection on one shelf: the books become members and the folders are

@@ -523,6 +523,22 @@
   background: color-mix(in srgb, var(--color-surface) 72%, var(--color-paper));
 }
 
+/* The two cells a fold's preview lights, in the plate a drag carries
+   (`src/features/library/dnd/layer`). Filled is the accent's own tint rather than
+   a cover, because the shelf does not exist yet and has nothing to show; the next
+   cell holds the `+` that says the plate is still taking items, and the rest stay
+   the empty cell's recessed tone. One preview, three of a folder card's own
+   states, and no colours of its own. */
+.folder-thumb-fill {
+  background: color-mix(in srgb, var(--color-accent) 34%, var(--color-surface));
+}
+.folder-thumb-next {
+  display: grid;
+  place-items: center;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+}
+
 /* A folder deeper than the preview recurses: a few pixels of something is a
    smear, so it draws as what it is — a folder — on a quieter ground than the
    hatched empty cell, because "there is more in here" and "there is nothing
@@ -568,9 +584,6 @@
 }
 .folder-drag-over > .folder-thumb-grid {
   transform: translateY(-3px);
-}
-.folder-dragging {
-  opacity: 0.45;
 }
 
 /* ---------------------------------------------------------------------------
@@ -904,11 +917,137 @@
   opacity: 0.82;
 }
 
-/* The pointer half of a drag, between the moment the wrapper decides a movement
-   meant "drag" and the moment the browser's own drag takes the pointer away. */
+/* What a drag is holding. Every card in the payload fades and not only the one
+   the press began on, because the set the reader picked up has to stay readable
+   as a set while the pointer carries it — a single faded card and a ghost of four
+   covers is a ghost the shelf disagrees with. The class comes off on the release,
+   on the cancellation and on Escape alike, since all three end the one session in
+   `src/features/library/dnd` rather than three flags on three cards. */
 .book-dragging,
-.library-row-dragging {
+.library-row-dragging,
+.folder-dragging {
   opacity: 0.45;
+}
+
+/* ---------------------------------------------------------------------------
+   The drag layer: what the pointer is carrying, drawn by the session rather than
+   composited by the engine.
+
+   A browser drag image is one bitmap of the element the press started on, made
+   before the drag begins and unreachable from a stylesheet afterwards. This is a
+   view like any other, which is the only way three things become possible: a ghost
+   of all four covers a reader is holding, a plate that fills in as a fold brews,
+   and a layer that the theme's own tokens paint.
+   --------------------------------------------------------------------------- */
+.lib-drag-layer {
+  position: fixed;
+  z-index: var(--z-drag-overlay);
+  /* The ghost hangs from the pointer rather than being centred on it: a card is
+     picked up by its top-left and the reader's eye is above and to the right of
+     the cursor, so a centred ghost hides the target the drop is aiming at. */
+  transform: translate(-38%, -32%);
+  pointer-events: none;
+}
+.lib-drag-ghost {
+  position: relative;
+  width: 9rem;
+  aspect-ratio: 210 / 297;
+}
+/* One fanned tile per held item. The fan is a custom property written per tile,
+   so four covers read as four covers and not as one slightly thicker rectangle —
+   and the rotation is small enough that the topmost tile is still recognisable as
+   the book the reader pressed. */
+.lib-drag-tile {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 3px 6px 6px 3px;
+  background: var(--color-surface);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.22),
+    0 14px 30px -12px rgb(0 0 0 / 0.55);
+  transform: rotate(calc(var(--fan) * 2.4deg - 3.6deg))
+    translate(calc(var(--fan) * 7px), calc(var(--fan) * -6px));
+}
+.lib-drag-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* A shelf has no cover, so its tile is the folder's own answer to "what is in
+   here" at the size a tile has: the glyph the deep plate of a folder card draws
+   when a preview has run out of depth to keep going. */
+.lib-drag-folder {
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+}
+.lib-drag-letter {
+  font-size: 2.25rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+.lib-drag-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: var(--color-accent);
+  color: var(--color-paper);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+}
+
+/* The fold: the shelf a rest is about to make. A folder card's own plate and its
+   own four cells, so the preview is the thing that appears rather than a drawing
+   of it, with the label under it naming what the drop will do. */
+.lib-drag-fold {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 8.5rem;
+}
+.lib-drag-fold .folder-thumb-grid {
+  box-shadow:
+    inset 0 0 0 1px var(--plate-seam),
+    0 14px 30px -12px rgb(0 0 0 / 0.55);
+}
+.lib-drag-fold-label {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+/* A book that is the fold's partner wears the folder's ring rather than the
+   insertion line: the drop is about to make a shelf here, and a line at the edge
+   of the card would promise a position the drop does not honour. */
+.book-fold-here .book-cover-wrap {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 6px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+.row-fold-here {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+/* A crumb under a drag: the level the held items are about to go to, marked with
+   the accent under it rather than around it, because a crumb is a line of prose in
+   a bar and a ring around one would be a ring around a word. */
+.crumb-drop {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
 /* While choosing, the cards not in the set step back, and come forward again

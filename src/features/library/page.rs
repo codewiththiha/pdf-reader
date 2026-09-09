@@ -25,6 +25,8 @@ use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::features::library::breadcrumb::Breadcrumb;
 use crate::features::library::content::LibraryContent;
+use crate::features::library::dnd::controller::DragController;
+use crate::features::library::dnd::layer::DragLayer;
 use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
 use crate::features::library::progress_dock::ProgressDock;
 use crate::features::library::remove_modal::{RemoveBookModal, RemoveSheet};
@@ -38,6 +40,12 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // the bar and the traffic lights ask it like any page's do.
     let shell = ShellController::titlebar_only(state);
     provide_context(shell);
+
+    // The drag session, installed before anything that can be dragged: every
+    // card, row and crumb below reads it out of context, and the layer that draws
+    // what a drag is holding has to be a sibling of the content rather than a
+    // child of it, because a ghost inside a scrolling grid is a ghost that scrolls.
+    DragController::install(state);
 
     // The library is rail-less, so settings open straight from its title bar.
     let settings_open = RwSignal::new(false);
@@ -88,6 +96,10 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             <div class="relative h-full w-full overflow-hidden bg-paper text-ink">
                 <LibraryContent state=state />
             </div>
+            // Fixed and above the content, but below the sheets: a drag is over
+            // when a modal opens, and a ghost floating on top of a receipt would
+            // be a ghost of something the reader has already put down.
+            <DragLayer />
             <SettingsModal state=state open=settings_open />
             <ImportModal state=state sheet=sheet />
             <RemoveBookModal state=state sheet=remove_sheet />

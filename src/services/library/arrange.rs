@@ -26,39 +26,41 @@ use crate::services::library as wire;
 use crate::state::library::prune_covers;
 use crate::state::{AppState, Toast};
 
-/// Move a book: onto `to` at `index`, and off `from` when the two differ.
+/// Move books: onto `to` at `index`, and off `from` when the two differ.
+///
+/// A whole drag in one call, whatever it held. A drag of four books is one action
+/// from the reader's side, and the blob is written once for it — the rule
+/// [`purge_books`] gives for a bulk removal, for the same reason: a reader who
+/// closes the window halfway through a move should find all of it or none of it.
 ///
 /// Dropping on the root ([`ALL_SHELF`]) re-orders the library's own list rather
-/// than a shelf, because "All" IS that list and not a shelf holding a copy of
-/// it. `index` is `None` for "append", which is what a drop on empty space
-/// means.
+/// than a shelf, because "All" IS that list and not a shelf holding a copy of it.
+/// `index` is `None` for "append", which is what a drop on empty space means.
 ///
-/// Only ever called while the view is in its manual order: a shelf sorted by
-/// title re-sorts on the next render, so a drop there would be undone before the
-/// reader saw it land. `library_core::view::LibraryView::drag_reorders` is the
-/// question the grid asks before it makes a card draggable.
-pub fn move_to_shelf(
+/// `index` counts the level the reader pointed at BEFORE the lift, and the two
+/// placements below correct for the books the lift shifts left — a correction one
+/// book needs once and four books need together, because the second of them lands
+/// where the first one just was.
+///
+/// Only ever called with an index while the view is in its manual order: a shelf
+/// sorted by title re-sorts on the next render, so a drop there would be undone
+/// before the reader saw it land. `library_core::view::LibraryView::drag_reorders`
+/// is the question the drop asks before it names a position.
+pub fn move_many_to_shelf(
     state: AppState,
-    book_id: String,
+    book_ids: &[String],
     from: Option<String>,
     to: String,
     index: Option<usize>,
 ) {
+    if book_ids.is_empty() {
+        return;
+    }
     if to == ALL_SHELF {
-        state.library.books.update(|books| {
-            let Some(at) = books.iter().position(|b| b.id == book_id) else {
-                return;
-            };
-            let book = books.remove(at);
-            // Removing shifts the tail left, so an index past the book's old
-            // position is one lower than the reader pointed at.
-            let target = match index {
-                Some(i) if at < i => i - 1,
-                Some(i) => i,
-                None => books.len(),
-            };
-            books.insert(target.min(books.len()), book);
-        });
+        state
+            .library
+            .books
+            .update(|books| reorder_root(books, book_ids, index));
         crate::storage::persist_library(state.library);
         return;
     }
@@ -67,13 +69,117 @@ pub fn move_to_shelf(
         if let Some(from) = from.as_deref().filter(|id| *id != to)
             && let Some(shelf) = shelves.iter_mut().find(|s| s.id == from)
         {
-            shelf::forget(&mut shelf.books, &book_id);
+            for book_id in book_ids {
+                shelf::forget(&mut shelf.books, book_id);
+            }
         }
         if let Some(shelf) = shelves.iter_mut().find(|s| s.id == to) {
-            shelf::place(&mut shelf.books, &book_id, index);
+            place_many(&mut shelf.books, book_ids, index);
         }
     });
     crate::storage::persist_library(state.library);
+}
+
+/// Take books off a shelf without filing them anywhere else.
+///
+/// What a drop on the root crumb means from inside a shelf: the reader lifted
+/// them OUT, and the root is a level rather than a shelf, so there is no member
+/// list to move them to. The books stay in the library — a shelf holds ids and
+/// never held a byte — and the folder ledger is untouched, so a watched folder
+/// that placed one of them still has its fingerprint and will not offer it back
+/// on the next rescan.
+pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
+    if book_ids.is_empty() {
+        return;
+    }
+    let mut moved = false;
+    state.library.shelves.update(|shelves| {
+        let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {
+            return;
+        };
+        for book_id in book_ids {
+            moved |= shelf::forget(&mut shelf.books, book_id);
+        }
+    });
+    // A drop that changed nothing writes nothing: a reader who puts a book back
+    // where it was has not edited the library, and a save is a chance to close
+    // the window mid-write.
+    if moved {
+        crate::storage::persist_library(state.library);
+    }
+}
+
+/// Re-order the library's own list, which IS the "All" level.
+///
+/// Lifted out and put back in together rather than one at a time: each book's
+/// removal shifts the tail left, so moving four in sequence would have the second
+/// one's index mean something the first one's already changed.
+fn reorder_root(books: &mut Vec<Book>, book_ids: &[String], index: Option<usize>) {
+    let mut lifted: Vec<(usize, Book)> = book_ids
+        .iter()
+        .filter_map(|book_id| {
+            let was = books
+                .iter()
+                .position(|book| book.id.as_str() == book_id.as_str())?;
+            Some((was, books[was].clone()))
+        })
+        .collect();
+    if lifted.is_empty() {
+        return;
+    }
+    // Back to front, so the positions counted above are still true when they are
+    // removed.
+    let mut positions: Vec<usize> = lifted.iter().map(|(was, _)| *was).collect();
+    positions.sort_unstable_by_key(|was| std::cmp::Reverse(*was));
+    for was in positions {
+        books.remove(was);
+    }
+    let shift = index.map_or(0, |at| {
+        lifted.iter().filter(|(was, _)| *was < at).count()
+    });
+    // Put back in the order the reader held them, not the order the list did.
+    lifted.sort_by_key(|(_, book)| {
+        book_ids
+            .iter()
+            .position(|book_id| book_id.as_str() == book.id.as_str())
+            .unwrap_or(usize::MAX)
+    });
+    insert_many(books, lifted.into_iter().map(|(_, book)| book), index, shift);
+}
+
+/// Put `book_ids` on a member list at `index`, taking them off it first.
+///
+/// [`shelf::place`] for one book and this for a drag: `place` retains and inserts,
+/// which is the same two steps, and doing them per book would leave each one's
+/// index counting a list the last one had already changed.
+fn place_many(members: &mut Vec<String>, book_ids: &[String], index: Option<usize>) {
+    let shift = index.map_or(0, |at| {
+        book_ids
+            .iter()
+            .filter(|book_id| {
+                members
+                    .iter()
+                    .position(|member| member.as_str() == book_id.as_str())
+                    .is_some_and(|was| was < at)
+            })
+            .count()
+    });
+    for book_id in book_ids {
+        shelf::forget(members, book_id);
+    }
+    insert_many(members, book_ids.iter().cloned(), index, shift);
+}
+
+/// Insert `items` at `index`, less the `shift` the lift took off the front of it,
+/// and in order — each one after the last rather than each one at the same place,
+/// which would put them back reversed.
+fn insert_many<T>(list: &mut Vec<T>, items: impl Iterator<Item = T>, index: Option<usize>, shift: usize) {
+    let mut at = index.map_or(list.len(), |at| at.saturating_sub(shift));
+    for item in items {
+        at = at.min(list.len());
+        list.insert(at, item);
+        at += 1;
+    }
 }
 
 /// What a removal is allowed to take with it.

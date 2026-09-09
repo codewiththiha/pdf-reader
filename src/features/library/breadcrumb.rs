@@ -27,6 +27,13 @@
 //! and a closure that moved an id out of its environment on the first run has
 //! nothing left for the second. The way-back crumbs DO capture theirs, because
 //! "go to this level" is a fact about the crumb rather than about here.
+//!
+//! A crumb is a drop target for the same reason it is a way back: it is the one
+//! place on the page that names a level the reader is NOT looking at, so it is the
+//! only way to file something onto that level without first going there and finding
+//! the drag had ended. The root's `All` is a crumb like any other and its target
+//! carries an empty id, which is how the library spells "no shelf" — a drop there
+//! takes a book off whatever held it rather than putting it somewhere else.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -37,8 +44,27 @@ use library_core::shelf::{ALL_SHELF, Shelf, ancestors};
 use crate::components::primitives::form::text_input::TextInput;
 use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::features::library::dnd::controller::DragController;
+use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::services::library::{delete_shelf, rename_shelf};
 use crate::state::AppState;
+
+/// The element id of the root crumb, which stands for no shelf at all and so has
+/// no id of its own to be named after.
+const ALL_CRUMB_DOM_ID: &str = "crumb-all";
+
+/// Register a crumb as the target for `shelf_id`, which is empty for the root.
+///
+/// One call per crumb rather than a `NodeRef` and a rect reader, because a crumb's
+/// box is the one thing about it that cannot go stale unnoticed: the chain re-renders
+/// on a drill or a rename, and a target that outlived the crumb it belonged to would
+/// be a way to file books onto a level that is not on screen.
+fn register_crumb(drag: &DragController, shelf_id: &str, dom_id: String) {
+    drag.registry.register(DropTargetEntry {
+        id: DropTargetId(DropTargetKind::Shelf, shelf_id.to_string()),
+        dom_id,
+    });
+}
 
 /// One crumb: the level it stands for, what it is called right now, and whether
 /// the folder behind it is still watched.
@@ -125,27 +151,35 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
     let draft = RwSignal::new(String::new());
     let anchor: NodeRef<html::Div> = NodeRef::new();
     let at_root = Signal::derive(move || chain.get().is_empty());
+    let drag = use_context::<DragController>().expect("the library page installs the drag session");
+    register_crumb(&drag, "", ALL_CRUMB_DOM_ID.to_string());
 
     view! {
         <nav class="flex min-w-0 items-center gap-0.5 text-sm" aria-label="Library location">
-            <button
-                type="button"
-                title="The top level of the library"
-                on:click=move |_| state.library.shelf.set(ALL_SHELF.to_string())
-                class=move || {
-                    // The crumb that is not where you are reads as a way back, and
-                    // the one that is reads as a heading.
-                    let base = "shrink-0 rounded-md px-1.5 py-0.5 transition-colors \
-                                focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
-                    if at_root.get() {
-                        format!("{base} font-medium text-ink")
-                    } else {
-                        format!("{base} text-muted hover:bg-line hover:text-ink")
-                    }
-                }
+            <span
+                id=ALL_CRUMB_DOM_ID
+                class="flex min-w-0 shrink-0 items-center"
+                class=("crumb-drop", move || drag.over_shelf(""))
             >
-                "All"
-            </button>
+                <button
+                    type="button"
+                    title="The top level of the library"
+                    on:click=move |_| state.library.shelf.set(ALL_SHELF.to_string())
+                    class=move || {
+                        // The crumb that is not where you are reads as a way back, and
+                        // the one that is reads as a heading.
+                        let base = "shrink-0 rounded-md px-1.5 py-0.5 transition-colors \
+                                    focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+                        if at_root.get() {
+                            format!("{base} font-medium text-ink")
+                        } else {
+                            format!("{base} text-muted hover:bg-line hover:text-ink")
+                        }
+                    }
+                >
+                    "All"
+                </button>
+            </span>
             {move || {
                 let levels = chain.get();
                 let last = levels.len().saturating_sub(1);
@@ -158,6 +192,7 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
                             view! {
                                 <ShelfCrumb
                                     state=state
+                                    id=id
                                     name=name
                                     watched=watched
                                     anchor=anchor
@@ -188,9 +223,17 @@ fn LevelCrumb(state: AppState, id: String, name: String) -> impl IntoView {
     let label = name.clone();
     let tooltip = name.clone();
     let aria = format!("Go back to {name}");
+    let dom_id = format!("crumb-{id}");
+    let drag = use_context::<DragController>().expect("the library page installs the drag session");
+    register_crumb(&drag, &id, dom_id.clone());
+    let hot_id = id.clone();
 
     view! {
-        <span class="flex min-w-0 items-center gap-0.5">
+        <span
+            id=dom_id
+            class="flex min-w-0 items-center gap-0.5"
+            class=("crumb-drop", move || drag.over_shelf(&hot_id))
+        >
             <Icon name=IconName::Next size=13 class="shrink-0 text-muted" />
             <button
                 type="button"
@@ -212,9 +255,15 @@ fn LevelCrumb(state: AppState, id: String, name: String) -> impl IntoView {
 /// Its own component so the name arrives as an owned prop and the two states the
 /// crumb can be in are two views rather than one view with a branch inside a
 /// reactive child.
+///
+/// The `id` is the crumb's own level and is used for the one thing that is a fact
+/// about the crumb rather than about *here* — the drop target it registers, which
+/// is the same fact a way-back crumb's click carries. The menu's actions still ask
+/// which shelf the page is on when they run.
 #[component]
 fn ShelfCrumb(
     state: AppState,
+    id: String,
     name: String,
     watched: bool,
     anchor: NodeRef<html::Div>,
@@ -224,9 +273,17 @@ fn ShelfCrumb(
 ) -> impl IntoView {
     let tooltip = name.clone();
     let aria = format!("{name} shelf options");
+    let dom_id = format!("crumb-{id}");
+    let drag = use_context::<DragController>().expect("the library page installs the drag session");
+    register_crumb(&drag, &id, dom_id.clone());
+    let hot_id = id;
 
     view! {
-        <div class="flex min-w-0 items-center gap-0.5">
+        <div
+            id=dom_id
+            class="flex min-w-0 items-center gap-0.5"
+            class=("crumb-drop", move || drag.over_shelf(&hot_id))
+        >
             <Icon name=IconName::Next size=13 class="shrink-0 text-muted" />
             {move || {
                 if renaming.get() {

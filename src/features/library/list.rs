@@ -7,14 +7,20 @@
 //! here. A reader who switched to the denser layout has not thereby lost the way
 //! in, the way out, or the hold that starts a selection.
 //!
+//! A row is the same drop target a card is, and registers under the same kind: a
+//! book at one density and the same book at the other are one thing to a drag, and
+//! a session that had to be told which layout was showing would be a session that
+//! could only drop on the one the reader happened to be looking at.
+//!
 //! A row shows the author when the book has one and the resume point when it does
 //! not: at this density there is room for one line of prose and the reader gets to
 //! choose which by opening the book.
 //!
 //! Folders are NOT here, and were not before either: the shelf tile only ever
 //! rendered in the grid, so the dense layout has always been the books and the way
-//! in. The breadcrumb is the way around a folder from here, and a reader who wants
-//! to see the folders is a reader who wants the grid.
+//! in. The breadcrumb is the way around a folder from here — and, being a drop
+//! target too, the way to file onto a shelf from here — and a reader who wants to
+//! see the folders is a reader who wants the grid.
 
 use std::rc::Rc;
 
@@ -32,11 +38,12 @@ use crate::components::primitives::interactions::draggable_item::{
 };
 use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::add_menu::AddMenu;
-use crate::features::library::drag::{self, DropTarget, ShelfOrder};
+use crate::features::library::content::ShelfOrder;
+use crate::features::library::dnd::controller::DragController;
+use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::remove_modal::RemoveSheet;
-use crate::features::library::selection::{enter_selection, toggle_selected};
+use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
 use crate::services::document;
-use crate::services::library::move_to_shelf;
 use crate::state::AppState;
 
 #[component]
@@ -91,9 +98,8 @@ fn AddRow(state: AppState) -> impl IntoView {
 
 #[component]
 fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
-    let drop_target = use_context::<DropTarget>().expect("the library content provides the target");
-    let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
     let selecting = state.library.selecting;
     let selected_set = state.library.selected;
@@ -124,11 +130,14 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let press_id = id.clone();
     let tap_id = id.clone();
     let tap_path = path.clone();
+    let lift_id = id.clone();
     let item = use_draggable_item(DraggableItemOptions {
         press_ms: SELECT_PRESS_MS,
         drag_threshold_px: DRAG_THRESHOLD_PX,
-        // While a set is selected the pointer is choosing, not filing.
-        draggable: Signal::derive(move || !selecting.get()),
+        // A movement is always a drag here, including from inside a selection: a
+        // set that could not be lifted was a set the bar's "Add to shelf" was the
+        // only way to move.
+        draggable: Signal::derive(|| true),
         selectable: Signal::derive(move || !selecting.get()),
         on_tap: Callback::new(move |_| {
             if selecting.get_untracked() {
@@ -138,14 +147,16 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
             document::open_path(state, tap_path.clone());
         }),
         on_long_press: Callback::new(move |_| enter_selection(state, &press_id)),
-        on_drag_start: Callback::new(move |_| drop_target.0.set(None)),
-        // The browser's own drag carries the payload and the coordinates; this
-        // half only decided that a movement meant "drag" and not "hold".
+        on_drag_start: Callback::new(move |(x, y)| {
+            drag.begin(payload_for(state, &lift_id), x, y);
+        }),
+        // The session owns the move; see `crate::features::library::book_card` for
+        // why its listeners are on the window rather than on the row.
         on_drag_move: Callback::new(move |_| {}),
-        on_drag_end: Callback::new(move |_| drop_target.0.set(None)),
+        on_drag_end: Callback::new(move |(x, y)| drag.release(x, y)),
+        on_drag_cancel: Callback::new(move |_| drag.cancel()),
     });
     let pressing = item.pressing;
-    let dragging = item.dragging;
     let on_down = Rc::clone(&item.on_pointerdown);
     let on_move = Rc::clone(&item.on_pointermove);
     let on_up = Rc::clone(&item.on_pointerup);
@@ -153,18 +164,23 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     let swallow_click = Rc::clone(&item.swallow_click);
     let swallow_context = Rc::clone(&item.swallow_context);
 
+    // The same target a card registers, under the same id scheme: a book is one
+    // thing to a drag whatever density it is being shown at.
+    let dom_id = format!("book-{}", id);
+    drag.registry.register(DropTargetEntry {
+        id: DropTargetId(DropTargetKind::Book, id.clone()),
+        dom_id: dom_id.clone(),
+    });
+
     let context_id = id.clone();
     let key_id = id.clone();
     let aria_id = id.clone();
     let select_key_id = id.clone();
-    let dom_id = format!("book-{}", id);
     let reveal_id = id.clone();
     let remove_id = id.clone();
-    let drag_id = id.clone();
     let over_id = id.clone();
-    let hover_id = id.clone();
-    let leave_id = id.clone();
-    let drop_id = id.clone();
+    let fold_id = id.clone();
+    let held_id = id.clone();
     let alt_path = path.clone();
     let alt_title = title.clone();
     let row_title = title.clone();
@@ -181,18 +197,14 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                         .is_some_and(|(id, _)| id == reveal_id.as_str())
                 })
             })
-            class=("row-drop-before", move || {
-                drop_target
-                    .0
-                    .with(|t| t.as_deref() == Some(over_id.as_str()))
-            })
+            class=("row-drop-before", move || drag.inserts_before(&over_id))
+            class=("row-fold-here", move || drag.folds_with(&fold_id))
             class=("row-missing", missing)
             class=("library-row-selected", move || is_selected.get())
             class=("library-row-pressing", move || pressing.get())
-            class=("library-row-dragging", move || dragging.get())
+            class=("library-row-dragging", move || drag.holds(&held_id))
             role="button"
             tabindex="0"
-            draggable=move || if selecting.get() { "false" } else { "true" }
             aria-label=move || {
                 if selecting.get() {
                     format!("Select {row_label}")
@@ -249,33 +261,6 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                 }
                 document::open_path(state, path.clone());
             }
-            on:dragstart=move |ev| drag::begin(&ev, &drag_id)
-            on:dragend=move |_| drop_target.0.set(None)
-            on:dragover=move |ev| {
-                // A book only: the line this row draws is an index in a list of
-                // books, and the list has no folders in it to nest anything into.
-                if drag::accepts_book(&ev) {
-                    drop_target.0.set(Some(hover_id.clone()));
-                }
-            }
-            on:dragleave=move |_| drop_target.release(&leave_id)
-            on:drop=move |ev| {
-                ev.prevent_default();
-                ev.stop_propagation();
-                drop_target.0.set(None);
-                let Some(dragged) = drag::dragged(&ev) else {
-                    return;
-                };
-                let manual = state.library.view.with_untracked(|v| v.drag_reorders());
-                let index = manual.then(|| {
-                    order
-                        .0
-                        .with_untracked(|list| list.iter().position(|b| b.id == drop_id))
-                        .unwrap_or(0)
-                });
-                let shelf = state.library.shelf.get_untracked();
-                move_to_shelf(state, dragged, Some(shelf.clone()), shelf, index);
-            }
         >
             <span
                 class="library-row-cover"
@@ -301,11 +286,13 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                         .with(|covers| covers.get(&alt_path).cloned())
                         .map(|cover| {
                             view! {
+                                // Not natively draggable; see `book_card`.
                                 <img
                                     class="library-row-img"
                                     src=cover.data_url.clone()
                                     alt=alt_title.clone()
                                     loading="lazy"
+                                    draggable="false"
                                 />
                             }
                         })

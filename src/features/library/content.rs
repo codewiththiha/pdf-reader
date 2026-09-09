@@ -8,11 +8,16 @@
 //! nobody sees.
 //!
 //! This is also where the things the grid and the list share are provided: the
-//! order both render, the folders at this level, the one drop-target signal both
-//! draw their markers from, and the selection mode both toggle into. Deriving the
-//! order once here is what makes a drag between the two views impossible to get
-//! wrong — there is only one order — and it is what lets the selection bar's "All"
-//! mean everything on screen rather than everything in the library.
+//! order both render, the folders at this level, and the selection mode both
+//! toggle into. Deriving the order once here is what makes a drag between the two
+//! views impossible to get wrong — there is only one order — and it is what lets
+//! the selection bar's "All" mean everything on screen rather than everything in
+//! the library. It is also the order a drop names its position by, which is the
+//! reason [`visible`] is a function of the state and not a closure of a view: the
+//! page and the drag have to be counting the same thing.
+//!
+//! The empty space of this level is a drop target too, registered here rather
+//! than per view because there is one scroll container and two layouts inside it.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -27,13 +32,37 @@ use library_core::sort::{self, SortKey};
 use library_core::book::Book;
 
 use crate::components::primitives::feedback::CenteredLoader;
-use crate::features::library::drag::{DropTarget, FolderOrder, ShelfOrder};
+use crate::features::library::dnd::controller::DragController;
+use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::empty_state::EmptyState;
 use crate::features::library::grid::GridView;
 use crate::features::library::list::ListView;
 use crate::features::library::selection::{LibrarySelectBar, use_select_mode};
 use crate::services::library::backfill_missing;
 use crate::state::AppState;
+
+/// The id of the element a drag's empty space is: the level's own scroll
+/// container, which is the one box both layouts live in.
+const LEVEL_DOM_ID: &str = "library-level";
+
+/// The order the page is showing, so a drop on a card can name the index it
+/// landed at and so both layouts render one list rather than two that agree.
+///
+/// Provided here and read by the views, the selection bar and
+/// `crate::features::library::dnd::commit`; a card cannot work the index out from
+/// its own DOM without counting siblings, which is a second definition of the
+/// order.
+#[derive(Clone, Copy)]
+pub struct ShelfOrder(pub Signal<Vec<Book>>);
+
+/// The shelves the page is showing at this level, in the order it shows them.
+///
+/// Provided beside [`ShelfOrder`] and for the same reason: the grid renders the
+/// folders before the books, the selection bar's "All" has to mean everything on
+/// screen rather than everything in the library, and a card that derived the level
+/// itself would be a second answer to "what is here".
+#[derive(Clone, Copy)]
+pub struct FolderOrder(pub Signal<Vec<Shelf>>);
 
 /// How long a revealed card stays lit. Long enough to find with the eye after the
 /// scroll settles, short enough that it is a pointer and not a decoration.
@@ -109,6 +138,10 @@ fn scroll_may_animate(state: AppState) -> bool {
 
 /// The books the page shows, in the order it shows them.
 ///
+/// This is the order a drop counts, as well as the one both layouts render: a
+/// card lands "here" at an index in what the reader is looking at, and an index
+/// into any other list would be a position in a shelf nobody can see.
+///
 /// Four steps, and the sequence is the point: the level narrows the list, the
 /// view's sort orders it, and the query filters it LAST — so a search never
 /// re-orders anything and clearing one puts the shelf back exactly as it was. A
@@ -123,7 +156,7 @@ fn scroll_may_animate(state: AppState) -> bool {
 /// nested one wearing one page. A query is the one exception: searching from the
 /// root searches the LIBRARY, because a search that could not see inside folders
 /// would miss silently, and the matches it shows are the ones asked for.
-fn visible(state: AppState) -> Vec<Book> {
+pub(crate) fn visible(state: AppState) -> Vec<Book> {
     let view = state.library.view.get();
     let shelf_id = state.library.shelf.get();
     let books = state.library.books.get();
@@ -194,7 +227,16 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     provide_context(ShelfOrder(order));
     let folders = Signal::derive(move || visible_folders(state));
     provide_context(FolderOrder(folders));
-    provide_context(DropTarget(RwSignal::new(None)));
+    // The level's own empty space, registered before anything that sits in it:
+    // the registry hit-tests in reverse, so the cards a shelf mounts after this
+    // are found ahead of the space they stand on. One registration for both
+    // layouts, because there is one scroll container and the grid and the list are
+    // two things inside it.
+    let drag = use_context::<DragController>().expect("the library page installs the drag session");
+    drag.registry.register(DropTargetEntry {
+        id: DropTargetId(DropTargetKind::Level, String::new()),
+        dom_id: LEVEL_DOM_ID.to_string(),
+    });
     // The shelf asks for the covers it is missing whenever it is looked at. The
     // queue already skips what it has, so this reads as a question rather than a
     // command, and a render that failed for a second's reason — or a book that
@@ -272,7 +314,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
                     when=move || has_anything.get()
                     fallback=move || view! { <EmptyState state=state /> }
                 >
-                    <div class="min-h-0 flex-1 overflow-y-auto pt-12">
+                    <div id=LEVEL_DOM_ID class="min-h-0 flex-1 overflow-y-auto pt-12">
                         <div class="mx-auto w-full max-w-6xl px-6 py-8">
                             {move || {
                                 if is_list.get() {

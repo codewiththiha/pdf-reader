@@ -4,10 +4,13 @@
 //! carrying a document the reader can open. Two things used to fool it and
 //! are ruled out here —
 //!
-//!   * A drag that STARTED inside the window (a text selection, a page image,
-//!     a book card): both the DOM and Tauri report it as entering, and the
-//!     window's `dragstart`/`dragend` pair is what tells the two apart —
-//!     while it is open every enter is ignored.
+//!   * A drag that STARTED inside the window (a text selection, a page image):
+//!     both the DOM and Tauri report it as entering, and the window's
+//!     `dragstart`/`dragend` pair is what tells the two apart — while it is open
+//!     every enter is ignored. The library's own moves are not in that list and
+//!     never reach it: a book being filed rides pointer events end to end
+//!     (`crate::features::library::dnd`), so it raises no DOM `dragstart` for this
+//!     to stand aside from and cannot be mistaken for a document arriving.
 //!   * A drag of something else (a PNG, a folder, a URL): the DOM drag names
 //!     its items' kinds and MIME types up front, Tauri names the paths, and
 //!     each is checked against `reader_core::format` — the one registry of

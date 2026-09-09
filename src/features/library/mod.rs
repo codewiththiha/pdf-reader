@@ -3,7 +3,8 @@
 //!
 //! Grouped by what a reader does rather than by file count:
 //!
-//!   * [`page`] — the route: the title bar's three slots and the modal hosts
+//!   * [`page`] — the route: the title bar's three slots, the modal hosts, and the
+//!     drag session with the layer that draws what it is holding
 //!   * [`content`] — the state the page is in (opening, failed, shelf) and the one
 //!     order every view below it renders
 //!   * [`grid`] / [`list`] / [`folder_card`] / [`book_card`] — the shelf itself
@@ -14,7 +15,8 @@
 //!     on it
 //!   * [`progress_dock`] — the run's ring, in the corner
 //!   * [`view_menu`] / [`breadcrumb`] / [`titlebar_search`] — the bar's three jobs
-//!   * [`drag`] — what a card carries and what a target reads
+//!   * [`dnd`] — the drag that moves things: the session, the targets it can land
+//!     on, the table that decides what a drop means, and the overlay it draws
 //!
 //! A level of the library is the same shape at every depth: [`grid`] renders the
 //! folders filed at this level and then the books on it, and a folder card is one
@@ -23,14 +25,17 @@
 //!
 //! None of these decides anything: the rules live in `library_core` and the
 //! operations in `crate::services::library`, so a view here can be replaced
-//! without the library's behaviour moving with it.
+//! without the library's behaviour moving with it. [`dnd`] is the exception that
+//! proves the shape — it decides what a DROP means, which is a question about a
+//! gesture rather than about the library, and it hands the answer to the same
+//! services every menu row uses.
 
 pub mod add_card;
 pub mod add_menu;
 pub mod book_card;
 pub mod breadcrumb;
 pub mod content;
-pub mod drag;
+pub mod dnd;
 pub mod empty_state;
 pub mod folder_card;
 pub mod grid;

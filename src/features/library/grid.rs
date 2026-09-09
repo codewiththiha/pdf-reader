@@ -12,25 +12,26 @@
 //!
 //! The level itself — which folders and which books — arrives from
 //! `crate::features::library::content` as [`FolderOrder`] and [`ShelfOrder`],
-//! derived once for both views.
+//! derived once for both views. The grid itself is not a drop target and carries
+//! no drag handlers: the space a card is not standing on belongs to the level, and
+//! the level registers its own box once in [`content`] for both layouts to share.
+//!
+//! [`content`]: crate::features::library::content
 
 use leptos::prelude::*;
 
-use library_core::shelf::ALL_SHELF;
 use library_core::view::CoverFit;
 
 use crate::features::library::add_card::AddCard;
 use crate::features::library::book_card::BookCard;
-use crate::features::library::drag::{self, DropTarget, FolderOrder, ShelfOrder};
+use crate::features::library::content::{FolderOrder, ShelfOrder};
 use crate::features::library::folder_card::FolderCard;
-use crate::services::library::{move_to_shelf, nest_shelf};
 use crate::state::AppState;
 
 #[component]
 pub(crate) fn GridView(state: AppState) -> impl IntoView {
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
     let folders = use_context::<FolderOrder>().expect("the library content provides the folders");
-    let drop_target = use_context::<DropTarget>().expect("the library content provides the target");
     let crop = Signal::derive(move || state.library.view.with(|v| v.cover == CoverFit::Crop));
     let columns = Signal::derive(move || state.library.view.with(|v| v.columns_token()));
 
@@ -42,32 +43,6 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
             // should not run three hundred derivations to agree on that.
             class=("library-grid-selecting", move || state.library.selecting.get())
             style=move || format!("--lib-cols:{}", columns.get())
-            on:dragover=move |ev| {
-                // Empty space is a target too: dropping there appends a book to
-                // this level and un-nests a folder into it, and without a claim
-                // the cursor would say "no" over the gutters.
-                if drag::accept(&ev) {
-                    drop_target.0.set(None);
-                }
-            }
-            on:drop=move |ev| {
-                ev.prevent_default();
-                drop_target.0.set(None);
-                // "All" is not a shelf, so a drop at the root has no shelf to
-                // file out of and no shelf to file into — `move_to_shelf` reads
-                // the pseudo-shelf as "re-order the library's own list", and
-                // `nest_shelf` reads `None` as "the top level".
-                let at = state.library.shelf.get_untracked();
-                let inside = (at != ALL_SHELF).then_some(at);
-                if let Some(dragged) = drag::dragged(&ev) {
-                    let target = inside.clone().unwrap_or_else(|| ALL_SHELF.to_string());
-                    move_to_shelf(state, dragged, inside, target, None);
-                    return;
-                }
-                if let Some(moved) = drag::dragged_folder(&ev) {
-                    nest_shelf(state, &moved, inside.as_deref());
-                }
-            }
         >
             // Folders before books at every level: the doors out of this page are
             // the things a reader scans for first, and a folder that renders after

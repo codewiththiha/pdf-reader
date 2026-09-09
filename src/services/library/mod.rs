@@ -29,8 +29,8 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    PurgeOpts, also_show, create_shelf, delete_shelf, file_many, memberships, move_to_shelf,
-    nest_many, nest_shelf, new_shelf, purge_books, relink_dialog, rename_shelf,
+    PurgeOpts, also_show, create_shelf, delete_shelf, file_many, memberships, move_many_to_shelf,
+    nest_many, nest_shelf, new_shelf, purge_books, relink_dialog, rename_shelf, unfile_books,
 };
 pub use covers::backfill_missing;
 pub use reveal::reveal_book;
