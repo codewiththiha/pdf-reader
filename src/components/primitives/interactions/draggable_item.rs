@@ -235,10 +235,11 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                 return;
             }
             reset();
-            let Some(el) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else {
+            let Some(target) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            else {
                 return;
             };
-            if el.closest(OWNED_BY_A_CONTROL).ok().flatten().is_some() {
+            if target.closest(OWNED_BY_A_CONTROL).ok().flatten().is_some() {
                 return;
             }
             suppress_click.set_value(false);
@@ -255,7 +256,22 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
             // Capture, so the gesture survives the pointer drifting off a narrow
             // cover and so a drag's own stream keeps arriving here rather than at
             // whatever the pointer happens to be over.
-            let _ = el.set_pointer_capture(ev.pointer_id());
+            //
+            // Captured on the element the handler is BOUND to, not on the event's
+            // target. The target can be a cover `<img>` deep inside a card, and
+            // covers land asynchronously: a background render replacing the node
+            // under a captured press detaches the capture, and the browser
+            // answers with a `pointercancel` that kills the drag in its first
+            // frames — which is how a folder plate full of covers became the one
+            // thing on the shelf that could not be grabbed. The card or row
+            // itself is keyed by id and survives every reactive swap inside it.
+            // (`current_target` IS that element here: this app attaches its
+            // listeners directly, leptos's delegation feature being off.)
+            let host = ev
+                .current_target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                .unwrap_or(target);
+            let _ = host.set_pointer_capture(ev.pointer_id());
 
             if !selectable.get_untracked() {
                 return;
