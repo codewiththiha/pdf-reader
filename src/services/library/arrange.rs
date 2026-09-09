@@ -351,9 +351,11 @@ pub fn rename_shelf(state: AppState, shelf_id: &str, name: &str) {
 /// always to the root, so removing a folder three levels down leaves the reader
 /// two levels down and not at the top of the library.
 ///
-/// Only offered for a shelf the reader made. A folder's shelf is derived from the
-/// tree, so removing one would be undone by the next file that lands in it, and a
-/// control that appears to work and then does not is worse than no control.
+/// A folder's shelf is removable too, and the receipt says what that means: the
+/// shelf comes off the list and the folder keeps watching, so it returns if the
+/// folder ever places a book in it again. That is the honest reading of "watched"
+/// rather than a control that appears to work and then does not — the shelf map's
+/// pointer is cut here, so a returning shelf is a new shelf, not a ghost.
 pub fn delete_shelf(state: AppState, shelf_id: &str) {
     let was_inside = state.library.shelf.get_untracked() == shelf_id;
     let stepped_out = state
@@ -366,10 +368,27 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
                 .and_then(|gone| gone.parent.clone())
         })
         .unwrap_or_else(|| ALL_SHELF.to_string());
+    // The folder tree's own pointer at this shelf, cut as well. Left in place,
+    // a watched folder that places a book here again would file it onto a shelf
+    // that no longer exists — a ghost row the reader can neither see nor remove,
+    // and the one way a removal could lose a book rather than a shelf.
+    let detached = state.library.shelves.with_untracked(|shelves| {
+        shelves
+            .iter()
+            .find(|s| s.id == shelf_id)
+            .and_then(|s| s.kind.folder_id().map(str::to_string))
+    });
     state.library.shelves.update(|shelves| {
         shelf::lift_children(shelves, shelf_id);
         shelves.retain(|s| s.id != shelf_id);
     });
+    if let Some(folder_id) = detached {
+        state.library.folders.update(|folders| {
+            if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+                folder.shelf_map.retain(|_, sid| sid != shelf_id);
+            }
+        });
+    }
     if was_inside {
         state.library.shelf.set(stepped_out);
     }

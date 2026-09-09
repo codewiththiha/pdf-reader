@@ -15,9 +15,11 @@
 //! two halves are different operations on the same shelf list. Filing a book is
 //! membership; filing a folder is nesting, which `library_core::shelf::can_nest`
 //! refuses when it would close a loop. Removing goes through the receipt sheet a
-//! single removal uses, and the sheet is about BOOKS — a folder's removal costs
-//! nothing itemisable (its books stay in the library and its children move up a
-//! level), so it stays where it has always been, on the crumb that names it.
+//! single removal uses, and the sheet receipts both halves at once: a book's row
+//! itemises what it takes with it, a shelf's row says what SURVIVES it — the books
+//! stay in the library, the shelves inside it move up a level, and a shelf cut from
+//! a watched folder says the folder keeps watching. One gesture, one confirmation,
+//! one honest receipt.
 //!
 //! A keyboard cannot hold anything down, so it gets the same two halves as two
 //! keys: Shift+Enter on a card enters selection with that card in it, and Enter
@@ -108,21 +110,6 @@ fn selected_folders(state: AppState) -> Vec<String> {
     })
 }
 
-/// How many of the selected ids are books, reactively — the number the removal
-/// button prints, because it is the number of things the receipt will list.
-///
-/// Counted as "everything selected that is not a shelf" rather than by walking the
-/// book list per id: a selection of the whole of a three-thousand-book shelf is the
-/// common worst case, and this is asked on every toggle.
-fn selected_book_count(state: AppState) -> usize {
-    let selected = state.library.selected.get();
-    let folders: HashSet<String> = state
-        .library
-        .shelves
-        .with(|shelves| shelves.iter().map(|s| s.id.clone()).collect());
-    selected.iter().filter(|id| !folders.contains(*id)).count()
-}
-
 /// File the selection on one shelf: the books become members and the folders are
 /// filed inside it. One action from the reader's side, two operations on the same
 /// list, and a folder that cannot be nested there (because it would end up inside
@@ -202,11 +189,9 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
     let selecting = state.library.selecting;
+    // One count for both kinds, because the button removes both kinds and the
+    // sheet's receipt is where the two halves are told apart.
     let count = Signal::derive(move || state.library.selected.with(|s| s.len()));
-    // The receipt lists books, so the button that opens it counts books: a set of
-    // two books and one folder is "3 selected" and "Remove (2)", and the difference
-    // is the honest one — the folder is not going anywhere from here.
-    let books = Signal::derive(move || selected_book_count(state));
     let choices = shelf_choices(state);
     let shelf_menu = RwSignal::new(false);
     let shelf_anchor: NodeRef<html::Div> = NodeRef::new();
@@ -309,20 +294,21 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
             <Button
                 on_click=move |_| {
                     let ids = selected_books(state);
-                    if ids.is_empty() {
+                    let folders = selected_folders(state);
+                    if ids.is_empty() && folders.is_empty() {
                         return;
                     }
                     exit_selection(state);
-                    remove_sheet.ask_many(ids);
+                    remove_sheet.ask_many(ids, folders);
                 }
                 variant=ButtonVariant::Ghost
                 tone=ButtonTone::Danger
                 compact=true
                 class="rounded-full px-3"
-                disabled=Signal::derive(move || books.get() == 0)
-                title="Remove the selected books from the library"
+                disabled=Signal::derive(move || count.get() == 0)
+                title="Remove the selected books, and take the selected shelves apart"
             >
-                {move || format!("Remove ({})", books.get())}
+                {move || format!("Remove ({})", count.get())}
             </Button>
 
             <Button

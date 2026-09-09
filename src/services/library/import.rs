@@ -17,6 +17,14 @@
 //!     ([`rescan_watched`]) never raises a dock card, a toast or a state write
 //!     for a folder nothing changed in — which, on every window focus, is nearly
 //!     all of them.
+//!   * **an ask outranks a removal.** The tombstones a removal writes are an
+//!     answer to the passive rescan — "stay quiet about this file" — and not to
+//!     the reader picking the same folder again a week later. [`Asked::Explicitly`]
+//!     runs the import's own ledger table ([`ledger::diff_import`]), where those
+//!     tombstones stand aside, and the tombstone is lifted when each book
+//!     actually lands rather than when it is merely asked for. Without this,
+//!     emptying a watched folder's shelf and importing the folder again returns
+//!     nothing at all, silently: a broken import wearing a rule's clothes.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -37,6 +45,22 @@ use super::file_name;
 use crate::services::library as wire;
 use crate::state::library::ImportTask;
 use crate::state::{AppState, Toast};
+
+/// Who asked for a folder run, which is what the tombstones mean.
+///
+/// One type rather than a boolean at the call site because the two runs are not
+/// two settings of one thing: they answer different questions, and a reader of
+/// `run_folder(state, task, root, opts, true)` cannot tell which question `true`
+/// was answering.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Asked {
+    /// The reader picked the folder, or dropped it on the window. An explicit
+    /// ask overrides the tombstones their own earlier removals wrote.
+    Explicitly,
+    /// The window regaining focus asked. This is exactly the case a tombstone
+    /// exists for — a removed book must stay removed on its own — so they hold.
+    OnFocus,
+}
 
 /// A run's id. The shell echoes it on every progress beat, so two imports in
 /// flight never mix their counts, and the dock can look a card up by it.
@@ -137,7 +161,7 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     let task = task_id();
     push_task(state, ImportTask::new(task.clone(), folder_label(&root)));
     spawn_local(async move {
-        run_folder(state, task, root, opts, false).await;
+        run_folder(state, task, root, opts, Asked::Explicitly).await;
     });
 }
 
@@ -190,7 +214,7 @@ pub fn rescan_watched(state: AppState) {
     for (root, opts) in watched {
         let task = task_id();
         spawn_local(async move {
-            run_folder(state, task, root, opts, true).await;
+            run_folder(state, task, root, opts, Asked::OnFocus).await;
         });
     }
 }
@@ -280,7 +304,17 @@ fn apply_checks(state: AppState, checks: &[PathCheck]) {
 
 /// Scan one folder, run the ledger over what the walk found, copy whatever the
 /// options say to copy, and write the result in one go.
-async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpts, quiet: bool) {
+async fn run_folder(
+    state: AppState,
+    task: String,
+    root: String,
+    opts: FolderOpts,
+    asked: Asked,
+) {
+    // A rescan is the quiet half of this function: it owes the reader no card
+    // and no write for a folder nothing changed in. An import owes an answer
+    // either way.
+    let quiet = asked == Asked::OnFocus;
     let found = match wire::scan_folder(&task, &root, &opts).await {
         Ok(found) => found,
         Err(message) => return fail(state, &task, message, quiet),
@@ -327,7 +361,13 @@ async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpt
 
     let mut adds: Vec<FoundFile> = Vec::new();
     let mut relinks: Vec<(String, String)> = Vec::new();
-    for action in ledger::diff_folder(&folder, &registry, &found) {
+    // Two tables, one question each: what should come back on its own, and what
+    // the reader is asking for right now. See `ledger` for which rows differ.
+    let actions = match asked {
+        Asked::OnFocus => ledger::diff_folder(&folder, &registry, &found),
+        Asked::Explicitly => ledger::diff_import(&folder, &registry, &found),
+    };
+    for action in actions {
         match action {
             ScanAction::Add(file) => adds.push(file),
             ScanAction::Relink { book_id, to } => relinks.push((book_id, to)),
@@ -500,6 +540,11 @@ async fn run_folder(state: AppState, task: String, root: String, opts: FolderOpt
             }
             placements.push((placed_id, shelf_id));
             folder.mark_placed(file.fp);
+            // The book landed, so a removal that was holding it out is spent.
+            // Lifted here rather than with the diff: a copy that fails leaves
+            // the tombstone standing, which is the one honest outcome for a
+            // file that could not be filed.
+            ledger::restore_deleted(&mut folder, &file.fp);
             placed += 1;
         }
     });

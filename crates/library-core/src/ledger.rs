@@ -33,6 +33,20 @@
 //! The last row is the tombstone, and it is checked FIRST: a book the reader
 //! deliberately removed is refused even when everything else about it says
 //! "new".
+//!
+//! ## Two tables, because two questions are asked
+//!
+//! The table above is a RESCAN's answer — the passive walk a window focus
+//! triggers, where "stay out" is the whole point of a tombstone and a
+//! fingerprint this folder placed before is a book the reader filed away on
+//! purpose. [`diff_import`] is an EXPLICIT import's answer, and two of its rows
+//! lean the other way: a removal is an answer to "should this come back on its
+//! own", not to "the reader is asking for it again". Import a folder you emptied
+//! last week and the tombstones stand aside, because refusing them would make
+//! "import this folder" silently refuse exactly the books the reader removed
+//! from it — a broken import wearing a rule's clothes. Everything else is the
+//! rescan's answer unchanged: a book the library holds at this address is a
+//! Skip, at another address a Relink.
 
 use std::collections::HashMap;
 
@@ -145,6 +159,42 @@ pub fn decide(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> 
             }
         }
     }
+}
+
+/// One row of an explicit import's table: the same questions as [`decide`],
+/// with the two rows a previous removal owns answered the other way.
+///
+/// A tombstone is lifted rather than honoured, and a fingerprint this folder
+/// placed before — whose book row is gone because the reader removed it — is an
+/// Add rather than a Skip. The lift itself happens when the book actually lands
+/// (see [`restore_deleted`]), not here: a copy that fails leaves the tombstone
+/// standing, which is the one honest outcome for a file that could not be filed.
+pub fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> ScanAction {
+    match registry.get(&file.fp) {
+        None => ScanAction::Add(file.clone()),
+        Some(known) => {
+            if known.path == file.path {
+                ScanAction::Skip
+            } else if folder.placed.contains(&file.fp) || known.missing {
+                ScanAction::Relink {
+                    book_id: known.id.clone(),
+                    to: file.path.clone(),
+                }
+            } else {
+                ScanAction::Skip
+            }
+        }
+    }
+}
+
+/// [`diff_folder`] for a run the reader asked for by name. See the module docs
+/// for which two rows differ and why.
+pub fn diff_import(folder: &WatchedFolder, registry: &Registry, found: &[FoundFile]) -> Vec<ScanAction> {
+    let mut out = Vec::with_capacity(found.len());
+    for file in found {
+        out.push(decide_import(folder, registry, file));
+    }
+    out
 }
 
 /// Record a deliberate removal, so the next rescan stays quiet about the file.
@@ -448,6 +498,48 @@ mod tests {
         let f = folder(&[1], &[1]);
         let r = registry(&[(1, "b1", "/books/a.pdf", false)]);
         assert_eq!(decide(&f, &r, &file(1, "/books/elsewhere.pdf")), ScanAction::Skip);
+    }
+
+    /// The import table: a removal is an answer to "should this come back on
+    /// its own", not to "the reader is asking for it again". Emptying a watched
+    /// folder's shelf and then importing the folder again must give the books
+    /// back, or the import reads as broken rather than as a choice.
+    #[test]
+    fn an_explicit_import_overrides_the_removals_that_wrote_the_tombstones() {
+        let f = folder(&[], &[1]);
+        assert_eq!(
+            decide_import(&f, &registry(&[]), &file(1, "/books/a.pdf")),
+            ScanAction::Add(file(1, "/books/a.pdf"))
+        );
+        // Row 6 leans the same way: the ledger remembering a book whose row is
+        // gone is a rescan's reason to stay quiet, not an import's.
+        let f = folder(&[1], &[]);
+        assert_eq!(
+            decide_import(&f, &registry(&[]), &file(1, "/books/a.pdf")),
+            ScanAction::Add(file(1, "/books/a.pdf"))
+        );
+    }
+
+    /// The import table keeps every row the tombstone does not own: a book the
+    /// library already holds at this address is still a Skip, and at another
+    /// address still a Relink — an explicit import is not a licence to
+    /// duplicate what the reader has.
+    #[test]
+    fn an_explicit_import_still_refuses_to_duplicate_a_book_it_has() {
+        let f = folder(&[1], &[]);
+        let r = registry(&[(1, "b1", "/books/a.pdf", false)]);
+        assert_eq!(decide_import(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide_import(&f, &r, &file(1, "/books/moved/a.pdf")),
+            ScanAction::Relink {
+                book_id: "b1".into(),
+                to: "/books/moved/a.pdf".into()
+            }
+        );
+        // And a book another folder placed is still none of this folder's business.
+        let f = folder(&[], &[]);
+        let r = registry(&[(1, "b1", "/other/a.pdf", false)]);
+        assert_eq!(decide_import(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
     }
 
     #[test]

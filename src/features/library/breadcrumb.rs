@@ -40,8 +40,8 @@ use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::services::library::{delete_shelf, rename_shelf};
 use crate::state::AppState;
 
-/// One crumb: the level it stands for, what it is called right now, and whether the
-/// reader made it.
+/// One crumb: the level it stands for, what it is called right now, and whether
+/// the folder behind it is still watched.
 ///
 /// `Clone` because the chain crosses a signal, and a `Signal` hands out copies
 /// rather than references — a derived value's contents are read inside a lock that
@@ -50,19 +50,11 @@ use crate::state::AppState;
 struct Crumb {
     id: String,
     name: String,
-    /// Whether the reader made this shelf. A folder's shelf is derived from its
-    /// tree, so removing it here would be undone by the next file that lands in it.
-    own: bool,
-}
-
-impl Crumb {
-    fn of(shelf: &Shelf) -> Self {
-        Self {
-            id: shelf.id.clone(),
-            name: shelf.name.clone(),
-            own: !shelf.is_folder(),
-        }
-    }
+    /// Whether the shelf was cut from a folder that is still being watched. Every
+    /// shelf is removable now; this is the one fact about a removal worth a
+    /// sentence under the menu row, because it is the one consequence the reader
+    /// cannot see coming — the shelf comes back when the folder places again.
+    watched: bool,
 }
 
 /// The shelf the page is drilled into, or `None` at the root.
@@ -101,11 +93,22 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
             let Some(current) = shelves.iter().find(|s| s.id == id) else {
                 return Vec::new();
             };
-            let mut chain: Vec<Crumb> = ancestors(shelves, &id)
-                .into_iter()
-                .map(Crumb::of)
-                .collect();
-            chain.push(Crumb::of(current));
+            let of = |shelf: &Shelf| {
+                let watched = shelf.kind.folder_id().is_some_and(|folder_id| {
+                    state.library.folders.with_untracked(|folders| {
+                        folders.iter().any(|f| f.id == folder_id && f.opts.watch)
+                    })
+                });
+                Crumb {
+                    id: shelf.id.clone(),
+                    name: shelf.name.clone(),
+                    watched,
+                }
+            };
+            // `|s| of(s)` rather than `map(of)`: the adapter takes its closure by
+            // value, and the last crumb is built by the same one a line later.
+            let mut chain: Vec<Crumb> = ancestors(shelves, &id).into_iter().map(|s| of(s)).collect();
+            chain.push(of(current));
             chain
         })
     })
@@ -150,13 +153,13 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
                     .into_iter()
                     .enumerate()
                     .map(|(at, crumb)| {
-                        let Crumb { id, name, own } = crumb;
+                        let Crumb { id, name, watched } = crumb;
                         if at == last {
                             view! {
                                 <ShelfCrumb
                                     state=state
                                     name=name
-                                    own=own
+                                    watched=watched
                                     anchor=anchor
                                     menu_open=menu_open
                                     renaming=renaming
@@ -213,7 +216,7 @@ fn LevelCrumb(state: AppState, id: String, name: String) -> impl IntoView {
 fn ShelfCrumb(
     state: AppState,
     name: String,
-    own: bool,
+    watched: bool,
     anchor: NodeRef<html::Div>,
     menu_open: RwSignal<bool>,
     renaming: RwSignal<bool>,
@@ -265,25 +268,22 @@ fn ShelfCrumb(
                                     renaming.set(true);
                                 }
                             />
-                            {own.then(|| {
-                                view! {
-                                    <MenuItem
-                                        icon=IconName::Close
-                                        label="Remove shelf"
-                                        tone=MenuItemTone::Danger
-                                        on_click=move || {
-                                            menu_open.set(false);
-                                            if let Some(id) = current_shelf_id(state) {
-                                                delete_shelf(state, &id);
-                                            }
-                                        }
-                                    />
+                            <MenuItem
+                                icon=IconName::Close
+                                label="Remove shelf"
+                                tone=MenuItemTone::Danger
+                                on_click=move || {
+                                    menu_open.set(false);
+                                    if let Some(id) = current_shelf_id(state) {
+                                        delete_shelf(state, &id);
+                                    }
                                 }
-                            })}
-                            {(!own).then(|| {
+                            />
+                            {watched.then(|| {
                                 view! {
                                     <p class="px-2 py-1.5 text-[11px] text-muted">
-                                        "A folder's shelf comes from its tree, so it is not removed here."
+                                        "Cut from a watched folder: removing takes it off the list, and it
+                                         returns if the folder places a book here again."
                                     </p>
                                 }
                             })}

@@ -12,6 +12,13 @@
 //! would not tell you what it takes. The rows aggregate; the questions do not
 //! change.
 //!
+//! Shelves come through the same sheet, because a selection holds both kinds and
+//! one removal gesture owes the reader one receipt. A shelf's row is shorter than
+//! a book's — it is a list of ids and never held a byte — but it is not empty of
+//! consequences: the books stay in the library, the shelves inside it move up a
+//! level, and a shelf cut from a watched folder says that the folder keeps
+//! watching and the shelf returns if the folder places a book in it again.
+//!
 //! There is no undo toast, deliberately. The sheet IS the safety, and the real undo
 //! path is the folder's import menu, which keeps a tombstone per removal and can
 //! offer the book back; a toast would promise a second mechanism and then have to
@@ -23,13 +30,14 @@ use wasm_bindgen::JsCast;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::book::Book;
+use library_core::shelf::{Shelf, children_of};
 use library_core::text::human_size;
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 use crate::components::settings::common::Row;
-use crate::services::library::{PurgeOpts, memberships, purge_books};
+use crate::services::library::{PurgeOpts, delete_shelf, memberships, purge_books};
 use crate::state::AppState;
 
 /// The sheet's two handles, provided by the library page: whether it is open and
@@ -45,6 +53,11 @@ pub(crate) struct RemoveSheet {
     /// The books under question. One id for a card's ✕, several for a selection;
     /// empty means the sheet has nothing to ask about and closes itself.
     pub books: RwSignal<Vec<String>>,
+    /// The shelves under question, from a selection. Separate from [`Self::books`]
+    /// because the two are different operations with one confirmation: a purge
+    /// itemises what a book takes with it, a shelf is taken apart and keeps every
+    /// book in the library.
+    pub shelves: RwSignal<Vec<String>>,
 }
 
 impl RemoveSheet {
@@ -53,24 +66,28 @@ impl RemoveSheet {
         let sheet = Self {
             open: RwSignal::new(false),
             books: RwSignal::new(Vec::new()),
+            shelves: RwSignal::new(Vec::new()),
         };
         provide_context(sheet);
         sheet
     }
 
-    /// Ask about one book.
+    /// Ask about one book. A card's ✕ is never a question about a shelf, so the
+    /// shelf half is cleared rather than left over from the last selection.
     pub fn ask(&self, book_id: &str) {
         self.books.set(vec![book_id.to_string()]);
+        self.shelves.set(Vec::new());
         self.open.set(true);
     }
 
-    /// Ask about a selection. An empty selection is not a question, and opening
-    /// onto one would show a receipt for nothing.
-    pub fn ask_many(&self, book_ids: Vec<String>) {
-        if book_ids.is_empty() {
+    /// Ask about a selection, which may hold both kinds. An empty selection is
+    /// not a question, and opening onto one would show a receipt for nothing.
+    pub fn ask_many(&self, book_ids: Vec<String>, shelf_ids: Vec<String>) {
+        if book_ids.is_empty() && shelf_ids.is_empty() {
             return;
         }
         self.books.set(book_ids);
+        self.shelves.set(shelf_ids);
         self.open.set(true);
     }
 }
@@ -90,24 +107,39 @@ struct Receipt {
     /// The app's own copies among them, and what they occupy.
     stored_count: usize,
     stored_bytes: u64,
+    /// The shelves being taken apart, and what survives each of them.
+    shelves: Vec<ShelfLine>,
+}
+
+/// One shelf the removal takes apart. A shelf is a list of ids and never held a
+/// byte, so its row is about what SURVIVES it rather than about what goes.
+struct ShelfLine {
+    name: String,
+    books: usize,
+    /// Shelves filed inside it, which move up to the level it was on.
+    inside: usize,
+    /// Cut from a folder that is still watched, so the shelf returns if the
+    /// folder ever places a book in it again. Worth one sentence on the receipt
+    /// because it is the one consequence a reader cannot see coming.
+    watched: bool,
 }
 
 impl Receipt {
     fn many(&self) -> bool {
-        self.books.len() != 1
+        self.books.len() + self.shelves.len() != 1
     }
 
-    /// The heading: one book's title, or a count.
+    /// The heading: one thing's own name, or a count.
     fn heading(&self) -> String {
-        match self.books.first() {
-            Some(book) if !self.many() => book.title(),
-            _ => {
-                let n = self.books.len();
-                if n == 1 {
-                    "1 book".to_string()
-                } else {
-                    format!("{n} books")
-                }
+        if !self.books.is_empty() {
+            match self.books.first() {
+                Some(book) if !self.many() => book.title(),
+                _ => count(self.books.len(), "book", "books"),
+            }
+        } else {
+            match self.shelves.first() {
+                Some(shelf) if !self.many() => shelf.name.clone(),
+                _ => count(self.shelves.len(), "shelf", "shelves"),
             }
         }
     }
@@ -115,8 +147,17 @@ impl Receipt {
     /// The line under the heading: the format, and a size the library has actually
     /// measured. A book never measured has no honest size, and a placeholder's
     /// "size" is the length of its path — a number on a receipt that would mean
-    /// nothing.
+    /// nothing. A shelves-only receipt has no formats to name, so it says the one
+    /// thing a reader worries about: that nothing else goes with them.
     fn subtitle(&self) -> String {
+        if self.books.is_empty() {
+            let kept: usize = self.shelves.iter().map(|s| s.books).sum();
+            return if kept == 0 {
+                "Nothing else goes with them".to_string()
+            } else {
+                format!("{} stay in the library", count(kept, "book", "books"))
+            };
+        }
         let measured: Vec<u64> = self
             .books
             .iter()
@@ -143,9 +184,20 @@ impl Receipt {
     }
 }
 
-/// Build the receipt. `None` when none of the books are there any more, which is
-/// what makes a sheet left open across a removal harmless rather than a panic.
-fn receipt(state: AppState, ids: &[String]) -> Option<Receipt> {
+/// "3 books", "1 shelf". One helper because the receipt says this in four places
+/// and the singular of "shelves" is easy to get wrong once.
+fn count(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// Build the receipt. `None` when none of the books or shelves are there any
+/// more, which is what makes a sheet left open across a removal harmless rather
+/// than a panic.
+fn receipt(state: AppState, ids: &[String], shelf_ids: &[String]) -> Option<Receipt> {
     let gloss = crate::storage::load_gloss();
     let books = state.library.books.with_untracked(|books| {
         books
@@ -154,9 +206,36 @@ fn receipt(state: AppState, ids: &[String]) -> Option<Receipt> {
             .cloned()
             .collect::<Vec<Book>>()
     });
-    if books.is_empty() {
+    let shelves = state.library.shelves.with_untracked(|shelves| {
+        shelves
+            .iter()
+            .filter(|s| shelf_ids.contains(&s.id))
+            .cloned()
+            .collect::<Vec<Shelf>>()
+    });
+    if books.is_empty() && shelves.is_empty() {
         return None;
     }
+    let shelf_lines: Vec<ShelfLine> = shelves
+        .iter()
+        .map(|s| {
+            let inside = state
+                .library
+                .shelves
+                .with_untracked(|all| children_of(all, Some(s.id.as_str())).len());
+            let watched = s.kind.folder_id().is_some_and(|folder_id| {
+                state.library.folders.with_untracked(|folders| {
+                    folders.iter().any(|f| f.id == folder_id && f.opts.watch)
+                })
+            });
+            ShelfLine {
+                name: s.name.clone(),
+                books: s.books.len(),
+                inside,
+                watched,
+            }
+        })
+        .collect();
     let mut marks = 0usize;
     let mut covers = 0usize;
     let mut stored_count = 0usize;
@@ -203,6 +282,7 @@ fn receipt(state: AppState, ids: &[String]) -> Option<Receipt> {
         watched,
         stored_count,
         stored_bytes,
+        shelves: shelf_lines,
     })
 }
 
@@ -232,20 +312,27 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
         on_cleanup(move || handle.remove());
     });
 
-    // Books removed by any other route while the sheet is open close it. Done in an
-    // effect rather than in the view, because a view that writes a signal is a view
-    // that can be asked to render and mutate in the same pass.
+    // Books and shelves removed by any other route while the sheet is open close
+    // it, once neither half has anything left to talk about. Done in an effect
+    // rather than in the view, because a view that writes a signal is a view that
+    // can be asked to render and mutate in the same pass.
     Effect::new(move |_| {
         if !sheet.open.get() {
             return;
         }
         let ids = sheet.books.get();
-        let alive = !ids.is_empty()
+        let shelf_ids = sheet.shelves.get();
+        let books_alive = !ids.is_empty()
             && state
                 .library
                 .books
                 .with(|books| books.iter().any(|b| ids.contains(&b.id)));
-        if !alive {
+        let shelves_alive = !shelf_ids.is_empty()
+            && state
+                .library
+                .shelves
+                .with(|shelves| shelves.iter().any(|s| shelf_ids.contains(&s.id)));
+        if !books_alive && !shelves_alive {
             sheet.open.set(false);
         }
     });
@@ -258,7 +345,8 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
             >
                 {move || {
                     let ids = sheet.books.get();
-                    let info = receipt(state, &ids)?;
+                    let shelf_ids = sheet.shelves.get();
+                    let info = receipt(state, &ids, &shelf_ids)?;
                     let cover_path = info
                         .books
                         .first()
@@ -272,6 +360,7 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                             delete_copy=delete_copy
                             info=info
                             ids=ids
+                            shelf_ids=shelf_ids
                             cover_path=cover_path
                             alt=alt
                         />
@@ -292,6 +381,7 @@ fn Sheet(
     delete_copy: RwSignal<bool>,
     info: Receipt,
     ids: Vec<String>,
+    shelf_ids: Vec<String>,
     cover_path: String,
     alt: String,
 ) -> impl IntoView {
@@ -352,12 +442,40 @@ fn Sheet(
             human_size(stored_bytes)
         ),
     };
-    let remove_label = if many {
-        format!("Remove {} books", ids.len())
-    } else {
-        "Remove everything".to_string()
+    // The button names both halves when the selection held both kinds, because
+    // a confirmation that only mentioned the books would be a confirmation the
+    // reader did not read before the shelves went.
+    let remove_label = match (info.books.len(), info.shelves.len()) {
+        (1, 0) => "Remove everything".to_string(),
+        (0, 1) => "Remove the shelf".to_string(),
+        (0, n) => format!("Remove {n} shelves"),
+        (b, 0) => format!("Remove {b} books"),
+        (b, s) => format!("Remove {b} books and {s} shelves"),
     };
-    let show_cover = !many;
+    let show_cover = !many && !info.books.is_empty();
+    // One row per shelf, saying what survives it rather than what goes: a shelf
+    // is a list of ids, and the receipt's job for it is the books that stay and
+    // the shelves that move up.
+    let shelf_rows: Vec<(String, String)> = info
+        .shelves
+        .iter()
+        .map(|s| {
+            let mut detail = if s.books == 0 {
+                "empty".to_string()
+            } else {
+                count(s.books, "book", "books")
+            };
+            if s.inside > 0 {
+                detail.push_str(&format!(
+                    " · {} move up",
+                    count(s.inside, "shelf", "shelves")
+                ));
+            }
+            (s.name.clone(), detail)
+        })
+        .collect();
+    let has_shelves = !shelf_rows.is_empty();
+    let shelf_watched = info.shelves.iter().any(|s| s.watched);
 
     view! {
         <div
@@ -452,6 +570,35 @@ fn Sheet(
                     })}
                 </div>
 
+                {has_shelves.then(|| {
+                    view! {
+                        <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+                            {shelf_rows
+                                .iter()
+                                .map(|(name, detail)| {
+                                    view! {
+                                        <ReceiptRow
+                                            icon=IconName::Outline
+                                            label="Shelf taken apart"
+                                            value=format!("{name} — {detail}")
+                                        />
+                                    }
+                                })
+                                .collect_view()}
+                        </div>
+                    }
+                })}
+
+                {shelf_watched.then(|| {
+                    view! {
+                        <p class="mt-3 text-xs text-muted">
+                            "A shelf here was cut from a watched folder. Removing takes it off the
+                             list; the folder keeps watching, and the shelf returns if the folder
+                             places a book in it again."
+                        </p>
+                    }
+                })}
+
                 {(stored_count > 0).then(|| {
                     view! {
                         <div class="mt-3 rounded-xl border border-line">
@@ -497,13 +644,21 @@ fn Sheet(
                 <Button
                     on_click=move |_| {
                         sheet.open.set(false);
-                        purge_books(
-                            state,
-                            &ids,
-                            PurgeOpts {
-                                delete_store_copy: delete_copy.get_untracked(),
-                            },
-                        );
+                        if !ids.is_empty() {
+                            purge_books(
+                                state,
+                                &ids,
+                                PurgeOpts {
+                                    delete_store_copy: delete_copy.get_untracked(),
+                                },
+                            );
+                        }
+                        // Shelves after the books: a purge sweeps every shelf's
+                        // member list, and a shelf dissolved first would be swept
+                        // by nobody.
+                        for shelf_id in &shelf_ids {
+                            delete_shelf(state, shelf_id);
+                        }
                     }
                     variant=ButtonVariant::Toolbar
                     tone=ButtonTone::Danger
