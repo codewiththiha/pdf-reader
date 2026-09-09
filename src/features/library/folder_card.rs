@@ -471,7 +471,11 @@ fn CoverCell(state: AppState, book: Book) -> impl IntoView {
 /// answer to a question the reader did not ask — those shelves are the rest of
 /// the library down that path, and a count that leaves them out reads as a
 /// folder that is nearly empty.
-fn summary(counts: (usize, usize)) -> String {
+///
+/// Shared with the list's tree rows (`crate::features::library::list`), because
+/// a folder that counted itself differently at the two densities would be two
+/// answers to "what is in here".
+pub(crate) fn summary(counts: (usize, usize)) -> String {
     let (books, inside) = counts;
     let mut parts: Vec<String> = Vec::with_capacity(2);
     if books > 0 {

@@ -27,8 +27,11 @@ use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_l
 pub fn MenuPopover(
     open: RwSignal<bool>,
     anchor: NodeRef<html::Div>,
-    #[prop(default = 256)]
-    width: u32,
+    /// The panel's width in CSS px — reactive for the one menu that measures
+    /// itself (the breadcrumb's folded chain); every other menu passes a
+    /// number.
+    #[prop(into, default = Signal::stored(256u32))]
+    width: Signal<u32>,
     #[prop(default = 8)]
     margin: u32,
     #[prop(optional, into)]

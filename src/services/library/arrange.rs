@@ -366,6 +366,12 @@ pub fn create_shelf(state: AppState) -> String {
             parent,
         });
     });
+    // A belt-and-braces tick for an open search: the folder filter reads the
+    // query and the shelves inside one derive, and re-setting the query
+    // guarantees both are seen together on the frame the shelf lands — a new
+    // shelf under an open search appears at once rather than waiting for the
+    // next keystroke to re-run the filter it should already have passed.
+    state.library.query.set(state.library.query.get_untracked());
     id
 }
 

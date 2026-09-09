@@ -61,7 +61,7 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
             <MenuPopover
                 open=open
                 anchor=root_ref
-                width=300
+                width=300u32
                 coordinate_space="toolbar-row"
                 class="p-2".to_string()
             >

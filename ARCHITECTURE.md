@@ -485,7 +485,11 @@ lands among them are all counting the same level.
 
 The grid renders a folder as a cell of the same grid the books are cells of, which is the whole of
 what makes nesting drawable: the shelf tile this replaced spanned the grid to read as a row *of*
-books, and a row cannot be inside a row. The dense list still shows books only, as it did before.
+books, and a row cannot be inside a row. The dense list draws the same level as a tree: a shelf is a
+row that unfolds in place — the shelves filed in it and its own books indenting under it, as deep as
+the forest goes — while an Open on the row drills the breadcrumb route, because unfolding is a way
+of looking and must not move the reader. The tree is `ShelfTree`, a plain prop bag over the same
+rows, which is the component the reader sidebar's shelf tab will mount at its own density.
 
 One relationship in this model can be wrong in a way no single row shows — a shelf filed inside
 itself, or inside one of its own children, is a folder that renders on no level and can never be
@@ -649,11 +653,18 @@ confusion worth naming. An arrow on the THIRD level whose panel lists the first 
 "deeper than three", because a disclosure hangs below the thing it discloses — and the elided levels
 are shallower. An affordance standing for them must not itself be a level, so it claims to be nothing
 but a gap. Inside, the levels are drawn in the bar's own grammar rather than as a list of rows: name,
-chevron, name, wrapping into a rectangle whose width the window sets. The chevron trails its crumb and
-shares its flex item, so a wrapped line ends on `4 >` and the next begins on `5`; a leading chevron
-would put a stray `>` at the head of every line but the first. Wrapping is `flex-wrap` against a
-`max-width` of `calc(100vw - 1.5rem)`, so the panel answers a resized window with no measurement and
-no resize listener — the layout is already asking the question the moment the window does.
+chevron, name, wrapping into a rectangle whose width the chain measures and the window caps. The
+chevron trails its crumb and shares its flex item, so a wrapped line ends on `4 >` and the next
+begins on `5`; a leading chevron would put a stray `>` at the head of every line but the first. The
+panel's width is measured rather than picked: the chain is drawn once more inside the panel as an
+invisible, unwrapped ruler, and on open — and on every resize while the panel is open — the popover
+takes the ruler's width under a budget of 80% of the window (the whole width below 640px, where a
+budget the window cannot split is a panel off the edge), never narrower than the widest single
+crumb, because a name does not wrap and a panel narrower than its widest crumb is a panel with a
+crumb hanging out of it. Inside that width the wrapping is still `flex-wrap` against
+`width: max-content`, so a wrapped row is only as wide as its own labels, a fold of one level takes
+exactly one label's width, and a chain longer than the budget becomes a taller rectangle rather than
+a panel off the edge.
 
 It opens on hover and closes one beat after the pointer leaves, because a click is already taken by
 the crumb it lands on. The beat is owned by an effect on "is the pointer over it" rather than by a

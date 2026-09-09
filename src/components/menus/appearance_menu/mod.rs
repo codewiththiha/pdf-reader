@@ -84,7 +84,7 @@ pub fn AppearanceMenu(
             <MenuPopover
                 open=open
                 anchor=root_ref
-                width=288
+                width=288u32
                 coordinate_space="toolbar-row"
                 class="max-h-[min(70vh,32rem)] overflow-y-auto p-3".to_string()
             >

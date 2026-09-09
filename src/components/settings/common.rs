@@ -98,7 +98,7 @@ disabled:cursor-not-allowed disabled:opacity-45"
             <MenuPopover
                 open=open
                 anchor=root_ref
-                width=190
+                width=190u32
                 class="p-1".to_string()
                 // A dropdown INSIDE the settings modal is part of the dialog,
                 // not a competitor for the window: the default MENU policy

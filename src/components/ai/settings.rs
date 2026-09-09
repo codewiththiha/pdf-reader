@@ -222,7 +222,7 @@ fn CustomColorPicker(
         <MenuPopover
             open=open
             anchor=anchor
-            width=224
+            width=224u32
             class="space-y-3 p-3".to_string()
             // The picker floats INSIDE the settings modal; the in-dialog
             // policy keeps the modal from evicting itself when the picker

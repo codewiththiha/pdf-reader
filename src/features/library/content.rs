@@ -198,6 +198,11 @@ pub(crate) fn visible(state: AppState) -> Vec<Book> {
 /// name, through the same rule the books go through, so one text box is not two
 /// searches wearing one field.
 ///
+/// The query is read BEFORE the shelves and both are read inside the one derive,
+/// so a shelf created while a search is open re-runs the whole filter on the
+/// frame it lands: one invalidation covers both facts, and a fresh shelf can
+/// never be memoised past the query it was born under.
+///
 /// The view's sort key is NOT applied. It sorts books (title, author, how far in
 /// they were read) and a shelf has none of those; folders render in the order the
 /// library stores them, which is the order the reader made them in and the order a
@@ -212,7 +217,7 @@ fn visible_folders(state: AppState) -> Vec<Shelf> {
         children_of(shelves, parent)
             .into_iter()
             .filter(|s| s.id != ALL_SHELF)
-            .filter(|s| query::matches_terms(&s.name, &terms))
+            .filter(|s| !query::is_active(&terms) || query::matches_terms(&s.name, &terms))
             .cloned()
             .collect()
     })

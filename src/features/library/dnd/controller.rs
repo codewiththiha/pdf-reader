@@ -261,7 +261,19 @@ impl DragController {
                     on_cleanup(move || sunk.clear());
                 }
             }
-            if target.0 != DropTargetKind::Book {
+            // The fold's dwell is armed off the ANSWER and not only off the
+            // target's kind: a book the session currently reads as a position
+            // (`InsertBefore`) is a book a rest can turn into a partner. The
+            // answer is the session's own truth about the pointer — it has
+            // already collapsed which node of the row the hit-test landed on —
+            // so a rest over a book works even when the hit-test resolved
+            // through one of the row's children, and a target with no live
+            // answer arms no timer at all.
+            let arms_fold = matches!(
+                this.effect.get_untracked(),
+                Some(DropEffect::InsertBefore { .. })
+            ) && target.0 == DropTargetKind::Book;
+            if !arms_fold {
                 return;
             }
             let still = target;

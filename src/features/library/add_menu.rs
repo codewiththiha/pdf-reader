@@ -263,7 +263,7 @@ pub(crate) fn AddMenu(
         <MenuPopover
             open=open
             anchor=anchor
-            width=264
+            width=264u32
             class="max-h-80 overflow-y-auto p-1".to_string()
         >
             {move || {

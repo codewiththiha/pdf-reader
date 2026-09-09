@@ -66,6 +66,7 @@ use std::time::Duration;
 use leptos::html;
 use leptos::prelude::*;
 
+use app_chrome::hooks::dom::by_id;
 use app_chrome::icon::{Icon, IconName};
 use library_core::shelf::{ALL_SHELF, Shelf, ancestors};
 
@@ -86,15 +87,28 @@ use crate::state::AppState;
 /// show. A fifth element is a fifth of the bar spent on where you have been.
 const CRUMB_KEEP: usize = 3;
 
-/// The panel's preferred width, in CSS px.
-///
-/// Wide enough for the chain to read as a chain — three crumbs and their chevrons
-/// on a line — rather than as the vertical list it replaces, and a CEILING rather
-/// than a size: `.lib-elided-panel` caps it against the window, so a narrow one
-/// gets a narrower panel and the chain re-wraps into a taller rectangle instead of
-/// overflowing. What it must not be is content-sized, or the panel would change
-/// width between levels and move under the pointer that is hovering it.
-const ELIDED_WIDTH: u32 = 384;
+/// The id of the ruler the folded panel measures itself with: the chain drawn
+/// once more, invisible and unwrapped, whose natural width is the width the
+/// panel wants. Deliberately not in the drag's registry — it stands for no
+/// level, and a target that is a measurement would be a way to file books onto
+/// a ruler.
+const ELIDED_MAX_DOM_ID: &str = "crumb-elided-max";
+
+/// How wide the folded panel may be. 80% of the window is the budget, because a
+/// panel across the whole bar is a panel hiding the shelf it is naming the way
+/// back to; a window too narrow to split gets the whole width, because a panel
+/// wider than its window is a panel off the edge.
+fn elided_budget_px() -> f64 {
+    let window = web_sys::window()
+        .and_then(|w| w.inner_width().ok())
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    if window < 640.0 {
+        window
+    } else {
+        window * 0.8
+    }
+}
 
 /// The element id of the ellipsis. Deliberately not a `crumb-` id: it is a target
 /// the drag can rest on but it stands for no level, and sharing the crumbs' scheme
@@ -496,6 +510,52 @@ fn EllipsisCrumb(
     // class.
     let folded: StoredValue<Vec<Crumb>, LocalStorage> = StoredValue::new_local(elided);
 
+    // The panel's width is measured rather than picked. Three numbers decide it:
+    // the chain's own unwrapped width (what the panel WANTS), the window's budget
+    // (what it MAY have), and the widest single crumb (what it must have — a name
+    // does not wrap, and a panel narrower than its widest crumb is a panel with a
+    // crumb hanging out of it). A constant guessed between the three and got all
+    // of them wrong: too wide for one short name, too narrow for a chain that
+    // would have fit. Written only on a real change, because the popover
+    // re-places itself on this signal and a resize storm should not re-place it
+    // by sub-pixels.
+    let panel_width: RwSignal<f64> = RwSignal::new(0.0);
+    let measure = move || {
+        let Some(ruler) = by_id(ELIDED_MAX_DOM_ID) else {
+            return;
+        };
+        let budget = elided_budget_px();
+        if budget <= 0.0 {
+            return;
+        }
+        let chain = ruler.get_bounding_client_rect().width();
+        let mut widest: f64 = 0.0;
+        let crumbs = ruler.children();
+        for index in 0..crumbs.length() {
+            if let Some(crumb) = crumbs.item(index) {
+                widest = widest.max(crumb.get_bounding_client_rect().width());
+            }
+        }
+        let want = chain.min(budget).max(widest.min(budget));
+        if (panel_width.get_untracked() - want).abs() > 0.5 {
+            panel_width.set(want);
+        }
+    };
+    // Measured once the panel — and the ruler inside it — has mounted, and
+    // re-measured on every resize while the panel is open: the budget is a
+    // fraction of the window, and the chain re-wraps when the fraction moves.
+    // The measurement is stable under a hover, which is what the old constant
+    // was actually protecting: the width only moves when the chain or the
+    // window does, and a chain that changed closed the panel a beat earlier.
+    Effect::new(move |_| {
+        if !intent.open.get() {
+            return;
+        }
+        request_animation_frame(measure);
+        let handle = window_event_listener(leptos::ev::resize, move |_| measure());
+        on_cleanup(move || handle.remove());
+    });
+
     // A drag cannot raise a `mouseenter` — the card the press began on holds the
     // pointer capture, and a captured pointer reports its boundary events to the
     // capture target alone. So while a drag is live the panel opens from the
@@ -544,10 +604,41 @@ fn EllipsisCrumb(
             <MenuPopover
                 open=intent.open
                 anchor=anchor
-                width=ELIDED_WIDTH
+                width=Signal::derive(move || panel_width.get() as u32)
                 coordinate_space="toolbar-row"
                 class="lib-elided-panel max-h-80 overflow-y-auto p-1.5".to_string()
             >
+                // The chain, drawn twice: once as the ruler — invisible,
+                // unwrapped, never hovered — and once as the chain the reader
+                // reads. The ruler wears the crumbs' own metrics (the
+                // `.lib-elided-crumb` item, and a label boxed like the live
+                // button) so what it measures is what the live chain needs, and
+                // its natural width is the panel's answer to "how wide is this
+                // fold".
+                <div id=ELIDED_MAX_DOM_ID class="lib-elided-probe" aria-hidden="true">
+                    {move || {
+                        let levels = folded.get_value();
+                        let last = levels.len().saturating_sub(1);
+                        levels
+                            .into_iter()
+                            .enumerate()
+                            .map(|(at, crumb)| {
+                                view! {
+                                    <span class="lib-elided-crumb">
+                                        <span class="lib-elided-probe-label">
+                                            <span class="truncate">{crumb.name}</span>
+                                        </span>
+                                        {(at != last).then(|| {
+                                            view! {
+                                                <Icon name=IconName::Next size=13 class="shrink-0" />
+                                            }
+                                        })}
+                                    </span>
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </div>
                 <div
                     class="lib-elided-chain"
                     on:mouseenter=move |_| intent.enter()
@@ -691,7 +782,7 @@ fn ShelfCrumbMenu(state: AppState, crumb: Crumb) -> impl IntoView {
                         <MenuPopover
                             open=menu_open
                             anchor=anchor
-                            width=224
+                            width=224u32
                             coordinate_space="toolbar-row"
                             class="p-1".to_string()
                         >

@@ -612,6 +612,13 @@
 .library-row:focus-visible {
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
+/* The tree's shelf row: a book row's shape wearing a disclosure. The indent is
+   an inline style — the depth scale lives with the tree that owns it — and the
+   tighter gap is all the row itself needs: chevron, glyph and name sit closer
+   than a cover sits to its title, because they are one noun. */
+.library-row-shelf {
+  gap: 0.5rem;
+}
 .library-row-cover {
   position: relative;
   display: block;
@@ -632,6 +639,25 @@
   width: 100%;
   height: 100%;
   object-fit: fill;
+}
+/* The dense tree's stand-in for the cover: at sidebar width the format IS the
+   art — the kind of thing the row is, in the footprint the cover would have
+   had, so rows still line up and the eye still lands on the same corner. */
+.library-row-ext {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  padding: 0.125rem 0;
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  color: var(--color-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .library-row-remove {
   display: flex;
@@ -1099,15 +1125,19 @@
 
    A chain and not a list, in the bar's own grammar — name, chevron, name — so a
    reader who has understood the breadcrumb has already understood the panel, and
-   so three levels cost one line of height instead of three. Wrapping is what makes
-   it a rectangle rather than a strip: the panel's width is a ceiling the window
-   sets, the chain fills it, and whatever does not fit goes to the next line. No
-   measurement and no resize listener, because flex-wrap is already answering the
-   question the moment the window does.
+   so three levels cost one line of height instead of three. The panel's width is
+   measured rather than guessed: the chain is drawn once more as an invisible,
+   unwrapped ruler, and the popover takes the ruler's width under the window's
+   budget (see the measurement in the breadcrumb's ellipsis). Wrapping is what
+   makes the chain a rectangle rather than a strip inside that width: row one
+   fills to the budget, row two sizes to its own labels, and whatever does not
+   fit goes to the next line — flex-wrap is still answering the window the moment
+   it moves.
    --------------------------------------------------------------------------- */
 .lib-elided-panel {
-  /* A ceiling under the popover's own width, so a window too narrow for it gets a
-     narrower panel and a taller chain rather than a panel hanging off the edge. */
+  /* A hard ceiling under the popover's measured width, so a measurement that
+     overshoots — or a window that narrowed between the open and the place —
+     still keeps the panel on the screen it opened on. */
   max-width: calc(100vw - 1.5rem);
 }
 .lib-elided-chain {
@@ -1117,6 +1147,11 @@
   /* Row gap only; the column gap is the chevron, which is a glyph rather than
      spacing so the chain reads the same wrapped as unwrapped. */
   gap: 2px 0;
+  /* Content-sized under the panel's width is the whole trick: a wrapped row is
+     only as wide as its own labels, and a fold of one level takes exactly one
+     label's width instead of a constant's. */
+  width: max-content;
+  max-width: 100%;
 }
 /* One crumb and the chevron that trails it, in ONE flex item: a wrapped line ends
    on `4 >` and the next begins on `5`, which is how a chain reads when it breaks.
@@ -1124,23 +1159,55 @@
 .lib-elided-crumb {
   display: inline-flex;
   min-width: 0;
-  max-width: 100%;
+  /* A cap so one long shelf name cannot stretch a row: a name that will not
+     wrap should not decide the panel's width either. */
+  max-width: 14rem;
   align-items: center;
   gap: 0.125rem;
+}
+.lib-elided-crumb > button {
+  min-width: 0;
+}
+/* The ruler: the same chain drawn invisible and unwrapped, so its natural width
+   can be measured before the panel commits to one. Absolute so it takes no room
+   in the panel, hidden so it never paints, pointer-events none so a hover can
+   never land on a measurement, and max-content so the box being measured is the
+   chain's own width and never the panel's. */
+.lib-elided-probe {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  width: max-content;
+}
+/* The ruler's label: the live button's own box — the same font, padding, corner
+   and cap — without any of its behaviour. Measuring anything else measures the
+   wrong width. */
+.lib-elided-probe-label {
+  display: flex;
+  min-width: 0;
+  max-width: 8rem;
+  align-items: center;
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 /* While choosing, the cards not in the set step back, and come forward again
    under the pointer: the reader is about to tap one of them. */
 /* `.book-add` wears the book card's classes for its shape and is not a book:
-   dimming it would advertise a choice it does not offer. */
+   dimming it would advertise a choice it does not offer. The tree's shelf rows
+   are out for the same reason from the other side: no hold adds one to a set,
+   and a dimmed row is a row that looks tappable into the selection. */
 .library-grid-selecting .book-card:not(.book-selected):not(.book-add),
 .library-grid-selecting .folder-card:not(.folder-selected),
-.library-list-selecting .library-row:not(.library-row-selected) {
+.library-list-selecting .library-row:not(.library-row-selected):not(.library-row-shelf) {
   opacity: 0.62;
 }
 .library-grid-selecting .book-card:not(.book-selected):not(.book-add):hover,
 .library-grid-selecting .folder-card:not(.folder-selected):hover,
-.library-list-selecting .library-row:not(.library-row-selected):hover {
+.library-list-selecting .library-row:not(.library-row-selected):not(.library-row-shelf):hover {
   opacity: 0.95;
 }
 

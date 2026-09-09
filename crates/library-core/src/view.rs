@@ -59,9 +59,19 @@ pub struct LibraryView {
     #[serde(default)]
     pub layout: LibraryLayout,
     /// Fixed column count, or `None` for Auto (as many as fit). Ignored — and
-    /// shown disabled — in [`LibraryLayout::List`], where a row is a row.
+    /// shown disabled — in [`LibraryLayout::List`], where a row is a row; the
+    /// count survives the visit, so switching back to the grid returns the
+    /// columns the reader last picked.
     #[serde(default)]
     pub columns: Option<u8>,
+    /// The count the auto flow currently produces. The shell writes it on every
+    /// resize while `columns` is `None`, so the menu can show Auto's live count
+    /// and the stepper's first `+` pins the count the reader is looking at
+    /// (5 → 6) rather than stepping from an idea nobody can see. Stale is
+    /// harmless: a resize — or a return to Auto — refreshes it before the next
+    /// click.
+    #[serde(default = "default_auto_fit")]
+    pub auto_fit: u8,
     #[serde(default)]
     pub cover: CoverFit,
     #[serde(default)]
@@ -74,11 +84,19 @@ fn default_asc() -> bool {
     true
 }
 
+/// What `auto_fit` is in a blob written before the grid reported the flow's
+/// count: a mid-range guess, so a restored Auto steps inside the range rather
+/// than at its edge until the first measurement lands.
+fn default_auto_fit() -> u8 {
+    5
+}
+
 impl Default for LibraryView {
     fn default() -> Self {
         Self {
             layout: LibraryLayout::default(),
             columns: None,
+            auto_fit: default_auto_fit(),
             cover: CoverFit::default(),
             sort: SortKey::default(),
             sort_asc: true,
@@ -89,7 +107,9 @@ impl Default for LibraryView {
 impl LibraryView {
     /// The value the grid's `--lib-cols` custom property takes: a count, or
     /// `auto-fill` when the reader left it to the window width. One function
-    /// owns the spelling so the CSS and the control cannot drift.
+    /// owns the spelling so the CSS and the control cannot drift. `auto_fit`
+    /// deliberately never reaches this token: a measurement that moved the
+    /// thing it measured would be a layout loop.
     pub fn columns_token(&self) -> String {
         match self.columns {
             Some(n) => n.to_string(),
@@ -97,35 +117,45 @@ impl LibraryView {
         }
     }
 
-    /// True when the column stepper does something: a grid, with a count to
-    /// step. Auto is stepped out of by the menu's own "Auto" row, not by −/+.
+    /// Whether the +/− stepper may act. Auto is a real target: the first `+`
+    /// pins the count the auto flow is producing right now and steps from
+    /// there, so the stepper is live wherever a grid is showing columns and
+    /// only the list layout — which has none — kills it.
     pub fn columns_enabled(&self) -> bool {
-        self.layout == LibraryLayout::Grid && self.columns.is_some()
+        !self.is_list()
     }
 
     /// Move the column count by one press, staying inside
-    /// [`COLUMNS_MIN`]..=[`COLUMNS_MAX`]. A no-op while Auto or in the list, so
-    /// a control that renders disabled cannot be driven by a stray key.
+    /// [`COLUMNS_MIN`]..=[`COLUMNS_MAX`]. From Auto the first press pins what
+    /// the flow was showing (`auto_fit`) and steps from THAT; in the list it is
+    /// a no-op, so a control that renders disabled cannot be driven by a stray
+    /// key.
     pub fn step_columns(&mut self, delta: i32) {
-        if !self.columns_enabled() {
+        if self.is_list() {
             return;
         }
-        let current = self.columns.unwrap_or(COLUMNS_MIN) as i32;
-        let next = (current + delta).clamp(i32::from(COLUMNS_MIN), i32::from(COLUMNS_MAX));
+        let base = u16::from(self.columns.unwrap_or(self.auto_fit));
+        let next =
+            (i32::from(base) + delta).clamp(i32::from(COLUMNS_MIN), i32::from(COLUMNS_MAX));
         self.columns = Some(next as u8);
     }
 
     /// Leave Auto: the columns become the count the window fits right now, so
     /// the reader's first press of −/+ has something to step from. `fit` is the
-    /// caller's measurement, clamped here rather than trusted.
+    /// caller's measurement, clamped here rather than trusted. A count the
+    /// reader has pinned already is not overridden by a report — it is only
+    /// clamped, so a stray call can move the range but never the choice.
     pub fn pin_columns(&mut self, fit: u8) {
-        if self.layout != LibraryLayout::Grid {
-            return;
-        }
-        self.columns = Some(fit.clamp(COLUMNS_MIN, COLUMNS_MAX));
+        self.auto_fit = fit.clamp(COLUMNS_MIN, COLUMNS_MAX);
+        self.columns = Some(
+            self.columns
+                .map_or(self.auto_fit, |n| n.clamp(COLUMNS_MIN, COLUMNS_MAX)),
+        );
     }
 
-    /// Back to Auto.
+    /// Back to Auto. The flow's count keeps being reported into `auto_fit`, so
+    /// the menu still shows a live number and the stepper's next press steps
+    /// from what the shelf is showing.
     pub fn auto_columns(&mut self) {
         self.columns = None;
     }
@@ -143,16 +173,12 @@ impl LibraryView {
     }
 }
 
-/// Make a persisted view internally valid: a column count inside the range the
-/// menu offers, and a list layout that is not carrying a count it cannot show.
-/// Idempotent.
+/// Make a persisted view internally valid: the pinned count and the reported
+/// auto count both inside the range the menu offers. Idempotent. A list keeps
+/// the count it cannot show — it returns with the grid.
 pub fn sanitize(view: &mut LibraryView) {
-    if let Some(n) = view.columns {
-        view.columns = Some(n.clamp(COLUMNS_MIN, COLUMNS_MAX));
-    }
-    if view.layout == LibraryLayout::List {
-        view.columns = None;
-    }
+    view.columns = view.columns.map(|n| n.clamp(COLUMNS_MIN, COLUMNS_MAX));
+    view.auto_fit = view.auto_fit.clamp(COLUMNS_MIN, COLUMNS_MAX);
 }
 
 #[cfg(test)]
@@ -164,11 +190,15 @@ mod tests {
         let v = LibraryView::default();
         assert_eq!(v.layout, LibraryLayout::Grid);
         assert_eq!(v.columns, None, "Auto until the reader says otherwise");
+        assert_eq!(v.auto_fit, 5, "a mid-range guess until the grid reports");
         assert_eq!(v.cover, CoverFit::Fit);
         assert_eq!(v.sort, SortKey::Manual);
         assert!(v.sort_asc);
         assert_eq!(v.columns_token(), "auto-fill");
-        assert!(!v.columns_enabled());
+        assert!(
+            v.columns_enabled(),
+            "Auto is a count the stepper can step from"
+        );
         assert!(v.drag_reorders(), "a manual grid is the one a drag writes to");
     }
 
@@ -179,16 +209,25 @@ mod tests {
     }
 
     #[test]
+    fn a_blob_from_before_the_grid_reported_loads_a_mid_range_auto_fit() {
+        let v: LibraryView = serde_json::from_str(r#"{"columns":null}"#).unwrap();
+        assert_eq!(v.auto_fit, 5);
+        assert_eq!(v.columns, None);
+    }
+
+    #[test]
     fn the_view_persists_under_its_camel_case_names() {
         let v = LibraryView {
             layout: LibraryLayout::List,
             columns: Some(4),
+            auto_fit: 7,
             cover: CoverFit::Crop,
             sort: SortKey::LastRead,
             sort_asc: false,
         };
         let json = serde_json::to_string(&v).unwrap();
         assert!(json.contains("\"layout\":\"list\""), "{json}");
+        assert!(json.contains("\"autoFit\":7"), "{json}");
         assert!(json.contains("\"cover\":\"crop\""), "{json}");
         assert!(json.contains("\"sort\":\"lastRead\""), "{json}");
         let back: LibraryView = serde_json::from_str(&json).unwrap();
@@ -214,12 +253,64 @@ mod tests {
     }
 
     #[test]
+    fn stepping_from_auto_pins_what_auto_was_showing() {
+        let mut v = LibraryView::default();
+        // The grid has been reporting the flow's count on every resize.
+        v.auto_fit = 7;
+        assert_eq!(v.columns, None, "Auto still owns the layout");
+        v.step_columns(1);
+        assert_eq!(
+            v.columns,
+            Some(8),
+            "the first + pins what Auto was showing and steps from there"
+        );
+        assert_eq!(v.columns_token(), "8");
+        v.step_columns(-2);
+        assert_eq!(v.columns, Some(6), "and from then on it steps the pin");
+        v.step_columns(-99);
+        assert_eq!(v.columns, Some(COLUMNS_MIN));
+        v.step_columns(99);
+        assert_eq!(v.columns, Some(COLUMNS_MAX));
+    }
+
+    #[test]
+    fn the_stepper_is_live_in_grid_and_dead_in_list() {
+        let mut v = LibraryView::default();
+        assert!(v.columns_enabled(), "live in a grid under Auto…");
+        v.columns = Some(4);
+        assert!(v.columns_enabled(), "…and with a pinned count");
+        v.layout = LibraryLayout::List;
+        assert!(!v.columns_enabled(), "dead only where there are no columns");
+        v.step_columns(1);
+        assert_eq!(v.columns, Some(4), "and a stray key cannot drive it");
+        v.layout = LibraryLayout::Grid;
+        assert!(
+            v.columns_enabled(),
+            "the pin survived the list, so the grid returns as it left"
+        );
+    }
+
+    #[test]
     fn a_pin_outside_the_range_is_clamped_not_trusted() {
         let mut v = LibraryView::default();
         v.pin_columns(0);
+        assert_eq!(v.auto_fit, COLUMNS_MIN);
         assert_eq!(v.columns, Some(COLUMNS_MIN));
+        v.auto_columns();
         v.pin_columns(200);
+        assert_eq!(v.auto_fit, COLUMNS_MAX);
         assert_eq!(v.columns, Some(COLUMNS_MAX));
+    }
+
+    #[test]
+    fn a_report_refreshes_auto_without_overriding_a_pin() {
+        let mut v = LibraryView {
+            columns: Some(4),
+            ..LibraryView::default()
+        };
+        v.pin_columns(9);
+        assert_eq!(v.auto_fit, 9, "the flow's count is recorded…");
+        assert_eq!(v.columns, Some(4), "…and the reader's pin is left alone");
     }
 
     #[test]
@@ -230,13 +321,15 @@ mod tests {
             ..LibraryView::default()
         };
         sanitize(&mut v);
-        assert_eq!(v.columns, None);
+        assert_eq!(
+            v.columns,
+            Some(5),
+            "the count survives the list, to return with the grid"
+        );
         assert!(!v.columns_enabled());
         assert!(v.is_list());
-        v.pin_columns(4);
-        assert_eq!(v.columns, None, "a list ignores a pin");
         v.step_columns(1);
-        assert_eq!(v.columns, None);
+        assert_eq!(v.columns, Some(5), "a list ignores a step");
     }
 
     #[test]
@@ -247,6 +340,9 @@ mod tests {
         let mut v: LibraryView = serde_json::from_str(r#"{"columns":0}"#).unwrap();
         sanitize(&mut v);
         assert_eq!(v.columns, Some(COLUMNS_MIN));
+        let mut v: LibraryView = serde_json::from_str(r#"{"autoFit":99}"#).unwrap();
+        sanitize(&mut v);
+        assert_eq!(v.auto_fit, COLUMNS_MAX);
     }
 
     #[test]

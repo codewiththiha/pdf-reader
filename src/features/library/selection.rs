@@ -360,7 +360,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                 <MenuPopover
                     open=shelf_menu
                     anchor=shelf_anchor
-                    width=240
+                    width=240u32
                     placement=PlacementSide::Above
                     // The bar is nowhere near the reader's title bar, so there is
                     // no bar to hold open while this menu is up.

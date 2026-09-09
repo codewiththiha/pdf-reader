@@ -28,9 +28,12 @@ pub fn Popover(
     open: RwSignal<bool>,
     /// NodeRef of the trigger wrapper the panel anchors to.
     anchor: NodeRef<html::Div>,
-    /// Desired panel width in CSS px (custom per menu).
-    #[prop(default = 256)]
-    width: u32,
+    /// Desired panel width in CSS px (custom per menu). Reactive because one
+    /// panel measures itself: the breadcrumb's folded chain takes its width
+    /// from an invisible ruler inside the panel, and the measurement lands a
+    /// frame after the open — the panel re-places itself when it does.
+    #[prop(into, default = Signal::stored(256u32))]
+    width: Signal<u32>,
     /// Min distance from viewport edges.
     #[prop(default = 8)]
     margin: u32,
@@ -82,13 +85,16 @@ pub fn Popover(
                 let r = p.get_bounding_client_rect();
                 Size::new(r.width().max(1.0), r.height().max(1.0))
             })
-            .unwrap_or(Size::new(width as f64, 200.0));
+            .unwrap_or(Size::new(width.get() as f64, 200.0));
         let opts = placement_options(placement, 4.0, margin as f64, Size::new(win_w, win_h));
         let placed = place_at_anchor(&a, panel.w, panel.h, &opts, coordinate_space);
         let rect = placed.rect;
         style_sig.set(format!(
             "left:{:.1}px;top:{:.1}px;width:{:.0}px;transform-origin:{}",
-            rect.x, rect.y, width, placed.transform_origin
+            rect.x,
+            rect.y,
+            width.get(),
+            placed.transform_origin
         ));
     };
 

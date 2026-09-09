@@ -7,9 +7,12 @@
 //! the DOM to arrange anything itself.
 //!
 //! The Columns row is the one that can be impossible, and it says so by going
-//! quiet rather than by hiding: a list has no columns, and Auto has no count to
-//! step. Both leave the stored value alone, so switching back to a grid returns
-//! the columns the reader last picked.
+//! quiet rather than by hiding: a list has no columns. Auto is not impossible —
+//! it is a count the grid reports on every resize (see
+//! `crate::features::library::grid`), so the row shows the live number and the
+//! stepper's first press pins it and steps from there. Every press leaves the
+//! stored value whole, so switching back to a grid returns the columns the
+//! reader last picked.
 
 use leptos::html;
 use leptos::prelude::*;
@@ -51,17 +54,24 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
     let root_ref: NodeRef<html::Div> = NodeRef::new();
 
     let is_list = Signal::derive(move || state.library.view.with(|v| v.is_list()));
-    let columns = Signal::derive(move || state.library.view.with(|v| v.columns));
+    // The count the stepper shows and steps from: the pinned count when there is
+    // one, else the count Auto's flow is producing right now — which the grid
+    // reports on every resize (see `crate::features::library::grid`). An en-dash
+    // was what this row used to show under Auto; the live count is a better
+    // answer to "how many across am I looking at", and it is what the bounds
+    // below read, so Auto reports its own edges instead of having none.
+    let columns = Signal::derive(move || {
+        state.library.view.with(|v| v.columns.or(Some(v.auto_fit)))
+    });
+    // "Auto" is selected when no count is pinned — the raw field, not `columns`,
+    // which now answers for Auto too.
+    let auto = Signal::derive(move || state.library.view.with(|v| v.columns.is_none()));
     let stepper_live = Signal::derive(move || state.library.view.with(|v| v.columns_enabled()));
     let at_min = Signal::derive(move || {
-        state.library.view.with(|v| {
-            v.columns.is_some_and(|n| n <= library_core::view::COLUMNS_MIN)
-        })
+        columns.with(|c| c.is_some_and(|n| n <= library_core::view::COLUMNS_MIN))
     });
     let at_max = Signal::derive(move || {
-        state.library.view.with(|v| {
-            v.columns.is_some_and(|n| n >= library_core::view::COLUMNS_MAX)
-        })
+        columns.with(|c| c.is_some_and(|n| n >= library_core::view::COLUMNS_MAX))
     });
     let fit = Signal::derive(move || state.library.view.with(|v| v.cover == CoverFit::Fit));
     let sort = Signal::derive(move || state.library.view.with(|v| v.sort));
@@ -81,7 +91,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
             <MenuPopover
                 open=open
                 anchor=root_ref
-                width=264
+                width=264u32
                 coordinate_space="toolbar-row"
                 class="p-2".to_string()
             >
@@ -119,7 +129,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                 <SectionLabel text="Columns" />
                 <div class="flex items-center justify-between gap-2 px-1 py-1">
                     <OptionButton
-                        selected=Signal::derive(move || columns.get().is_none())
+                        selected=auto
                         on_click=move || {
                             set_view(state, LibraryView::auto_columns);
                         }
@@ -127,18 +137,12 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     >
                         <span>"Auto"</span>
                     </OptionButton>
-                    <div
-                        class=move || {
-                            // A control that cannot act reads as quiet, not as
-                            // broken: the value it would write is unchanged.
-                            let base = "flex items-center gap-0.5";
-                            if stepper_live.get() {
-                                base.to_string()
-                            } else {
-                                format!("{base} opacity-45")
-                            }
-                        }
-                    >
+                    // A control that cannot act reads as quiet without help: the
+                    // disabled buttons already carry the app's disabled treatment,
+                    // and a dimmed wrapper on top of it was a second statement of
+                    // one fact — and the fact was wrong whenever it dimmed a
+                    // stepper that was live.
+                    <div class="flex items-center gap-0.5">
                         <IconButton
                             icon=IconName::Minus
                             size=13
@@ -150,7 +154,9 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                             }
                         />
                         <span class="w-5 text-center text-xs tabular-nums text-ink">
-                            {move || columns.get().map_or("–".to_string(), |n| n.to_string())}
+                            {move || {
+                                columns.get().map_or_else(|| "–".to_string(), |n| n.to_string())
+                            }}
                         </span>
                         <IconButton
                             icon=IconName::Plus
