@@ -37,9 +37,8 @@
 //! hold that rests on a collapsed one opens it, the courtesy every file manager's
 //! tree gives a drag. And a shelf row is a LIFT as well as a landing: a hold
 //! enters the selection with the shelf in it and a movement picks it up — the
-//! same wiring and the same disk-bound refusal the grid's folder card wears — so
-//! a folder is draggable at both densities, and a set of books and folders
-//! lifts as one.
+//! same wiring the grid's folder card wears — so a folder is draggable at both
+//! densities, watched or not, and a set of books and folders lifts as one.
 //!
 //! A row shows the author when the book has one and the resume point when it does
 //! not: at this density there is room for one line of prose and the reader gets to
@@ -231,20 +230,6 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     let open_id = id.clone();
     let open = Signal::derive(move || ctx.expanded.with(|set| set.contains(&open_id)));
 
-    // A shelf cut from a watched tree is the tree's to place — every scan
-    // re-hangs it on the rung its `rel` names — so offering it a lift would be
-    // offering a move the next rescan undoes. The grid's folder card refuses by
-    // the same rule; a virtual shelf lifts freely at both densities.
-    let disk_id = id.clone();
-    let disk_bound = Signal::derive(move || {
-        state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == disk_id)
-                .is_some_and(|s| s.is_folder())
-        })
-    });
-
     // A target at last, and the row IS the shelf: its middle takes a hold
     // inside, and its outer quarters reorder held folders beside it in the
     // level that holds them. Unregistered, a drop here fell through to the
@@ -318,9 +303,10 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     // folder card and the book rows wear (see
     // `crate::features::library::gestures`) with the disclosure's own answer: a
     // tap unfolds, a hold enters the selection with this shelf in it, and a
-    // movement lifts it unless the disk places it. The hosts arrive as the
-    // Options this row asked for: the sidebar's tree mounts it with neither,
-    // and a row with no session and no menu keeps its tap and nothing else.
+    // movement lifts it, watched or not — a hand-move is marked on the row and
+    // the next re-hang passes it by. The hosts arrive as the Options this row
+    // asked for: the sidebar's tree mounts it with neither, and a row with no
+    // session and no menu keeps its tap and nothing else.
     let target_id = id.clone();
     let gestures = use_shelf_item(
         state,
@@ -329,7 +315,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
         ShelfItemPolicy {
             id: id.clone(),
             label: Signal::derive(move || format!("the {} shelf", name.get())),
-            draggable: Signal::derive(move || !disk_bound.get()),
+            draggable: Signal::derive(|| true),
             open: toggle,
             menu_target: Callback::new(move |_| MenuTarget::Folder {
                 id: target_id.clone(),

@@ -51,9 +51,11 @@ pub(crate) struct ShelfItemPolicy {
     /// "the Sci-fi shelf" for a folder — so the label reads "Open Dune" and
     /// "Open the Sci-fi shelf" in the two voices the shelves already have.
     pub label: Signal<String>,
-    /// Whether a movement may lift this item. A book always may; a shelf cut
-    /// from a watched tree does not, because the disk places it and the next
-    /// rescan would undo a hand that moved it.
+    /// Whether a movement may lift this item. The shelf surfaces all say yes
+    /// today — a watched shelf a hand moves keeps its move (see
+    /// `library_core::shelf::Shelf::manual_parent`) — and the knob stays the
+    /// caller's, because "may this be lifted" is a policy and the wiring is
+    /// not the place one is decided.
     pub draggable: Signal<bool>,
     /// What "open" means for this item, answered when the press was NOT a hold
     /// and the shelf is NOT selecting: a book reads, a folder drills.

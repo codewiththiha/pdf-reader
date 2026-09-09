@@ -197,6 +197,7 @@ mod tests {
             kind,
             books: books.iter().map(|b| b.to_string()).collect(),
             parent: None,
+            manual_parent: false,
         }
     }
 

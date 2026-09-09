@@ -17,13 +17,14 @@
 //!     ([`rescan_watched`]) never raises a dock card, a toast or a state write
 //!     for a folder nothing changed in — which, on every window focus, is nearly
 //!     all of them.
-//!   * **the tree on disk is the tree on the shelf.** A folder import mints the
-//!     whole chain of shelves between the watched root and each file's subfolder,
-//!     and a rescan re-hangs the folder's shelves on the rung their `rel` names,
-//!     so importing "1" that holds "2", "3" and four books yields "1" at the root
-//!     with "2", "3" and the books inside it — one logic, one tree, rather than a
-//!     flat shelf list grown beside a nested one. Virtual shelves are the
-//!     reader's own and no scan ever rearranges them.
+//!   * **the tree on disk is the tree on the shelf — until a hand moves one.**
+//!     A folder import mints the whole chain of shelves between the watched root
+//!     and each file's subfolder, and a rescan re-hangs the folder's shelves on
+//!     the rung their `rel` names, passing by the ones the reader moved by hand
+//!     (`Shelf::manual_parent`), so importing "1" that holds "2", "3" and four
+//!     books yields "1" at the root with "2", "3" and the books inside it — one
+//!     logic, one tree, rather than a flat shelf list grown beside a nested one.
+//!     Virtual shelves are the reader's own and no scan ever rearranges them.
 //!   * **an ask outranks a removal.** The tombstones a removal writes are an
 //!     answer to the passive rescan — "stay quiet about this file" — and not to
 //!     the reader picking the same folder again a week later. [`Asked::Explicitly`]
@@ -399,7 +400,11 @@ async fn run_folder(
     // rung is the one its `rel` names — including for shelves an older, flatter
     // build minted as siblings, which this pass re-hangs under the rung they were
     // always cut from. Virtual shelves are the reader's own arrangement and are
-    // never touched here, and neither is a shelf of another folder.
+    // never touched here, and neither is a shelf of another folder — nor a shelf
+    // the reader moved BY HAND, which `reparent` marked `manual_parent`: the
+    // hand beats the disk, and this pass is the disk's. A moved shelf still
+    // serves as its subfolders' rung in the map below, so the subtree the reader
+    // carried off re-hangs together, wherever it now hangs.
     //
     // Before the diff and before the "nothing changed" return on purpose: a
     // library arranged by an older build is repaired by the first rescan that
@@ -416,6 +421,10 @@ async fn run_folder(
             .collect();
         let mut moved = Vec::new();
         for shelf in shelves.iter() {
+            // The reader's placement wins over the disk's shape.
+            if shelf.manual_parent {
+                continue;
+            }
             let want: Option<Option<String>> = match &shelf.kind {
                 ShelfKind::Folder { folder_id, rel } if folder_id == &folder.id => {
                     let key = rel.clone().unwrap_or_default();
@@ -619,6 +628,9 @@ async fn run_folder(
                         },
                         books: Vec::new(),
                         parent,
+                        // Minted by the scan, so the scan owns its rung —
+                        // until a hand moves it, which is `reparent`'s mark.
+                        manual_parent: false,
                     });
                 },
             );

@@ -94,7 +94,7 @@ fn book_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
 pub fn shelves(conn: &Connection) -> Result<Vec<Shelf>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, kind, folder_id, rel, position, parent \
+            "SELECT id, name, kind, folder_id, rel, position, parent, manual_parent \
              FROM shelves ORDER BY position, id",
         )
         .map_err(|e| format!("could not prepare the shelf query: {e}"))?;
@@ -114,6 +114,7 @@ pub fn shelves(conn: &Connection) -> Result<Vec<Shelf>, String> {
                 // shelf would be one query per shelf for no benefit.
                 books: Vec::new(),
                 parent: row.get(6)?,
+                manual_parent: row.get::<_, i64>(7)? != 0,
             })
         })
         .map_err(|e| format!("could not query the shelves: {e}"))?;
@@ -428,8 +429,8 @@ pub fn shelf_insert(conn: &Connection, shelf: &Shelf, position: i64) -> Result<(
         ShelfKind::Folder { folder_id, rel } => ("folder", Some(folder_id.as_str()), rel.as_deref()),
     };
     conn.execute(
-        "INSERT INTO shelves (id, name, kind, folder_id, rel, position, parent) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO shelves (id, name, kind, folder_id, rel, position, parent, manual_parent) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             shelf.id,
             shelf.name,
@@ -437,7 +438,8 @@ pub fn shelf_insert(conn: &Connection, shelf: &Shelf, position: i64) -> Result<(
             folder_id,
             rel,
             position,
-            shelf.parent
+            shelf.parent,
+            shelf.manual_parent as i64
         ],
     )
     .map_err(|e| format!("could not create shelf {}: {e}", shelf.id))?;
@@ -451,13 +453,19 @@ pub fn shelf_insert(conn: &Connection, shelf: &Shelf, position: i64) -> Result<(
 /// caller before it gets to this: a graph walk rewritten as a recursive CTE would
 /// be a second answer to the same question in the one language the other cannot
 /// read, and the two would disagree silently.
+///
+/// Moving a shelf the disk cut is a hand-move, and the row says so — the same
+/// `manual_parent` mark `library_core::shelf::reparent` writes, in the same
+/// moment, so the two stores cannot disagree about whose the rung is.
 pub fn shelf_reparent(conn: &Connection, id: &str, parent: Option<&str>) -> Result<bool, String> {
     // `IS NOT` rather than `<>`, because the top level is a NULL and `NULL <> x`
     // is NULL — an UPDATE guarded by it would never fire on a shelf being lifted
     // out of a folder, and would report "changed" for one that had not moved.
     let changed = conn
         .execute(
-            "UPDATE shelves SET parent = ?2 WHERE id = ?1 AND parent IS NOT ?2",
+            "UPDATE shelves SET parent = ?2, \
+                    manual_parent = CASE WHEN kind = 'folder' THEN 1 ELSE manual_parent END \
+             WHERE id = ?1 AND parent IS NOT ?2",
             params![id, parent],
         )
         .map_err(|e| format!("could not re-file shelf {id}: {e}"))?;
@@ -1234,6 +1242,7 @@ mod tests {
             },
             books: Vec::new(),
             parent: None,
+            manual_parent: false,
         };
         shelf_insert(&conn, &virtual_shelf("s1", "Mine"), 0).unwrap();
         shelf_insert(&conn, &folder_shelf, 1).unwrap();
@@ -1306,6 +1315,49 @@ mod tests {
         assert!(!shelf_reparent(&conn, "s2", None).unwrap());
         // A shelf that is not there is not a move.
         assert!(!shelf_reparent(&conn, "nope", Some("s1")).unwrap());
+        // A virtual shelf's move is the reader's from the start: no scan ever
+        // wrote its parent, so it carries no mark.
+        assert!(!shelves(&conn).unwrap()[1].manual_parent);
+    }
+
+    #[test]
+    fn moving_a_shelf_the_disk_cut_marks_it_the_readers() {
+        let conn = db();
+        shelf_insert(&conn, &virtual_shelf("s1", "Fiction"), 0).unwrap();
+        let cut = Shelf {
+            id: "s2".into(),
+            name: "scifi".into(),
+            kind: ShelfKind::Folder {
+                folder_id: "f1".into(),
+                rel: Some("scifi".into()),
+            },
+            books: Vec::new(),
+            parent: None,
+            manual_parent: false,
+        };
+        shelf_insert(&conn, &cut, 1).unwrap();
+        assert!(shelf_reparent(&conn, "s2", Some("s1")).unwrap());
+        let back = shelves(&conn).unwrap();
+        assert_eq!(back[1].parent.as_deref(), Some("s1"));
+        assert!(
+            back[1].manual_parent,
+            "the mark is what tells the frontend's next re-hang to pass it by"
+        );
+        // The mark survives the round trip both ways: a shelf inserted as
+        // hand-moved reads back hand-moved.
+        shelf_insert(
+            &conn,
+            &Shelf {
+                id: "s3".into(),
+                manual_parent: true,
+                parent: Some("s1".into()),
+                ..virtual_shelf("s3", "Moved")
+            },
+            2,
+        )
+        .unwrap();
+        let back = shelves(&conn).unwrap();
+        assert!(back.iter().find(|s| s.id == "s3").unwrap().manual_parent);
     }
 
     #[test]
@@ -1705,6 +1757,7 @@ mod tests {
             kind: ShelfKind::Virtual,
             books: Vec::new(),
             parent: None,
+            manual_parent: false,
         }
     }
 

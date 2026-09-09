@@ -57,6 +57,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../../migrations/0001_init.sql")),
     (2, include_str!("../../migrations/0002_gloss_fts.sql")),
     (3, include_str!("../../migrations/0003_shelf_parent.sql")),
+    (4, include_str!("../../migrations/0004_shelf_manual_parent.sql")),
 ];
 
 /// The library's connection, or nothing when it could not be opened.

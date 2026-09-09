@@ -26,11 +26,15 @@
 //!
 //! Nesting is NOT the same thing as [`ShelfKind::Folder`]'s `rel`. `rel` is a
 //! subfolder's address inside a watched directory's tree — a rescan key, owned
-//! by the filesystem. For a folder shelf `parent` is its projection: the tree
-//! on disk is the tree on the shelf, so a scan re-hangs one on the rung its
-//! `rel` names and [`reparent`] refuses a hand that would move it where the
-//! next rescan undoes it. For a virtual shelf `parent` is where the reader
-//! filed it, and no scan ever writes it.
+//! by the filesystem. For a folder shelf `parent` starts as its projection —
+//! the tree on disk is the tree on the shelf, and a scan re-hangs the folder's
+//! shelves on the rungs their `rel` names — until the reader moves one by hand.
+//! A hand beats the disk: [`reparent`] accepts the move and marks the row
+//! [`Shelf::manual_parent`], which is what makes the next rescan leave it
+//! where the reader put it. The shelf keeps its disk knowledge through the
+//! move — its `rel` still routes newly scanned files into it — and for a
+//! virtual shelf `parent` is the reader's from the start, and no scan ever
+//! writes it.
 
 use serde::{Deserialize, Serialize};
 
@@ -94,6 +98,19 @@ pub struct Shelf {
     /// the right reading of it rather than a migration.
     #[serde(default)]
     pub parent: Option<String>,
+    /// The reader moved this shelf by hand, so its place in the library is the
+    /// reader's and not the disk's: a watched folder's rescan re-hangs the
+    /// shelves it owns on the rungs their `rel` names, and passes a shelf
+    /// wearing this mark by. Written by [`reparent`] and by nothing else;
+    /// `#[serde(default)]` because a blob from before shelves could be
+    /// hand-moved has no key and every shelf in it is the scan's.
+    ///
+    /// The shelf keeps everything else it knows: its `rel` is still the rescan
+    /// key, its folder's `shelf_map` still routes newly scanned files into it,
+    /// and its books keep their read-in-place addresses — a moved shelf moves
+    /// its whole subtree, the way a moved directory takes its tree with it.
+    #[serde(default)]
+    pub manual_parent: bool,
 }
 
 impl Shelf {
@@ -179,20 +196,20 @@ pub fn can_nest(shelves: &[Shelf], folder_id: &str, target_id: &str) -> bool {
 }
 
 /// File `folder_id` inside `parent`, or at the root when `parent` is `None`.
-/// True when the shelf moved.
+/// True when the shelf was found and the graph allows the move.
 ///
 /// Refuses the move [`can_nest`] refuses, and leaves the list exactly as it
-/// was: a drop that would close a cycle is a drop that never happened, which is
-/// what lets the caller answer a refusal by doing nothing at all.
+/// was: a drop that would close a cycle is a drop that never happened, which
+/// is what lets the caller answer a refusal by doing nothing at all.
+///
+/// Every shelf may be moved, including one cut from a watched tree — the
+/// reader's hand beats the disk's shape — and moving a watched one marks it
+/// [`Shelf::manual_parent`], which is what tells the next rescan's re-hang to
+/// pass it by instead of putting it back where the directory had it. The mark
+/// is written HERE, in the one function every hand-move rides (a drag's nest,
+/// a bulk filing, a sibling reorder), rather than at call sites that would
+/// each have to remember it.
 pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) -> bool {
-    // A shelf cut from a watched tree is a view of that tree, and its rung is the
-    // disk's to write: the import mints the chain and every rescan re-hangs it,
-    // so a hand that could move it would be undone by the next scan — a control
-    // that appears to work and then does not. Virtual shelves are the reader's
-    // own arrangement and move freely.
-    if shelves.iter().any(|s| s.id == folder_id && s.is_folder()) {
-        return false;
-    }
     if let Some(target) = parent
         && !can_nest(shelves, folder_id, target)
     {
@@ -201,6 +218,12 @@ pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) ->
     let Some(shelf) = shelves.iter_mut().find(|s| s.id == folder_id) else {
         return false;
     };
+    // A watched shelf keeps every fact it has except its rung: the `rel` that
+    // routes its folder's new files into it travels with the move, and the
+    // mark below is what stops the next re-hang from undoing the hand.
+    if shelf.is_folder() {
+        shelf.manual_parent = true;
+    }
     shelf.parent = parent.map(str::to_string);
     true
 }
@@ -349,6 +372,7 @@ mod tests {
             kind: ShelfKind::Virtual,
             books: books.iter().map(|b| b.to_string()).collect(),
             parent: None,
+            manual_parent: false,
         }
     }
 
@@ -590,24 +614,60 @@ mod tests {
     }
 
     #[test]
-    fn a_shelf_cut_from_a_watched_tree_is_not_the_readers_to_move() {
+    fn a_hand_moved_watched_shelf_keeps_its_move_and_says_so() {
         let mut shelves = vec![
             shelf("s1", "Fiction", &[]),
             Shelf {
                 kind: ShelfKind::Folder {
                     folder_id: "f1".into(),
-                    rel: None,
+                    rel: Some("scifi".into()),
                 },
                 ..shelf("s2", "Watched", &[])
             },
         ];
-        // Its rung follows the disk on every scan, so a hand-move would be a
-        // promise the next rescan breaks; the refusal is the honest answer.
-        assert!(!reparent(&mut shelves, "s2", Some("s1")));
-        assert_eq!(shelves[1].parent, None);
-        // And a virtual shelf into it is fine: the reader's arrangement holds.
-        assert!(reparent(&mut shelves, "s1", Some("s2")));
-        assert_eq!(shelves[0].parent.as_deref(), Some("s2"));
+        // The reader's hand beats the disk's shape: the move lands, and the row
+        // carries the mark the next re-hang reads — which is what makes the
+        // move a promise the rescan KEEPS instead of one it breaks.
+        assert!(reparent(&mut shelves, "s2", Some("s1")));
+        assert_eq!(shelves[1].parent.as_deref(), Some("s1"));
+        assert!(shelves[1].manual_parent);
+        // Its disk knowledge is the move's survivor: the kind — and with it
+        // the `rel` that routes the folder's new files into this very shelf —
+        // is untouched by a change of place.
+        assert!(matches!(
+            shelves[1].kind,
+            ShelfKind::Folder { ref rel, .. } if rel.as_deref() == Some("scifi")
+        ));
+        // A virtual shelf's move is the reader's from the start: no scan ever
+        // wrote its parent, so there is no scan to tell to stand aside.
+        assert!(reparent(&mut shelves, "s1", None));
+        assert!(!shelves[0].manual_parent);
+        // And the loop rule holds for a watched shelf exactly as for any
+        // other: s2 is inside s1, so s1 inside s2 is refused, mark or no mark.
+        assert!(!reparent(&mut shelves, "s1", Some("s2")));
+        assert_eq!(shelves[0].parent, None);
+    }
+
+    #[test]
+    fn a_shelf_from_before_the_mark_existed_is_the_scans() {
+        // No `manualParent` key in an older blob is not a hand-move: every
+        // shelf in it is where the last scan put it, and the next one may
+        // re-hang it.
+        let older: Shelf = serde_json::from_str(
+            r#"{"id":"s2","name":"scifi","kind":{"kind":"folder","folderId":"f1"}}"#,
+        )
+        .unwrap();
+        assert!(!older.manual_parent);
+        // And a shelf the reader moved persists as one.
+        let moved = Shelf {
+            manual_parent: true,
+            parent: Some("s1".into()),
+            ..older.clone()
+        };
+        let json = serde_json::to_string(&moved).unwrap();
+        assert!(json.contains("\"manualParent\":true"), "{json}");
+        let back: Shelf = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, moved);
     }
 
     #[test]

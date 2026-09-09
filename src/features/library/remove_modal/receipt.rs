@@ -355,6 +355,7 @@ mod tests {
             kind: ShelfKind::Virtual,
             books: books.iter().map(|each| each.to_string()).collect(),
             parent: parent.map(str::to_string),
+            manual_parent: false,
         }
     }
 

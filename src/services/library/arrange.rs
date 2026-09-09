@@ -381,6 +381,7 @@ fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
             kind: library_core::shelf::ShelfKind::Virtual,
             books: Vec::new(),
             parent,
+            manual_parent: false,
         });
     });
     // A belt-and-braces tick for an open search: the folder filter reads the

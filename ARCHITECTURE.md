@@ -526,11 +526,19 @@ arithmetic that decides which shelves those are (`subtree`, `deepest_first`) is 
 list and host-tested, including the cycle a blob caught between two writes can still carry.
 
 Nesting is not `ShelfKind::Folder`'s `rel`. `rel` is a subfolder's address inside a watched
-directory's tree — a rescan key, written by the filesystem's shape. For a FOLDER shelf, `parent` is
-its projection: the tree on disk is the tree on the shelf, so every scan re-hangs the folder's
-shelves on the rung their `rel` names, and `library_core::shelf::reparent` refuses the hand that
-would move one where the next scan would undo it anyway. For a VIRTUAL shelf `parent` is where the
-reader filed it, and no scan ever writes it.
+directory's tree — a rescan key, written by the filesystem's shape. For a FOLDER shelf, `parent`
+starts as its projection: the tree on disk is the tree on the shelf, and every scan re-hangs the
+folder's shelves on the rung their `rel` names — until the reader moves one by hand. A hand beats
+the disk: `library_core::shelf::reparent` accepts the move and marks the row
+`Shelf::manual_parent`, and the re-hang passes a marked shelf by, so the move is a promise the next
+scan KEEPS instead of one it breaks. The mark is written in `reparent` alone — the one function
+every hand-move rides — and mirrored by the catalog's own `shelf_reparent`, because the two stores
+hold the same library and a value that survives a restart in one and not the other is a value
+lost. The moved shelf keeps every disk fact it had: its `rel` still routes newly scanned files
+into it, and its subtree hangs off `parent` pointers, so a moved folder carries its folders and
+its books the way a moved directory carries its tree — and a read-in-place book's address travels
+on the book, so tracking, relink and the resume points never knew a move happened. For a VIRTUAL
+shelf `parent` is the reader's from the start, and no scan ever writes it.
 
 ### One gesture, decided once
 
@@ -610,8 +618,9 @@ middle one, and the grid keeps its whole-card answers without the table carrying
 layouts. The tree adds the courtesy every file manager's tree gives a drag: a hold resting on a
 collapsed shelf row opens it, so the way deeper is the way in. A shelf row is a LIFT as well as a
 landing: a hold enters the selection with the shelf in it and a movement picks it up, by the same
-wiring and the same disk-bound refusal the folder card wears — a folder is draggable at both
-densities, and a set of books and folders is one gesture in either.
+wiring the folder card wears — a folder is draggable at both densities, watched or not (the move
+is the hand's, and `Shelf::manual_parent` is what tells the next re-hang so), and a set of books
+and folders is one gesture in either.
 
 Two dwells hang off the same target change, and they are NOT the same question at two depths — the
 difference is the whole of the design. The sink belongs to the title bar alone: at 420ms over a crumb,

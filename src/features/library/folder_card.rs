@@ -20,10 +20,12 @@
 //! and a movement hands the press to `crate::features::library::dnd`, which is
 //! what files a book dropped on it or nests a shelf dropped on it.
 //!
-//! The one card that does not drag is a shelf cut from a watched folder: its rung
-//! in the library is the rung its directory has on disk, re-hung on every scan, so
-//! a hand-move would be a promise the next rescan breaks. It still opens, still
-//! selects, and still takes the books and virtual shelves dropped on it.
+//! Every card drags, including one cut from a watched folder. A scan mints such a
+//! shelf on the rung its directory has on disk and re-hangs it there — but the
+//! reader's hand beats the disk's shape: the move is marked on the row
+//! (`library_core::shelf::Shelf::manual_parent`), the next re-hang passes it by,
+//! and the shelf keeps its disk knowledge through the move, so files its folder
+//! scans later still land inside it wherever the reader filed it.
 //!
 //! A drop this folder refuses — a shelf that would end up inside itself — wears no
 //! ring at all, which is the honest half of the gesture: the decision table says
@@ -115,24 +117,10 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         })
     });
 
-    // A shelf cut from a watched tree is the tree's to place — every scan re-hangs
-    // it on the rung its `rel` names — so offering it a drag would be offering a
-    // move the next rescan undoes. Virtual shelves drag freely.
-    let disk_id = id.clone();
-    let disk_bound = Signal::derive(move || {
-        state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == disk_id)
-                .is_some_and(|s| s.is_folder())
-        })
-    });
-
     let selecting = state.library.selecting;
 
     // The shelf's one press contract, the same wiring a book wears (see
-    // `crate::features::library::gestures`) with the folder's own three
-    // answers: a shelf the disk places is not one the pointer gets to place,
+    // `crate::features::library::gestures`) with the folder's own answers:
     // "open" drills the breadcrumb route, and the right-click asks about a
     // folder. A set being selected is not a reason to refuse a drag: lifting
     // one of three held folders is the whole of what a multi-drag is.
@@ -145,7 +133,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         ShelfItemPolicy {
             id: id.clone(),
             label: Signal::derive(move || format!("the {} shelf", name.get())),
-            draggable: Signal::derive(move || !disk_bound.get()),
+            draggable: Signal::derive(|| true),
             open: Callback::new(move |_| state.library.shelf.set(open_id.clone())),
             // `watched` is read at the ask rather than at the mount: a rescan
             // can start or stop watching a folder between the two, and the
