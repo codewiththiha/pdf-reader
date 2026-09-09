@@ -10,11 +10,13 @@
 //! A list has no end, and a title bar does. The oldest crumbs are elided behind an
 //! ellipsis, which is the same trade every bar that can go deep makes: the reader
 //! keeps the LAST few — the ones nearest where they are — and gets the rest one
-//! hover away. How many is a WIDTH question before it is a count: every crumb is
-//! measured in a hidden probe against the cluster's own live box, and the fold
-//! deepens on the same frame the bar gets cramped — no window event anywhere. The
-//! count rule ([`CRUMB_KEEP`]) is the fallback for the frames before the first
-//! measurement, and for numbers that cannot be trusted.
+//! hover away. Whether the bar folds at all is a DEPTH question first: a chain
+//! shallower than [`FOLD_MIN_DEPTH`] never folds, however cramped — its crumbs
+//! truncate instead. Past the gate, how many fold is a WIDTH question before it is
+//! a count: every crumb is measured in a hidden probe against the cluster's own
+//! live box, and the fold deepens on the same frame the bar gets cramped — no
+//! window event anywhere. The count rule ([`CRUMB_KEEP`]) is the fallback for the
+//! frames before the first measurement, and for numbers that cannot be trusted.
 //!
 //! The ellipsis is its own affordance and not an arrow on a crumb, and that is not
 //! cosmetics. An arrow on the third level whose panel lists the FIRST and the
@@ -92,6 +94,15 @@ use crate::state::AppState;
 /// a slot of its own, so three kept plus one elided is the four the bar used to
 /// show. A fifth element is a fifth of the bar spent on where you have been.
 const CRUMB_KEEP: usize = 3;
+
+/// The chain length at which the ellipsis first earns its slot: four nested
+/// folders. A shallower chain NEVER folds, however cramped the cluster is — its
+/// crumbs truncate against each other instead — because the smallest fold this
+/// bar allows hides two levels, and below four that leaves one lonely crumb
+/// beside the ellipsis: a worse way to say the names truncation says for free.
+/// Folding by width the moment the bar got tight, at any depth, was the fold
+/// readers did not want; the depth gate is the answer to it.
+const FOLD_MIN_DEPTH: usize = 4;
 
 /// The bar's gap between crumbs, in CSS px — the nav's `gap-0.5`. The fold's
 /// arithmetic charges it between the measured boxes, because the probe measures
@@ -293,10 +304,12 @@ fn elide_at(len: usize) -> usize {
     }
 }
 
-/// How many of the chain's oldest levels the bar elides, by WIDTH: the smallest
-/// split — never exactly one, the rule [`elide_at`] keeps — whose ellipsis and
-/// kept crumbs fit the cluster's live box, and 0 when the whole chain already
-/// does. `widths` is the probe's answer, `[ellipsis, crumb0, …, crumbN-1]`.
+/// How many of the chain's oldest levels the bar elides, by WIDTH — past a
+/// depth gate: a chain shallower than [`FOLD_MIN_DEPTH`] never folds and
+/// answers 0 whatever the cluster costs. Beyond the gate, the smallest split —
+/// never exactly one, the rule [`elide_at`] keeps — whose ellipsis and kept
+/// crumbs fit the cluster's live box, and 0 when the whole chain already does.
+/// `widths` is the probe's answer, `[ellipsis, crumb0, …, crumbN-1]`.
 ///
 /// Pure over the measurements so the fold's arithmetic is host-tested. The count
 /// rule is the fallback for every frame the numbers cannot be trusted: nothing
@@ -304,7 +317,13 @@ fn elide_at(len: usize) -> usize {
 /// The answer never exceeds `len`, which is what keeps the `split_at` below it
 /// from panicking on a frame the two lists disagree.
 fn choose_split(widths: &[f64], available: f64, len: usize) -> usize {
-    if len == 0 || widths.len() != len + 1 || available <= 0.0 {
+    // Depth gates the fold before width measures it: a shallow chain keeps
+    // every crumb and lets them truncate. This also answers `len == 0`, which
+    // the count rule answers the same way.
+    if len < FOLD_MIN_DEPTH {
+        return 0;
+    }
+    if widths.len() != len + 1 || available <= 0.0 {
         return elide_at(len);
     }
     let items = &widths[1..];
@@ -312,12 +331,6 @@ fn choose_split(widths: &[f64], available: f64, len: usize) -> usize {
     let total: f64 = items.iter().sum::<f64>() + gap(len);
     if total <= available {
         // Everything fits: no ellipsis at all.
-        return 0;
-    }
-    if len < 2 {
-        // One level that does not fit is shown truncated: beside an ellipsis
-        // there would be no chain left to keep, and a fold of exactly one level
-        // is the one this bar refuses on principle.
         return 0;
     }
     let ellipsis = widths[0];
@@ -1143,10 +1156,29 @@ mod tests {
 
     #[test]
     fn a_chain_the_cluster_holds_folds_nothing() {
-        // Three crumbs of 120 plus their gaps is 364; a 600px cluster holds
-        // the lot, so the ellipsis stays out of the bar entirely.
-        let widths = measured(3, 22.0, 120.0);
-        assert_eq!(choose_split(&widths, 600.0, 3), 0);
+        // Four crumbs of 120 plus their gaps is 486; a 600px cluster holds the
+        // lot, so at the first depth a fold is allowed at all, the ellipsis
+        // stays out of the bar anyway.
+        let widths = measured(4, 22.0, 120.0);
+        assert_eq!(choose_split(&widths, 600.0, 4), 0);
+    }
+
+    #[test]
+    fn a_shallow_chain_never_folds_however_cramped() {
+        // The gate the fold answers to before any width: below four nested
+        // levels the bar keeps every crumb and lets them truncate — an
+        // ellipsis at depth two buys back one crumb and costs a hover, and the
+        // smallest legal fold would leave a lonely crumb beside it.
+        for len in 0..FOLD_MIN_DEPTH {
+            let widths = measured(len, 22.0, 900.0);
+            for available in [0.0, 40.0, 324.0, 5000.0] {
+                assert_eq!(
+                    choose_split(&widths, available, len),
+                    0,
+                    "a chain of {len} keeps every crumb at every width"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1168,12 +1200,6 @@ mod tests {
     fn nothing_fits_but_the_newest_level_and_the_fold_stops_there() {
         let widths = measured(4, 22.0, 200.0);
         assert_eq!(choose_split(&widths, 100.0, 4), 3, "len - 1, never past the chain");
-        let two = measured(2, 22.0, 200.0);
-        assert_eq!(
-            choose_split(&two, 100.0, 2),
-            2,
-            "a chain of two folds whole rather than showing one beside the ellipsis"
-        );
     }
 
     #[test]
@@ -1193,10 +1219,12 @@ mod tests {
 
     #[test]
     fn unmeasured_numbers_fall_back_to_the_count_rule() {
-        assert_eq!(choose_split(&[], 500.0, 4), elide_at(4));
+        // Past the depth gate, a chain the probe has not measured — or
+        // measured out of step — folds by count rather than by a guess.
+        assert_eq!(choose_split(&[], 500.0, 6), elide_at(6));
         assert_eq!(
-            choose_split(&measured(2, 22.0, 100.0), 500.0, 4),
-            elide_at(4),
+            choose_split(&measured(4, 22.0, 100.0), 500.0, 6),
+            elide_at(6),
             "a probe out of step with the chain is not trusted"
         );
         assert_eq!(

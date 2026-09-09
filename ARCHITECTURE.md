@@ -643,11 +643,14 @@ gliding there.
 
 A chain of levels has no end and a title bar does, so `features::library::breadcrumb` elides the
 oldest crumbs behind an ellipsis — never just one, because a single elided level costs a hover to
-reach and costs the bar the width showing it would have. How many fold is a width question before it
-is a count: every crumb (plus the ellipsis itself) is measured in a hidden probe against the
-cluster's own live box, which is observed rather than polled — so a chain that grew folds on the same
-frame it gets cramped, and so does a cluster the window squeezed, with no resize handler anywhere in
-the fold. The count rule — keep three — is the fallback for the frames before the first measurement.
+reach and costs the bar the width showing it would have. Whether the bar folds at all is a depth
+question first: a chain shallower than four nested folders never folds, however cramped the bar is —
+its crumbs truncate against each other instead, because the smallest legal fold hides two levels and
+below four that leaves one lonely crumb beside the ellipsis. Past that gate, how many fold is a width
+question before it is a count: every crumb (plus the ellipsis itself) is measured in a hidden probe
+against the cluster's own live box, which is observed rather than polled — so a chain that grew folds
+on the same frame it gets cramped, and so does a cluster the window squeezed, with no resize handler
+anywhere in the fold. The count rule — keep three — is the fallback for the frames before the first measurement.
 The cluster itself is squeezable (`min-w-0`, not `shrink-0`): a bar whose left refuses to shrink
 answers a long chain by overflowing over the search field, which is the overlap the fold exists to
 prevent, and the shell already observes the cluster elements, so the centered slot follows every
