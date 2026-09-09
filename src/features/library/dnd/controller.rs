@@ -273,17 +273,18 @@ impl DragController {
                 }
             }
             // The fold's dwell is armed off the ANSWER and not only off the
-            // target's kind: a book the session currently reads as a landing —
-            // a position (`InsertBefore`), or the folders-only filing that
-            // answers a hold with no books in it — is a book a rest can turn
-            // into a partner. The answer is the session's own truth about the
-            // pointer — it has already collapsed which node of the row the
-            // hit-test landed on — so a rest over a book works even when the
-            // hit-test resolved through one of the row's children, and a
-            // target with no live answer arms no timer at all.
+            // target's kind: a book the session currently reads as a landing
+            // (`InsertBefore`) is a book a rest can turn into a partner — and
+            // the table answers that only for a hold with books in it, so a
+            // folders-only hold arms no timer and the plate never appears over
+            // a book. The answer is the session's own truth about the pointer:
+            // it has already collapsed which node of the row the hit-test
+            // landed on, so a rest over a book works even when the hit-test
+            // resolved through one of the row's children, and a target with no
+            // live answer arms no timer at all.
             let arms_fold = matches!(
                 this.effect.get_untracked(),
-                Some(DropEffect::InsertBefore { .. }) | Some(DropEffect::FileToShelf { .. })
+                Some(DropEffect::InsertBefore { .. })
             ) && target.0 == DropTargetKind::Book;
             if !arms_fold {
                 return;

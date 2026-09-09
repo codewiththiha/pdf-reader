@@ -16,13 +16,15 @@
 //! The grid does not ask the question: outside the list layout every band is the
 //! middle one, and a card keeps the whole-card answer it has always had.
 //!
-//! The one judgement call in the table is the fold. Resting over a book while
-//! holding two or more items offers to make a shelf out of them, and the offer
-//! has to be distinguishable from the drop that lands on the same book — which is
-//! why the dwell is a question the table is asked rather than a timer the table
-//! runs.
-
-use library_core::shelf::ALL_SHELF;
+//! The one judgement call in the table is the fold, and it is BOOK over book:
+//! resting a hold with books in it over an unheld book offers to make a shelf
+//! out of them, and the offer has to be distinguishable from the drop that
+//! lands on the same book — which is why the dwell is a question the table is
+//! asked rather than a timer the table runs. A hold with no books in it is
+//! refused by a book row outright: a row is a seam between books, a shelf is
+//! not a book, and a folder over a book is a stacking nobody asked for —
+//! folders land in a folder's mouth, beside their own kind on a shelf row's
+//! edges, on a crumb or on the level's own space.
 
 use super::target::DropTargetKind;
 use crate::features::library::folder_card::THUMB_CAP;
@@ -84,9 +86,10 @@ pub enum DropEffect {
     /// Make a shelf out of the held items and this book, and file them in it.
     CreateFolder { with_book_id: String },
     /// This target refuses what is being held — a folder that would end up
-    /// inside itself, or a sibling the graph says no to. Distinct from
-    /// "nothing under the pointer", which is a `None` effect rather than this
-    /// one, so a card can tell "not a target" from "a target that says no".
+    /// inside itself, a sibling the graph says no to, or a book row asked
+    /// about a hold with no books in it. Distinct from "nothing under the
+    /// pointer", which is a `None` effect rather than this one, so a card can
+    /// tell "not a target" from "a target that says no".
     Refused,
 }
 
@@ -165,8 +168,7 @@ pub struct DropQuery<'a> {
     pub band: Band,
     /// The shelf whose member list renders the target row, resolved by the
     /// session: the entry's own when the row named one, else the open level,
-    /// and `None` at the root. What an insertion names as its container and a
-    /// folders-only landing on a book row files into.
+    /// and `None` at the root. What an insertion names as its container.
     pub target_shelf: Option<&'a str>,
     /// Whether the pointer has rested over the target long enough for a fold to
     /// be offered.
@@ -215,25 +217,26 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
                     after: false,
                 };
             }
+            // A hold with no books in it has nothing to say to a book row: a
+            // row is a seam BETWEEN books and a shelf is not a book, so there
+            // is no position to take and no fold to brew — the fold is book
+            // over book. Folders land in a folder's mouth, beside their own
+            // kind on a shelf row's edges, on a crumb or on the level's space,
+            // and a refusal here is what keeps the plate and the ring off a
+            // rest that would promise a shelf nobody asked for.
+            if query.held_books == 0 {
+                return DropEffect::Refused;
+            }
             // Any other book is a partner, but only once the pointer has rested.
             // The dwell is the whole of the difference between the two answers and
             // it is not a refinement: without it a reorder would be unreachable,
             // because every card a drag crossed would be offering a new shelf
             // instead of a place to land. Membership of the payload decides WHICH
             // book could be a partner; the rest decides WHETHER the reader meant
-            // one. The rest is asked BEFORE the folders-only rule below, so a
-            // held shelf resting on a book still folds the pair into a new one.
+            // one.
             if query.dwell_armed && fold_items(&query) >= FOLD_MIN_ITEMS {
                 return DropEffect::CreateFolder {
                     with_book_id: id.to_string(),
-                };
-            }
-            // Folders alone on a book row have no position to take — a row is a
-            // seam between books — so they join the row's own container, which
-            // is the same answer the level's empty space gives.
-            if query.held_books == 0 {
-                return DropEffect::FileToShelf {
-                    shelf_id: query.target_shelf.unwrap_or(ALL_SHELF).to_string(),
                 };
             }
             DropEffect::InsertBefore {
@@ -381,24 +384,24 @@ mod tests {
     }
 
     #[test]
-    fn folders_alone_on_a_book_row_join_the_rows_container() {
-        // A folder has no seam between books, so the row answers with its
-        // container instead: the open level's spelling of the same filing the
-        // level's empty space performs.
+    fn a_hold_with_no_books_in_it_is_refused_by_a_book_row() {
+        // A row is a seam between books and a shelf is not a book: no band of
+        // the row, no container behind it and no rest changes that answer.
         assert_eq!(
             drop_effect(query(DropTargetKind::Book, "b2", 0, 1)),
-            DropEffect::FileToShelf {
-                shelf_id: ALL_SHELF.to_string()
-            }
+            DropEffect::Refused
         );
         assert_eq!(
             drop_effect(DropQuery {
                 target_shelf: Some("s2"),
                 ..query(DropTargetKind::Book, "b2", 0, 2)
             }),
-            DropEffect::FileToShelf {
-                shelf_id: "s2".to_string()
-            }
+            DropEffect::Refused
+        );
+        assert_eq!(
+            drop_effect(rested(DropTargetKind::Book, "b2", 0, 1)),
+            DropEffect::Refused,
+            "a dwell offers a fold to a hold with books in it, and nothing to this"
         );
         // A mixed hold keeps the books' position; the folders ride the same
         // container at the commit rather than splitting the release in two.
@@ -428,17 +431,10 @@ mod tests {
                 with_book_id: "b2".to_string()
             }
         );
+        // A mixed hold folds too: the new shelf takes the books AND the
+        // folders the reader was carrying, plus the partner.
         assert_eq!(
             drop_effect(rested(DropTargetKind::Book, "b2", 3, 1)),
-            DropEffect::CreateFolder {
-                with_book_id: "b2".to_string()
-            }
-        );
-        // Folders alone rest into a fold as well: the dwell is asked before
-        // the folders-only filing, so the gesture that makes a shelf out of a
-        // shelf and a book survives the band rules.
-        assert_eq!(
-            drop_effect(rested(DropTargetKind::Book, "b2", 0, 1)),
             DropEffect::CreateFolder {
                 with_book_id: "b2".to_string()
             }

@@ -612,7 +612,10 @@ page's own shelf, which a book on both is a member of as well. The question is w
 is on: the bottom half of a book row lands the hold after its anchor, a shelf row's middle takes the
 hold inside it, and its outer quarters reorder held folders beside their anchor in the level that
 holds the anchor — the graph asked is the parent's own `can_nest`, and a folder asked to sibling
-itself is refused. The band is computed once, in the session, from the row's own rectangle, so the
+itself is refused. A hold with no books in it is refused by a book row at EVERY band: a row is a
+seam between books and a shelf is not a book, so a folder over a book is neither a landing nor a
+fold — it lands in a folder's mouth, beside its own kind on a shelf row's edge, on a crumb or on
+the level's space. The band is computed once, in the session, from the row's own rectangle, so the
 seam painted and the index committed cannot disagree; outside the list layout every band is the
 middle one, and the grid keeps its whole-card answers without the table carrying a branch about
 layouts. The tree adds the courtesy every file manager's tree gives a drag: a hold resting on a
@@ -655,8 +658,12 @@ its own members, reorders instead of counting that book twice — the bug a self
 The rest decides WHETHER, and it is not a refinement: without the dwell a reorder would be unreachable
 at all, because every card a drag crossed would be offering a new shelf instead of a place to land.
 With both, one book rested on another is a shelf of the two, which is the smallest shelf a drag can
-make and the whole of what folding a pair means. Folders and crumbs never brew a shelf whatever the
-rest, because a fold over a folder would be a nest and a create at once — two answers to one release.
+make and the whole of what folding a pair means. The fold is BOOK over book in both halves: folders
+and crumbs never brew a shelf whatever the rest, because a fold over a folder would be a nest and a
+create at once — two answers to one release — and a hold with no books in it is refused by a book
+row before the dwell is ever asked, so the plate and the ring appear only for the gesture that
+exists: books brewing a shelf over a book. A mixed hold folds with everything it carries, the
+folders included, because the new shelf is a shelf like any other and takes both kinds.
 
 A sunk drag is a parked drag, and it is charged for nothing. The sink caches the crumb's box with the
 spot, and while the pointer stays inside that box a `pointermove` does one comparison and returns:
