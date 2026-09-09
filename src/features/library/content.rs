@@ -32,6 +32,7 @@ use library_core::sort::{self, SortKey};
 use library_core::book::Book;
 
 use crate::components::primitives::feedback::CenteredLoader;
+use crate::features::library::context_menu::{LibraryContextMenu, LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::empty_state::EmptyState;
@@ -233,6 +234,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     // layouts, because there is one scroll container and the grid and the list are
     // two things inside it.
     let drag = use_context::<DragController>().expect("the library page installs the drag session");
+    let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Level, String::new()),
         dom_id: LEVEL_DOM_ID.to_string(),
@@ -314,7 +316,22 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
                     when=move || has_anything.get()
                     fallback=move || view! { <EmptyState state=state /> }
                 >
-                    <div id=LEVEL_DOM_ID class="min-h-0 flex-1 overflow-y-auto pt-12">
+                    <div
+                        id=LEVEL_DOM_ID
+                        class="min-h-0 flex-1 overflow-y-auto pt-12"
+                        // Empty shelf is a surface with a menu of its own: it is
+                        // where "new shelf" and "select all" belong, and a card's
+                        // own right-click stops propagating so this only ever hears
+                        // the space between them.
+                        on:contextmenu=move |ev: leptos::ev::MouseEvent| {
+                            ev.prevent_default();
+                            menu.ask(
+                                ev.client_x() as f64,
+                                ev.client_y() as f64,
+                                MenuTarget::Level,
+                            );
+                        }
+                    >
                         <div class="mx-auto w-full max-w-6xl px-6 py-8">
                             {move || {
                                 if is_list.get() {
@@ -339,6 +356,10 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
             // that vanished mid-open would leave the reader in a mode with no way
             // out of it on screen.
             <LibrarySelectBar state=state />
+            // Mounted here rather than on the page so the menu can read the level's
+            // own order: "select all" has to mean all of what is on screen, and
+            // that is the same derived list both layouts render.
+            <LibraryContextMenu state=state />
         </div>
     }
 }

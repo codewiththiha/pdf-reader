@@ -39,6 +39,7 @@ use crate::components::primitives::interactions::draggable_item::{
 use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::add_menu::AddMenu;
 use crate::features::library::content::ShelfOrder;
+use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::remove_modal::RemoveSheet;
@@ -98,7 +99,11 @@ fn AddRow(state: AppState) -> impl IntoView {
 
 #[component]
 fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
+    // Both, because the card keeps its own ✕: the menu is what a right-click asks
+    // and the sheet is what a removal costs, and the second is reached from the
+    // first as well as from the button.
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
     let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
     let selecting = state.library.selecting;
@@ -173,6 +178,7 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
     });
 
     let context_id = id.clone();
+    let context_path = path.clone();
     let key_id = id.clone();
     let aria_id = id.clone();
     let select_key_id = id.clone();
@@ -233,17 +239,30 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
                     ev.stop_propagation();
                 }
             }
+            // The same answer a card gives, at this density; see `book_card`.
             on:contextmenu=move |ev: leptos::ev::MouseEvent| {
+                // Stopped before the swallow is asked; see `book_card`.
                 ev.prevent_default();
+                ev.stop_propagation();
                 if (swallow_context)() {
                     return;
                 }
-                ev.stop_propagation();
-                if selecting.get_untracked() {
-                    toggle_selected(state, &context_id);
+                let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
+                let in_set = selecting.get_untracked()
+                    && selected_set.with_untracked(|set| set.contains(&context_id));
+                if in_set {
+                    menu.ask(x, y, MenuTarget::Selection);
                     return;
                 }
-                remove_sheet.ask(&context_id);
+                menu.ask(
+                    x,
+                    y,
+                    MenuTarget::Book {
+                        id: context_id.clone(),
+                        path: context_path.clone(),
+                        missing,
+                    },
+                );
             }
             on:keydown=move |ev: leptos::ev::KeyboardEvent| {
                 if ev.key() != "Enter" {

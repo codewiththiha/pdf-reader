@@ -326,9 +326,11 @@ the filesystem.
   420ms and it sits at a third of its size on the crumb's centre, leaving the name of the level you
   are about to file onto readable instead of covered. Nothing on the shelf itself sinks — a folder
   card already wears the loudest marker the shelf has, and a book is a position rather than a
-  container, so it answers at once with the insertion line and, after 650ms of resting with two or
-  more items held, with the folder card's own plate filling in, one cell per item the new shelf would
-  hold. While the ghost is parked a move costs one comparison against a cached box, and the
+  container, so it answers at once with the insertion line and, after 650ms of resting, with the
+  folder card's own plate filling in — one cell per item the new shelf would hold, so a single book
+  rested on another is a shelf of the two. A book you are already carrying is never a partner:
+  dragging onto yourself, or onto one of your own selected cards, reorders instead of counting that
+  book twice. While the ghost is parked a move costs one comparison against a cached box, and the
   transition that glides it in is the parked state itself, so the follow resumes exactly under the
   hand on the first move out.
 - **The view is a set of knobs, not a set of modes.** Grid or list, Auto or two to ten columns,
@@ -354,6 +356,13 @@ the filesystem.
   chain with nothing measured and nothing listening. ArrowDown opens it too, since those levels are on
   no other surface. Every crumb is a drop target, which is what makes a deep level reachable with a
   hand full of books; the ellipsis itself is a place to rest and not a place to drop.
+- **A right-click is a menu, per kind of thing.** A book gets Open, Select, Find again when its
+  address died, and Remove; a folder gets Open, Select, and Take shelf apart with the note about what
+  survives it; a card already in a selection gets the set's menu — New shelf from these, Remove, Clear
+  — because a right-click on one of several things means all of them; and the empty shelf gets New
+  shelf and Select all. One host answers all four, so the menu is the same menu wherever it was asked
+  from, and a right-click never starts a drag: a menu row is clicked by a pointer that has already
+  been released, and a session begun from one would have no release to end it.
 - **Removing a book shows you the receipt first.** The sheet itemises what goes with it — the resume
   point, the highlights, the cached cover, every shelf it was filed on — and leaves out the rows for
   things the book does not have. For a book the app copied there is a switch for the copy, on by

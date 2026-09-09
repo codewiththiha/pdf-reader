@@ -197,6 +197,59 @@ fn file_selection(state: AppState, shelf_id: &str) {
     nest_many(state, &folders, shelf_id);
 }
 
+/// Make a shelf at this level and file the selection in it, then drop the set.
+///
+/// Created without drilling into it: the reader picked cards on one shelf and
+/// asked for them to be on another, and navigating away is an answer to a question
+/// they did not ask. Created at this level, so the shelf the selection just went
+/// into is one the reader can still see.
+///
+/// One definition, and it lives here rather than in either caller because the bar's
+/// *New shelf* row and the level's right-click menu are the same action: two places
+/// that each minted a shelf would eventually differ about whether to drill in.
+pub(crate) fn file_selection_on_new_shelf(state: AppState) {
+    let shelf_id = create_shelf(state);
+    file_selection(state, &shelf_id);
+    exit_selection(state);
+}
+
+/// Ask for the removal of the whole selection, and drop the set.
+///
+/// Both halves go to the sheet, because the sheet receipts both: a book's row
+/// itemises what it takes with it and a shelf's row says what survives it. An ask
+/// that handed over the books alone would take the shelves apart with no receipt
+/// at all.
+pub(crate) fn ask_remove_selection(state: AppState, sheet: &RemoveSheet) {
+    let books = selected_books(state);
+    let folders = selected_folders(state);
+    if books.is_empty() && folders.is_empty() {
+        return;
+    }
+    exit_selection(state);
+    sheet.ask_many(books, folders);
+}
+
+/// Select everything on screen, which is what the bar's *All* and the level's
+/// right-click both mean by it.
+///
+/// Everything ON SCREEN and not everything in the library: a search or a drilled
+/// shelf narrows what "All" can mean, and selecting cards the reader cannot see is
+/// how a bulk action becomes a surprise. Both halves of the level — the books and
+/// the folders — because both are on it.
+pub(crate) fn select_on_screen(state: AppState, order: ShelfOrder, folders: FolderOrder) {
+    let on_screen: Vec<String> = order
+        .0
+        .get_untracked()
+        .into_iter()
+        .map(|book| book.id)
+        .chain(folders.0.get_untracked().into_iter().map(|each| each.id))
+        .collect();
+    state.library.selecting.set(true);
+    state.library.selected.update(|selected| {
+        selected.extend(on_screen);
+    });
+}
+
 /// The selection-mode wiring the page owns: the exit paths, and dropping the
 /// selection when the page goes away.
 ///
@@ -284,23 +337,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
             </span>
 
             <Button
-                on_click=move |_| {
-                    // Everything on screen, not everything in the library: a
-                    // search or a drilled shelf narrows what "All" can mean, and
-                    // selecting cards the reader cannot see is how a bulk action
-                    // becomes a surprise. Both halves of the page — the books and
-                    // the folders at this level — because both are on it.
-                    let on_screen: Vec<String> = order
-                        .0
-                        .get_untracked()
-                        .into_iter()
-                        .map(|book| book.id)
-                        .chain(folders.0.get_untracked().into_iter().map(|s| s.id))
-                        .collect();
-                    state.library.selected.update(|selected| {
-                        selected.extend(on_screen);
-                    });
-                }
+                on_click=move |_| select_on_screen(state, order, folders)
                 variant=ButtonVariant::Ghost
                 compact=true
                 class="rounded-full px-3"
@@ -353,30 +390,14 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                         label="New shelf"
                         on_click=move || {
                             shelf_menu.set(false);
-                            // Created without drilling into it: the reader picked
-                            // cards on one shelf and asked for them to be on
-                            // another, and navigating away is an answer to a
-                            // question they did not ask. Created at this level, so
-                            // the shelf the selection just went into is one the
-                            // reader can still see.
-                            let shelf_id = create_shelf(state);
-                            file_selection(state, &shelf_id);
-                            exit_selection(state);
+                            file_selection_on_new_shelf(state);
                         }
                     />
                 </MenuPopover>
             </div>
 
             <Button
-                on_click=move |_| {
-                    let ids = selected_books(state);
-                    let folders = selected_folders(state);
-                    if ids.is_empty() && folders.is_empty() {
-                        return;
-                    }
-                    exit_selection(state);
-                    remove_sheet.ask_many(ids, folders);
-                }
+                on_click=move |_| ask_remove_selection(state, &remove_sheet)
                 variant=ButtonVariant::Ghost
                 tone=ButtonTone::Danger
                 compact=true

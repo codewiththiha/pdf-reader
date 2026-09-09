@@ -41,6 +41,7 @@ use crate::components::primitives::interactions::draggable_item::{
     DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
 };
 use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
+use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
@@ -66,6 +67,7 @@ const PLATE_DEPTH: usize = 2;
 #[component]
 pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let drag = use_context::<DragController>().expect("the library page installs the drag session");
+    let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
 
     // The prop is the shelf the `For` keyed this row on, and a keyed row is not
     // re-created when the shelf's CONTENTS change — a book filed into it, a
@@ -230,18 +232,33 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             }
             on:contextmenu=move |ev: leptos::ev::MouseEvent| {
                 // WebKit answers a hold with a contextmenu as well as with the
-                // selection. This card has no menu of its own — a shelf's rename
-                // and its removal live on the crumb that names it — so the
-                // platform's menu is kept down either way, and inside a
-                // selection the same button toggles the way it does on a book.
+                // selection, so the hold's exhaust is swallowed before anything is
+                // asked for. What is left is a real right-click, and it used to be
+                // kept down and nothing else — a shelf's rename and its removal
+                // lived on the crumb that names it, and that popover is parked. A
+                // folder is now a thing with a menu of its own, which is the only
+                // place a shelf can be taken apart from without selecting it first.
+                // Stopped before the swallow is asked; see `book_card`.
                 ev.prevent_default();
+                ev.stop_propagation();
                 if (swallow_context)() {
                     return;
                 }
-                ev.stop_propagation();
-                if selecting.get_untracked() {
-                    toggle_selected(state, &context_id);
+                let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
+                let in_set = selecting.get_untracked()
+                    && selected_set.with_untracked(|set| set.contains(&context_id));
+                if in_set {
+                    menu.ask(x, y, MenuTarget::Selection);
+                    return;
                 }
+                menu.ask(
+                    x,
+                    y,
+                    MenuTarget::Folder {
+                        id: context_id.clone(),
+                        watched: watched.get_untracked(),
+                    },
+                );
             }
             on:keydown=move |ev: leptos::ev::KeyboardEvent| {
                 if ev.key() != "Enter" {

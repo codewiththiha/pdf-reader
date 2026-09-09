@@ -590,6 +590,16 @@ read. The dwell is longer than the hold that starts a selection on purpose: a re
 rests over cards, and a fold that armed at the hold's tuning would offer a new shelf on every drag
 that happened to slow down.
 
+Which book can be a partner is a separate question from whether the reader meant one, and the two are
+answered by different things. Membership of the payload decides WHICH: a book the pointer is already
+carrying is a position and never a partner, so dragging a book onto itself, or a selection onto one of
+its own members, reorders instead of counting that book twice — the bug a self-counting target had.
+The rest decides WHETHER, and it is not a refinement: without the dwell a reorder would be unreachable
+at all, because every card a drag crossed would be offering a new shelf instead of a place to land.
+With both, one book rested on another is a shelf of the two, which is the smallest shelf a drag can
+make and the whole of what folding a pair means. Folders and crumbs never brew a shelf whatever the
+rest, because a fold over a folder would be a nest and a create at once — two answers to one release.
+
 A sunk drag is a parked drag, and it is charged for nothing. The sink caches the crumb's box with the
 spot, and while the pointer stays inside that box a `pointermove` does one comparison and returns:
 no `getBoundingClientRect` per registered target, no signal write, no re-render. The cache is what
@@ -639,6 +649,28 @@ session's hot target instead, which is the same geometry the drop is decided by 
 a capture that still tells the truth. The ellipsis is a target and not a drop: it stands for several
 levels and names none of them, so resting on it opens the panel and releasing on it does nothing —
 filing onto a level whose name the reader cannot see is a filing they cannot check.
+
+### What a right-click is
+
+A card used to answer a right-click with the removal receipt and nothing else, which is one row of a
+menu wearing the whole gesture. `features::library::context_menu` is the shelf's answer now: one host
+and one signal, asked by every surface that can be right-clicked — a book card, a list row, a folder,
+the empty level — so four surfaces do not own four placements, four dismissals and four sets of rows
+to keep in step. The payload says which menu, and it carries the facts rather than an id, because a
+row that asked the library what it was pointing at would be reading a list a rescan can change between
+the click and the row.
+
+Two things it deliberately does not do. It does not start a drag: a menu row is clicked with a pointer
+that has already been released, so a session begun from one would have no pointer to follow and no
+release to end it, and the next click anywhere would be the drop. And it does not fork a second shelf
+picker — "file these somewhere" is the selection bar's popover, which is on screen whenever a
+selection is. The actions both surfaces offer are one function each in
+`features::library::selection` for that reason: a bar and a menu that each minted a shelf would
+eventually differ about whether to drill into it.
+
+A card's right-click is stopped before the hold's exhaust is even asked about. A completed hold
+answers with a synthetic `contextmenu` on some platforms, and one that went on to bubble would open
+the LEVEL's menu under the finger that was busy selecting.
 
 The current shelf's crumb used to carry the rename and remove popover, and that popover is now parked
 behind `SHOW_SHELF_CRUMB_MENU` while the crumb's shapes settle. It is parked rather than deleted for a

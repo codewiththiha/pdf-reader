@@ -15,8 +15,9 @@
 //! Three gestures share the card and one wrapper decides between them — see
 //! `crate::components::primitives::interactions::draggable_item`. A tap opens the
 //! book, or toggles it once the shelf is in multi-select. A hold starts that
-//! multi-select with this book already in it. A right-click asks for the removal
-//! receipt. The hold is the same gesture, at the same tuning, that a highlighted
+//! multi-select with this book already in it. A right-click asks
+//! `crate::features::library::context_menu`, which is where the removal receipt now
+//! lives beside the rest of what a book can be asked to do. The hold is the same gesture, at the same tuning, that a highlighted
 //! stroke on a page answers to, so holding a book and holding a highlight are one
 //! idea rather than two that happen to feel alike.
 //!
@@ -42,6 +43,7 @@ use crate::components::primitives::interactions::draggable_item::{
     DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
 };
 use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
+use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::remove_modal::RemoveSheet;
@@ -58,7 +60,11 @@ use crate::state::reader::DEFAULT_PAGE_ASPECT;
 /// view separately.
 #[component]
 pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
+    // Both, because the card keeps its own ✕: the menu is what a right-click asks
+    // and the sheet is what a removal costs, and the second is reached from the
+    // first as well as from the button.
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
     let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
     // Selection is a page-wide mode, so every card asks the same two signals rather
@@ -164,22 +170,42 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         dom_id: dom_id.clone(),
     });
 
-    // A right-click is the shelf's answer to a stroke's remove menu: it asks, and
-    // the sheet that answers is the same one the card's own ✕ opens. Inside
-    // selection mode the same button toggles instead, because a reader who is
-    // picking books out is not asking to remove one of them.
+    // A right-click is the shelf's answer to a stroke's remove menu, and the menu
+    // it opens is the library's one host rather than this card's own: the card says
+    // what was clicked and the host decides what that means. Inside a selection the
+    // same button on a card ALREADY in the set asks about the whole set, which is
+    // what a right-click on one of several things means everywhere else; on a card
+    // outside the set it asks about that card, because selecting it first would be
+    // a choice the reader did not make. Toggling stays on the left button, where
+    // selection mode already puts it.
     let context_id = id.clone();
+    let context_path = path.clone();
     let on_context = move |ev: leptos::ev::MouseEvent| {
+        // Stopped before the swallow is even asked: the card owns this event
+        // whether or not it acts on it, and a completed hold's synthetic
+        // contextmenu that went on to bubble would open the LEVEL's menu under the
+        // finger that was busy selecting.
         ev.prevent_default();
+        ev.stop_propagation();
         if (swallow_context)() {
             return;
         }
-        ev.stop_propagation();
-        if selecting.get_untracked() {
-            toggle_selected(state, &context_id);
+        let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
+        let in_set = selecting.get_untracked()
+            && selected_set.with_untracked(|set| set.contains(&context_id));
+        if in_set {
+            menu.ask(x, y, MenuTarget::Selection);
             return;
         }
-        remove_sheet.ask(&context_id);
+        menu.ask(
+            x,
+            y,
+            MenuTarget::Book {
+                id: context_id.clone(),
+                path: context_path.clone(),
+                missing,
+            },
+        );
     };
 
     let key_path = path.clone();

@@ -25,6 +25,7 @@ use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::features::library::breadcrumb::Breadcrumb;
 use crate::features::library::content::LibraryContent;
+use crate::features::library::context_menu::LibraryMenuHost;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::layer::DragLayer;
 use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
@@ -56,6 +57,12 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // The remove sheet's handles, for the same reason: a card and a list row both
     // ask, and neither should have to be told where the sheet lives.
     let remove_sheet = RemoveSheet::provide();
+    // And the right-click's: a card, a row, a folder and the empty shelf all ask,
+    // and one host is what makes the answer the same menu wherever it was asked
+    // from. Provided here and rendered by the content, which is where the level's
+    // own order lives — a menu row that says "select all" has to mean all of what
+    // is on screen.
+    LibraryMenuHost::provide();
 
     // A picker that failed before the sheet could open has nowhere of its own to
     // put the error, and the page owns the app's one toast slot.

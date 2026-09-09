@@ -16,13 +16,12 @@
 use super::target::DropTargetKind;
 use crate::features::library::folder_card::THUMB_CAP;
 
-/// How many items must be HELD before the drag offers to fold them.
+/// How many items the new shelf must hold before the drag offers to make it.
 ///
-/// Two, because a shelf made from a single book is a shelf the reader could have
-/// made from the view menu, and offering one on every drag that rested over a
-/// card would be an offer nobody asked for. The book under the pointer is not one
-/// of the two: it is what the held items are folded WITH, which is why the plate
-/// [`fold_items`] counts lights three cells for a hold of two.
+/// Two, because a shelf of one is a shelf the view menu already makes and a drag
+/// has nothing to add to it. The book under the pointer is the second one, so the
+/// offer starts at the first item held: one book dragged onto another and rested
+/// there is a shelf of the two, which is the whole of what folding a pair means.
 pub const FOLD_MIN_ITEMS: usize = 2;
 
 /// What a release over the hot target would do.
@@ -111,26 +110,44 @@ impl DropQuery<'_> {
 }
 
 /// How many items a fold over this target would put in the new shelf: the ones
-/// held, plus the book under the pointer unless it is already one of them.
+/// held, plus the book under the pointer.
 ///
-/// The plate's count rather than the gate's — a hold of two over a third book is
-/// a shelf of three, and the preview has to show three or it is a preview of a
-/// different shelf than the one the drop makes.
+/// Counted once, and by construction rather than by a check here — [`drop_effect`]
+/// refuses to fold over a book the pointer is already carrying, so the partner is
+/// never also one of the held. That is the bug this used to have: a target that
+/// counted itself made a drag of two onto one of the two look like a shelf of
+/// three, and a drag of one onto itself look like a shelf of two.
+///
+/// The plate's count and the gate's are the same number, which is the point of it
+/// being one function: a hold of two over a third book is a shelf of three, and a
+/// preview that showed two would be a preview of a different shelf than the one the
+/// drop makes.
 pub fn fold_items(query: &DropQuery<'_>) -> usize {
-    query.held() + usize::from(!query.target_is_held)
+    query.held() + 1
 }
 
 /// The answer to "what would a release here mean".
 pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
     match query.target_kind {
         DropTargetKind::Book => {
-            // The fold outranks the insertion line only once it has been asked
-            // for: the same book under the same drag means "put it here" until
-            // the dwell says the reader meant "make a shelf of these". Gated on
-            // what is HELD rather than on what the new shelf would contain, so a
-            // drag of one book that happens to rest over a second stays the
-            // reorder it looks like.
-            if query.dwell_armed && query.held() >= FOLD_MIN_ITEMS {
+            // A book the pointer is already carrying is a POSITION and never a
+            // partner. Folding there would count it twice, and "put it here" is
+            // what a reader who drags onto their own selection means — including
+            // the single book dragged onto itself, which is a reorder that lands
+            // where it started and so is the no-op it looks like.
+            if query.target_is_held {
+                return DropEffect::InsertBefore {
+                    book_id: query.target_id.to_string(),
+                };
+            }
+            // Any other book is a partner, but only once the pointer has rested.
+            // The dwell is the whole of the difference between the two answers and
+            // it is not a refinement: without it a reorder would be unreachable,
+            // because every card a drag crossed would be offering a new shelf
+            // instead of a place to land. Membership of the payload decides WHICH
+            // book could be a partner; the rest decides WHETHER the reader meant
+            // one.
+            if query.dwell_armed && fold_items(&query) >= FOLD_MIN_ITEMS {
                 return DropEffect::CreateFolder {
                     with_book_id: query.target_id.to_string(),
                 };
@@ -192,6 +209,14 @@ mod tests {
         }
     }
 
+    /// The same query with the pointer rested, which is the state a fold needs.
+    fn rested(kind: DropTargetKind, id: &str, books: usize, folders: usize) -> DropQuery<'_> {
+        DropQuery {
+            dwell_armed: true,
+            ..query(kind, id, books, folders)
+        }
+    }
+
     #[test]
     fn a_book_under_a_drag_is_where_the_held_items_land() {
         assert_eq!(
@@ -203,14 +228,23 @@ mod tests {
     }
 
     #[test]
-    fn resting_over_a_book_while_holding_two_makes_a_shelf() {
-        let mut held = query(DropTargetKind::Book, "b2", 2, 0);
+    fn resting_over_an_unheld_book_folds_it_with_the_hold() {
         // The dwell is the whole of the difference: the same pointer over the
         // same card a moment earlier means "put it here".
-        assert!(matches!(drop_effect(held), DropEffect::InsertBefore { .. }));
-        held.dwell_armed = true;
+        assert!(matches!(
+            drop_effect(query(DropTargetKind::Book, "b2", 1, 0)),
+            DropEffect::InsertBefore { .. }
+        ));
+        // One held book and the one rested on is a shelf of two, which is the
+        // smallest shelf a drag can make and the reason the pair gesture exists.
         assert_eq!(
-            drop_effect(held),
+            drop_effect(rested(DropTargetKind::Book, "b2", 1, 0)),
+            DropEffect::CreateFolder {
+                with_book_id: "b2".to_string()
+            }
+        );
+        assert_eq!(
+            drop_effect(rested(DropTargetKind::Book, "b2", 3, 1)),
             DropEffect::CreateFolder {
                 with_book_id: "b2".to_string()
             }
@@ -218,30 +252,56 @@ mod tests {
     }
 
     #[test]
-    fn one_held_item_never_folds_however_long_it_rests() {
-        // The gate is on what is held, not on what the new shelf would contain:
-        // a drag of one book resting over a second is still the reorder it looks
-        // like, and folding there would take a shelf of one away from the reader.
-        let mut held = query(DropTargetKind::Book, "b2", 1, 0);
-        held.dwell_armed = true;
-        assert!(matches!(drop_effect(held), DropEffect::InsertBefore { .. }));
+    fn a_book_the_pointer_is_carrying_is_a_position_and_never_a_partner() {
+        // The bug this rule exists for: a target that counted itself made a drag
+        // of one book onto itself a shelf of two, and a multi-select dragged onto
+        // one of its own members a shelf that held that member twice.
+        let onto_itself = DropQuery {
+            target_is_held: true,
+            ..rested(DropTargetKind::Book, "b1", 1, 0)
+        };
+        assert_eq!(
+            drop_effect(onto_itself),
+            DropEffect::InsertBefore {
+                book_id: "b1".to_string()
+            }
+        );
+        let onto_the_set = DropQuery {
+            target_is_held: true,
+            ..rested(DropTargetKind::Book, "b2", 3, 1)
+        };
+        assert!(matches!(
+            drop_effect(onto_the_set),
+            DropEffect::InsertBefore { .. }
+        ));
+        // And unrested, a held target is the same answer: the dwell cannot rescue
+        // a partner that is already in the payload.
+        let unrested = DropQuery {
+            target_is_held: true,
+            ..query(DropTargetKind::Book, "b2", 3, 0)
+        };
+        assert!(matches!(drop_effect(unrested), DropEffect::InsertBefore { .. }));
     }
 
     #[test]
-    fn the_plate_counts_the_hovered_book_unless_it_is_already_held() {
-        let held = query(DropTargetKind::Book, "b2", 2, 0);
-        assert_eq!(fold_items(&held), 3, "two held plus the one rested on");
-        let mut same = query(DropTargetKind::Book, "b2", 2, 0);
-        same.target_is_held = true;
-        assert_eq!(fold_items(&same), 2, "a book already held is not counted twice");
-    }
+    fn the_plate_counts_the_partner_once_and_stops_at_four_cells() {
+        // Held plus the one book rested on, never the book twice.
+        assert_eq!(fold_items(&query(DropTargetKind::Book, "b2", 1, 0)), 2);
+        assert_eq!(fold_items(&query(DropTargetKind::Book, "b2", 2, 0)), 3);
+        assert_eq!(fold_items(&query(DropTargetKind::Book, "b2", 0, 1)), 2);
+        assert_eq!(fold_items(&query(DropTargetKind::Book, "b2", 3, 1)), 5);
 
-    #[test]
-    fn a_mix_of_books_and_shelves_folds_too() {
-        let mut held = query(DropTargetKind::Book, "b2", 1, 1);
-        held.dwell_armed = true;
-        assert_eq!(fold_items(&held), 3);
-        assert!(matches!(drop_effect(held), DropEffect::CreateFolder { .. }));
+        assert_eq!(fold_preview(1, "b2"), None);
+        assert_eq!(
+            fold_preview(2, "b2"),
+            Some(FoldPreview {
+                filled: 2,
+                with_book_id: "b2".to_string()
+            })
+        );
+        assert_eq!(fold_preview(3, "b2").unwrap().filled, 3);
+        assert_eq!(fold_preview(4, "b2").unwrap().filled, THUMB_CAP);
+        assert_eq!(fold_preview(9, "b2").unwrap().filled, THUMB_CAP);
     }
 
     #[test]
@@ -252,8 +312,10 @@ mod tests {
                 folder_id: "f1".to_string()
             }
         );
-        let mut refused = query(DropTargetKind::Folder, "f1", 0, 1);
-        refused.can_nest = false;
+        let refused = DropQuery {
+            can_nest: false,
+            ..query(DropTargetKind::Folder, "f1", 0, 1)
+        };
         assert_eq!(drop_effect(refused), DropEffect::Refused);
     }
 
@@ -261,9 +323,29 @@ mod tests {
     fn a_nesting_is_never_refused_by_what_the_books_are() {
         // `can_nest` is about the shelves being filed, so a drag of books only
         // is welcome in a folder whatever the folder's own ancestry is.
-        let mut books_only = query(DropTargetKind::Folder, "f1", 3, 0);
-        books_only.can_nest = false;
+        let books_only = DropQuery {
+            can_nest: false,
+            ..query(DropTargetKind::Folder, "f1", 3, 0)
+        };
         assert!(matches!(drop_effect(books_only), DropEffect::NestInto { .. }));
+    }
+
+    #[test]
+    fn folders_and_crumbs_never_brew_a_shelf_however_long_the_rest() {
+        // A fold effect over a folder would be a nest and a create at once, and
+        // over a crumb a filing and a create at once: two answers to one release.
+        assert!(matches!(
+            drop_effect(rested(DropTargetKind::Folder, "f1", 2, 1)),
+            DropEffect::NestInto { .. }
+        ));
+        assert!(matches!(
+            drop_effect(rested(DropTargetKind::Shelf, "s1", 2, 0)),
+            DropEffect::FileToShelf { .. }
+        ));
+        assert!(matches!(
+            drop_effect(rested(DropTargetKind::Level, "s1", 2, 0)),
+            DropEffect::FileToShelf { .. }
+        ));
     }
 
     #[test]
@@ -296,26 +378,11 @@ mod tests {
             drop_effect(query(DropTargetKind::Ellipsis, "", 2, 1)),
             DropEffect::Refused
         );
-        // …and no dwell changes that: a fold is made out of a BOOK the pointer is
+        // …and no rest changes that: a fold is made out of a BOOK the pointer is
         // resting on, and the ellipsis is not a book.
-        let mut rested = query(DropTargetKind::Ellipsis, "", 2, 1);
-        rested.dwell_armed = true;
-        assert_eq!(drop_effect(rested), DropEffect::Refused);
-    }
-
-    #[test]
-    fn the_fold_plate_counts_every_item_and_stops_at_four_cells() {
-        // Below the gate there is no plate at all, whatever was counted.
-        assert_eq!(fold_preview(1, "b2"), None);
         assert_eq!(
-            fold_preview(2, "b2"),
-            Some(FoldPreview {
-                filled: 2,
-                with_book_id: "b2".to_string()
-            })
+            drop_effect(rested(DropTargetKind::Ellipsis, "", 2, 1)),
+            DropEffect::Refused
         );
-        assert_eq!(fold_preview(3, "b2").unwrap().filled, 3);
-        assert_eq!(fold_preview(4, "b2").unwrap().filled, THUMB_CAP);
-        assert_eq!(fold_preview(9, "b2").unwrap().filled, THUMB_CAP);
     }
 }

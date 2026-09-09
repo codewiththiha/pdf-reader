@@ -1209,6 +1209,17 @@
 .library-select-bar {
   animation: library-bar-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+/* The shelf's right-click arrives the way the gloss's does — a short rise from the
+   cursor, once. Both nets in animations.css collapse it for a reader who asked for
+   no motion, and the keyframe ends at the resting state, so a collapsed animation
+   is a menu that is simply already there. */
+.library-context-menu {
+  animation: library-menu-in 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes library-menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 @media (prefers-reduced-motion: reduce) {
   /* Off rather than shortened: the global net in animations.css would leave the
      bar parked at its starting offset for the length of a 0.01ms animation, and

@@ -1,0 +1,381 @@
+//! The shelf's right-click: one menu per kind of thing under the pointer.
+//!
+//! A card used to answer a right-click with the removal receipt and nothing else,
+//! which is one row of a menu wearing the whole gesture. The receipt is still what
+//! a removal costs and still asks first — it is just reached from a row now, beside
+//! the things a right-click is actually for: opening, selecting, finding a book
+//! whose address died, taking a shelf apart.
+//!
+//! One host and one signal, for the reason the removal sheet is one: a right-click
+//! can land on a card, a row, a folder or the empty shelf, and four surfaces each
+//! owning a menu is four placements, four dismissals and four sets of rows to keep
+//! in step. So the surfaces ask and this answers, and the payload says which menu.
+//!
+//! The primitive underneath is `crate::components::primitives::floating::context_menu`,
+//! which owns the cursor placement, the viewport clamp and the dismissal; what is
+//! here is the library's half — what a right-click on each kind of thing means.
+//!
+//! Two things this deliberately does not do. It does not start a drag: a menu row
+//! is clicked with a pointer that has already been released, so a session begun
+//! from one would have no pointer to follow and no release to end it, and the next
+//! click anywhere would be the drop. And it does not fork a second shelf picker —
+//! "file these somewhere" is the selection bar's popover, which is on screen
+//! whenever a selection is, and a menu that rebuilt it would be a second answer to
+//! the same question.
+
+use leptos::prelude::*;
+
+use app_chrome::icon::IconName;
+
+use crate::components::primitives::floating::context_menu::ContextMenu;
+use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
+use crate::components::primitives::menu::section_label::SectionLabel;
+use crate::components::primitives::menu::separator::Separator;
+use crate::features::library::content::{FolderOrder, ShelfOrder};
+use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::selection::{
+    ask_remove_selection, enter_selection, exit_selection, file_selection_on_new_shelf,
+    select_on_screen,
+};
+use crate::services::document;
+use crate::services::library::{delete_shelf, new_shelf, relink_dialog};
+use crate::state::AppState;
+
+/// What was right-clicked.
+///
+/// Carrying the facts rather than an id: a menu row that asked the library what it
+/// was pointing at would be reading a list that a rescan can change between the
+/// click and the row, and the two facts that shape a menu — a book whose address
+/// died, a shelf the disk places — are ones the card already knew.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MenuTarget {
+    /// A book: a card in the grid or a row in the list. `path` is what opening
+    /// needs, and it is not derivable from `id`.
+    Book {
+        id: String,
+        path: String,
+        missing: bool,
+    },
+    /// A shelf drawn as a folder.
+    Folder { id: String, watched: bool },
+    /// A card that is already in the selection: the menu acts on the whole set,
+    /// which is what a right-click on one of several things means everywhere else.
+    Selection,
+    /// The empty shelf — the level's own space, with no card under the pointer.
+    Level,
+}
+
+/// One right-click: where it happened and what it happened on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MenuRequest {
+    pub x: f64,
+    pub y: f64,
+    pub target: MenuTarget,
+}
+
+/// The host's handle, provided by the page and asked by every surface that can be
+/// right-clicked.
+#[derive(Clone, Copy)]
+pub struct LibraryMenuHost {
+    /// The open request, or `None`. One signal for the whole page, so exactly one
+    /// menu is up at a time and asking for a second closes the first by replacing
+    /// it rather than by either surface knowing about the other.
+    pub request: RwSignal<Option<MenuRequest>>,
+}
+
+impl LibraryMenuHost {
+    /// Create and provide the handle. Called once, by the page.
+    pub fn provide() -> Self {
+        let this = Self {
+            request: RwSignal::new(None),
+        };
+        provide_context(this);
+        this
+    }
+
+    /// Ask for a menu at the pointer.
+    pub fn ask(&self, x: f64, y: f64, target: MenuTarget) {
+        self.request.set(Some(MenuRequest { x, y, target }));
+    }
+}
+
+/// The shelf's one context menu.
+#[component]
+pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
+    let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
+    let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    let order = use_context::<ShelfOrder>().expect("the library content provides the order");
+    let folders = use_context::<FolderOrder>().expect("the library content provides the folders");
+    let request = menu.request;
+    // Closing is one write, handed to whichever row was chosen rather than left to
+    // each menu to remember: a row that acted without closing would leave a menu
+    // floating over the shelf it had just changed.
+    let close = Callback::new(move |_| request.set(None));
+
+    view! {
+        <ContextMenu
+            target=request
+            position=|at: &MenuRequest| (at.x, at.y)
+            on_close=close
+            min_width=208
+            class="library-context-menu"
+        >
+            {move || {
+                let Some(at) = request.get() else {
+                    return ().into_any();
+                };
+                match at.target {
+                    MenuTarget::Book { id, path, missing } => {
+                        view! { <BookMenu state=state id=id path=path missing=missing close=close /> }
+                            .into_any()
+                    }
+                    MenuTarget::Folder { id, watched } => {
+                        view! { <FolderMenu state=state id=id watched=watched close=close /> }
+                            .into_any()
+                    }
+                    MenuTarget::Selection => {
+                        view! { <SelectionMenu state=state remove_sheet=remove_sheet close=close /> }
+                            .into_any()
+                    }
+                    MenuTarget::Level => {
+                        view! {
+                            <LevelMenu
+                                state=state
+                                order=order
+                                folders=folders
+                                close=close
+                            />
+                        }
+                            .into_any()
+                    }
+                }
+            }}
+        </ContextMenu>
+    }
+}
+
+/// A book's menu.
+#[component]
+fn BookMenu(
+    state: AppState,
+    id: String,
+    path: String,
+    missing: bool,
+    close: Callback<()>,
+) -> impl IntoView {
+    let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    // One owned id per row: each row's handler is a closure of its own and a
+    // `move` takes what it captures.
+    let open_path = path;
+    let select_id = id.clone();
+    let relink_id = id.clone();
+    let remove_id = id;
+
+    view! {
+        <>
+            <MenuItem
+                icon=IconName::Open
+                label="Open"
+                // A book whose address died cannot be opened, and a row that
+                // answered with an error toast would be a row that knew better
+                // than to be offered.
+                disabled=missing
+                on_click=move || {
+                    close.run(());
+                    document::open_path(state, open_path.clone());
+                }
+            />
+            <MenuItem
+                icon=IconName::Check
+                label="Select"
+                sublabel="Picks it up with the rest of the set"
+                on_click=move || {
+                    close.run(());
+                    enter_selection(state, &select_id);
+                }
+            />
+            {missing.then(|| {
+                view! {
+                    <MenuItem
+                        icon=IconName::Search
+                        label="Find again…"
+                        sublabel="Points the book at a file you pick"
+                        on_click=move || {
+                            close.run(());
+                            relink_dialog(state, relink_id.clone());
+                        }
+                    />
+                }
+            })}
+            <div class="my-1"><Separator /></div>
+            <MenuItem
+                icon=IconName::Close
+                label="Remove from library"
+                tone=MenuItemTone::Danger
+                on_click=move || {
+                    close.run(());
+                    remove_sheet.ask(&remove_id);
+                }
+            />
+        </>
+    }
+}
+
+/// A shelf's menu, drawn as a folder.
+///
+/// The one place a shelf can be taken apart from without selecting it first, which
+/// is the affordance the breadcrumb's parked popover used to be the only one for.
+#[component]
+fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -> impl IntoView {
+    let open_id = id.clone();
+    let select_id = id.clone();
+    let remove_id = id;
+
+    view! {
+        <>
+            <MenuItem
+                icon=IconName::Open
+                label="Open shelf"
+                on_click=move || {
+                    close.run(());
+                    state.library.shelf.set(open_id.clone());
+                }
+            />
+            <MenuItem
+                icon=IconName::Check
+                label="Select"
+                sublabel="Picks it up with the rest of the set"
+                on_click=move || {
+                    close.run(());
+                    enter_selection(state, &select_id);
+                }
+            />
+            <div class="my-1"><Separator /></div>
+            <MenuItem
+                icon=IconName::Close
+                label="Take shelf apart"
+                tone=MenuItemTone::Danger
+                sublabel="Its books stay in the library"
+                on_click=move || {
+                    close.run(());
+                    delete_shelf(state, &remove_id);
+                }
+            />
+            {watched.then(|| {
+                view! {
+                    <p class="px-2 py-1.5 text-[11px] text-muted">
+                        "Cut from a watched folder: it comes off the list, and returns if the
+                         folder places a book here again."
+                    </p>
+                }
+            })}
+        </>
+    }
+}
+
+/// The set's menu, from a right-click on any card already in it.
+///
+/// The count is read when the menu is built rather than carried in the request, so
+/// the heading and the removal row cannot disagree about how many things they are
+/// talking about. It is a number and not a signal because a menu row's label is a
+/// `String`: the set cannot change while a menu is up — every action that changes
+/// it closes the menu first — and a row that pretended otherwise would be a row
+/// the primitive cannot draw.
+#[component]
+fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>) -> impl IntoView {
+    let count = state.library.selected.with_untracked(|set| set.len());
+    let heading = format!("{count} selected");
+    let remove_label = format!("Remove ({count})");
+
+    view! {
+        <>
+            <SectionLabel text=heading />
+            <MenuItem
+                icon=IconName::Plus
+                label="New shelf from these"
+                on_click=move || {
+                    close.run(());
+                    file_selection_on_new_shelf(state);
+                }
+            />
+            <div class="my-1"><Separator /></div>
+            <MenuItem
+                icon=IconName::Close
+                label=remove_label
+                tone=MenuItemTone::Danger
+                on_click=move || {
+                    close.run(());
+                    ask_remove_selection(state, &remove_sheet);
+                }
+            />
+            <MenuItem
+                icon=IconName::Undo
+                label="Clear selection"
+                on_click=move || {
+                    close.run(());
+                    exit_selection(state);
+                }
+            />
+        </>
+    }
+}
+
+/// The level's menu, from a right-click on empty shelf.
+#[component]
+fn LevelMenu(
+    state: AppState,
+    order: ShelfOrder,
+    folders: FolderOrder,
+    close: Callback<()>,
+) -> impl IntoView {
+    // A row that silently does nothing is worse than no row, so "Select all" is
+    // only here while there is something on the level to select.
+    let anything = Signal::derive(move || {
+        !order.0.with(|books| books.is_empty()) || !folders.0.with(|each| each.is_empty())
+    });
+    let selecting = state.library.selecting;
+
+    view! {
+        <>
+            <MenuItem
+                icon=IconName::Plus
+                label="New shelf"
+                sublabel="Made here, and opened"
+                on_click=move || {
+                    close.run(());
+                    new_shelf(state);
+                }
+            />
+            {move || {
+                if !anything.get() {
+                    return ().into_any();
+                }
+                if selecting.get() {
+                    return view! {
+                        <MenuItem
+                            icon=IconName::Undo
+                            label="Clear selection"
+                            on_click=move || {
+                                close.run(());
+                                exit_selection(state);
+                            }
+                        />
+                    }
+                        .into_any();
+                }
+                view! {
+                    <MenuItem
+                        icon=IconName::Check
+                        label="Select all"
+                        sublabel="Everything on this level"
+                        on_click=move || {
+                            close.run(());
+                            select_on_screen(state, order, folders);
+                        }
+                    />
+                }
+                    .into_any()
+            }}
+        </>
+    }
+}

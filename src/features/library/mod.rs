@@ -13,6 +13,8 @@
 //!   * [`remove_modal`] — what a removal costs, itemised
 //!   * [`selection`] — the hold that starts a multi-select, and the bar that acts
 //!     on it
+//!   * [`context_menu`] — the right-click: one menu per kind of thing under the
+//!     pointer, and the one host every surface asks
 //!   * [`progress_dock`] — the run's ring, in the corner
 //!   * [`view_menu`] / [`breadcrumb`] / [`titlebar_search`] — the bar's three jobs
 //!   * [`dnd`] — the drag that moves things: the session, the targets it can land
@@ -35,6 +37,7 @@ pub mod add_menu;
 pub mod book_card;
 pub mod breadcrumb;
 pub mod content;
+pub mod context_menu;
 pub mod dnd;
 pub mod empty_state;
 pub mod folder_card;
