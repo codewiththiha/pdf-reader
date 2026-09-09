@@ -415,6 +415,54 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     }
 }
 
+/// Move shelves beside one of their own kind: into the anchor's level, at the
+/// anchor's place in it, before or after. What a drag onto a shelf ROW's edge
+/// commits — the sibling seam the list layout draws — and a reorder rather than
+/// a filing wherever the two shelves already share a level, which is the common
+/// case: the reader is not changing the tree, they are changing the order the
+/// level renders it in.
+///
+/// Two steps per shelf because the shelf list IS the render order: `reparent`
+/// writes the edge (and refuses the loop the graph would close, or a rung the
+/// disk owns), and the splice writes the position — `children_of` filters the
+/// list in order, so a moved row that kept its old place in the vec would keep
+/// its old place on the page. The anchor's index is re-found after every lift,
+/// because a removal above it shifts it, and one persist covers the batch.
+pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, after: bool) {
+    if ids.is_empty() {
+        return;
+    }
+    let mut moved = false;
+    state.library.shelves.update(|shelves| {
+        let parent = shelves
+            .iter()
+            .find(|s| s.id == anchor)
+            .and_then(|s| s.parent.clone());
+        for id in ids {
+            if id == anchor || !shelf::reparent(shelves, id, parent.as_deref()) {
+                continue;
+            }
+            // Both positions found before the lift: removing the row first
+            // would move the anchor under a hand that had already aimed.
+            let (Some(at), Some(mut ai)) = (
+                shelves.iter().position(|s| s.id == *id),
+                shelves.iter().position(|s| s.id == anchor),
+            ) else {
+                continue;
+            };
+            let item = shelves.remove(at);
+            if at < ai {
+                ai -= 1;
+            }
+            shelves.insert(if after { ai + 1 } else { ai }, item);
+            moved = true;
+        }
+    });
+    if moved {
+        crate::storage::persist_library(state.library);
+    }
+}
+
 /// File several books on one shelf at once.
 ///
 /// Membership only, so the same rule covers a bulk filing as covers a drag: a

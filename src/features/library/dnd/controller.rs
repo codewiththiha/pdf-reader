@@ -28,7 +28,9 @@ use wasm_bindgen::JsCast;
 use library_core::book::Book;
 use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
 
-use super::effect::{DropEffect, DropQuery, FoldPreview, drop_effect, fold_items, fold_preview};
+use super::effect::{
+    Band, DropEffect, DropQuery, FoldPreview, drop_effect, fold_items, fold_preview,
+};
 use super::target::{DropTargetId, DropTargetKind, DropTargetRegistry};
 use super::{FOLD_DWELL_MS, SINK_DWELL_MS, commit};
 use crate::features::library::selection::exit_selection;
@@ -262,16 +264,17 @@ impl DragController {
                 }
             }
             // The fold's dwell is armed off the ANSWER and not only off the
-            // target's kind: a book the session currently reads as a position
-            // (`InsertBefore`) is a book a rest can turn into a partner. The
-            // answer is the session's own truth about the pointer — it has
-            // already collapsed which node of the row the hit-test landed on —
-            // so a rest over a book works even when the hit-test resolved
-            // through one of the row's children, and a target with no live
-            // answer arms no timer at all.
+            // target's kind: a book the session currently reads as a landing —
+            // a position (`InsertBefore`), or the folders-only filing that
+            // answers a hold with no books in it — is a book a rest can turn
+            // into a partner. The answer is the session's own truth about the
+            // pointer — it has already collapsed which node of the row the
+            // hit-test landed on — so a rest over a book works even when the
+            // hit-test resolved through one of the row's children, and a
+            // target with no live answer arms no timer at all.
             let arms_fold = matches!(
                 this.effect.get_untracked(),
-                Some(DropEffect::InsertBefore { .. })
+                Some(DropEffect::InsertBefore { .. }) | Some(DropEffect::FileToShelf { .. })
             ) && target.0 == DropTargetKind::Book;
             if !arms_fold {
                 return;
@@ -441,10 +444,30 @@ impl DragController {
         })
     }
 
-    /// Whether a release over this book would land the held items before it.
+    /// Whether a release over this book would land the held items BEFORE it —
+    /// the top seam of its row, and the only seam the grid's cards have.
     pub fn inserts_before(&self, id: &str) -> bool {
         self.effect
-            .with(|at| at.as_ref().and_then(|each| each.insert_before()) == Some(id))
+            .with(|at| at.as_ref().and_then(|each| each.insert_at()) == Some((id, false)))
+    }
+
+    /// Whether a release over this book would land the held items AFTER it —
+    /// the bottom seam of a list row, which is the same position seen from the
+    /// other side of the row that names it.
+    pub fn inserts_after(&self, id: &str) -> bool {
+        self.effect
+            .with(|at| at.as_ref().and_then(|each| each.insert_at()) == Some((id, true)))
+    }
+
+    /// Whether a release over this shelf row would reorder the held folders
+    /// beside it, and on which side. `None` for every other answer, which is
+    /// what a row paints its sibling seams from.
+    pub fn sibling_at(&self, id: &str) -> Option<bool> {
+        self.effect.with(|at| {
+            at.as_ref()
+                .and_then(|each| each.sibling_at())
+                .and_then(|(anchor, after)| (anchor == id).then_some(after))
+        })
     }
 
     /// Whether this book is the one a fold is brewing over.
@@ -484,6 +507,20 @@ impl DragController {
         self.hot.with(|at| {
             at.as_ref()
                 .is_some_and(|target| target.0 == DropTargetKind::Shelf && target.1 == id)
+        })
+    }
+
+    /// Whether the pointer is over the shelf row (or folder card) for `id`.
+    ///
+    /// The tree's hover-to-expand asks it: a hold resting on a COLLAPSED shelf
+    /// row is the courtesy every file manager's tree gives a drag — the way
+    /// deeper is the way in, and the reader should not have to put the hold
+    /// down to knock. It is a question about the hot target rather than about
+    /// the effect, because the answer is the same at every band of the row.
+    pub fn over_folder(&self, id: &str) -> bool {
+        self.hot.with(|at| {
+            at.as_ref()
+                .is_some_and(|target| target.0 == DropTargetKind::Folder && target.1 == id)
         })
     }
 
@@ -554,6 +591,15 @@ impl DragController {
         // no shelf — which the table spells as an empty id and the commit step
         // reads as "take them off whatever holds them".
         let open = self.state.library.shelf.get_untracked();
+        // The container the row answers to: the entry's own shelf when the row
+        // named one — a book inside an expanded tree belongs to THAT shelf, not
+        // to the level the page is on — and the open level otherwise, which is
+        // the container a grid card and a flat row both imply. `None` at the
+        // root, where the library's own order is the member list.
+        let row_shelf = match self.registry.entry_of(&target).and_then(|each| each.shelf) {
+            Some(named) => (named != ALL_SHELF).then_some(named),
+            None => (open != ALL_SHELF).then(|| open.clone()),
+        };
         let target_id = match target.0 {
             DropTargetKind::Level if open == ALL_SHELF => String::new(),
             DropTargetKind::Level => open,
@@ -566,6 +612,10 @@ impl DragController {
             target_id: &target_id,
             target_is_held: held.contains(&target.1),
             can_nest: target.0 == DropTargetKind::Folder && self.can_nest_held(&held, &target.1),
+            can_sibling: target.0 == DropTargetKind::Folder
+                && self.can_sibling_held(&held, &target.1),
+            band: self.band_of(&target),
+            target_shelf: row_shelf.as_deref(),
             dwell_armed: self.dwell.get_untracked(),
         };
         let effect = drop_effect(query);
@@ -603,6 +653,68 @@ impl DragController {
                 .iter()
                 .all(|each| can_nest(shelves, each, target))
         })
+    }
+
+    /// Whether every held shelf may sit beside `anchor` as a sibling.
+    ///
+    /// The graph question is the PARENT's: filing beside a shelf is filing into
+    /// the level that holds it, so `can_nest` is asked of that level — and a
+    /// root-level seam has no parent to close a loop through, which is why an
+    /// anchor at the top of the library only refuses a shelf asked to sibling
+    /// itself.
+    fn can_sibling_held(&self, held: &DragPayload, anchor: &str) -> bool {
+        self.state.library.shelves.with_untracked(|shelves| {
+            let Some(target) = shelves.iter().find(|s| s.id == anchor) else {
+                return false;
+            };
+            held.folders.iter().all(|each| {
+                each != anchor
+                    && target
+                        .parent
+                        .as_deref()
+                        .is_none_or(|parent| can_nest(shelves, each, parent))
+            })
+        })
+    }
+
+    /// Which part of the target's box the pointer is on: the list's seams, and
+    /// the grid's non-question — outside the list layout every target is its
+    /// whole self and the answer is the middle.
+    ///
+    /// Computed here rather than in the table or the rows because three things
+    /// have to agree about it — the seam a row paints, the effect the table
+    /// answers, and the index the commit resolves — and one rectangle read in
+    /// one place is the only way they cannot drift.
+    fn band_of(&self, target: &DropTargetId) -> Band {
+        if !self.state.library.view.with_untracked(|v| v.is_list()) {
+            return Band::Middle;
+        }
+        let Some(rect) = self.registry.rect_of(target) else {
+            return Band::Middle;
+        };
+        let (_, y) = self.pointer.get_untracked();
+        let at = (y - rect.top()) / rect.height().max(1.0);
+        match target.0 {
+            // A shelf row is a container first and a seam second: only its
+            // outer quarters reorder, and its middle half stays the mouth.
+            DropTargetKind::Folder => {
+                if at < 0.25 {
+                    Band::Top
+                } else if at > 0.75 {
+                    Band::Bottom
+                } else {
+                    Band::Middle
+                }
+            }
+            // A book row is two positions and nothing else.
+            _ => {
+                if at < 0.5 {
+                    Band::Top
+                } else {
+                    Band::Bottom
+                }
+            }
+        }
     }
 
     /// End the session, however it ended.

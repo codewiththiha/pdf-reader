@@ -573,9 +573,10 @@ four books drags as whichever was pressed.
   unmount, and a move hit-tests the registry against coordinates instead of counting `dragenter` and
   `dragleave` boundaries. Boxes are read at hit-test time, so a shelf that scrolled between two moves
   is hit where it is rather than where it was.
-- `features::library::dnd::effect` is the decision table: what is held, what is under the pointer and
-  how long it has been there go in, and one `DropEffect` comes out. It has no DOM and no signals in
-  it, which is why it is the piece with the unit tests and why a refusal is a value rather than an
+- `features::library::dnd::effect` is the decision table: what is held, what is under the pointer,
+  which part of the target's box the pointer is on, which shelf renders the target's row, and how
+  long it has been there go in, and one `DropEffect` comes out. It has no DOM and no signals in it,
+  which is why it is the piece with the unit tests and why a refusal is a value rather than an
   absence — a folder that would close a loop says no before the pointer arrives, so the ring that
   would have promised the drop is never drawn.
 - `features::library::dnd::commit` is the only place an effect touches state, and it touches it
@@ -587,6 +588,19 @@ What a press picks up is the set's business rather than the gesture's: `features
 which is the rule that makes a bulk move one gesture. The visible half of that is a fade on every held
 card and a ghost of their covers — four tiles at most, fanned, with a count badge for the rest — drawn
 by `features::library::dnd::layer` above the content and below the sheets.
+
+A list row is the same target with one fact and one question more. The fact is the shelf whose member
+list renders the row, which the entry carries and the insertion names, so a drop inside an expanded
+tree indexes that branch's own list instead of the flat order the page is showing — the seam under a
+nested row used to land in the open level, silently. The question is which PART of the row the pointer
+is on: the bottom half of a book row lands the hold after its anchor, a shelf row's middle takes the
+hold inside it, and its outer quarters reorder held folders beside their anchor in the level that
+holds the anchor — the graph asked is the parent's own `can_nest`, and a folder asked to sibling
+itself is refused. The band is computed once, in the session, from the row's own rectangle, so the
+seam painted and the index committed cannot disagree; outside the list layout every band is the
+middle one, and the grid keeps its whole-card answers without the table carrying a branch about
+layouts. The tree adds the courtesy every file manager's tree gives a drag: a hold resting on a
+collapsed shelf row opens it, so the way deeper is the way in.
 
 Two dwells hang off the same target change, and they are NOT the same question at two depths — the
 difference is the whole of the design. The sink belongs to the title bar alone: at 420ms over a crumb,

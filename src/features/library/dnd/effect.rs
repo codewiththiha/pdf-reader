@@ -1,5 +1,6 @@
-//! What a drop MEANS, decided from three facts and nothing else: what is held,
-//! what is under the pointer, and how long it has been there.
+//! What a drop MEANS, decided from four facts and nothing else: what is held,
+//! what is under the pointer, WHICH PART of the target's box the pointer is on,
+//! and how long it has been there.
 //!
 //! Pure on purpose — no DOM, no signals, no state. That is what makes the table
 //! testable on the host rather than in a browser, and what makes
@@ -7,11 +8,21 @@
 //! rules: by the time an effect reaches it, every question a reader could have
 //! asked the gesture has already been answered here.
 //!
+//! The part-of-the-box fact is the list's: a row is thin, so its edges are seams
+//! rather than a single "here". The bottom half of a book row lands the hold
+//! AFTER its anchor, the middle half of a shelf row files the hold INSIDE it,
+//! and a shelf row's outer quarters reorder the held folders beside it in the
+//! level that holds them — the three cues a file manager's tree gives a drag.
+//! The grid does not ask the question: outside the list layout every band is the
+//! middle one, and a card keeps the whole-card answer it has always had.
+//!
 //! The one judgement call in the table is the fold. Resting over a book while
 //! holding two or more items offers to make a shelf out of them, and the offer
 //! has to be distinguishable from the drop that lands on the same book — which is
 //! why the dwell is a question the table is asked rather than a timer the table
 //! runs.
+
+use library_core::shelf::ALL_SHELF;
 
 use super::target::DropTargetKind;
 use crate::features::library::folder_card::THUMB_CAP;
@@ -24,11 +35,46 @@ use crate::features::library::folder_card::THUMB_CAP;
 /// there is a shelf of the two, which is the whole of what folding a pair means.
 pub const FOLD_MIN_ITEMS: usize = 2;
 
+/// Which part of a target's box the pointer is on.
+///
+/// The list's question — a row is thin and its edges are seams — and the grid's
+/// non-question: the session answers `Middle` for every target outside the list
+/// layout, which is how a card keeps its whole-card semantics without the table
+/// carrying a branch about layouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Band {
+    Top,
+    Middle,
+    Bottom,
+}
+
+impl Band {
+    /// Whether this band lands the hold on the far side of its anchor: the
+    /// bottom edge is "after", every other edge is "before".
+    pub fn after(self) -> bool {
+        self == Band::Bottom
+    }
+}
+
 /// What a release over the hot target would do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DropEffect {
-    /// Put the held books down at this book's place in the level's order.
-    InsertBefore { book_id: String },
+    /// Put the held books down at this book's place in the order of the shelf
+    /// that renders its row — before the anchor, or after it when the seam was
+    /// the row's bottom edge.
+    InsertBefore {
+        book_id: String,
+        /// The shelf whose member list renders the anchor row, or `None` for
+        /// the library's own order at the root. Named by the effect rather
+        /// than re-derived at the commit: the row that was hit is the row that
+        /// knows its container, and a nested tree row's is not the open level.
+        shelf: Option<String>,
+        after: bool,
+    },
+    /// Reorder the held folders beside this shelf, inside the level that holds
+    /// it. Edges of a shelf row only, and folders only: a mixed hold on a shelf
+    /// row is a hold going INSIDE it, and a book has no siblings among shelves.
+    ShelfSibling { anchor_id: String, after: bool },
     /// Take the held items to this shelf. An empty id is the library's root,
     /// which is not a shelf: the books come off whatever held them and the
     /// folders come up to the top level.
@@ -38,20 +84,32 @@ pub enum DropEffect {
     /// Make a shelf out of the held items and this book, and file them in it.
     CreateFolder { with_book_id: String },
     /// This target refuses what is being held — a folder that would end up
-    /// inside itself. Distinct from "nothing under the pointer", which is a
-    /// `None` effect rather than this one, so a card can tell "not a target"
-    /// from "a target that says no".
+    /// inside itself, or a sibling the graph says no to. Distinct from
+    /// "nothing under the pointer", which is a `None` effect rather than this
+    /// one, so a card can tell "not a target" from "a target that says no".
     Refused,
 }
 
 impl DropEffect {
-    /// The book a release would land the held items before, if that is the
-    /// effect. What a card asks to decide whether to draw its insertion line —
-    /// one accessor rather than a pattern match at every card that wants to know,
-    /// because "is this effect mine" is the effect's question to answer.
-    pub fn insert_before(&self) -> Option<&str> {
+    /// The book a release would land the held items beside, and on which side
+    /// of it, if that is the effect. What a row asks to decide which of its two
+    /// seams to draw — one accessor rather than a pattern match at every row
+    /// that wants to know, because "is this effect mine" is the effect's
+    /// question to answer.
+    pub fn insert_at(&self) -> Option<(&str, bool)> {
         match self {
-            DropEffect::InsertBefore { book_id } => Some(book_id.as_str()),
+            DropEffect::InsertBefore {
+                book_id, after, ..
+            } => Some((book_id.as_str(), *after)),
+            _ => None,
+        }
+    }
+
+    /// The shelf a release would reorder the held folders beside, and on which
+    /// side of it, if that is the effect.
+    pub fn sibling_at(&self) -> Option<(&str, bool)> {
+        match self {
+            DropEffect::ShelfSibling { anchor_id, after } => Some((anchor_id.as_str(), *after)),
             _ => None,
         }
     }
@@ -97,6 +155,19 @@ pub struct DropQuery<'a> {
     /// asked of a folder target, and only answered by
     /// `library_core::shelf::can_nest`.
     pub can_nest: bool,
+    /// Whether every held shelf may sit beside the target as a sibling — the
+    /// PARENT's `can_nest` answer, because filing beside a shelf is filing into
+    /// the level that holds it. Only asked of a folder target; the edges of its
+    /// row are the only place a sibling is a question.
+    pub can_sibling: bool,
+    /// Which part of the target's box the pointer is on. The list's seams;
+    /// `Middle` everywhere else. See [`Band`].
+    pub band: Band,
+    /// The shelf whose member list renders the target row, resolved by the
+    /// session: the entry's own when the row named one, else the open level,
+    /// and `None` at the root. What an insertion names as its container and a
+    /// folders-only landing on a book row files into.
+    pub target_shelf: Option<&'a str>,
     /// Whether the pointer has rested over the target long enough for a fold to
     /// be offered.
     pub dwell_armed: bool,
@@ -130,6 +201,8 @@ pub fn fold_items(query: &DropQuery<'_>) -> usize {
 pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
     match query.target_kind {
         DropTargetKind::Book => {
+            let id = query.target_id;
+            let shelf = query.target_shelf.map(str::to_string);
             // A book the pointer is already carrying is a POSITION and never a
             // partner. Folding there would count it twice, and "put it here" is
             // what a reader who drags onto their own selection means — including
@@ -137,7 +210,9 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
             // where it started and so is the no-op it looks like.
             if query.target_is_held {
                 return DropEffect::InsertBefore {
-                    book_id: query.target_id.to_string(),
+                    book_id: id.to_string(),
+                    shelf,
+                    after: false,
                 };
             }
             // Any other book is a partner, but only once the pointer has rested.
@@ -146,25 +221,62 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
             // because every card a drag crossed would be offering a new shelf
             // instead of a place to land. Membership of the payload decides WHICH
             // book could be a partner; the rest decides WHETHER the reader meant
-            // one.
+            // one. The rest is asked BEFORE the folders-only rule below, so a
+            // held shelf resting on a book still folds the pair into a new one.
             if query.dwell_armed && fold_items(&query) >= FOLD_MIN_ITEMS {
                 return DropEffect::CreateFolder {
-                    with_book_id: query.target_id.to_string(),
+                    with_book_id: id.to_string(),
+                };
+            }
+            // Folders alone on a book row have no position to take — a row is a
+            // seam between books — so they join the row's own container, which
+            // is the same answer the level's empty space gives.
+            if query.held_books == 0 {
+                return DropEffect::FileToShelf {
+                    shelf_id: query.target_shelf.unwrap_or(ALL_SHELF).to_string(),
                 };
             }
             DropEffect::InsertBefore {
-                book_id: query.target_id.to_string(),
+                book_id: id.to_string(),
+                shelf,
+                after: query.band.after(),
             }
         }
         DropTargetKind::Folder => {
-            // A book is always welcome. A shelf is welcome unless filing it here
-            // would put it inside itself, which is a folder no level renders and
-            // a reader can never open again.
-            if query.held_folders > 0 && !query.can_nest {
+            let id = query.target_id;
+            // The middle of a folder is its mouth: a book is always welcome,
+            // and a shelf is welcome unless filing it here would put it inside
+            // itself, which is a folder no level renders and a reader can never
+            // open again.
+            if query.band == Band::Middle {
+                if query.held_folders > 0 && !query.can_nest {
+                    return DropEffect::Refused;
+                }
+                return DropEffect::NestInto {
+                    folder_id: id.to_string(),
+                };
+            }
+            // The edges are seams between SHELVES — but only for a hold that is
+            // shelves alone. Books on an edge, or a mixed hold, still go inside:
+            // a book has no position among a level's folders, and splitting one
+            // hold two ways at one release is two answers to one question.
+            if query.held_books > 0 || query.held_folders == 0 {
+                if query.held_folders > 0 && !query.can_nest {
+                    return DropEffect::Refused;
+                }
+                return DropEffect::NestInto {
+                    folder_id: id.to_string(),
+                };
+            }
+            // Folders alone on an edge: a sibling reorder, refused by the same
+            // graph the nest is — the parent's `can_nest` — and by the drop on
+            // itself, which has no seam to speak of.
+            if query.target_is_held || !query.can_sibling {
                 return DropEffect::Refused;
             }
-            DropEffect::NestInto {
-                folder_id: query.target_id.to_string(),
+            DropEffect::ShelfSibling {
+                anchor_id: id.to_string(),
+                after: query.band.after(),
             }
         }
         // A crumb and the level's own empty space are one answer at two
@@ -205,6 +317,9 @@ mod tests {
             target_id: id,
             target_is_held: false,
             can_nest: true,
+            can_sibling: false,
+            band: Band::Middle,
+            target_shelf: None,
             dwell_armed: false,
         }
     }
@@ -217,13 +332,83 @@ mod tests {
         }
     }
 
+    /// The book's answer with the position written out.
+    fn insert(id: &str, shelf: Option<&str>, after: bool) -> DropEffect {
+        DropEffect::InsertBefore {
+            book_id: id.to_string(),
+            shelf: shelf.map(str::to_string),
+            after,
+        }
+    }
+
     #[test]
     fn a_book_under_a_drag_is_where_the_held_items_land() {
         assert_eq!(
             drop_effect(query(DropTargetKind::Book, "b2", 1, 0)),
-            DropEffect::InsertBefore {
-                book_id: "b2".to_string()
+            insert("b2", None, false)
+        );
+    }
+
+    #[test]
+    fn the_bottom_half_of_a_book_row_lands_the_hold_after_it() {
+        // The list's seam: one row, two positions, and the band is the whole
+        // of the difference between them.
+        assert_eq!(
+            drop_effect(DropQuery {
+                band: Band::Bottom,
+                ..query(DropTargetKind::Book, "b2", 1, 0)
+            }),
+            insert("b2", None, true)
+        );
+        assert_eq!(
+            drop_effect(DropQuery {
+                band: Band::Top,
+                ..query(DropTargetKind::Book, "b2", 1, 0)
+            }),
+            insert("b2", None, false),
+            "the top half is the before it has always been"
+        );
+        // …and the row's own shelf rides along, so a nested row lands in the
+        // shelf that renders it rather than in the level the page is on.
+        assert_eq!(
+            drop_effect(DropQuery {
+                band: Band::Bottom,
+                target_shelf: Some("s2"),
+                ..query(DropTargetKind::Book, "b2", 1, 0)
+            }),
+            insert("b2", Some("s2"), true)
+        );
+    }
+
+    #[test]
+    fn folders_alone_on_a_book_row_join_the_rows_container() {
+        // A folder has no seam between books, so the row answers with its
+        // container instead: the open level's spelling of the same filing the
+        // level's empty space performs.
+        assert_eq!(
+            drop_effect(query(DropTargetKind::Book, "b2", 0, 1)),
+            DropEffect::FileToShelf {
+                shelf_id: ALL_SHELF.to_string()
             }
+        );
+        assert_eq!(
+            drop_effect(DropQuery {
+                target_shelf: Some("s2"),
+                ..query(DropTargetKind::Book, "b2", 0, 2)
+            }),
+            DropEffect::FileToShelf {
+                shelf_id: "s2".to_string()
+            }
+        );
+        // A mixed hold keeps the books' position; the folders ride the same
+        // container at the commit rather than splitting the release in two.
+        assert_eq!(
+            drop_effect(DropQuery {
+                target_shelf: Some("s2"),
+                band: Band::Bottom,
+                ..query(DropTargetKind::Book, "b2", 1, 1)
+            }),
+            insert("b2", Some("s2"), true)
         );
     }
 
@@ -249,6 +434,15 @@ mod tests {
                 with_book_id: "b2".to_string()
             }
         );
+        // Folders alone rest into a fold as well: the dwell is asked before
+        // the folders-only filing, so the gesture that makes a shelf out of a
+        // shelf and a book survives the band rules.
+        assert_eq!(
+            drop_effect(rested(DropTargetKind::Book, "b2", 0, 1)),
+            DropEffect::CreateFolder {
+                with_book_id: "b2".to_string()
+            }
+        );
     }
 
     #[test]
@@ -260,12 +454,7 @@ mod tests {
             target_is_held: true,
             ..rested(DropTargetKind::Book, "b1", 1, 0)
         };
-        assert_eq!(
-            drop_effect(onto_itself),
-            DropEffect::InsertBefore {
-                book_id: "b1".to_string()
-            }
-        );
+        assert_eq!(drop_effect(onto_itself), insert("b1", None, false));
         let onto_the_set = DropQuery {
             target_is_held: true,
             ..rested(DropTargetKind::Book, "b2", 3, 1)
@@ -305,9 +494,15 @@ mod tests {
     }
 
     #[test]
-    fn a_shelf_nests_into_a_shelf_unless_it_would_close_a_loop() {
+    fn the_middle_of_a_shelf_row_takes_the_hold_inside() {
         assert_eq!(
             drop_effect(query(DropTargetKind::Folder, "f1", 0, 1)),
+            DropEffect::NestInto {
+                folder_id: "f1".to_string()
+            }
+        );
+        assert_eq!(
+            drop_effect(query(DropTargetKind::Folder, "f1", 2, 0)),
             DropEffect::NestInto {
                 folder_id: "f1".to_string()
             }
@@ -317,6 +512,76 @@ mod tests {
             ..query(DropTargetKind::Folder, "f1", 0, 1)
         };
         assert_eq!(drop_effect(refused), DropEffect::Refused);
+    }
+
+    #[test]
+    fn the_edges_of_a_shelf_row_reorder_siblings() {
+        // Folders alone on an edge are a seam between SHELVES: the drop files
+        // them into the anchor's own level, before or after the anchor.
+        let sibling = |band: Band| DropQuery {
+            band,
+            can_sibling: true,
+            ..query(DropTargetKind::Folder, "f1", 0, 1)
+        };
+        assert_eq!(
+            drop_effect(sibling(Band::Top)),
+            DropEffect::ShelfSibling {
+                anchor_id: "f1".to_string(),
+                after: false
+            }
+        );
+        assert_eq!(
+            drop_effect(sibling(Band::Bottom)),
+            DropEffect::ShelfSibling {
+                anchor_id: "f1".to_string(),
+                after: true
+            }
+        );
+    }
+
+    #[test]
+    fn books_on_a_shelf_rows_edge_still_go_inside_it() {
+        // A book has no position among a level's folders, and a mixed hold is
+        // one question: both go in, the way the middle answers.
+        for band in [Band::Top, Band::Bottom] {
+            assert_eq!(
+                drop_effect(DropQuery {
+                    band,
+                    can_sibling: true,
+                    ..query(DropTargetKind::Folder, "f1", 2, 0)
+                }),
+                DropEffect::NestInto {
+                    folder_id: "f1".to_string()
+                }
+            );
+            assert!(matches!(
+                drop_effect(DropQuery {
+                    band,
+                    can_sibling: true,
+                    ..query(DropTargetKind::Folder, "f1", 1, 1)
+                }),
+                DropEffect::NestInto { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn a_sibling_the_graph_refuses_is_refused() {
+        // The parent's can_nest is the question, and a folder asked to sibling
+        // itself has no seam to speak of.
+        let edge = DropQuery {
+            band: Band::Top,
+            can_sibling: false,
+            ..query(DropTargetKind::Folder, "f1", 0, 1)
+        };
+        assert_eq!(drop_effect(edge), DropEffect::Refused);
+        let onto_itself = DropQuery {
+            band: Band::Bottom,
+            can_sibling: true,
+            target_is_held: true,
+            ..query(DropTargetKind::Folder, "f1", 0, 1)
+        };
+        assert_eq!(drop_effect(onto_itself), DropEffect::Refused);
     }
 
     #[test]
@@ -384,5 +649,12 @@ mod tests {
             drop_effect(rested(DropTargetKind::Ellipsis, "", 2, 1)),
             DropEffect::Refused
         );
+    }
+
+    #[test]
+    fn a_band_is_only_an_after_at_the_bottom() {
+        assert!(!Band::Top.after());
+        assert!(!Band::Middle.after());
+        assert!(Band::Bottom.after());
     }
 }

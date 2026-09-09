@@ -383,6 +383,13 @@
 .row-drop-before {
   box-shadow: inset 0 2px 0 var(--color-accent);
 }
+/* The mirror seam: the bottom half of a list row is "after", and a drop shows
+   the exact edge it will land on — the top rule and this one are the two halves
+   of one row, never both lit, because the band that paints them is the band the
+   commit resolves its index from. */
+.row-drop-after {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
 
 /* ---------------------------------------------------------------------------
    The add card: a cover's shape with nothing on it. Same box as a book, dashed
@@ -1108,6 +1115,14 @@
     0 0 0 6px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 .row-fold-here {
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+/* A shelf row about to take the hold INSIDE itself: the list's answer to the
+   grid's folder-drag-over ring, as an inset rule plus a tint so the rows keep
+   their rhythm — an outer ring would shove its neighbours in a divide-y list. */
+.row-nest-here {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 

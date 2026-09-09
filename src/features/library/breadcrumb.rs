@@ -369,6 +369,7 @@ fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
     ctrl.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Shelf, shelf_id.to_string()),
         dom_id: dom_id.clone(),
+        shelf: None,
     });
     dom_id
 }
@@ -713,6 +714,7 @@ fn EllipsisCrumb(
     ctrl.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Ellipsis, String::new()),
         dom_id: ELLIPSIS_DOM_ID.to_string(),
+        shelf: None,
     });
     let anchor: NodeRef<html::Div> = NodeRef::new();
     let live = ctrl.live();

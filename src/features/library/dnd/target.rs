@@ -64,6 +64,13 @@ pub struct DropTargetEntry {
     /// target that cannot be hit rather than a node that has to be checked for
     /// liveness.
     pub dom_id: String,
+    /// The shelf whose member list renders this target's row, when the row
+    /// knows it: a book inside an expanded tree answers to THAT shelf rather
+    /// than to the level the page happens to be on. `Some(ALL_SHELF)` spells
+    /// the library's own order; `None` is "unspecified", and the session
+    /// resolves it to the open level — the answer a grid card implies, because
+    /// a card is only ever drawn by the shelf the page is on.
+    pub shelf: Option<String>,
 }
 
 /// One registration: a target, and the token that says WHICH registration of it
@@ -155,6 +162,21 @@ impl DropTargetRegistry {
                 .find(|each| &each.entry.id == id)
                 .and_then(|each| by_id(&each.entry.dom_id))
                 .map(|node| node.get_bounding_client_rect())
+        })
+    }
+
+    /// The entry registered under `id`, if one is live.
+    ///
+    /// What the session asks for a row's own container: the hit-test answers
+    /// WHICH target the pointer is on, and the entry carries the shelf whose
+    /// member list renders it — the fact an insertion resolves its index
+    /// against, so a drop inside an expanded tree lands in the shelf the row
+    /// belongs to rather than in the level the page is on.
+    pub fn entry_of(&self, id: &DropTargetId) -> Option<DropTargetEntry> {
+        self.entries.with_untracked(|list| {
+            list.iter()
+                .find(|each| &each.entry.id == id)
+                .map(|each| each.entry.clone())
         })
     }
 }

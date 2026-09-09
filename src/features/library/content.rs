@@ -243,6 +243,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Level, String::new()),
         dom_id: LEVEL_DOM_ID.to_string(),
+        shelf: None,
     });
     // The shelf asks for the covers it is missing whenever it is looked at. The
     // queue already skips what it has, so this reads as a question rather than a

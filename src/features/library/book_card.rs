@@ -168,6 +168,10 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Book, id.clone()),
         dom_id: dom_id.clone(),
+        // No shelf of its own: a card is drawn by the open level and by
+        // nothing else, which is the container the session resolves a
+        // nameless entry to.
+        shelf: None,
     });
 
     // A right-click is the shelf's answer to a stroke's remove menu, and the menu

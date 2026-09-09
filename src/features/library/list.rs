@@ -29,7 +29,13 @@
 //! A row is the same drop target a card is, and registers under the same kind: a
 //! book at one density and the same book at the other are one thing to a drag, and
 //! a session that had to be told which layout was showing would be a session that
-//! could only drop on the one the reader happened to be looking at.
+//! could only drop on the one the reader happened to be looking at. The tree's
+//! rows carry one fact a card never had to: the shelf whose member list renders
+//! them, so a drop inside an expanded branch lands in the branch and not in the
+//! level the page is on. A shelf row is a target in its own right — its middle
+//! takes a hold inside, its outer quarters reorder held folders beside it, and a
+//! hold that rests on a collapsed one opens it, the courtesy every file manager's
+//! tree gives a drag.
 //!
 //! A row shows the author when the book has one and the resume point when it does
 //! not: at this density there is room for one line of prose and the reader gets to
@@ -47,6 +53,7 @@
 
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::time::Duration;
 
 use leptos::html;
 use leptos::prelude::*;
@@ -107,6 +114,12 @@ fn row_indent(depth: usize) -> String {
     format!("padding-left:{}rem", 0.75 + depth as f32 * 0.9)
 }
 
+/// How long a hold rests on a collapsed shelf row before the tree opens it: the
+/// way deeper is the way IN, and a reader carrying books should not have to put
+/// them down to knock. Longer than the fold's own dwell, because opening a level
+/// is a navigation the reader has to see happen before they aim into it.
+const AUTO_EXPAND_MS: u64 = 650;
+
 #[component]
 pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> impl IntoView {
     let order = use_context::<ShelfOrder>().expect("the library content provides the order");
@@ -149,7 +162,7 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
                 <TreeRow state=state shelf=shelf depth=0 crop=crop />
             </For>
             <For each=move || order.0.get() key=|b| b.id.clone() let:book>
-                <ListRow state=state book=book crop=crop depth=0 />
+                <ListRow state=state book=book crop=crop depth=0 parent=None />
             </For>
             // The grid ends in an add card, so the list ends in an add row: the two
             // layouts are the same library, and a reader who switched to the denser
@@ -166,10 +179,11 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
 fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> impl IntoView {
     let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
     // The sidebar will mount this tree with no library page under it, and the
-    // right-click is the one gesture that needs the page's host — so the host is
-    // asked for rather than expected, and a tree without one simply has no menu
-    // to offer.
+    // right-click and the drag are the two gestures that need the page's hosts
+    // — so both are asked for rather than expected, and a tree without them
+    // simply has no menu to offer and no seam to paint.
     let menu = use_context::<LibraryMenuHost>();
+    let drag = use_context::<DragController>();
 
     // The prop is the shelf the `For` keyed this row on, and a keyed row is not
     // re-created when the shelf's CONTENTS change — a book filed into it, a
@@ -215,6 +229,51 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     let open_id = id.clone();
     let open = Signal::derive(move || ctx.expanded.with(|set| set.contains(&open_id)));
 
+    // A target at last, and the row IS the shelf: its middle takes a hold
+    // inside, and its outer quarters reorder held folders beside it in the
+    // level that holds them. Unregistered, a drop here fell through to the
+    // level's own box and silently re-filed into the shelf the reader was
+    // already standing in — the list's whole drag mess in one sentence.
+    let row_dom = format!("shelf-row-{id}");
+    if let Some(drag) = drag {
+        drag.registry.register(DropTargetEntry {
+            id: DropTargetId(DropTargetKind::Folder, id.clone()),
+            dom_id: row_dom.clone(),
+            shelf: None,
+        });
+    }
+
+    // The tree's courtesy to a drag: a hold resting on a COLLAPSED row opens
+    // it, so the way deeper is the way in and the reader never has to put the
+    // hold down to knock. The timer belongs to an effect on the hover, so
+    // leaving the row — or the row opening by hand — is the cancellation.
+    let hover_id = id.clone();
+    let hover_collapsed = Signal::derive(move || {
+        drag.is_some_and(|each| each.live().get() && each.over_folder(&hover_id)) && !open.get()
+    });
+    let expand_id = id.clone();
+    Effect::new(move |_| {
+        if !hover_collapsed.get() {
+            return;
+        }
+        let at = expand_id.clone();
+        let expanded = ctx.expanded;
+        let handle = set_timeout_with_handle(
+            move || {
+                expanded.update(|set| {
+                    set.insert(at);
+                });
+            },
+            Duration::from_millis(AUTO_EXPAND_MS),
+        )
+        .ok();
+        on_cleanup(move || {
+            if let Some(handle) = handle {
+                handle.clear();
+            }
+        });
+    });
+
     // A search lists its matches flat — the level's `order` is the whole
     // library's when a query is open — so an unfolded shelf withholds its
     // members while the search is on: the doors stay, to show WHERE the matches
@@ -240,14 +299,38 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     });
 
     let nav_id = id.clone();
+    let nest_id = id.clone();
+    let before_id = id.clone();
+    let after_id = id.clone();
+    // Parked in a `StoredValue` rather than captured: the member rows are built
+    // inside the unfold's `Show`, whose children closure has to stay an `Fn` —
+    // a `String` owned by the rows' `move` closure would be moved out of it on
+    // the first build, and a Copy handle to a scoped cell is the same fix
+    // `crate::features::library::breadcrumb` uses for its folded chain.
+    let members_parent: StoredValue<Option<String>, LocalStorage> =
+        StoredValue::new_local(Some(id.clone()));
     let context_id = id;
     let indent = row_indent(depth);
 
     view! {
         <>
             <div
+                id=row_dom
                 class="library-row library-row-shelf"
                 style=indent
+                // The row's three drag faces: the accent wash and inset ring
+                // while the hold is going INSIDE it — the list's answer to the
+                // grid's folder-drag-over — and the two sibling seams while a
+                // folders-only hold is landing beside it.
+                class=("row-nest-here", move || {
+                    drag.is_some_and(|each| each.nests_into(&nest_id))
+                })
+                class=("row-drop-before", move || {
+                    drag.is_some_and(|each| each.sibling_at(&before_id) == Some(false))
+                })
+                class=("row-drop-after", move || {
+                    drag.is_some_and(|each| each.sibling_at(&after_id) == Some(true))
+                })
                 role="button"
                 tabindex="0"
                 aria-expanded=move || open.get().to_string()
@@ -343,7 +426,13 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                         .into_any()}
                 </For>
                 <For each=move || shown_books.get() key=|b| b.id.clone() let:book>
-                    <ListRow state=state book=book crop=crop depth=depth + 1 />
+                    <ListRow
+                        state=state
+                        book=book
+                        crop=crop
+                        depth=depth + 1
+                        parent=members_parent.get_value()
+                    />
                 </For>
             </Show>
         </>
@@ -400,7 +489,19 @@ fn AddRow(state: AppState) -> impl IntoView {
 }
 
 #[component]
-fn ListRow(state: AppState, book: Book, crop: Signal<bool>, depth: usize) -> impl IntoView {
+fn ListRow(
+    state: AppState,
+    book: Book,
+    crop: Signal<bool>,
+    depth: usize,
+    /// The shelf whose member list renders this row: the tree's own id for a
+    /// row inside an expanded branch, `None` for the flat section — which the
+    /// open level renders, and which the session resolves at the drop rather
+    /// than at the mount, so a flat row can never carry a stale container
+    /// through a drill. It is the fact a grid card never had to state, because
+    /// a card is only ever drawn by the level the page is on.
+    parent: Option<String>,
+) -> impl IntoView {
     let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
     // The dense variant's whole difference, decided once at the mount: at
     // sidebar width the format IS the cover — the kind of thing the row is, in
@@ -480,11 +581,15 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>, depth: usize) -> imp
     let swallow_context = Rc::clone(&item.swallow_context);
 
     // The same target a card registers, under the same id scheme: a book is one
-    // thing to a drag whatever density it is being shown at.
+    // thing to a drag whatever density it is being shown at — plus the one fact
+    // the tree adds: the container that renders THIS row, so a drop inside an
+    // expanded branch indexes the branch's own member list and not the flat
+    // order the page is showing.
     let dom_id = format!("book-{}", id);
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Book, id.clone()),
         dom_id: dom_id.clone(),
+        shelf: parent,
     });
 
     let context_id = id.clone();
@@ -495,6 +600,7 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>, depth: usize) -> imp
     let reveal_id = id.clone();
     let remove_id = id.clone();
     let over_id = id.clone();
+    let after_id = id.clone();
     let fold_id = id.clone();
     let held_id = id.clone();
     let alt_path = path.clone();
@@ -516,6 +622,7 @@ fn ListRow(state: AppState, book: Book, crop: Signal<bool>, depth: usize) -> imp
                 })
             })
             class=("row-drop-before", move || drag.inserts_before(&over_id))
+            class=("row-drop-after", move || drag.inserts_after(&after_id))
             class=("row-fold-here", move || drag.folds_with(&fold_id))
             class=("row-missing", missing)
             class=("library-row-selected", move || is_selected.get())

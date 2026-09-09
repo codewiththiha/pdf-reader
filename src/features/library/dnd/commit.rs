@@ -5,7 +5,7 @@
 //! `crate::services::library::create_shelf` for the one a fold makes — so a
 //! dragged book persists, keeps its cover and is revealed exactly as a filed one
 //! is. Nothing in here decides anything either: the decision arrived as a
-//! [`DropEffect`] and what is left is which of five operations it names.
+//! [`DropEffect`] and what is left is which operation it names.
 //!
 //! One rule carries over from the services and is worth repeating at the seam
 //! where a reader's hand meets it: an in-app move never touches the filesystem.
@@ -19,9 +19,9 @@ use library_core::shelf::ALL_SHELF;
 
 use super::controller::DragPayload;
 use super::effect::DropEffect;
-use crate::features::library::content::visible;
 use crate::services::library::{
-    create_shelf, move_many_to_shelf, nest_many, nest_shelf, unfile_books,
+    create_shelf, move_many_to_shelf, nest_many, nest_shelf, reorder_shelves_to_anchor,
+    unfile_books,
 };
 use crate::state::AppState;
 
@@ -37,15 +37,36 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
 
     match effect {
         DropEffect::Refused => {}
-        DropEffect::InsertBefore { book_id } => {
-            // A drop on a card means "put it here", which is a position in the
-            // order the reader is looking at. The held folders get no position:
-            // a level renders its folders before its books, in the order the
-            // library stores them, and a drag that promised a place among the
-            // covers would be a promise the next render breaks.
-            let to = from.clone().unwrap_or_else(|| ALL_SHELF.to_string());
-            let index = index_of(state, &book_id);
-            move_many_to_shelf(state, &payload.books, from, to, index);
+        DropEffect::InsertBefore {
+            book_id,
+            shelf,
+            after,
+        } => {
+            // A drop on a row means "put it here", and HERE is two facts the
+            // effect carries rather than this step re-deriving: the container
+            // that renders the row — a nested tree row answers to its own
+            // shelf, not to the level the page is on — and which side of the
+            // anchor the seam was. The held folders get no position: a level
+            // renders its folders before its books, in the order the library
+            // stores them, and a drag that promised a place among the covers
+            // would be a promise the next render breaks. They are not left in
+            // the hand either — they join the container the books just landed
+            // in, which is the same roof the level's empty space files under.
+            let (to, index) = insert_anchor(state, &book_id, shelf.as_deref(), after);
+            move_many_to_shelf(state, &payload.books, from, to.clone(), index);
+            if to == ALL_SHELF {
+                for folder in &payload.folders {
+                    nest_shelf(state, folder, None);
+                }
+            } else {
+                nest_many(state, &payload.folders, &to);
+            }
+        }
+        DropEffect::ShelfSibling { anchor_id, after } => {
+            // Folders alone on a shelf row's edge: the same level, a new place
+            // in it. The books' half cannot arrive here — the table sends a
+            // mixed hold inside the folder instead — so this is the folders.
+            reorder_shelves_to_anchor(state, &payload.folders, &anchor_id, after);
         }
         DropEffect::FileToShelf { shelf_id } if shelf_id.is_empty() => {
             // The root, which is a level and not a shelf. From inside a shelf
@@ -87,23 +108,62 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
     }
 }
 
-/// The index a drop on `book_id` names, or `None` for "the end of the level".
+/// Where an insertion lands: the shelf whose member list renders the anchor
+/// row — the effect's own when the row named one, the open level otherwise —
+/// and the anchor's index inside it, one further on when the seam was the row's
+/// bottom edge.
 ///
-/// `None` while the shelf is sorted rather than a position that will not survive:
-/// a sorted level re-sorts on the next render, so a drop that named a slot would
-/// be undone before the reader saw it land. `library_core::view`'s
-/// `drag_reorders` is the question, and it is the same one the grid used to ask
-/// before it made a card draggable.
+/// The index is the anchor's position in its CONTAINER rather than a count of
+/// what is on screen, and that is the fix for a drop between nested rows: an
+/// expanded tree renders a shelf's members under it while the page's visible
+/// order is the flat section's, so a screen count would name a slot in the
+/// wrong list. A count of the container is also the count the search cannot
+/// skew: the filtered page shows fewer rows than the member list holds, and a
+/// filtered index applied to an unfiltered list lands where nobody pointed.
 ///
-/// The order is [`visible`] — the one the page is showing. A card cannot work its
-/// own position out from the DOM without counting siblings, and a count of
-/// siblings would be a second definition of an order the search and the sort have
-/// already had their say about.
-fn index_of(state: AppState, book_id: &str) -> Option<usize> {
-    if !state.library.view.with_untracked(|view| view.drag_reorders()) {
-        return None;
+/// `None` while the view is sorted rather than manual: a sorted level re-sorts
+/// on the next render, so a drop that named a slot would be undone before the
+/// reader saw it land. `library_core::view`'s `drag_reorders` is the question,
+/// and it is the same one the grid asked before it made a card draggable — a
+/// sorted shelf still accepts the drop, it just appends.
+fn insert_anchor(
+    state: AppState,
+    book_id: &str,
+    shelf: Option<&str>,
+    after: bool,
+) -> (String, Option<usize>) {
+    let reorder = state.library.view.with_untracked(|view| view.drag_reorders());
+    let open = state.library.shelf.get_untracked();
+    let container: Option<String> = match shelf {
+        // A row that named its shelf. The root spells itself "all" and is the
+        // library's own order rather than a member list.
+        Some(named) => (named != ALL_SHELF).then(|| named.to_string()),
+        None => (open != ALL_SHELF).then_some(open),
+    };
+    let step = usize::from(after && reorder);
+    match container {
+        Some(id) => {
+            let index = reorder.then(|| {
+                state.library.shelves.with_untracked(|shelves| {
+                    shelves
+                        .iter()
+                        .find(|each| each.id == id)
+                        .and_then(|each| each.books.iter().position(|member| member == book_id))
+                        .map_or(0, |at| at + step)
+                })
+            });
+            (id, index)
+        }
+        None => {
+            let index = reorder.then(|| {
+                state.library.books.with_untracked(|books| {
+                    books
+                        .iter()
+                        .position(|book| book.id == book_id)
+                        .map_or(0, |at| at + step)
+                })
+            });
+            (ALL_SHELF.to_string(), index)
+        }
     }
-    visible(state)
-        .iter()
-        .position(|book| book.id == book_id)
 }

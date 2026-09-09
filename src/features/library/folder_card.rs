@@ -182,6 +182,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Folder, id.clone()),
         dom_id: dom_id.clone(),
+        shelf: None,
     });
 
     let context_id = id.clone();
