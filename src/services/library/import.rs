@@ -17,6 +17,13 @@
 //!     ([`rescan_watched`]) never raises a dock card, a toast or a state write
 //!     for a folder nothing changed in — which, on every window focus, is nearly
 //!     all of them.
+//!   * **the tree on disk is the tree on the shelf.** A folder import mints the
+//!     whole chain of shelves between the watched root and each file's subfolder,
+//!     and a rescan re-hangs the folder's shelves on the rung their `rel` names,
+//!     so importing "1" that holds "2", "3" and four books yields "1" at the root
+//!     with "2", "3" and the books inside it — one logic, one tree, rather than a
+//!     flat shelf list grown beside a nested one. Virtual shelves are the
+//!     reader's own and no scan ever rearranges them.
 //!   * **an ask outranks a removal.** The tombstones a removal writes are an
 //!     answer to the passive rescan — "stay quiet about this file" — and not to
 //!     the reader picking the same folder again a week later. [`Asked::Explicitly`]
@@ -33,7 +40,7 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{Book, Fingerprint, Origin, add_book, apply_check};
-use library_core::folder::{FolderOpts, WatchedFolder};
+use library_core::folder::{FolderOpts, WatchedFolder, parent_key};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
@@ -348,6 +355,56 @@ async fn run_folder(
     // The sheet's answers are this import's truth, and the next scan's.
     folder.opts = opts;
 
+    // The tree on disk is the tree on the shelf, for the shelves this folder
+    // owns: a folder card cut from a watched tree is a VIEW of that tree, so its
+    // rung is the one its `rel` names — including for shelves an older, flatter
+    // build minted as siblings, which this pass re-hangs under the rung they were
+    // always cut from. Virtual shelves are the reader's own arrangement and are
+    // never touched here, and neither is a shelf of another folder.
+    //
+    // Before the diff and before the "nothing changed" return on purpose: a
+    // library arranged by an older build is repaired by the first rescan that
+    // looks at the folder, not only by an import that happens to add something.
+    let rehanged = state.library.shelves.with_untracked(|shelves| {
+        let rungs: HashMap<String, String> = shelves
+            .iter()
+            .filter_map(|s| match &s.kind {
+                ShelfKind::Folder { folder_id, rel } if folder_id == &folder.id => {
+                    Some((rel.clone().unwrap_or_default(), s.id.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        let mut moved = Vec::new();
+        for shelf in shelves.iter() {
+            let want: Option<Option<String>> = match &shelf.kind {
+                ShelfKind::Folder { folder_id, rel } if folder_id == &folder.id => {
+                    let key = rel.clone().unwrap_or_default();
+                    Some(parent_key(&key).and_then(|rung| rungs.get(rung).cloned()))
+                }
+                _ => None,
+            };
+            if let Some(want) = want {
+                // A shelf is never its own parent, whatever a stale map claims.
+                let want = want.filter(|w| w != &shelf.id);
+                if shelf.parent != want {
+                    moved.push((shelf.id.clone(), want));
+                }
+            }
+        }
+        moved
+    });
+    if !rehanged.is_empty() {
+        state.library.shelves.update(|shelves| {
+            for (id, want) in &rehanged {
+                if let Some(shelf) = shelves.iter_mut().find(|s| &s.id == id) {
+                    shelf.parent = want.clone();
+                }
+            }
+        });
+        crate::storage::persist_library(state.library);
+    }
+
     let registry = ledger::registry_of(&books);
 
     // A fingerprint can rejoin the library by any route — a hand-open, a second
@@ -511,33 +568,33 @@ async fn run_folder(
             };
             let placed_id = add_book(books, book);
             let key = folder.shelf_key(file);
-            let name = shelf_name(&key, &root);
-            let seq = shelf_seq;
-            let shelf_id = folder.shelf_for(
+            // The whole chain, not the leaf: importing "1" whose inside is "2",
+            // "3" and four books has to produce "1" at the root with "2", "3" and
+            // the four books inside it — not three siblings at the root and the
+            // books twice. `shelf_chain_for` mints every rung between the root
+            // shelf and the file's own subfolder, and reuses the rungs a previous
+            // scan already minted.
+            let shelf_id = folder.shelf_chain_for(
                 &key,
                 |_| {
+                    let seq = shelf_seq;
                     shelf_seq += 1;
                     id::new_shelf_id(now, seq)
                 },
-                &name,
+                |rung| shelf_name(rung, &root),
+                |rung, id, name, parent| {
+                    new_shelves.push(Shelf {
+                        id: id.to_string(),
+                        name,
+                        kind: ShelfKind::Folder {
+                            folder_id: folder_id.clone(),
+                            rel: rel_of(rung),
+                        },
+                        books: Vec::new(),
+                        parent,
+                    });
+                },
             );
-            if !new_shelves.iter().any(|s| s.id == shelf_id) {
-                new_shelves.push(Shelf {
-                    id: shelf_id.clone(),
-                    name,
-                    kind: ShelfKind::Folder {
-                        folder_id: folder_id.clone(),
-                        rel: rel_of(&key),
-                    },
-                    books: Vec::new(),
-                    // Flat, on purpose. `rel` is this shelf's address inside the
-                    // watched directory's tree and `parent` is where the READER
-                    // filed it inside the library: a scan that wrote `parent`
-                    // from the tree would move a folder the reader had arranged,
-                    // on every rescan, back to a shape they did not choose.
-                    parent: None,
-                });
-            }
             placements.push((placed_id, shelf_id));
             folder.mark_placed(file.fp);
             // The book landed, so a removal that was holding it out is spent.

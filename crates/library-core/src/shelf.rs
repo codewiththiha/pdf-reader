@@ -188,6 +188,14 @@ pub fn can_nest(shelves: &[Shelf], folder_id: &str, target_id: &str) -> bool {
 /// was: a drop that would close a cycle is a drop that never happened, which is
 /// what lets the caller answer a refusal by doing nothing at all.
 pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) -> bool {
+    // A shelf cut from a watched tree is a view of that tree, and its rung is the
+    // disk's to write: the import mints the chain and every rescan re-hangs it,
+    // so a hand that could move it would be undone by the next scan — a control
+    // that appears to work and then does not. Virtual shelves are the reader's
+    // own arrangement and move freely.
+    if shelves.iter().any(|s| s.id == folder_id && s.is_folder()) {
+        return false;
+    }
     if let Some(target) = parent
         && !can_nest(shelves, folder_id, target)
     {
@@ -577,6 +585,27 @@ mod tests {
         // Back out to the root.
         assert!(reparent(&mut shelves, "s2", None));
         assert_eq!(shelves[1].parent, None);
+    }
+
+    #[test]
+    fn a_shelf_cut_from_a_watched_tree_is_not_the_readers_to_move() {
+        let mut shelves = vec![
+            shelf("s1", "Fiction", &[]),
+            Shelf {
+                kind: ShelfKind::Folder {
+                    folder_id: "f1".into(),
+                    rel: None,
+                },
+                ..shelf("s2", "Watched", &[])
+            },
+        ];
+        // Its rung follows the disk on every scan, so a hand-move would be a
+        // promise the next rescan breaks; the refusal is the honest answer.
+        assert!(!reparent(&mut shelves, "s2", Some("s1")));
+        assert_eq!(shelves[1].parent, None);
+        // And a virtual shelf into it is fine: the reader's arrangement holds.
+        assert!(reparent(&mut shelves, "s1", Some("s2")));
+        assert_eq!(shelves[0].parent.as_deref(), Some("s2"));
     }
 
     #[test]

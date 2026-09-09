@@ -130,7 +130,7 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
         <nav class="flex min-w-0 items-center gap-0.5 text-sm" aria-label="Library location">
             <button
                 type="button"
-                title="Every book"
+                title="The top level of the library"
                 on:click=move |_| state.library.shelf.set(ALL_SHELF.to_string())
                 class=move || {
                     // The crumb that is not where you are reads as a way back, and

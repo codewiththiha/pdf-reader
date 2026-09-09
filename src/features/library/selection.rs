@@ -14,7 +14,8 @@
 //! What a selection can DO is narrower than what it can hold, deliberately, and the
 //! two halves are different operations on the same shelf list. Filing a book is
 //! membership; filing a folder is nesting, which `library_core::shelf::can_nest`
-//! refuses when it would close a loop. Removing goes through the receipt sheet a
+//! refuses when it would close a loop and `Shelf::is_folder` refuses outright for
+//! a shelf the disk places — its rung is the watched tree's, not the selection's. Removing goes through the receipt sheet a
 //! single removal uses, and the sheet receipts both halves at once: a book's row
 //! itemises what it takes with it, a shelf's row says what SURVIVES it — the books
 //! stay in the library, the shelves inside it move up a level, and a shelf cut from

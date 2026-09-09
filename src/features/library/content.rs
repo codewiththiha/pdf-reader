@@ -14,6 +14,7 @@
 //! wrong — there is only one order — and it is what lets the selection bar's "All"
 //! mean everything on screen rather than everything in the library.
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use leptos::prelude::*;
@@ -107,18 +108,40 @@ fn scroll_may_animate(state: AppState) -> bool {
 
 /// The books the page shows, in the order it shows them.
 ///
-/// Four steps, and the sequence is the point: the drilled-into shelf narrows the
-/// list, the view's sort orders it, and the query filters it LAST — so a search
-/// never re-orders anything and clearing one puts the shelf back exactly as it
-/// was. A shelf's own member order is read with `SortKey::Manual`, which is a
-/// no-op, because the sort the reader chose is applied to the whole list once
-/// rather than to each shelf's copy of it.
+/// Four steps, and the sequence is the point: the level narrows the list, the
+/// view's sort orders it, and the query filters it LAST — so a search never
+/// re-orders anything and clearing one puts the shelf back exactly as it was. A
+/// shelf's own member order is read with `SortKey::Manual`, which is a no-op,
+/// because the sort the reader chose is applied to the whole list once rather
+/// than to each shelf's copy of it.
+///
+/// At the root the level is the TOP of the library rather than a flattening of
+/// it: the books nobody has filed, beside the folders [`visible_folders`] puts
+/// there. A book inside a folder is that folder's to show, and showing it at the
+/// root as well was the same book on two levels at once — a flat shelf list and a
+/// nested one wearing one page. A query is the one exception: searching from the
+/// root searches the LIBRARY, because a search that could not see inside folders
+/// would miss silently, and the matches it shows are the ones asked for.
 fn visible(state: AppState) -> Vec<Book> {
     let view = state.library.view.get();
     let shelf_id = state.library.shelf.get();
     let books = state.library.books.get();
     let mut list = if shelf_id == ALL_SHELF {
-        books
+        let terms = state.library.query.get();
+        if query::is_active(&terms) {
+            books
+        } else {
+            let filed: HashSet<String> = state.library.shelves.with(|shelves| {
+                shelves
+                    .iter()
+                    .flat_map(|s| s.books.iter().cloned())
+                    .collect()
+            });
+            books
+                .into_iter()
+                .filter(|b| !filed.contains(&b.id))
+                .collect()
+        }
     } else {
         let members = state.library.shelves.with(|shelves| {
             shelves

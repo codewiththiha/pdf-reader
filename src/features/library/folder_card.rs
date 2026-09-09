@@ -16,6 +16,11 @@
 //! `crate::components::primitives::interactions::draggable_item`. A tap opens
 //! the shelf, a hold starts a multi-select with this shelf already in it, and a
 //! drag files a book dropped on it or nests a shelf dropped on it.
+//!
+//! The one card that does not drag is a shelf cut from a watched folder: its rung
+//! in the library is the rung its directory has on disk, re-hung on every scan, so
+//! a hand-move would be a promise the next rescan breaks. It still opens, still
+//! selects, and still takes the books and virtual shelves dropped on it.
 
 use std::rc::Rc;
 
@@ -113,6 +118,19 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         })
     });
 
+    // A shelf cut from a watched tree is the tree's to place — every scan re-hangs
+    // it on the rung its `rel` names — so offering it a drag would be offering a
+    // move the next rescan undoes. Virtual shelves drag freely.
+    let disk_id = id.clone();
+    let disk_bound = Signal::derive(move || {
+        state.library.shelves.with(|shelves| {
+            shelves
+                .iter()
+                .find(|s| s.id == disk_id)
+                .is_some_and(|s| s.is_folder())
+        })
+    });
+
     let selecting = state.library.selecting;
     let selected_set = state.library.selected;
     let selected_id = id.clone();
@@ -124,8 +142,9 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let item = use_draggable_item(DraggableItemOptions {
         press_ms: SELECT_PRESS_MS,
         drag_threshold_px: DRAG_THRESHOLD_PX,
-        // While a set is selected the pointer is choosing, not filing.
-        draggable: Signal::derive(move || !selecting.get()),
+        // While a set is selected the pointer is choosing, not filing; and a
+        // shelf the disk places is not one the pointer gets to place.
+        draggable: Signal::derive(move || !selecting.get() && !disk_bound.get()),
         // And a hold inside a selection would be a second way to do the thing a
         // tap now does.
         selectable: Signal::derive(move || !selecting.get()),
@@ -181,9 +200,16 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             })
             role="button"
             tabindex="0"
-            // Dragging a shelf one level deeper; while a set is selected the
-            // pointer is choosing, not filing.
-            draggable=move || if selecting.get() { "false" } else { "true" }
+            // Dragging files this shelf one level deeper; while a set is selected
+            // the pointer is choosing, and a shelf the disk places is not one the
+            // pointer gets to place.
+            draggable=move || {
+                if selecting.get() || disk_bound.get() {
+                    "false"
+                } else {
+                    "true"
+                }
+            }
             aria-label=move || {
                 let shown = name.get();
                 if selecting.get() {
@@ -257,10 +283,18 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                     drop_target.0.set(Some(drag_marker.clone()));
                     return;
                 }
-                let closes_a_loop = drag::dragged_folder(&ev).is_some_and(|moved| {
-                    !can_nest(&state.library.shelves.get_untracked(), &moved, &over_id)
+                let refused = drag::dragged_folder(&ev).is_some_and(|moved| {
+                    let shelves = state.library.shelves.get_untracked();
+                    // A shelf the disk places is not offered a drop here: the nest
+                    // would be refused, and a cursor that promises what the drop
+                    // cannot do is a lie with a drag image.
+                    let disk_bound = shelves
+                        .iter()
+                        .find(|s| s.id == moved)
+                        .is_none_or(|s| s.is_folder());
+                    disk_bound || !can_nest(&shelves, &moved, &over_id)
                 });
-                if closes_a_loop {
+                if refused {
                     return;
                 }
                 if drag::accepts_folder(&ev) {

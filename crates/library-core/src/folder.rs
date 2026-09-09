@@ -167,6 +167,34 @@ pub struct WatchedFolder {
     pub scanned_ms: u64,
 }
 
+/// Every rung of a shelf key's path, root first and the key itself last: `""`,
+/// then `"2"`, then `"2/deep"`. The root rung is always first because the watched
+/// folder's own shelf is the top of every chain it mints.
+pub fn key_chain(key: &str) -> Vec<&str> {
+    let mut out = vec![""];
+    if key.is_empty() {
+        return out;
+    }
+    for (at, _) in key.match_indices('/') {
+        out.push(&key[..at]);
+    }
+    out.push(key);
+    out
+}
+
+/// The rung a shelf key sits inside: `"2/deep"` is inside `"2"`, `"2"` is inside
+/// the root, and the root is inside nothing. What a rescan re-hangs a folder
+/// shelf's `parent` from.
+pub fn parent_key(key: &str) -> Option<&str> {
+    if key.is_empty() {
+        return None;
+    }
+    match key.rfind('/') {
+        Some(at) => Some(&key[..at]),
+        None => Some(""),
+    }
+}
+
 impl WatchedFolder {
     /// The ledger key for a found file: its subfolder when the folder groups,
     /// the empty string for the root otherwise. One function owns the choice so
@@ -182,6 +210,46 @@ impl WatchedFolder {
         } else {
             String::new()
         }
+    }
+
+    /// The shelf a found file belongs on, minting EVERY rung between the folder's
+    /// root shelf and the file's own subfolder, and reporting each rung it mints
+    /// through `made` (rung, id, name, the parent id above it) so the caller can
+    /// put a shelf row under the id.
+    ///
+    /// A walk reports files, not directories: minting only the leaf would hang a
+    /// subfolder's shelf off the root with a hole above it, and a library that
+    /// showed the tree flat beside the tree nested was two logics wearing one
+    /// shelf list. The chain is minted level by level instead, so an intermediate
+    /// directory with no books of its own is an empty folder card rather than a
+    /// missing rung, and the shelf at every depth is the directory at that depth.
+    ///
+    /// Rungs already in [`WatchedFolder::shelf_map`] are reused rather than
+    /// re-minted, which is what makes a rescan continue the tree instead of
+    /// growing a twin beside it. Called from the frontend, which owns the shelf
+    /// list and the id sequence; the shell's walk only reports what it found.
+    pub fn shelf_chain_for(
+        &mut self,
+        key: &str,
+        mut mint: impl FnMut(&str) -> String,
+        mut name_of: impl FnMut(&str) -> String,
+        mut made: impl FnMut(&str, &str, String, Option<String>),
+    ) -> String {
+        let mut current: Option<String> = None;
+        let mut id = String::new();
+        for rung in key_chain(key) {
+            id = match self.shelf_map.get(rung) {
+                Some(known) => known.clone(),
+                None => {
+                    let fresh = mint(rung);
+                    self.shelf_map.insert(rung.to_string(), fresh.clone());
+                    made(rung, &fresh, name_of(rung), current.clone());
+                    fresh
+                }
+            };
+            current = Some(id.clone());
+        }
+        id
     }
 
     /// The shelf a found file belongs on, minting one through `mint` when this
@@ -322,6 +390,16 @@ pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_key_is_a_chain_of_rungs_root_first() {
+        assert_eq!(key_chain(""), vec![""]);
+        assert_eq!(key_chain("2"), vec!["", "2"]);
+        assert_eq!(key_chain("2/deep"), vec!["", "2", "2/deep"]);
+        assert_eq!(parent_key(""), None);
+        assert_eq!(parent_key("2"), Some(""));
+        assert_eq!(parent_key("2/deep"), Some("2"));
+    }
 
     fn fp(n: u32) -> Fingerprint {
         Fingerprint {
