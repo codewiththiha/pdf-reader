@@ -154,6 +154,9 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                 id: target_id.clone(),
                 watched: watched.get_untracked(),
             }),
+            // A folder's lift is a nesting, which writes a parent rather than
+            // a membership: there is no list to lift it off.
+            container: None,
         },
     );
     let is_selected = gestures.is_selected;

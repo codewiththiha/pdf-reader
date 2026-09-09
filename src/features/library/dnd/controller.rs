@@ -47,6 +47,15 @@ use crate::state::AppState;
 pub struct DragPayload {
     pub books: Vec<String>,
     pub folders: Vec<String>,
+    /// The shelf whose member list rendered the row the press began on, when
+    /// the row knows it — a nested tree row answers with its own branch.
+    /// `None` everywhere else (a grid card, a flat row, a folder), which the
+    /// commit step resolves to the open level. What a move takes its books
+    /// OFF: a drag out of an expanded branch is a move out of THAT shelf, and
+    /// reading the open level instead would unfile a book from the page's
+    /// shelf for a drag that never left the branch — see
+    /// `crate::features::library::dnd::commit`.
+    pub source: Option<String>,
 }
 
 impl DragPayload {

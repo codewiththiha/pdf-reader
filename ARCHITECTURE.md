@@ -598,7 +598,9 @@ by `features::library::dnd::layer` above the content and below the sheets.
 A list row is the same target with one fact and one question more. The fact is the shelf whose member
 list renders the row, which the entry carries and the insertion names, so a drop inside an expanded
 tree indexes that branch's own list instead of the flat order the page is showing — the seam under a
-nested row used to land in the open level, silently. The question is which PART of the row the pointer
+nested row used to land in the open level, silently. The lift carries the same fact back out as the
+payload's source, so a reorder inside a branch takes its books off the branch and never off the
+page's own shelf, which a book on both is a member of as well. The question is which PART of the row the pointer
 is on: the bottom half of a book row lands the hold after its anchor, a shelf row's middle takes the
 hold inside it, and its outer quarters reorder held folders beside their anchor in the level that
 holds the anchor — the graph asked is the parent's own `can_nest`, and a folder asked to sibling

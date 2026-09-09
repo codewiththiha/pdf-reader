@@ -130,6 +130,9 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                 path: context_path.clone(),
                 missing,
             }),
+            // No shelf of its own: a card is drawn by the open level, which is
+            // the container the session resolves a nameless lift to.
+            container: None,
         },
     );
     let is_selected = gestures.is_selected;

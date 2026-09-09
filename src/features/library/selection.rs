@@ -131,7 +131,17 @@ fn selected_folders(state: AppState) -> Vec<String> {
 /// Split into books and shelves on the way out, because the two halves of every
 /// move are different operations on one list: a book becomes a member and a shelf
 /// is nested.
-pub(crate) fn payload_for(state: AppState, item_id: &str) -> DragPayload {
+///
+/// `source` is the container the pressed row was rendered by — the list's own
+/// fact, which a grid card and a flat row do not have (`None`), and the commit
+/// step resolves to the open level. A set lifted from a nested row carries that
+/// row's branch: every member of the set is on screen under the same press, and
+/// the press is the only source the gesture can honestly name.
+pub(crate) fn payload_for(
+    state: AppState,
+    item_id: &str,
+    source: Option<String>,
+) -> DragPayload {
     if state
         .library
         .selected
@@ -140,6 +150,7 @@ pub(crate) fn payload_for(state: AppState, item_id: &str) -> DragPayload {
         return DragPayload {
             books: in_page_order(state, selected_books(state)),
             folders: selected_folders(state),
+            source,
         };
     }
     let folder = state
@@ -150,11 +161,13 @@ pub(crate) fn payload_for(state: AppState, item_id: &str) -> DragPayload {
         DragPayload {
             books: Vec::new(),
             folders: vec![item_id.to_string()],
+            source,
         }
     } else {
         DragPayload {
             books: vec![item_id.to_string()],
             folders: Vec::new(),
+            source,
         }
     }
 }

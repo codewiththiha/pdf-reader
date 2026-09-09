@@ -552,6 +552,9 @@ fn ListRow(
                 path: context_path.clone(),
                 missing,
             }),
+            // The tree's own fact: a nested row answers to its branch, a flat
+            // row to the level the page is on.
+            container: parent.clone(),
         },
     );
     let is_selected = gestures.is_selected;

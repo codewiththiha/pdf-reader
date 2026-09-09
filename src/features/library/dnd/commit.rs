@@ -30,10 +30,20 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
     if payload.is_empty() {
         return;
     }
-    // The level the drag started on. `None` at the root, which is not a shelf
-    // and so has no member list to take a book off.
-    let open = state.library.shelf.get_untracked();
-    let from = (open != ALL_SHELF).then_some(open);
+    // What the move takes its books OFF: the shelf whose member list rendered
+    // the row the press began on, when the row named one. A drag inside an
+    // expanded branch is that branch's — reading the page's level here instead
+    // would unfile a book that sits on both from the open shelf for a reorder
+    // that never left the branch. A lift with no named container (a grid card,
+    // a flat row) belongs to the open level, and `None` at the root means "no
+    // shelf": the library's own order has no member list to take a book off.
+    let from = match payload.source.clone() {
+        Some(named) => (named != ALL_SHELF).then_some(named),
+        None => {
+            let open = state.library.shelf.get_untracked();
+            (open != ALL_SHELF).then_some(open)
+        }
+    };
 
     match effect {
         DropEffect::Refused => {}

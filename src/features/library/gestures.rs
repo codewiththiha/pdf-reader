@@ -57,6 +57,11 @@ pub(crate) struct ShelfItemPolicy {
     /// helper's). Read at the ask rather than at the mount: a rescan can move
     /// the facts a menu carries between the two.
     pub menu_target: Callback<(), MenuTarget>,
+    /// The shelf whose member list renders this item, when the surface knows
+    /// it — the list's nested rows do, a grid card and a flat row do not. The
+    /// drag payload carries it so a move takes its books off the shelf they
+    /// were lifted from rather than off the level the page is on.
+    pub container: Option<String>,
 }
 
 /// Everything a shelf item spreads onto its element and paints itself from.
@@ -118,6 +123,7 @@ pub(crate) fn use_shelf_item(
     let press_id = id.clone();
     let tap_id = id.clone();
     let lift_id = id.clone();
+    let container = policy.container;
     let open_tap = policy.open;
     let item = use_draggable_item(DraggableItemOptions {
         press_ms: SELECT_PRESS_MS,
@@ -136,8 +142,9 @@ pub(crate) fn use_shelf_item(
         on_long_press: Callback::new(move |_| enter_selection(state, &press_id)),
         on_drag_start: Callback::new(move |(x, y)| {
             // What the press picks up: the whole set when this item is already
-            // in it, and this item alone when it is not.
-            drag.begin(payload_for(state, &lift_id), x, y);
+            // in it, and this item alone when it is not — with the container
+            // the press was rendered by, which is where a move lifts FROM.
+            drag.begin(payload_for(state, &lift_id, container.clone()), x, y);
         }),
         // The session owns the move.
         on_drag_move: Callback::new(move |_| {}),
