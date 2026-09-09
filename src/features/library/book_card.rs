@@ -118,8 +118,8 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     let context_path = path.clone();
     let gestures = use_shelf_item(
         state,
-        drag,
-        menu,
+        Some(drag),
+        Some(menu),
         ShelfItemPolicy {
             id: id.clone(),
             label: Signal::stored(title.clone()),

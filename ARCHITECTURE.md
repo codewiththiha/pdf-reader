@@ -608,7 +608,10 @@ itself is refused. The band is computed once, in the session, from the row's own
 seam painted and the index committed cannot disagree; outside the list layout every band is the
 middle one, and the grid keeps its whole-card answers without the table carrying a branch about
 layouts. The tree adds the courtesy every file manager's tree gives a drag: a hold resting on a
-collapsed shelf row opens it, so the way deeper is the way in.
+collapsed shelf row opens it, so the way deeper is the way in. A shelf row is a LIFT as well as a
+landing: a hold enters the selection with the shelf in it and a movement picks it up, by the same
+wiring and the same disk-bound refusal the folder card wears — a folder is draggable at both
+densities, and a set of books and folders is one gesture in either.
 
 Two dwells hang off the same target change, and they are NOT the same question at two depths — the
 difference is the whole of the design. The sink belongs to the title bar alone: at 420ms over a crumb,

@@ -18,6 +18,12 @@
 //! session's begin/release/cancel, the selection's enter/toggle, the menu's
 //! ask — is one definition.
 //!
+//! The hosts are asked for rather than expected: the library page provides both,
+//! and the tree the reader's sidebar will mount provides neither — a shelf with
+//! no session and no menu keeps its tap and stands everything else down:
+//! nothing to lift into, no menu to draw, no hold to start a selection no bar
+//! could act on.
+//!
 //! What is NOT here, deliberately: the drop-target registration and the classes
 //! a surface paints itself with. Those name DOM ids and CSS this module has no
 //! business knowing — a card is the thing on screen, and the session's registry
@@ -101,15 +107,24 @@ pub(crate) struct ShelfItem {
 /// Wire one shelf item. Called from the surface's component body, inside its
 /// reactive owner: the wrapper, the derived signals and the session callbacks
 /// all belong to the item the surface is drawing, and they die with it.
+///
+/// `drag` and `menu` are the page's hosts, and a mount that has neither — the
+/// sidebar's tree — gets a row that still answers a tap and stands everything
+/// else down: nothing to lift into, nothing to ask, no hold to start a
+/// selection no bar could act on.
 pub(crate) fn use_shelf_item(
     state: AppState,
-    drag: DragController,
-    menu: LibraryMenuHost,
+    drag: Option<DragController>,
+    menu: Option<LibraryMenuHost>,
     policy: ShelfItemPolicy,
 ) -> ShelfItem {
     let selecting = state.library.selecting;
     let selected_set = state.library.selected;
     let id = policy.id;
+    // Both or neither: the page provides the pair, and a half-hosted shelf —
+    // a lift with no menu to act on, a menu with no session to file through —
+    // is a gesture the reader could start and not finish.
+    let hosted = drag.is_some() && menu.is_some();
 
     let selected_id = id.clone();
     let is_selected = Signal::derive(move || selected_set.with(|s| s.contains(&selected_id)));
@@ -128,10 +143,18 @@ pub(crate) fn use_shelf_item(
     let item = use_draggable_item(DraggableItemOptions {
         press_ms: SELECT_PRESS_MS,
         drag_threshold_px: DRAG_THRESHOLD_PX,
-        draggable: policy.draggable,
+        // A shelf with no session has nothing to lift into: the movement is a
+        // scroll there, and the wrapper's own touch rule already says a finger
+        // never drags.
+        draggable: if hosted {
+            policy.draggable
+        } else {
+            Signal::derive(|| false)
+        },
         // A hold inside a selection would be a second way to do the thing a tap
-        // now does.
-        selectable: Signal::derive(move || !selecting.get()),
+        // now does — and a hold with no hosts starts a selection nothing can
+        // act on, so it does not start one at all.
+        selectable: Signal::derive(move || hosted && !selecting.get()),
         on_tap: Callback::new(move |_| {
             if selecting.get_untracked() {
                 toggle_selected(state, &tap_id);
@@ -144,14 +167,24 @@ pub(crate) fn use_shelf_item(
             // What the press picks up: the whole set when this item is already
             // in it, and this item alone when it is not — with the container
             // the press was rendered by, which is where a move lifts FROM.
-            drag.begin(payload_for(state, &lift_id, container.clone()), x, y);
+            if let Some(drag) = drag {
+                drag.begin(payload_for(state, &lift_id, container.clone()), x, y);
+            }
         }),
         // The session owns the move.
         on_drag_move: Callback::new(move |_| {}),
         // Both halves end the session and the first one there wins: this
         // release bubbles ahead of the window's own.
-        on_drag_end: Callback::new(move |(x, y)| drag.release(x, y)),
-        on_drag_cancel: Callback::new(move |_| drag.cancel()),
+        on_drag_end: Callback::new(move |(x, y)| {
+            if let Some(drag) = drag {
+                drag.release(x, y);
+            }
+        }),
+        on_drag_cancel: Callback::new(move |_| {
+            if let Some(drag) = drag {
+                drag.cancel();
+            }
+        }),
     });
 
     let swallow_click = Rc::clone(&item.swallow_click);
@@ -177,6 +210,11 @@ pub(crate) fn use_shelf_item(
         if (swallow_context)() {
             return;
         }
+        // The row owns the event either way — no host to ask is no licence to
+        // bubble to the level — but with no menu host there is nothing to draw.
+        let Some(menu) = menu else {
+            return;
+        };
         let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
         // Inside a selection, the same button on an item ALREADY in the set
         // asks about the whole set, which is what a right-click on one of

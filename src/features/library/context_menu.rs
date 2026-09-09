@@ -38,7 +38,7 @@ use crate::features::library::selection::{
     select_on_screen,
 };
 use crate::services::document;
-use crate::services::library::{delete_shelf, new_shelf, relink_dialog};
+use crate::services::library::{delete_shelf, new_shelf, new_shelf_in, relink_dialog};
 use crate::state::AppState;
 
 /// What was right-clicked.
@@ -224,11 +224,15 @@ fn BookMenu(
 /// A shelf's menu, drawn as a folder.
 ///
 /// The one place a shelf can be taken apart from without selecting it first, which
-/// is the affordance the breadcrumb's parked popover used to be the only one for.
+/// is the affordance the breadcrumb's parked popover used to be the only one for —
+/// and the one place a shelf is subdivided from where it stands: the new shelf is
+/// filed inside the one that was asked, whichever level the page is on, because
+/// "new shelf" on a folder is an answer about that folder and not about the page.
 #[component]
 fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -> impl IntoView {
     let open_id = id.clone();
     let select_id = id.clone();
+    let inside_id = id.clone();
     let remove_id = id;
 
     view! {
@@ -248,6 +252,15 @@ fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
+                }
+            />
+            <MenuItem
+                icon=IconName::Plus
+                label="New shelf"
+                sublabel="Made inside this shelf, and opened"
+                on_click=move || {
+                    close.run(());
+                    new_shelf_in(state, &inside_id);
                 }
             />
             <div class="my-1"><Separator /></div>

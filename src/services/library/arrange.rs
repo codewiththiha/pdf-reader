@@ -321,7 +321,8 @@ pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
     crate::storage::persist_library(state.library);
 }
 
-/// Make a shelf the reader owns, and drill into it. Returns its id.
+/// Make a shelf the reader owns, at the level they are looking at, and drill
+/// into it. Returns its id.
 ///
 /// Named "New shelf" and left there on purpose: a modal that asks for a name
 /// before the shelf exists is a modal the reader has to answer to find out what
@@ -329,6 +330,25 @@ pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
 /// shows the shelf it is naming.
 pub fn new_shelf(state: AppState) -> String {
     let id = create_shelf(state);
+    state.library.shelf.set(id.clone());
+    crate::storage::persist_library(state.library);
+    id
+}
+
+/// Make a shelf the reader owns INSIDE `parent`, and drill into it. Returns its
+/// id.
+///
+/// What a folder's own right-click mints: a shelf made from inside a folder is
+/// that folder being subdivided, so the parent is the folder that was asked
+/// rather than the level the page happens to be on — a shelf the reader made
+/// three folders down appears three folders down, whichever level they are
+/// standing on. The drill-in is [`new_shelf`]'s, for the reason it gives.
+///
+/// No `can_nest` question: a shelf with no children yet closes no loop, and a
+/// virtual shelf filed inside a folder shelf is a filing the next rescan leaves
+/// alone — the scan re-hangs the folder's own rungs and nothing else.
+pub fn new_shelf_in(state: AppState, parent: &str) -> String {
+    let id = create_shelf_at(state, Some(parent.to_string()));
     state.library.shelf.set(id.clone());
     crate::storage::persist_library(state.library);
     id
@@ -343,10 +363,17 @@ pub fn new_shelf(state: AppState) -> String {
 /// folder is a folder being subdivided and one made from the root is a new top
 /// level; "All" is not a shelf, so it is the root.
 pub fn create_shelf(state: AppState) -> String {
-    let id = library_core::id::next_shelf_id(js_sys::Date::now() as u64);
-    let made = id.clone();
     let at = state.library.shelf.get_untracked();
     let parent = (at != ALL_SHELF).then_some(at);
+    create_shelf_at(state, parent)
+}
+
+/// The mint both "new shelf" doors share: one id, one empty virtual row at the
+/// level `parent` names, and the search tick that lands it on the frame it is
+/// made.
+fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
+    let id = library_core::id::next_shelf_id(js_sys::Date::now() as u64);
+    let made = id.clone();
     state.library.shelves.update(|shelves| {
         shelves.push(Shelf {
             id: made,

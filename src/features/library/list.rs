@@ -35,7 +35,11 @@
 //! level the page is on. A shelf row is a target in its own right — its middle
 //! takes a hold inside, its outer quarters reorder held folders beside it, and a
 //! hold that rests on a collapsed one opens it, the courtesy every file manager's
-//! tree gives a drag.
+//! tree gives a drag. And a shelf row is a LIFT as well as a landing: a hold
+//! enters the selection with the shelf in it and a movement picks it up — the
+//! same wiring and the same disk-bound refusal the grid's folder card wears — so
+//! a folder is draggable at both densities, and a set of books and folders
+//! lifts as one.
 //!
 //! A row shows the author when the book has one and the resume point when it does
 //! not: at this density there is room for one line of prose and the reader gets to
@@ -49,7 +53,9 @@
 //! sidebar's shelf tab mounts the same tree with `dense`: file-name rows whose
 //! format chip stands in for the cover art, because at that width the kind of
 //! thing a row is earns the pixels the art would cost. When it gets there, the
-//! row's own gestures lift behind an `interactive` prop the same way.
+//! rows' gestures stand down with the page's hosts: a tree with no drag session
+//! and no menu keeps the tap and the disclosure and nothing else (see
+//! `crate::features::library::gestures`).
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -177,7 +183,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     // The sidebar will mount this tree with no library page under it, and the
     // right-click and the drag are the two gestures that need the page's hosts
     // — so both are asked for rather than expected, and a tree without them
-    // simply has no menu to offer and no seam to paint.
+    // simply has no menu to offer, no seam to paint and nothing to lift into.
     let menu = use_context::<LibraryMenuHost>();
     let drag = use_context::<DragController>();
 
@@ -224,6 +230,20 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     });
     let open_id = id.clone();
     let open = Signal::derive(move || ctx.expanded.with(|set| set.contains(&open_id)));
+
+    // A shelf cut from a watched tree is the tree's to place — every scan
+    // re-hangs it on the rung its `rel` names — so offering it a lift would be
+    // offering a move the next rescan undoes. The grid's folder card refuses by
+    // the same rule; a virtual shelf lifts freely at both densities.
+    let disk_id = id.clone();
+    let disk_bound = Signal::derive(move || {
+        state.library.shelves.with(|shelves| {
+            shelves
+                .iter()
+                .find(|s| s.id == disk_id)
+                .is_some_and(|s| s.is_folder())
+        })
+    });
 
     // A target at last, and the row IS the shelf: its middle takes a hold
     // inside, and its outer quarters reorder held folders beside it in the
@@ -294,10 +314,51 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
         });
     });
 
+    // The row wears the shelf's one press contract — the same wiring the grid's
+    // folder card and the book rows wear (see
+    // `crate::features::library::gestures`) with the disclosure's own answer: a
+    // tap unfolds, a hold enters the selection with this shelf in it, and a
+    // movement lifts it unless the disk places it. The hosts arrive as the
+    // Options this row asked for: the sidebar's tree mounts it with neither,
+    // and a row with no session and no menu keeps its tap and nothing else.
+    let target_id = id.clone();
+    let gestures = use_shelf_item(
+        state,
+        drag,
+        menu,
+        ShelfItemPolicy {
+            id: id.clone(),
+            label: Signal::derive(move || format!("the {} shelf", name.get())),
+            draggable: Signal::derive(move || !disk_bound.get()),
+            open: toggle,
+            menu_target: Callback::new(move |_| MenuTarget::Folder {
+                id: target_id.clone(),
+                // Read at the ask rather than at the mount: a rescan can start
+                // or stop watching a folder between the two, and the menu's
+                // rows answer to now.
+                watched: shelf_is_watched(state, &target_id),
+            }),
+            // A folder's lift is a nesting, which writes a parent rather than
+            // a membership: there is no list to lift it off.
+            container: None,
+        },
+    );
+    let is_selected = gestures.is_selected;
+    let pressing = gestures.pressing;
+    let aria_pressed = gestures.aria_pressed;
+    let on_down = Rc::clone(&gestures.on_pointerdown);
+    let on_move = Rc::clone(&gestures.on_pointermove);
+    let on_up = Rc::clone(&gestures.on_pointerup);
+    let on_cancel = Rc::clone(&gestures.on_pointercancel);
+    let on_click = Rc::clone(&gestures.on_click);
+    let on_context = Rc::clone(&gestures.on_contextmenu);
+    let on_key = Rc::clone(&gestures.on_keydown);
+
     let nav_id = id.clone();
     let nest_id = id.clone();
     let before_id = id.clone();
     let after_id = id.clone();
+    let held_id = id.clone();
     // Parked in a `StoredValue` rather than captured: the member rows are built
     // inside the unfold's `Show`, whose children closure has to stay an `Fn` —
     // a `String` owned by the rows' `move` closure would be moved out of it on
@@ -305,7 +366,6 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     // `crate::features::library::breadcrumb` uses for its folded chain.
     let members_parent: StoredValue<Option<String>, LocalStorage> =
         StoredValue::new_local(Some(id.clone()));
-    let context_id = id;
     let indent = row_indent(depth);
 
     view! {
@@ -327,50 +387,42 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 class=("row-drop-after", move || {
                     drag.is_some_and(|each| each.sibling_at(&after_id) == Some(true))
                 })
+                // The row's own three states while the reader holds or carries
+                // it: the tint of the set, the press counting, and the fade of
+                // everything the session is holding — the same three a book row
+                // wears, because a shelf row is a row of the same list.
+                class=("library-row-selected", move || is_selected.get())
+                class=("library-row-pressing", move || pressing.get())
+                class=("library-row-dragging", move || {
+                    drag.is_some_and(|each| each.holds(&held_id))
+                })
                 role="button"
                 tabindex="0"
                 aria-expanded=move || open.get().to_string()
-                on:click=move |_| toggle.run(())
-                on:contextmenu=move |ev: leptos::ev::MouseEvent| {
-                    ev.prevent_default();
-                    ev.stop_propagation();
-                    let Some(menu) = menu else {
-                        return;
-                    };
-                    // The shelf's own menu — the same one the grid's folder card
-                    // asks — so a shelf can be named and taken apart from either
-                    // density. `watched` is read at the ask rather than at the
-                    // mount: a rescan can start or stop watching a folder between
-                    // the two, and the menu's rows answer to now.
-                    let watched = state.library.shelves.with_untracked(|shelves| {
-                        shelves
-                            .iter()
-                            .find(|s| s.id == context_id)
-                            .is_some_and(|s| {
-                                s.kind.folder_id().is_some_and(|folder_id| {
-                                    state.library.folders.with_untracked(|folders| {
-                                        folders.iter().any(|f| f.id == folder_id && f.opts.watch)
-                                    })
-                                })
-                            })
-                    });
-                    menu.ask(
-                        ev.client_x() as f64,
-                        ev.client_y() as f64,
-                        MenuTarget::Folder {
-                            id: context_id.clone(),
-                            watched,
-                        },
-                    );
-                }
+                aria-pressed=move || aria_pressed.get()
+                on:pointerdown=move |ev| (on_down)(&ev)
+                on:pointermove=move |ev| (on_move)(&ev)
+                on:pointerup=move |ev| (on_up)(&ev)
+                on:pointercancel=move |ev| (on_cancel)(&ev)
+                // The tap is the wrapper's answer now — it unfolds the way the
+                // click did — and what is left on the click is the completed
+                // hold's exhaust.
+                on:click=move |ev: leptos::ev::MouseEvent| (on_click)(&ev)
+                // The shelf's own menu — the same one the grid's folder card
+                // asks — so a shelf can be filed, nested and taken apart from
+                // either density.
+                on:contextmenu=move |ev: leptos::ev::MouseEvent| (on_context)(&ev)
                 on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                    // Enter unfolds the way a click does, and Space is the key a
-                    // disclosure owns — prevented, so the page does not scroll on
-                    // the row that meant to open.
-                    if ev.key() == "Enter" || ev.key() == " " {
+                    // Space is the key a disclosure owns — prevented, so the
+                    // page does not scroll on the row that meant to open. Enter
+                    // and Shift+Enter are the shared wiring's: open (unfold)
+                    // and the keyboard's hold.
+                    if ev.key() == " " {
                         ev.prevent_default();
                         toggle.run(());
+                        return;
                     }
+                    (on_key)(&ev);
                 }
             >
                 {move || {
@@ -433,6 +485,24 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
             </Show>
         </>
     }
+}
+
+/// Whether the folder this shelf was cut from is still being watched — the one
+/// fact the shelf's right-click menu carries, read when the menu is asked
+/// rather than when the row mounts.
+fn shelf_is_watched(state: AppState, shelf_id: &str) -> bool {
+    state.library.shelves.with_untracked(|shelves| {
+        shelves
+            .iter()
+            .find(|s| s.id == shelf_id)
+            .is_some_and(|s| {
+                s.kind.folder_id().is_some_and(|folder_id| {
+                    state.library.folders.with_untracked(|folders| {
+                        folders.iter().any(|f| f.id == folder_id && f.opts.watch)
+                    })
+                })
+            })
+    })
 }
 
 /// The books on a shelf's member list, in the order the page shows books: the
@@ -540,8 +610,8 @@ fn ListRow(
     let context_path = path.clone();
     let gestures = use_shelf_item(
         state,
-        drag,
-        menu,
+        Some(drag),
+        Some(menu),
         ShelfItemPolicy {
             id: id.clone(),
             label: Signal::stored(title.clone()),

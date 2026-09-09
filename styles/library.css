@@ -1257,16 +1257,16 @@
    under the pointer: the reader is about to tap one of them. */
 /* `.book-add` wears the book card's classes for its shape and is not a book:
    dimming it would advertise a choice it does not offer. The tree's shelf rows
-   are out for the same reason from the other side: no hold adds one to a set,
-   and a dimmed row is a row that looks tappable into the selection. */
+   used to be out for the mirror-image reason — no hold added one to a set —
+   and a hold does now, so a row steps back with the rest of the level. */
 .library-grid-selecting .book-card:not(.book-selected):not(.book-add),
 .library-grid-selecting .folder-card:not(.folder-selected),
-.library-list-selecting .library-row:not(.library-row-selected):not(.library-row-shelf) {
+.library-list-selecting .library-row:not(.library-row-selected) {
   opacity: 0.62;
 }
 .library-grid-selecting .book-card:not(.book-selected):not(.book-add):hover,
 .library-grid-selecting .folder-card:not(.folder-selected):hover,
-.library-list-selecting .library-row:not(.library-row-selected):not(.library-row-shelf):hover {
+.library-list-selecting .library-row:not(.library-row-selected):hover {
   opacity: 0.95;
 }
 

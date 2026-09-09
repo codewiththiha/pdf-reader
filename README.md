@@ -315,7 +315,8 @@ the filesystem.
   plates of their own for its folders, recursively) and a count of both halves — which is what
   lets a shelf be filed inside another shelf. The dense list draws the same level as a tree: a
   shelf row unfolds in place, as deep as the forest goes, while its Open drills the breadcrumb
-  route, because unfolding is a way of looking and must not move you. Filing a book is a drag from
+  route, because unfolding is a way of looking and must not move you. A hold on a row enters the
+  selection and a movement lifts it — books and folders alike at both densities. Filing a book is a drag from
   a card to a folder, to a crumb or to another card, and the only thing a drop edits is an
   ordered list of ids.
 - **One drag, and it is the app's own.** Nothing on the shelf rides the browser's drag-and-drop: a
@@ -361,8 +362,8 @@ the filesystem.
   no other surface. Every crumb is a drop target, which is what makes a deep level reachable with a
   hand full of books; the ellipsis itself is a place to rest and not a place to drop.
 - **A right-click is a menu, per kind of thing.** A book gets Open, Select, Find again when its
-  address died, and Remove; a folder gets Open, Select, and Take shelf apart with the note about what
-  survives it; a card already in a selection gets the set's menu — New shelf from these, Remove, Clear
+  address died, and Remove; a folder gets Open, Select, a New shelf filed inside the one you asked
+  whichever level the page is on, and Take shelf apart with the note about what survives it; a card already in a selection gets the set's menu — New shelf from these, Remove, Clear
   — because a right-click on one of several things means all of them; and the empty shelf gets New
   shelf and Select all. One host answers all four, so the menu is the same menu wherever it was asked
   from, and a right-click never starts a drag: a menu row is clicked by a pointer that has already

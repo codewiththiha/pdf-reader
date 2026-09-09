@@ -140,8 +140,8 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let target_id = id.clone();
     let gestures = use_shelf_item(
         state,
-        drag,
-        menu,
+        Some(drag),
+        Some(menu),
         ShelfItemPolicy {
             id: id.clone(),
             label: Signal::derive(move || format!("the {} shelf", name.get())),
