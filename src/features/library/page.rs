@@ -74,7 +74,16 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
                 <div
                     id=TOOLBAR_LEADING_ID
                     data-tauri-drag-region="true"
-                    class="flex min-w-0 shrink-0 items-center gap-1"
+                    // Squeezable on purpose — no `shrink-0` here. A left
+                    // cluster that refuses to shrink answers a long chain by
+                    // overflowing OVER the search field, because the row has
+                    // no other way to pay for it; `min-w-0` makes the cluster
+                    // what gives instead, and the breadcrumb folds itself to
+                    // the width it is given (see
+                    // `crate::features::library::breadcrumb`). The slot's own
+                    // measurement follows the squeeze: the shell observes this
+                    // very element.
+                    class="flex min-w-0 items-center gap-1"
                 >
                     <Breadcrumb state=state />
                 </div>

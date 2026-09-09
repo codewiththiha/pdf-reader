@@ -1120,42 +1120,86 @@
   box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
+/* The width fold's ruler: one box per crumb plus one for the ellipsis itself,
+   wearing the live crumbs' own metrics — the button's padding, the outer gap,
+   the 10rem name cap — invisible and out of flow. The bar folds by THESE widths
+   against the cluster's live box, so a chain that just grew folds the same frame
+   it gets cramped, with no window event anywhere. */
+.lib-crumb-probe {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.lib-crumb-probe-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 10rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.lib-crumb-probe-item > span {
+  min-width: 0;
+}
+
 /* ---------------------------------------------------------------------------
    The elided levels: the chain behind the breadcrumb's ellipsis.
 
    A chain and not a list, in the bar's own grammar — name, chevron, name — so a
    reader who has understood the breadcrumb has already understood the panel, and
-   so three levels cost one line of height instead of three. The panel's width is
-   measured rather than guessed: the chain is drawn once more as an invisible,
-   unwrapped ruler, and the popover takes the ruler's width under the window's
-   budget (see the measurement in the breadcrumb's ellipsis). Wrapping is what
-   makes the chain a rectangle rather than a strip inside that width: row one
-   fills to the budget, row two sizes to its own labels, and whatever does not
-   fit goes to the next line — flex-wrap is still answering the window the moment
-   it moves.
+   so three levels cost one line of height instead of three. The chain is PACKED
+   rather than wrapped: the panel measures the ruler's crumb boxes and lays them
+   greedily against a budget of the whole window minus breathing room, so a chain
+   the screen can hold on one line is held on one line — and each packed row
+   paints its own surface, so a short second row is a short rectangle instead of
+   a wide empty one dragging along behind it.
    --------------------------------------------------------------------------- */
 .lib-elided-panel {
   /* A hard ceiling under the popover's measured width, so a measurement that
      overshoots — or a window that narrowed between the open and the place —
      still keeps the panel on the screen it opened on. */
   max-width: calc(100vw - 1.5rem);
+  /* The shell stops painting: the rows own the surface now, each at its own
+     width. Unlayered on purpose — these have to outrank the popover's own
+     bg/border/rounded/shadow utilities, which live in Tailwind's layer. */
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 .lib-elided-chain {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  /* Row gap only; the column gap is the chevron, which is a glyph rather than
-     spacing so the chain reads the same wrapped as unwrapped. */
-  gap: 2px 0;
-  /* Content-sized under the panel's width is the whole trick: a wrapped row is
-     only as wide as its own labels, and a fold of one level takes exactly one
-     label's width instead of a constant's. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   width: max-content;
   max-width: 100%;
 }
-/* One crumb and the chevron that trails it, in ONE flex item: a wrapped line ends
+/* One packed row: its own little surface, hugging its labels. No wrapping in
+   here — the wrap already happened, in Rust, against the measured budget — and
+   the column gap stays zero because the chevron is the spacing. */
+.lib-elided-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px 0;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid var(--color-line);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-float);
+}
+/* One crumb and the chevron that trails it, in ONE flex item: a packed row ends
    on `4 >` and the next begins on `5`, which is how a chain reads when it breaks.
-   Split them and every line but the first starts with a stray chevron. */
+   Split them and every row but the first starts with a stray chevron. */
 .lib-elided-crumb {
   display: inline-flex;
   min-width: 0;

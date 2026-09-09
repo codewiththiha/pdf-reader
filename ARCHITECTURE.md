@@ -641,9 +641,17 @@ gliding there.
 
 ### A bar that can go deep
 
-A chain of levels has no end and a title bar does, so `features::library::breadcrumb` keeps three
-crumbs and elides the rest behind an ellipsis — never just one, because a single elided level costs a
-hover to reach and costs the bar the width showing it would have. The panel is the `MenuPopover` every
+A chain of levels has no end and a title bar does, so `features::library::breadcrumb` elides the
+oldest crumbs behind an ellipsis — never just one, because a single elided level costs a hover to
+reach and costs the bar the width showing it would have. How many fold is a width question before it
+is a count: every crumb (plus the ellipsis itself) is measured in a hidden probe against the
+cluster's own live box, which is observed rather than polled — so a chain that grew folds on the same
+frame it gets cramped, and so does a cluster the window squeezed, with no resize handler anywhere in
+the fold. The count rule — keep three — is the fallback for the frames before the first measurement.
+The cluster itself is squeezable (`min-w-0`, not `shrink-0`): a bar whose left refuses to shrink
+answers a long chain by overflowing over the search field, which is the overlap the fold exists to
+prevent, and the shell already observes the cluster elements, so the centered slot follows every
+squeeze without being told. The panel is the `MenuPopover` every
 other anchored menu in the app uses, which matters more than it looks: that primitive is the one place
 that knows the glass toolbar row's `backdrop-filter` makes it a containing block for `position: fixed`,
 and a hand-rolled panel anchored in the bar would be positioned against the row and not the viewport.
@@ -653,18 +661,16 @@ confusion worth naming. An arrow on the THIRD level whose panel lists the first 
 "deeper than three", because a disclosure hangs below the thing it discloses — and the elided levels
 are shallower. An affordance standing for them must not itself be a level, so it claims to be nothing
 but a gap. Inside, the levels are drawn in the bar's own grammar rather than as a list of rows: name,
-chevron, name, wrapping into a rectangle whose width the chain measures and the window caps. The
-chevron trails its crumb and shares its flex item, so a wrapped line ends on `4 >` and the next
-begins on `5`; a leading chevron would put a stray `>` at the head of every line but the first. The
-panel's width is measured rather than picked: the chain is drawn once more inside the panel as an
-invisible, unwrapped ruler, and on open — and on every resize while the panel is open — the popover
-takes the ruler's width under a budget of 80% of the window (the whole width below 640px, where a
-budget the window cannot split is a panel off the edge), never narrower than the widest single
-crumb, because a name does not wrap and a panel narrower than its widest crumb is a panel with a
-crumb hanging out of it. Inside that width the wrapping is still `flex-wrap` against
-`width: max-content`, so a wrapped row is only as wide as its own labels, a fold of one level takes
-exactly one label's width, and a chain longer than the budget becomes a taller rectangle rather than
-a panel off the edge.
+chevron, name. The chevron trails its crumb and shares its flex item, so a line ends on `4 >` and
+the next begins on `5`; a leading chevron would put a stray `>` at the head of every line but the
+first. The panel's width is measured rather than picked, and its chain is packed rather than
+wrapped: the chain is drawn once more inside the panel as an invisible, unwrapped ruler, and on
+open — and on every resize while the panel is open — the crumb boxes are laid greedily against a
+budget of the whole window minus breathing room, because a chain the screen can hold on one line is
+held on one line. The panel takes the widest packed row's width, and each row paints its own
+surface, so a short second row is a short rectangle rather than a wide empty one dragging along
+behind it. A crumb wider than the whole budget gets a row to itself: a level is never dropped, and
+the panel never hangs off the screen.
 
 It opens on hover and closes one beat after the pointer leaves, because a click is already taken by
 the crumb it lands on. The beat is owned by an effect on "is the pointer over it" rather than by a

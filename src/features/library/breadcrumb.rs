@@ -7,10 +7,14 @@
 //! were two crumbs at most and the chain was a single optional value; it is a list
 //! now because that is what a forest's path is.
 //!
-//! A list has no end, and a title bar does. Past [`CRUMB_KEEP`] levels the oldest
-//! crumbs are elided behind an ellipsis, which is the same trade every bar that can
-//! go deep makes: the reader keeps the LAST few — the ones nearest where they are —
-//! and gets the rest one hover away.
+//! A list has no end, and a title bar does. The oldest crumbs are elided behind an
+//! ellipsis, which is the same trade every bar that can go deep makes: the reader
+//! keeps the LAST few — the ones nearest where they are — and gets the rest one
+//! hover away. How many is a WIDTH question before it is a count: every crumb is
+//! measured in a hidden probe against the cluster's own live box, and the fold
+//! deepens on the same frame the bar gets cramped — no window event anywhere. The
+//! count rule ([`CRUMB_KEEP`]) is the fallback for the frames before the first
+//! measurement, and for numbers that cannot be trusted.
 //!
 //! The ellipsis is its own affordance and not an arrow on a crumb, and that is not
 //! cosmetics. An arrow on the third level whose panel lists the FIRST and the
@@ -67,6 +71,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::hooks::dom::by_id;
+use app_chrome::hooks::use_resize_observer::observe_elements;
 use app_chrome::icon::{Icon, IconName};
 use library_core::shelf::{ALL_SHELF, Shelf, ancestors};
 
@@ -78,8 +83,9 @@ use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropT
 use crate::services::library::{delete_shelf, rename_shelf};
 use crate::state::AppState;
 
-/// How many crumbs the bar keeps once a chain is deeper than this. Everything
-/// older goes behind the ellipsis.
+/// How many crumbs the bar keeps while the width fold has nothing to go on —
+/// the fallback [`elide_at`] answers, and [`choose_split`] falls back to. Once
+/// the probe has measured, the live split is the widths' answer, not this one.
 ///
 /// Three, because the bar's left cluster shares a row with a search box that has to
 /// stay usable and a window that can be 640px wide — and because the ellipsis takes
@@ -87,27 +93,91 @@ use crate::state::AppState;
 /// show. A fifth element is a fifth of the bar spent on where you have been.
 const CRUMB_KEEP: usize = 3;
 
+/// The bar's gap between crumbs, in CSS px — the nav's `gap-0.5`. The fold's
+/// arithmetic charges it between the measured boxes, because the probe measures
+/// the crumbs and the bar pays for the space between them. The panel's row
+/// packing charges the same gap; its CSS runs a column gap of zero (the chevron
+/// IS the spacing), which makes the arithmetic a hair conservative — a packed
+/// row renders at most a gap per crumb narrower than the number that placed it,
+/// and a row that fits its budget on paper cannot overflow it in paint.
+const CRUMB_GAP_PX: f64 = 2.0;
+
 /// The id of the ruler the folded panel measures itself with: the chain drawn
-/// once more, invisible and unwrapped, whose natural width is the width the
-/// panel wants. Deliberately not in the drag's registry — it stands for no
-/// level, and a target that is a measurement would be a way to file books onto
-/// a ruler.
+/// once more, invisible and unwrapped, one measured box per crumb — the widths
+/// the row pack is laid against. Deliberately not in the drag's registry — it
+/// stands for no level, and a target that is a measurement would be a way to
+/// file books onto a ruler.
 const ELIDED_MAX_DOM_ID: &str = "crumb-elided-max";
 
-/// How wide the folded panel may be. 80% of the window is the budget, because a
-/// panel across the whole bar is a panel hiding the shelf it is naming the way
-/// back to; a window too narrow to split gets the whole width, because a panel
-/// wider than its window is a panel off the edge.
+/// How wide the folded panel's rows may be: the whole window minus breathing
+/// room. A fraction of the window was the old budget, and it folded chains the
+/// screen had room to show on one line — the space was THERE and the panel
+/// declined to use it. The floor keeps a sliver of a window from producing a
+/// budget no crumb can be laid into; a crumb wider than even the full budget
+/// gets a row to itself rather than being dropped.
 fn elided_budget_px() -> f64 {
-    let window = web_sys::window()
+    web_sys::window()
         .and_then(|w| w.inner_width().ok())
         .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
-    if window < 640.0 {
-        window
-    } else {
-        window * 0.8
+        .map(|window| (window - 24.0).max(160.0))
+        .unwrap_or(0.0)
+}
+
+/// What one packed row costs around its crumbs, in CSS px: `.lib-elided-row`'s
+/// own padding and border.
+const ROW_CHROME_PX: f64 = 14.0;
+
+/// Greedy pack of the measured crumb widths against the budget: the first row
+/// takes as much of it as it can and every later row starts fresh. Answers the
+/// crumb COUNT per row. Pure, like every other arithmetic here, so the panel's
+/// shape is host-tested rather than eyeballed.
+fn pack_rows(widths: &[f64], budget: f64) -> Vec<usize> {
+    let mut counts = vec![0usize];
+    let mut used = ROW_CHROME_PX;
+    for width in widths {
+        let item = width + CRUMB_GAP_PX;
+        if *counts.last().unwrap_or(&0) > 0 && used + item > budget {
+            counts.push(0);
+            used = ROW_CHROME_PX;
+        }
+        *counts.last_mut().unwrap() += 1;
+        used += item;
     }
+    counts
+}
+
+/// How wide each packed row renders: its crumbs, the gaps between them, and the
+/// row's own chrome. The widest of these is the panel's width — every row hugs
+/// its own labels, and the panel has to hold the widest hug.
+fn row_widths(widths: &[f64], counts: &[usize]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(counts.len());
+    let mut at = 0usize;
+    for &count in counts {
+        let end = (at + count).min(widths.len());
+        let row = &widths[at..end];
+        out.push(row.iter().sum::<f64>() + CRUMB_GAP_PX * row.len() as f64 + ROW_CHROME_PX);
+        at = end;
+    }
+    out
+}
+
+/// Cut the folded chain into its packed rows. The defensive tail: the counts
+/// and the chain are read one frame apart, and a disagreement parks the
+/// leftovers in a row of their own rather than dropping a level on the floor.
+fn split_by_counts(chain: Vec<Crumb>, counts: &[usize]) -> Vec<Vec<Crumb>> {
+    let mut rows: Vec<Vec<Crumb>> = Vec::with_capacity(counts.len());
+    let mut rest = chain;
+    for &count in counts {
+        if count == 0 {
+            continue;
+        }
+        let take = count.min(rest.len());
+        rows.push(rest.drain(..take).collect());
+    }
+    if !rest.is_empty() {
+        rows.push(rest);
+    }
+    rows
 }
 
 /// The element id of the ellipsis. Deliberately not a `crumb-` id: it is a target
@@ -205,7 +275,9 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
 // Drop targets
 // ---------------------------------------------------------------------------
 
-/// How many of the chain's oldest levels the bar elides.
+/// How many of the chain's oldest levels the bar elides, by COUNT: the rule the
+/// bar folded by before it could measure, and the fallback [`choose_split`]
+/// answers with while the probe has nothing to say.
 ///
 /// Never one. A single elided level costs the reader a hover to reach and costs the
 /// bar the same width as showing it would have, so the ellipsis earns its slot from
@@ -219,6 +291,45 @@ fn elide_at(len: usize) -> usize {
     } else {
         split
     }
+}
+
+/// How many of the chain's oldest levels the bar elides, by WIDTH: the smallest
+/// split — never exactly one, the rule [`elide_at`] keeps — whose ellipsis and
+/// kept crumbs fit the cluster's live box, and 0 when the whole chain already
+/// does. `widths` is the probe's answer, `[ellipsis, crumb0, …, crumbN-1]`.
+///
+/// Pure over the measurements so the fold's arithmetic is host-tested. The count
+/// rule is the fallback for every frame the numbers cannot be trusted: nothing
+/// measured yet, no box to measure in, or a probe out of step with the chain.
+/// The answer never exceeds `len`, which is what keeps the `split_at` below it
+/// from panicking on a frame the two lists disagree.
+fn choose_split(widths: &[f64], available: f64, len: usize) -> usize {
+    if len == 0 || widths.len() != len + 1 || available <= 0.0 {
+        return elide_at(len);
+    }
+    let items = &widths[1..];
+    let gap = |n: usize| CRUMB_GAP_PX * n.saturating_sub(1) as f64;
+    let total: f64 = items.iter().sum::<f64>() + gap(len);
+    if total <= available {
+        // Everything fits: no ellipsis at all.
+        return 0;
+    }
+    if len < 2 {
+        // One level that does not fit is shown truncated: beside an ellipsis
+        // there would be no chain left to keep, and a fold of exactly one level
+        // is the one this bar refuses on principle.
+        return 0;
+    }
+    let ellipsis = widths[0];
+    for split in 2..len {
+        let suffix: f64 = items[split..].iter().sum::<f64>() + gap(len - split);
+        if ellipsis + suffix + CRUMB_GAP_PX <= available {
+            return split;
+        }
+    }
+    // Nothing fits but the newest level: keep exactly that, folded as deep as
+    // it takes.
+    (len - 1).max(2)
 }
 
 
@@ -351,13 +462,105 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
         }
     });
 
+    // The fold's two live numbers: what each crumb COSTS — the probe's boxes,
+    // re-read whenever the chain changes — and what the cluster can HOLD, which
+    // is its own client box, observed. Both move without a window resize: a
+    // crumb renamed, a level drilled into, the trailing cluster growing, the
+    // flex squeeze settling after the fold's own answer. The 0.5px guard on
+    // the write is what makes that last one a fixed point rather than a loop.
+    let nav_ref: NodeRef<html::Nav> = NodeRef::new();
+    let probe_ref: NodeRef<html::Span> = NodeRef::new();
+    let widths: RwSignal<Vec<f64>> = RwSignal::new(Vec::new());
+    let avail: RwSignal<f64> = RwSignal::new(0.0);
+
+    Effect::new(move |_| {
+        let _ = chain.get();
+        // A frame later: the probe's own reactive children re-render on the
+        // chain change, and measuring the boxes before the patch would measure
+        // the chain that just left.
+        request_animation_frame(move || {
+            let Some(probe) = probe_ref.get() else {
+                return;
+            };
+            let kids = probe.children();
+            let mut ws = Vec::with_capacity(kids.length() as usize);
+            for index in 0..kids.length() {
+                if let Some(kid) = kids.item(index) {
+                    ws.push(kid.get_bounding_client_rect().width());
+                }
+            }
+            if widths.get_untracked() != ws {
+                widths.set(ws);
+            }
+        });
+    });
+
+    Effect::new(move |_| {
+        let Some(nav) = nav_ref.get() else {
+            return;
+        };
+        let Some(parent) = nav.parent_element() else {
+            return;
+        };
+        let observed = parent.clone();
+        let read = move || {
+            let wide = parent.client_width() as f64;
+            if (avail.get_untracked() - wide).abs() > 0.5 {
+                avail.set(wide);
+            }
+        };
+        read();
+        observe_elements(vec![observed], move |_| read());
+    });
+
+    // The live split: by measured width, with the count rule as the fallback
+    // for the frames before the probe has answered.
+    let split_sig = Signal::derive(move || {
+        let len = chain.get().len();
+        choose_split(&widths.get(), avail.get(), len)
+    });
+
     view! {
-        <nav class="flex min-w-0 items-center gap-0.5 text-sm" aria-label="Library location">
+        <nav
+            node_ref=nav_ref
+            class="flex min-w-0 items-center gap-0.5 text-sm"
+            aria-label="Library location"
+        >
+            // The width fold's ruler: one box per crumb plus one for the
+            // ellipsis itself, wearing the live crumbs' own metrics — padding,
+            // gap, the 10rem cap — invisible and out of flow. Plain spans with
+            // no ids and no registrations: a ruler is not a crumb, and a second
+            // element carrying a crumb's id would be a second answer for the
+            // drag's hit-test and the reveal's scroll.
+            <span node_ref=probe_ref class="lib-crumb-probe" aria-hidden="true">
+                <span class="lib-crumb-probe-item">
+                    <Icon name=IconName::More size=14 />
+                </span>
+                {move || {
+                    let levels = chain.get();
+                    let last = levels.len().saturating_sub(1);
+                    levels
+                        .into_iter()
+                        .enumerate()
+                        .map(|(at, crumb)| {
+                            let trails = at != last;
+                            view! {
+                                <span class="lib-crumb-probe-item">
+                                    <span class="truncate">{crumb.name}</span>
+                                    {trails.then(|| {
+                                        view! { <Icon name=IconName::Next size=13 /> }
+                                    })}
+                                </span>
+                            }
+                        })
+                        .collect_view()
+                }}
+            </span>
             <AllCrumb state=state ctrl=ctrl />
             {move || {
                 let levels = chain.get();
                 let len = levels.len();
-                let split = elide_at(len);
+                let split = split_sig.get();
                 let (elided, shown) = levels.split_at(split);
                 let last = len.saturating_sub(1);
                 // The ellipsis first, because the levels behind it are the OLDEST:
@@ -509,16 +712,17 @@ fn EllipsisCrumb(
     // fix `crate::components::primitives::floating::popover` uses for its panel
     // class.
     let folded: StoredValue<Vec<Crumb>, LocalStorage> = StoredValue::new_local(elided);
+    // The folded chain cut into its packed rows. Reactive because the panel's
+    // children re-render when a measurement repacks them; it starts as the
+    // whole chain in one row, which is what the panel shows for the frame
+    // before the ruler has been read.
+    let rows: RwSignal<Vec<Vec<Crumb>>> = RwSignal::new(vec![folded.get_value()]);
 
-    // The panel's width is measured rather than picked. Three numbers decide it:
-    // the chain's own unwrapped width (what the panel WANTS), the window's budget
-    // (what it MAY have), and the widest single crumb (what it must have — a name
-    // does not wrap, and a panel narrower than its widest crumb is a panel with a
-    // crumb hanging out of it). A constant guessed between the three and got all
-    // of them wrong: too wide for one short name, too narrow for a chain that
-    // would have fit. Written only on a real change, because the popover
-    // re-places itself on this signal and a resize storm should not re-place it
-    // by sub-pixels.
+    // The panel's width is measured rather than picked, and its chain is
+    // PACKED rather than wrapped: the ruler's crumb boxes are laid greedily
+    // against the window's budget, the panel becomes the widest packed row,
+    // and the rows render as surfaces of their own — so a short second row is
+    // a short rectangle instead of a wide empty one dragging along behind it.
     let panel_width: RwSignal<f64> = RwSignal::new(0.0);
     let measure = move || {
         let Some(ruler) = by_id(ELIDED_MAX_DOM_ID) else {
@@ -528,25 +732,43 @@ fn EllipsisCrumb(
         if budget <= 0.0 {
             return;
         }
-        let chain = ruler.get_bounding_client_rect().width();
-        let mut widest: f64 = 0.0;
-        let crumbs = ruler.children();
-        for index in 0..crumbs.length() {
-            if let Some(crumb) = crumbs.item(index) {
-                widest = widest.max(crumb.get_bounding_client_rect().width());
+        let kids = ruler.children();
+        let mut widths: Vec<f64> = Vec::with_capacity(kids.length() as usize);
+        for index in 0..kids.length() {
+            if let Some(crumb) = kids.item(index) {
+                widths.push(crumb.get_bounding_client_rect().width());
             }
         }
-        let want = chain.min(budget).max(widest.min(budget));
-        if (panel_width.get_untracked() - want).abs() > 0.5 {
-            panel_width.set(want);
+        if widths.is_empty() {
+            return;
+        }
+        let counts = pack_rows(&widths, budget);
+        let wide = row_widths(&widths, &counts)
+            .into_iter()
+            .fold(0.0, f64::max);
+        if (panel_width.get_untracked() - wide).abs() > 0.5 {
+            panel_width.set(wide);
+        }
+        // Only a REPACK re-renders the chain: a resize that packs to the same
+        // shape is the same rows, and rebuilding them would re-register every
+        // crumb's drop target for nothing.
+        let repacked = rows.with_untracked(|current| {
+            current.len() != counts.len()
+                || current
+                    .iter()
+                    .zip(&counts)
+                    .any(|(row, count)| row.len() != *count)
+        });
+        if repacked {
+            rows.set(split_by_counts(folded.get_value(), &counts));
         }
     };
     // Measured once the panel — and the ruler inside it — has mounted, and
-    // re-measured on every resize while the panel is open: the budget is a
-    // fraction of the window, and the chain re-wraps when the fraction moves.
-    // The measurement is stable under a hover, which is what the old constant
-    // was actually protecting: the width only moves when the chain or the
-    // window does, and a chain that changed closed the panel a beat earlier.
+    // re-measured on every resize while the panel is open: the budget is the
+    // window's own, and the pack re-runs when it moves. The measurement is
+    // stable under a hover, which is what the old constant was actually
+    // protecting: the width only moves when the chain or the window does, and
+    // a chain that changed closed the panel a beat earlier.
     Effect::new(move |_| {
         if !intent.open.get() {
             return;
@@ -606,15 +828,13 @@ fn EllipsisCrumb(
                 anchor=anchor
                 width=Signal::derive(move || panel_width.get() as u32)
                 coordinate_space="toolbar-row"
-                class="lib-elided-panel max-h-80 overflow-y-auto p-1.5".to_string()
+                class="lib-elided-panel max-h-80 overflow-y-auto".to_string()
             >
                 // The chain, drawn twice: once as the ruler — invisible,
-                // unwrapped, never hovered — and once as the chain the reader
+                // unwrapped, never hovered — and once as the rows the reader
                 // reads. The ruler wears the crumbs' own metrics (the
                 // `.lib-elided-crumb` item, and a label boxed like the live
-                // button) so what it measures is what the live chain needs, and
-                // its natural width is the panel's answer to "how wide is this
-                // fold".
+                // button); the pack reads its boxes, one width per crumb.
                 <div id=ELIDED_MAX_DOM_ID class="lib-elided-probe" aria-hidden="true">
                     {move || {
                         let levels = folded.get_value();
@@ -645,25 +865,36 @@ fn EllipsisCrumb(
                     on:mouseleave=move |_| intent.leave()
                 >
                     {move || {
-                        let levels = folded.get_value();
-                        let last = levels.len().saturating_sub(1);
-                        levels
+                        // The last level of the chain trails nothing, wherever
+                        // the pack put it: the chevron is a separator between
+                        // levels, and the chain's own end is not one.
+                        let last_id = folded
+                            .get_value()
+                            .last()
+                            .map(|crumb| crumb.id.clone())
+                            .unwrap_or_default();
+                        rows.get()
                             .into_iter()
-                            .enumerate()
-                            .map(|(at, crumb)| {
-                                // Hoisted out of the markup: the last crumb in the
-                                // chain trails nothing, and a comparison in an
-                                // attribute is one more thing the macro has to
-                                // agree with the reader about.
-                                let trails = at != last;
+                            .map(|row| {
+                                let last_of_chain = last_id.clone();
                                 view! {
-                                    <ElidedCrumb
-                                        state=state
-                                        ctrl=ctrl
-                                        crumb=crumb
-                                        trails=trails
-                                        intent=intent
-                                    />
+                                    <div class="lib-elided-row">
+                                        {row
+                                            .into_iter()
+                                            .map(|crumb| {
+                                                let trails = crumb.id != last_of_chain;
+                                                view! {
+                                                    <ElidedCrumb
+                                                        state=state
+                                                        ctrl=ctrl
+                                                        crumb=crumb
+                                                        trails=trails
+                                                        intent=intent
+                                                    />
+                                                }
+                                            })
+                                            .collect_view()}
+                                    </div>
                                 }
                             })
                             .collect_view()
@@ -900,5 +1131,145 @@ mod tests {
             assert!(split <= len);
             assert_eq!(split + (len - split), len);
         }
+    }
+
+    /// The probe's numbers for a chain of `len` crumbs that each cost `crumb`,
+    /// behind an ellipsis that costs `ellipsis`: `[ellipsis, crumb0, …]`.
+    fn measured(len: usize, ellipsis: f64, crumb: f64) -> Vec<f64> {
+        std::iter::once(ellipsis)
+            .chain(std::iter::repeat_n(crumb, len))
+            .collect()
+    }
+
+    #[test]
+    fn a_chain_the_cluster_holds_folds_nothing() {
+        // Three crumbs of 120 plus their gaps is 364; a 600px cluster holds
+        // the lot, so the ellipsis stays out of the bar entirely.
+        let widths = measured(3, 22.0, 120.0);
+        assert_eq!(choose_split(&widths, 600.0, 3), 0);
+    }
+
+    #[test]
+    fn a_cramped_cluster_folds_the_oldest_levels_it_must_and_no_more() {
+        let widths = measured(4, 22.0, 200.0);
+        // Whole: 800 + 3 gaps = 806. Split 2: 22 + (400 + one gap) + 2 = 426.
+        // Split 3: 22 + 200 + 2 = 224.
+        assert_eq!(choose_split(&widths, 500.0, 4), 2);
+        assert_eq!(choose_split(&widths, 426.0, 4), 2, "the fit is inclusive");
+        assert_eq!(
+            choose_split(&widths, 425.0, 4),
+            3,
+            "one pixel less and a level goes behind the fold"
+        );
+        assert_eq!(choose_split(&widths, 224.0, 4), 3);
+    }
+
+    #[test]
+    fn nothing_fits_but_the_newest_level_and_the_fold_stops_there() {
+        let widths = measured(4, 22.0, 200.0);
+        assert_eq!(choose_split(&widths, 100.0, 4), 3, "len - 1, never past the chain");
+        let two = measured(2, 22.0, 200.0);
+        assert_eq!(
+            choose_split(&two, 100.0, 2),
+            2,
+            "a chain of two folds whole rather than showing one beside the ellipsis"
+        );
+    }
+
+    #[test]
+    fn the_fold_never_hides_exactly_one_level_whatever_the_numbers() {
+        for len in 1..8 {
+            let widths = measured(len, 22.0, 300.0);
+            for available in [0.0, 24.0, 324.0, 646.0, 5000.0] {
+                let split = choose_split(&widths, available, len);
+                assert_ne!(split, 1, "one hidden level costs a hover and a bar slot");
+                assert!(
+                    split <= len,
+                    "split_at({split}) on a chain of {len} would panic"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unmeasured_numbers_fall_back_to_the_count_rule() {
+        assert_eq!(choose_split(&[], 500.0, 4), elide_at(4));
+        assert_eq!(
+            choose_split(&measured(2, 22.0, 100.0), 500.0, 4),
+            elide_at(4),
+            "a probe out of step with the chain is not trusted"
+        );
+        assert_eq!(
+            choose_split(&measured(5, 22.0, 100.0), 0.0, 5),
+            elide_at(5),
+            "a cluster with no measured box folds by count"
+        );
+    }
+
+    #[test]
+    fn one_crumb_that_does_not_fit_is_truncated_not_hidden() {
+        let widths = measured(1, 22.0, 900.0);
+        assert_eq!(
+            choose_split(&widths, 100.0, 1),
+            0,
+            "hiding the only level behind an ellipsis leaves the bar with nowhere to go"
+        );
+    }
+
+    #[test]
+    fn rows_pack_to_the_budget_and_later_rows_start_fresh() {
+        // A row carries its chrome plus items of (width + gap):
+        // 14 + 102 + 102 = 218, and the third crumb would take it to 320.
+        assert_eq!(pack_rows(&[100.0, 100.0, 100.0], 220.0), vec![2, 1]);
+        assert_eq!(
+            pack_rows(&[100.0, 100.0, 100.0], 1000.0),
+            vec![3],
+            "under the budget it is one row"
+        );
+        assert_eq!(
+            pack_rows(&[500.0, 100.0], 200.0),
+            vec![1, 1],
+            "a crumb wider than the budget gets a row to itself; it is never dropped"
+        );
+        assert_eq!(
+            pack_rows(&[], 220.0).iter().sum::<usize>(),
+            0,
+            "no crumbs, no rows worth of them"
+        );
+    }
+
+    #[test]
+    fn a_packed_row_is_as_wide_as_its_own_labels_plus_chrome() {
+        let widths = [100.0, 100.0, 100.0];
+        let counts = pack_rows(&widths, 220.0);
+        let rows = row_widths(&widths, &counts);
+        // 102 + 102 + 14, then 102 + 14: the panel takes the widest.
+        assert_eq!(rows, vec![218.0, 116.0]);
+        assert_eq!(
+            rows.into_iter().fold(0.0, f64::max),
+            218.0,
+            "the panel is the width of its widest row and no wider"
+        );
+    }
+
+    #[test]
+    fn splitting_a_chain_by_counts_never_loses_a_level() {
+        let chain: Vec<Crumb> = (0..5)
+            .map(|at| Crumb {
+                id: format!("s{at}"),
+                name: format!("Level {at}"),
+                watched: false,
+            })
+            .collect();
+        let rows = split_by_counts(chain, &[2, 2]);
+        assert_eq!(
+            rows.len(),
+            3,
+            "the leftover rides a tail row rather than vanishing"
+        );
+        assert_eq!(rows.iter().flatten().count(), 5);
+        assert_eq!(rows[0][0].id, "s0");
+        assert_eq!(rows[1][0].id, "s2");
+        assert_eq!(rows[2][0].id, "s4");
     }
 }
