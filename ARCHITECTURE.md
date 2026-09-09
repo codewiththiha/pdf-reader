@@ -526,9 +526,11 @@ arithmetic that decides which shelves those are (`subtree`, `deepest_first`) is 
 list and host-tested, including the cycle a blob caught between two writes can still carry.
 
 Nesting is not `ShelfKind::Folder`'s `rel`. `rel` is a subfolder's address inside a watched
-directory's tree — a rescan key, written by the filesystem's shape. `parent` is where the reader
-filed the shelf inside the library, and no scan ever writes it: a rescan that derived one from the
-other would rearrange the reader's folders on every window focus.
+directory's tree — a rescan key, written by the filesystem's shape. For a FOLDER shelf, `parent` is
+its projection: the tree on disk is the tree on the shelf, so every scan re-hangs the folder's
+shelves on the rung their `rel` names, and `library_core::shelf::reparent` refuses the hand that
+would move one where the next scan would undo it anyway. For a VIRTUAL shelf `parent` is where the
+reader filed it, and no scan ever writes it.
 
 ### One gesture, decided once
 
@@ -549,7 +551,11 @@ paints itself from, and the one-shot probes that swallow the `click` and the syn
 a completed hold generates.
 
 The wrapper decides *which* gesture a press was and stops there. What a movement then does belongs to
-the caller, and on the shelf that is a session rather than a browser drag.
+the caller, and on the shelf that is a session rather than a browser drag. The caller side is itself
+one wiring rather than one per surface: `features::library::gestures` binds the wrapper, the session
+handoff, the selection's enter/toggle, the keyboard's two halves and the right-click's ask once, and
+a book card, a book row and a folder card hand it the three answers that are theirs — what the item
+is called, whether a movement may lift it, and what "open" means for it.
 
 ### What a drop means
 

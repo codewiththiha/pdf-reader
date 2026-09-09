@@ -310,10 +310,14 @@ the filesystem.
   half-written PDF is most likely to be measured. Only genuinely new files are ever added: a book
   you dragged to another shelf keeps its fingerprint in that folder's ledger, and a book you removed
   leaves a tombstone, so neither comes back on the next pass.
-- **Shelves are bookshelves.** In the grid a shelf is a strip of overlapping covers standing on a
-  board, with the subfolder's name above it and a count beside it; clicking drills in, and the
-  breadcrumb is the way back. Filing a book is a drag from a card to a shelf or to another card, and
-  the only thing a drop edits is an ordered list of ids.
+- **A shelf is a level, not a row.** In the grid a shelf is a folder card — one cell of the same
+  grid the books are cells of, wearing a 2×2 plate of what is inside it (covers for its books,
+  plates of their own for its folders, recursively) and a count of both halves — which is what
+  lets a shelf be filed inside another shelf. The dense list draws the same level as a tree: a
+  shelf row unfolds in place, as deep as the forest goes, while its Open drills the breadcrumb
+  route, because unfolding is a way of looking and must not move you. Filing a book is a drag from
+  a card to a folder, to a crumb or to another card, and the only thing a drop edits is an
+  ordered list of ids.
 - **One drag, and it is the app's own.** Nothing on the shelf rides the browser's drag-and-drop: a
   press that moves becomes a session that knows what it is holding, where the pointer is and which
   target is under it, so a drag can carry a whole selection at once with a ghost of their covers,
@@ -345,7 +349,7 @@ the filesystem.
   survives it — every book stays in the library, the shelves inside it move up a level, and a shelf
   cut from a watched folder says the folder keeps watching.
   The crumb's own *Rename…* / *Remove shelf* popover is written and parked behind
-  `SHOW_SHELF_CRUMB_MENU` in `src/features/library/breadcrumb.rs` while the bar's crumb shapes
+  `SHOW_SHELF_CRUMB_MENU` in `src/features/library/breadcrumb/mod.rs` while the bar's crumb shapes
   settle; flipping that one constant restores it, and until then renaming a shelf is not reachable
   from the UI.
 - **The breadcrumb keeps three crumbs and elides the rest behind `…`.** A chain has no end and a title

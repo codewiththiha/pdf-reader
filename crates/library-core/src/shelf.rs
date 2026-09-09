@@ -26,8 +26,11 @@
 //!
 //! Nesting is NOT the same thing as [`ShelfKind::Folder`]'s `rel`. `rel` is a
 //! subfolder's address inside a watched directory's tree — a rescan key, owned
-//! by the filesystem. `parent` is where the reader filed the shelf inside the
-//! library, and no scan ever writes it.
+//! by the filesystem. For a folder shelf `parent` is its projection: the tree
+//! on disk is the tree on the shelf, so a scan re-hangs one on the rung its
+//! `rel` names and [`reparent`] refuses a hand that would move it where the
+//! next rescan undoes it. For a virtual shelf `parent` is where the reader
+//! filed it, and no scan ever writes it.
 
 use serde::{Deserialize, Serialize};
 
