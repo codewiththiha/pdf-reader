@@ -19,6 +19,19 @@
 //! level, and a shelf cut from a watched folder says that the folder keeps
 //! watching and the shelf returns if the folder places a book in it again.
 //!
+//! A shelf can also take everything inside it with it, and that is a switch on the
+//! sheet rather than a second sheet, because it is a question about the SAME
+//! removal: what a shelf holds is part of what removing it costs. Off, the books
+//! inside stay in the library and the shelves inside move up a level — the shelf was
+//! a list of ids and never held a byte. On, the books inside are purged by the same
+//! receipt as a selected book (store copy, highlights, cover, tombstone) and the
+//! shelves inside are taken apart instead of lifted, deepest first so nothing is
+//! moved up a level on the way to being deleted. The switch is offered only when
+//! there is something inside to decide about, and the purge switch only when the
+//! books the removal will actually take include a copy the app made — a control
+//! that appears with nothing for it to decide is a control the reader has to read
+//! and then ignore.
+//!
 //! There is no undo toast, deliberately. The sheet IS the safety, and the real undo
 //! path is the folder's import menu, which keeps a tombstone per removal and can
 //! offer the book back; a toast would promise a second mechanism and then have to
@@ -30,7 +43,7 @@ use wasm_bindgen::JsCast;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::book::Book;
-use library_core::shelf::{Shelf, children_of};
+use library_core::shelf::{Shelf, ancestors, children_of};
 use library_core::text::human_size;
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
@@ -58,6 +71,13 @@ pub(crate) struct RemoveSheet {
     /// itemises what a book takes with it, a shelf is taken apart and keeps every
     /// book in the library.
     pub shelves: RwSignal<Vec<String>>,
+    /// Whether a shelf removal takes everything inside it with it.
+    ///
+    /// Reset by every ask rather than remembered, because a cascade is a decision
+    /// about ONE removal: a reader who took a deep shelf and all of its contents
+    /// apart did not thereby ask for the next removal to do the same, and a switch
+    /// that persisted would be a preference the sheet never offered as one.
+    pub cascade: RwSignal<bool>,
 }
 
 impl RemoveSheet {
@@ -67,6 +87,7 @@ impl RemoveSheet {
             open: RwSignal::new(false),
             books: RwSignal::new(Vec::new()),
             shelves: RwSignal::new(Vec::new()),
+            cascade: RwSignal::new(false),
         };
         provide_context(sheet);
         sheet
@@ -77,6 +98,7 @@ impl RemoveSheet {
     pub fn ask(&self, book_id: &str) {
         self.books.set(vec![book_id.to_string()]);
         self.shelves.set(Vec::new());
+        self.cascade.set(false);
         self.open.set(true);
     }
 
@@ -88,6 +110,7 @@ impl RemoveSheet {
         }
         self.books.set(book_ids);
         self.shelves.set(shelf_ids);
+        self.cascade.set(false);
         self.open.set(true);
     }
 }
@@ -95,6 +118,27 @@ impl RemoveSheet {
 /// Everything the receipt lines are made of, read once per open.
 struct Receipt {
     books: Vec<Book>,
+    /// The ids the confirm button will purge: what was asked, plus everything
+    /// inside the asked shelves when the cascade is on. Separate from [`Self::books`]
+    /// only because the button needs ids and the rows need the rows' own facts.
+    book_ids: Vec<String>,
+    /// The ids the confirm button will delete: what was asked, plus every
+    /// descendant when the cascade is on.
+    shelf_ids: Vec<String>,
+    /// Whether this receipt was built with the cascade on, which is what the shelf
+    /// rows and the button's own wording have to agree with.
+    cascade: bool,
+    /// The name of the one shelf asked about, when exactly one was. A cascade pulls
+    /// books and further shelves into the receipt, and without this the heading
+    /// would answer "3 books" to a reader who clicked a shelf — a heading about
+    /// something they did not click, on the one sheet whose whole job is to say what
+    /// the click means.
+    asked_name: Option<String>,
+    /// What sits inside the asked shelves whatever the switch says — the books
+    /// anywhere inside them, and the shelves nested inside them at any depth. The
+    /// switch's own visibility is decided by these, so it cannot depend on itself.
+    inside_books: usize,
+    inside_shelves: usize,
     /// Highlight marks stored against these addresses.
     marks: usize,
     covers: usize,
@@ -116,8 +160,9 @@ struct Receipt {
 struct ShelfLine {
     name: String,
     books: usize,
-    /// Shelves filed inside it, which move up to the level it was on.
-    inside: usize,
+    /// Shelves filed inside it, which move up to the level it was on. Always zero
+    /// under a cascade, where nothing survives inside to be lifted.
+    lifted: usize,
     /// Cut from a folder that is still watched, so the shelf returns if the
     /// folder ever places a book in it again. Worth one sentence on the receipt
     /// because it is the one consequence a reader cannot see coming.
@@ -131,6 +176,9 @@ impl Receipt {
 
     /// The heading: one thing's own name, or a count.
     fn heading(&self) -> String {
+        if let Some(name) = &self.asked_name {
+            return name.clone();
+        }
         if !self.books.is_empty() {
             match self.books.first() {
                 Some(book) if !self.many() => book.title(),
@@ -194,46 +242,149 @@ fn count(n: usize, one: &str, many: &str) -> String {
     }
 }
 
+/// Every shelf below any of `roots`, at any depth, in no particular order and
+/// without repeats.
+///
+/// Walked with an explicit stack and a seen-set rather than recursively, for two
+/// reasons. The forest is finite because `library_core::shelf::sanitize` cuts cycles
+/// out of a loaded blob — but this reads a list that can be caught between two
+/// writes, and a recursion over a graph with a loop in it is a stack that never
+/// unwinds. A shelf inside itself is also a shelf that would otherwise be counted
+/// twice on its own receipt, and two selected shelves can share a descendant, which
+/// one removal takes apart once.
+///
+/// Pure over the shelf list rather than over the state, so the arithmetic a cascade
+/// depends on is testable on the host: this is the function that decides which
+/// shelves a removal deletes, and "which shelves go" is exactly the question that
+/// should not need a browser to answer.
+fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
+    let mut out: Vec<Shelf> = Vec::new();
+    let mut stack: Vec<String> = roots.to_vec();
+    while let Some(parent) = stack.pop() {
+        for child in children_of(shelves, Some(parent.as_str())) {
+            if roots.iter().any(|each| each == &child.id)
+                || out.iter().any(|each| each.id == child.id)
+            {
+                continue;
+            }
+            stack.push(child.id.clone());
+            out.push(child.clone());
+        }
+    }
+    out
+}
+
+/// A cascade's delete order: deepest first.
+///
+/// `delete_shelf` lifts a shelf's children to the level it was on before removing
+/// it, which is the right thing for one removal and the wrong thing for a cascade:
+/// lifting a shelf that is next in line to be deleted moves it somewhere it is
+/// about to leave anyway, and moves it past the reader on the way. Deepest first
+/// means every lift finds nothing left to lift.
+///
+/// A stable sort on a reversed key, so two shelves at the same depth keep the
+/// order the library stores them in and the receipt's rows match the order they
+/// went in.
+fn deepest_first(shelves: &[Shelf], ids: &[String]) -> Vec<String> {
+    let mut with_depth: Vec<(String, usize)> = ids
+        .iter()
+        .map(|id| (id.clone(), ancestors(shelves, id).len()))
+        .collect();
+    with_depth.sort_by_key(|one| std::cmp::Reverse(one.1));
+    with_depth.into_iter().map(|(id, _)| id).collect()
+}
+
 /// Build the receipt. `None` when none of the books or shelves are there any
 /// more, which is what makes a sheet left open across a removal harmless rather
 /// than a panic.
-fn receipt(state: AppState, ids: &[String], shelf_ids: &[String]) -> Option<Receipt> {
+///
+/// `cascade` decides which SET the receipt is of, and everything below — the books
+/// row, the highlight and cover counts, the store copies, the placements, the
+/// button's own wording — is measured over that set rather than over what was
+/// clicked. A receipt that itemised the selection and then removed the selection
+/// plus a shelf's contents would be a receipt for a different removal than the one
+/// it confirmed.
+fn receipt(
+    state: AppState,
+    ids: &[String],
+    shelf_ids: &[String],
+    cascade: bool,
+) -> Option<Receipt> {
     let gloss = crate::storage::load_gloss();
-    let books = state.library.books.with_untracked(|books| {
-        books
-            .iter()
-            .filter(|b| ids.contains(&b.id))
+    // One untracked read of the shelf list, and the tree arithmetic below is pure
+    // over it: three nested reads of the same signal were three chances to see a
+    // different library than the one the receipt is describing.
+    let all: Vec<Shelf> = state.library.shelves.get_untracked();
+    let asked: Vec<Shelf> = all
+        .iter()
+        .filter(|s| shelf_ids.contains(&s.id))
+        .cloned()
+        .collect();
+    // Everything below the asked shelves, deduped against each other and against
+    // the asked ones: two selected shelves can share a descendant, and a shelf
+    // selected alongside its own parent is already in `asked`.
+    let descendants = subtree(&all, shelf_ids);
+    let delete_shelves: Vec<Shelf> = if cascade {
+        asked.iter().chain(descendants.iter()).cloned().collect()
+    } else {
+        asked.clone()
+    };
+    // What is inside, counted whether or not the cascade is on: these two numbers
+    // are what the switch's own visibility is decided by, and a switch that only
+    // appeared once it was already on could never be turned on.
+    let inside_ids: Vec<String> = {
+        let mut acc: Vec<String> = Vec::new();
+        for shelf in all.iter().filter(|s| {
+            shelf_ids.contains(&s.id) || descendants.iter().any(|each| each.id == s.id)
+        }) {
+            for book in &shelf.books {
+                if !acc.contains(book) {
+                    acc.push(book.clone());
+                }
+            }
+        }
+        acc
+    };
+    // The set the removal will actually take: what was asked, plus what is inside
+    // when the cascade is on. Deduped, because a book on the asked shelf and inside
+    // the asked folder is one book and one tombstone.
+    let mut effective: Vec<String> = Vec::new();
+    for id in ids {
+        if !effective.contains(id) {
+            effective.push(id.clone());
+        }
+    }
+    if cascade {
+        for id in &inside_ids {
+            if !effective.contains(id) {
+                effective.push(id.clone());
+            }
+        }
+    }
+    let books: Vec<Book> = state.library.books.with_untracked(|all| {
+        all.iter()
+            .filter(|b| effective.contains(&b.id))
             .cloned()
-            .collect::<Vec<Book>>()
+            .collect()
     });
-    let shelves = state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .filter(|s| shelf_ids.contains(&s.id))
-            .cloned()
-            .collect::<Vec<Shelf>>()
-    });
-    if books.is_empty() && shelves.is_empty() {
+    if books.is_empty() && asked.is_empty() {
         return None;
     }
-    let shelf_lines: Vec<ShelfLine> = shelves
+    let shelf_lines: Vec<ShelfLine> = delete_shelves
         .iter()
-        .map(|s| {
-            let inside = state
-                .library
-                .shelves
-                .with_untracked(|all| children_of(all, Some(s.id.as_str())).len());
-            let watched = s.kind.folder_id().is_some_and(|folder_id| {
+        .map(|s| ShelfLine {
+            name: s.name.clone(),
+            books: s.books.len(),
+            lifted: if cascade {
+                0
+            } else {
+                children_of(&all, Some(s.id.as_str())).len()
+            },
+            watched: s.kind.folder_id().is_some_and(|folder_id| {
                 state.library.folders.with_untracked(|folders| {
                     folders.iter().any(|f| f.id == folder_id && f.opts.watch)
                 })
-            });
-            ShelfLine {
-                name: s.name.clone(),
-                books: s.books.len(),
-                inside,
-                watched,
-            }
+            }),
         })
         .collect();
     let mut marks = 0usize;
@@ -275,7 +426,16 @@ fn receipt(state: AppState, ids: &[String], shelf_ids: &[String]) -> Option<Rece
             })
         });
     Some(Receipt {
+        book_ids: books.iter().map(|b| b.id.clone()).collect(),
         books,
+        shelf_ids: delete_shelves.iter().map(|s| s.id.clone()).collect(),
+        cascade,
+        asked_name: match asked.as_slice() {
+            [only] => Some(only.name.clone()),
+            _ => None,
+        },
+        inside_books: inside_ids.len(),
+        inside_shelves: descendants.len(),
         marks,
         covers,
         placements: placement_names,
@@ -346,7 +506,14 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                 {move || {
                     let ids = sheet.books.get();
                     let shelf_ids = sheet.shelves.get();
-                    let info = receipt(state, &ids, &shelf_ids)?;
+                    // Read here rather than inside the sheet, so flipping the
+                    // switch rebuilds the receipt and the sheet together: every
+                    // row, the store-copy switch and the button's own wording are
+                    // all answers about ONE set of books, and a sheet that
+                    // recomputed some of them and not others would be a receipt
+                    // disagreeing with itself.
+                    let cascade = sheet.cascade.get();
+                    let info = receipt(state, &ids, &shelf_ids, cascade)?;
                     let cover_path = info
                         .books
                         .first()
@@ -359,8 +526,6 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                             sheet=sheet
                             delete_copy=delete_copy
                             info=info
-                            ids=ids
-                            shelf_ids=shelf_ids
                             cover_path=cover_path
                             alt=alt
                         />
@@ -372,19 +537,29 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
 }
 
 /// The sheet's body, split out so it can take the receipt by value: the outer view
-/// answers "is there still anything to talk about?" on every run, and this one is
-/// built once per open with an answer it can keep.
+/// answers "is there still anything to talk about?" — and "what would this cost with
+/// the cascade on?" — on every run, and this one is built once per answer with an
+/// answer it can keep.
+///
+/// The sets the confirm button acts on come off the receipt and not off separate
+/// props, because the receipt is the thing the reader just read: a button handed the
+/// ids it was asked about while the rows described the ids plus a shelf's contents
+/// would confirm one removal and perform another.
 #[component]
 fn Sheet(
     state: AppState,
     sheet: RemoveSheet,
     delete_copy: RwSignal<bool>,
     info: Receipt,
-    ids: Vec<String>,
-    shelf_ids: Vec<String>,
     cover_path: String,
     alt: String,
 ) -> impl IntoView {
+    let cascade = info.cascade;
+    let purge_ids = info.book_ids.clone();
+    let delete_ids = info.shelf_ids.clone();
+    let inside_books = info.inside_books;
+    let inside_shelves = info.inside_shelves;
+    let offers_cascade = inside_books > 0 || inside_shelves > 0;
     // Everything the view prints, worked out once. A `view!` body is a builder, not
     // a place to compute: an attribute and a child that need the same string each
     // need their own copy, and learning that from a compiler is a slow way to learn
@@ -445,30 +620,43 @@ fn Sheet(
     // The button names both halves when the selection held both kinds, because
     // a confirmation that only mentioned the books would be a confirmation the
     // reader did not read before the shelves went.
+    // A cascade is already counted in both numbers — the books inside are in
+    // `books` and the shelves inside are in `shelves` — except in the one case
+    // where a shelf holds no books at all and only empty folders, and there the
+    // label has to say so or it promises less than the click does.
     let remove_label = match (info.books.len(), info.shelves.len()) {
         (1, 0) => "Remove everything".to_string(),
+        (0, 1) if cascade && inside_shelves > 0 => {
+            "Remove the shelf and the ones inside".to_string()
+        }
         (0, 1) => "Remove the shelf".to_string(),
+        (0, n) if cascade && inside_shelves > 0 => {
+            format!("Remove {n} shelves and the ones inside")
+        }
         (0, n) => format!("Remove {n} shelves"),
         (b, 0) => format!("Remove {b} books"),
         (b, s) => format!("Remove {b} books and {s} shelves"),
     };
     let show_cover = !many && !info.books.is_empty();
-    // One row per shelf, saying what survives it rather than what goes: a shelf
-    // is a list of ids, and the receipt's job for it is the books that stay and
-    // the shelves that move up.
+    // One row per shelf. Without the cascade the row says what SURVIVES it — a
+    // shelf is a list of ids, and the books stay while the shelves inside move up.
+    // With the cascade on it says what GOES, because that is now the honest answer
+    // and the same words would mean the opposite thing: `lifted` is zero there by
+    // construction, so nothing is described as moving up on its way to being
+    // deleted.
     let shelf_rows: Vec<(String, String)> = info
         .shelves
         .iter()
         .map(|s| {
-            let mut detail = if s.books == 0 {
-                "empty".to_string()
-            } else {
-                count(s.books, "book", "books")
+            let mut detail = match (s.books, cascade) {
+                (0, _) => "empty".to_string(),
+                (n, true) => format!("{} go with it", count(n, "book", "books")),
+                (n, false) => count(n, "book", "books"),
             };
-            if s.inside > 0 {
+            if s.lifted > 0 {
                 detail.push_str(&format!(
                     " · {} move up",
-                    count(s.inside, "shelf", "shelves")
+                    count(s.lifted, "shelf", "shelves")
                 ));
             }
             (s.name.clone(), detail)
@@ -476,6 +664,30 @@ fn Sheet(
         .collect();
     let has_shelves = !shelf_rows.is_empty();
     let shelf_watched = info.shelves.iter().any(|s| s.watched);
+    // What the switch is offering, in the numbers the receipt has just counted.
+    // Spelled out rather than left to the label, because "remove everything
+    // inside" is a sentence whose size the reader is about to find out the hard
+    // way, and this sheet exists so that they do not.
+    let cascade_note = if cascade {
+        match (inside_books, inside_shelves) {
+            (0, shelves) => format!(
+                "{} inside are taken apart with it, instead of moving up a level.",
+                count(shelves, "shelf", "shelves")
+            ),
+            (books, 0) => format!(
+                "{} inside go with the shelf, and are itemised above.",
+                count(books, "book", "books")
+            ),
+            (books, shelves) => format!(
+                "{} inside go with the shelf and {} inside are taken apart too.",
+                count(books, "book", "books"),
+                count(shelves, "shelf", "shelves")
+            ),
+        }
+    } else {
+        "Off: the books inside stay in the library and the shelves inside move up a level."
+            .to_string()
+    };
 
     view! {
         <div
@@ -589,6 +801,27 @@ fn Sheet(
                     }
                 })}
 
+                // Offered only when there is something inside to decide about.
+                // An empty leaf shelf has no cascade and gets no switch; a shelf
+                // holding nothing but empty folders does, because there the switch
+                // is the whole difference between "these move up and clutter the
+                // level above" and "these go too".
+                {offers_cascade.then(|| {
+                    view! {
+                        <div class="mt-3 rounded-xl border border-line">
+                            <Row label="Remove everything inside">
+                                <Switch
+                                    checked=Signal::derive(move || sheet.cascade.get())
+                                    on_change=Callback::new(move |on| sheet.cascade.set(on))
+                                    title="Take the books and the shelves inside with this shelf"
+                                        .to_string()
+                                />
+                            </Row>
+                            <p class="px-4 pb-3 text-xs text-muted">{cascade_note.clone()}</p>
+                        </div>
+                    }
+                })}
+
                 {shelf_watched.then(|| {
                     view! {
                         <p class="mt-3 text-xs text-muted">
@@ -644,10 +877,14 @@ fn Sheet(
                 <Button
                     on_click=move |_| {
                         sheet.open.set(false);
-                        if !ids.is_empty() {
+                        // The receipt's own sets, not the ones the click was
+                        // handed: under a cascade these are bigger, and this is the
+                        // one place where the difference is a book that survives or
+                        // does not.
+                        if !purge_ids.is_empty() {
                             purge_books(
                                 state,
-                                &ids,
+                                &purge_ids,
                                 PurgeOpts {
                                     delete_store_copy: delete_copy.get_untracked(),
                                 },
@@ -655,9 +892,11 @@ fn Sheet(
                         }
                         // Shelves after the books: a purge sweeps every shelf's
                         // member list, and a shelf dissolved first would be swept
-                        // by nobody.
-                        for shelf_id in &shelf_ids {
-                            delete_shelf(state, shelf_id);
+                        // by nobody. Deepest first, so a cascade never lifts a
+                        // shelf to the level it was on moments before deleting it.
+                        let shelves_now = state.library.shelves.get_untracked();
+                        for shelf_id in deepest_first(&shelves_now, &delete_ids) {
+                            delete_shelf(state, &shelf_id);
                         }
                     }
                     variant=ButtonVariant::Toolbar
@@ -684,5 +923,107 @@ fn ReceiptRow(icon: IconName, label: &'static str, value: String) -> impl IntoVi
                 {value}
             </span>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use library_core::shelf::ShelfKind;
+
+    /// A virtual shelf, which is the kind a reader makes and the only kind a
+    /// cascade can move.
+    fn shelf(id: &str, parent: Option<&str>, books: &[&str]) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: id.to_string(),
+            kind: ShelfKind::Virtual,
+            books: books.iter().map(|each| each.to_string()).collect(),
+            parent: parent.map(str::to_string),
+        }
+    }
+
+    fn ids(shelves: &[Shelf]) -> Vec<String> {
+        shelves.iter().map(|each| each.id.clone()).collect()
+    }
+
+    /// `a` at the root, `b` inside it, `c` inside `b`, and an empty `d` beside `b`.
+    fn tree() -> Vec<Shelf> {
+        vec![
+            shelf("a", None, &[]),
+            shelf("b", Some("a"), &["b1", "b2"]),
+            shelf("c", Some("b"), &["c1"]),
+            shelf("d", Some("a"), &[]),
+        ]
+    }
+
+    #[test]
+    fn the_subtree_is_everything_below_and_never_the_root_itself() {
+        let tree = tree();
+        let mut under_a = ids(&subtree(&tree, &["a".to_string()]));
+        under_a.sort();
+        assert_eq!(under_a, ["b", "c", "d"], "the root is asked about, not inside");
+
+        let under_b = ids(&subtree(&tree, &["b".to_string()]));
+        assert_eq!(under_b, ["c"]);
+
+        assert!(
+            subtree(&tree, &["d".to_string()]).is_empty(),
+            "an empty leaf has no subtree, which is why it gets no cascade switch"
+        );
+    }
+
+    #[test]
+    fn two_roots_sharing_a_descendant_count_it_once() {
+        // One removal takes a shared shelf apart once, and a receipt that listed
+        // it twice would be a receipt the reader could not reconcile with what
+        // actually went.
+        let tree = tree();
+        let under_both = ids(&subtree(&tree, &["a".to_string(), "b".to_string()]));
+        assert_eq!(under_both.len(), under_both.iter().collect::<std::collections::HashSet<_>>().len());
+        assert!(under_both.iter().any(|id| id == "c"));
+        assert!(
+            !under_both.iter().any(|id| id == "b"),
+            "a root is never reported as its own descendant"
+        );
+    }
+
+    #[test]
+    fn a_shelf_inside_itself_terminates_rather_than_repeating() {
+        // `sanitize` cuts cycles out of a loaded blob, but the receipt reads a
+        // signal that can be caught between two writes, and a walk that spun here
+        // would hang the sheet rather than answer it.
+        let looped = vec![
+            shelf("x", Some("y"), &[]),
+            shelf("y", Some("x"), &[]),
+        ];
+        let mut found = ids(&subtree(&looped, &["x".to_string()]));
+        found.sort();
+        assert_eq!(found, ["y"]);
+    }
+
+    #[test]
+    fn a_cascade_deletes_deepest_first() {
+        let tree = tree();
+        let order = deepest_first(&tree, &["a".to_string(), "b".to_string(), "c".to_string()]);
+        assert_eq!(
+            order.first().map(String::as_str),
+            Some("c"),
+            "the deepest goes first, so no lift moves a shelf that is next in line"
+        );
+        assert_eq!(
+            order.last().map(String::as_str),
+            Some("a"),
+            "and the shelf the reader asked about goes last"
+        );
+    }
+
+    #[test]
+    fn shelves_at_one_depth_keep_the_libraries_own_order() {
+        // A stable sort: the receipt's rows and the order the shelves went in are
+        // the same order, so a reader can follow what happened.
+        let tree = tree();
+        let order = deepest_first(&tree, &["d".to_string(), "b".to_string()]);
+        assert_eq!(order, ["d", "b"]);
     }
 }

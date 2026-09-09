@@ -501,6 +501,26 @@ Removing a shelf lifts the shelves inside it to the level it was on (`shelf::lif
 same rule in SQL in `src-tauri/src/db/repo.rs`), for the same reason its books stay in the library:
 a reader who took one folder apart did not ask to lose the folders filed in it.
 
+That is the default and not the only answer, because "take this shelf apart" and "get rid of this
+shelf and everything in it" are both things a reader means, and only the first of them was reachable.
+`features::library::remove_modal` carries the second as a switch on the same receipt — the cascade
+belongs in the sheet rather than in a second sheet, because it is a question about the SAME removal,
+and what a shelf holds is part of what removing it costs.
+
+Everything on that sheet is measured over the set the removal will actually take, not over what was
+clicked: with the cascade on, the books row, the highlight and cover counts, the store copies and the
+button's own wording all describe the asked books plus everything inside the asked shelves. A receipt
+that itemised the selection and then removed the selection plus a folder's contents would be a receipt
+for a different removal than the one it confirmed. The switch is offered only when there is something
+inside to decide about — an empty leaf shelf gets no switch — and the store-copy switch only when the
+effective set contains a copy the app made, because a control that appears with nothing for it to
+decide is a control the reader has to read and then ignore. Two things follow from the cascade being a
+change of SET rather than of wording: the shelf rows switch from saying what survives to saying what
+goes, since the same words would mean the opposite, and the deletes run deepest-first so
+`lift_children` never moves a shelf to the level it was on moments before deleting it. The tree
+arithmetic that decides which shelves those are (`subtree`, `deepest_first`) is pure over the shelf
+list and host-tested, including the cycle a blob caught between two writes can still carry.
+
 Nesting is not `ShelfKind::Folder`'s `rel`. `rel` is a subfolder's address inside a watched
 directory's tree — a rescan key, written by the filesystem's shape. `parent` is where the reader
 filed the shelf inside the library, and no scan ever writes it: a rescan that derived one from the

@@ -368,6 +368,13 @@ the filesystem.
   things the book does not have. For a book the app copied there is a switch for the copy, on by
   default; the file it was copied from is never touched either way. There is no undo toast, because
   the sheet is the safety and the folder's import menu is the undo.
+- **Removing a shelf can take everything inside it with it.** Off — the default — the books inside stay
+  in the library and the shelves inside move up a level. On, the books are purged by the same receipt a
+  selected book gets and the shelves inside are taken apart too, deepest first. The switch is offered
+  only when there is something inside to decide about, and every row on the sheet, the store-copy
+  switch and the confirm button's own wording all describe the set the removal will actually take
+  rather than the one you clicked — so a cascade that reaches stored copies is a cascade that shows
+  you the copies first.
 - **A watched folder can give a book back.** Its import menu keeps a tombstone per removal — the name
   the shelf showed, how long ago it went, how big it is — and offers the book back after measuring the
   file to check it is still there. An explicit restore ignores the folder's format and size filters,
