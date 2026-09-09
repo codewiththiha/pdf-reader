@@ -184,6 +184,35 @@ fn default_page() -> u32 {
 }
 
 impl Book {
+    /// A book just joined to the library: its identity, its content identity,
+    /// its pipeline, the address it is read from, and the moment it joined —
+    /// everything else is the blank a reader fills in later.
+    ///
+    /// One constructor rather than a struct literal per importing path, so a
+    /// joined book starts at page 1, with no title of its own and not missing,
+    /// in every one of them. The paths that mint a row — a folder walk, a
+    /// handful of loose files, a restore and a hand-open ([`record_read`]) —
+    /// override only the fields they have an answer for: an open has measured
+    /// nothing, so it stamps a [`Fingerprint::placeholder`] and the
+    /// [`Book::fp_pending`] mark on top.
+    pub fn new(id: String, fp: Fingerprint, format: Format, origin: Origin, added_ms: u64) -> Self {
+        Self {
+            id,
+            fp,
+            title: None,
+            author: None,
+            format,
+            origin,
+            added_ms,
+            last_read_ms: 0,
+            page: 1,
+            num_pages: 0,
+            fraction: None,
+            missing: false,
+            fp_pending: false,
+        }
+    }
+
     /// The address this book is read from. See [`Origin::path`].
     pub fn path(&self) -> &str {
         self.origin.path()
@@ -198,15 +227,6 @@ impl Book {
             .filter(|t| !t.trim().is_empty())
             .or_else(|| file_stem_from_path(self.path()))
             .unwrap_or_else(|| self.path().to_string())
-    }
-
-    /// The file stem of the address — the name a book is searchable by when its
-    /// document carries no title of its own.
-    ///
-    /// A column in the catalog rather than a derivation at query time, because the
-    /// search index is built by a trigger on write and a trigger cannot call this.
-    pub fn stem(&self) -> String {
-        stem_of(self.path())
     }
 
     /// The author line, when there is one to show.
@@ -251,9 +271,11 @@ impl ReadPoint {
     }
 
     /// The point with an impossible fraction dropped and the page clamped to
-    /// the first. What [`record_read`] writes, so no caller can hand the
-    /// library a resume point it has to second-guess later.
-    fn settled(self) -> Self {
+    /// the first. What [`record_read`] writes, and what the catalog's own SQL
+    /// layer in the shell applies before an UPDATE, so no writer in either
+    /// process can hand the library a resume point it has to second-guess
+    /// later.
+    pub fn settled(self) -> Self {
         Self {
             page: self.page.max(1),
             num_pages: self.num_pages,
@@ -314,21 +336,22 @@ pub fn record_read(
         return None;
     }
     let book = Book {
-        id: crate::id::new_id(now_ms, books.len() as u32),
-        fp: Fingerprint::placeholder(path),
         title,
         author,
-        format: reader_core::format::format_of(path),
-        origin: Origin::Linked {
-            src: path.to_string(),
-        },
-        added_ms: now_ms,
         last_read_ms: now_ms,
         page: point.page,
         num_pages: point.num_pages,
         fraction: point.fraction,
-        missing: false,
         fp_pending: true,
+        ..Book::new(
+            crate::id::next_id(now_ms),
+            Fingerprint::placeholder(path),
+            reader_core::format::format_of(path),
+            Origin::Linked {
+                src: path.to_string(),
+            },
+            now_ms,
+        )
     };
     books.insert(0, book.clone());
     Some(book)

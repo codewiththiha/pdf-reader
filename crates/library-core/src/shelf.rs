@@ -109,12 +109,6 @@ pub fn find<'a>(shelves: &'a [Shelf], id: &str) -> Option<&'a Shelf> {
     shelves.iter().find(|s| s.id == id)
 }
 
-/// The shelves whose id is not [`ALL_SHELF`], in the order the library stores
-/// them — the order the grid renders bookshelves in.
-pub fn real(shelves: &[Shelf]) -> Vec<&Shelf> {
-    shelves.iter().filter(|s| s.id != ALL_SHELF).collect()
-}
-
 /// The shelves filed directly inside `parent_id`, in the order the library
 /// stores them. `None` asks for the root level, which is what the page shows
 /// while it is drilled out of every shelf.
@@ -276,14 +270,17 @@ pub fn containing<'a>(shelves: &'a [Shelf], book_id: &str) -> Vec<&'a Shelf> {
 }
 
 /// Make a persisted shelf list internally valid: drop shelves with no id or no
-/// name, dedupe by id (first wins), drop members that are blank, drop a
-/// duplicate member keeping its first position, and cut the nesting graph back
-/// to a forest. Idempotent. Members that name a book the library no longer has
-/// are NOT dropped here — that needs the book list, and
+/// name, drop a row wearing the [`ALL_SHELF`] id (the pseudo-shelf is the book
+/// list and no level renders it), dedupe by id (first wins), drop members that
+/// are blank, drop a duplicate member keeping its first position, and cut the
+/// nesting graph back to a forest. Idempotent. Members that name a book the
+/// library no longer has are NOT dropped here — that needs the book list, and
 /// [`blob::sanitize`](crate::blob::sanitize) does it with both in hand.
 pub fn sanitize(shelves: &mut Vec<Shelf>) {
     let mut seen = std::collections::HashSet::new();
-    shelves.retain(|s| !s.id.trim().is_empty() && !s.name.trim().is_empty());
+    shelves.retain(|s| {
+        !s.id.trim().is_empty() && !s.name.trim().is_empty() && s.id != ALL_SHELF
+    });
     shelves.retain(|s| seen.insert(s.id.clone()));
     for s in shelves.iter_mut() {
         let mut members = std::collections::HashSet::new();
@@ -374,15 +371,17 @@ mod tests {
         assert!(find(&shelves, ALL_SHELF).is_none());
         assert!(find(&shelves, "s1").is_some());
         assert!(find(&shelves, "nope").is_none());
-        assert_eq!(real(&shelves).len(), 1);
     }
 
     #[test]
-    fn a_pseudo_all_shelf_is_never_rendered_as_a_bookshelf() {
+    fn a_pseudo_all_shelf_never_survives_a_load() {
         // A blob that somehow carries an "all" row must not turn into a
-        // bookshelf tile duplicating the whole library.
-        let shelves = vec![shelf(ALL_SHELF, "All", &["a"]), shelf("s1", "Sci-fi", &["a"])];
-        assert_eq!(real(&shelves).len(), 1);
+        // bookshelf tile duplicating the whole library: the sanitizer drops
+        // it, so no level ever renders it and no view has to remember to.
+        let mut shelves = vec![shelf(ALL_SHELF, "All", &["a"]), shelf("s1", "Sci-fi", &["a"])];
+        sanitize(&mut shelves);
+        let ids: Vec<&str> = shelves.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["s1"]);
     }
 
     #[test]

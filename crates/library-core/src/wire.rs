@@ -42,23 +42,6 @@ pub struct ImportProgress {
     pub name: String,
 }
 
-impl ImportProgress {
-    /// The beat's fraction complete, or `None` while the total is unknown. One
-    /// definition so the ring and the label cannot disagree about what "half
-    /// way" means.
-    pub fn fraction(&self) -> Option<f64> {
-        if self.total == 0 {
-            return None;
-        }
-        Some((f64::from(self.done) / f64::from(self.total)).clamp(0.0, 1.0))
-    }
-
-    /// The percentage the ring prints, when there is one to print.
-    pub fn percent(&self) -> Option<u32> {
-        self.fraction().map(|f| (f * 100.0).round() as u32)
-    }
-}
-
 /// What one address resolved to, from `verify_paths`. One row per path asked
 /// about, in the order asked, so the caller can zip the answer against its own
 /// list without matching on strings.
@@ -206,32 +189,6 @@ mod tests {
         assert!(!json.contains('_'), "{json}");
         let back: ImportProgress = serde_json::from_str(&json).unwrap();
         assert_eq!(back, beat);
-    }
-
-    #[test]
-    fn a_scan_beat_has_no_total_and_says_so() {
-        let beat = ImportProgress {
-            task: "t1".into(),
-            phase: ImportPhase::Scan,
-            done: 300,
-            total: 0,
-            name: "a.pdf".into(),
-        };
-        assert_eq!(beat.fraction(), None);
-        assert_eq!(beat.percent(), None);
-        let done = ImportProgress {
-            total: 48,
-            done: 12,
-            ..beat.clone()
-        };
-        assert_eq!(done.percent(), Some(25));
-        assert_eq!(done.fraction(), Some(0.25));
-        let over = ImportProgress {
-            total: 10,
-            done: 40,
-            ..beat
-        };
-        assert_eq!(over.percent(), Some(100), "a count past the total clamps");
     }
 
     #[test]

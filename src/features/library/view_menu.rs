@@ -174,7 +174,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                 <div class="my-1.5"><Separator /></div>
                 <SectionLabel text="Book covers" />
                 <MenuItem
-                    label="Fit"
+                    label=CoverFit::Fit.label()
                     selected=Signal::derive(move || fit.get())
                     on_click=move || {
                         set_view(state, |v| v.cover = CoverFit::Fit);
@@ -183,7 +183,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     <Check when=Signal::derive(move || fit.get()) />
                 </MenuItem>
                 <MenuItem
-                    label="Crop"
+                    label=CoverFit::Crop.label()
                     selected=Signal::derive(move || !fit.get())
                     on_click=move || {
                         set_view(state, |v| v.cover = CoverFit::Crop);

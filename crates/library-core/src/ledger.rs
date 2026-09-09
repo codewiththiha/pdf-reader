@@ -142,22 +142,29 @@ pub fn decide(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> 
                 ScanAction::Add(file.clone())
             }
         }
-        Some(known) => {
-            if known.path == file.path {
-                return ScanAction::Skip;
-            }
-            // The address moved. This folder placed the book, so the move is
-            // inside a tree it owns; or the book is already known to be
-            // missing, in which case any watched tree that finds it heals it.
-            if folder.placed.contains(&file.fp) || known.missing {
-                ScanAction::Relink {
-                    book_id: known.id.clone(),
-                    to: file.path.clone(),
-                }
-            } else {
-                ScanAction::Skip
-            }
+        Some(known) => known_action(folder, known, file),
+    }
+}
+
+/// The rows of both tables that answer the same way: a KNOWN fingerprint is a
+/// skip at its own address and a relink when the address moved — moved inside
+/// a tree this folder placed it in, or found by any folder while the book is
+/// missing. What the two tables disagree about is the unknown and the removed,
+/// which never reach here.
+fn known_action(folder: &WatchedFolder, known: &KnownBook, file: &FoundFile) -> ScanAction {
+    if known.path == file.path {
+        return ScanAction::Skip;
+    }
+    // The address moved. This folder placed the book, so the move is
+    // inside a tree it owns; or the book is already known to be
+    // missing, in which case any watched tree that finds it heals it.
+    if folder.placed.contains(&file.fp) || known.missing {
+        ScanAction::Relink {
+            book_id: known.id.clone(),
+            to: file.path.clone(),
         }
+    } else {
+        ScanAction::Skip
     }
 }
 
@@ -172,18 +179,7 @@ pub fn decide(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> 
 pub fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> ScanAction {
     match registry.get(&file.fp) {
         None => ScanAction::Add(file.clone()),
-        Some(known) => {
-            if known.path == file.path {
-                ScanAction::Skip
-            } else if folder.placed.contains(&file.fp) || known.missing {
-                ScanAction::Relink {
-                    book_id: known.id.clone(),
-                    to: file.path.clone(),
-                }
-            } else {
-                ScanAction::Skip
-            }
-        }
+        Some(known) => known_action(folder, known, file),
     }
 }
 
@@ -332,12 +328,6 @@ pub fn recoverables(
         });
     }
     out
-}
-
-/// Apply an `Add` to the folder's ledger. One call per placed file, so the
-/// ledger and the book list are written by the same code path that read them.
-pub fn mark_placed(folder: &mut WatchedFolder, file: &FoundFile) {
-    folder.mark_placed(file.fp);
 }
 
 /// Apply a `Relink` to a book list: rewrite the address, clear `missing`, and
@@ -588,7 +578,7 @@ mod tests {
     #[test]
     fn placing_a_file_is_what_makes_the_next_scan_skip_it() {
         let mut f = folder(&[], &[]);
-        mark_placed(&mut f, &file(1, "/books/a.pdf"));
+        f.mark_placed(fp(1));
         // The book row is not in the registry yet (the frontend adds it in the
         // same batch), so `placed` alone is what stops a second add.
         assert_eq!(decide(&f, &registry(&[]), &file(1, "/books/a.pdf")), ScanAction::Skip);

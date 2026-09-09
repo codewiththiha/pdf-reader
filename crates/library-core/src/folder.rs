@@ -202,7 +202,7 @@ impl WatchedFolder {
     /// it.
     ///
     /// Owned rather than borrowed because the caller goes straight from this to
-    /// [`WatchedFolder::shelf_for`], which takes `&mut self`: a key borrowed
+    /// [`WatchedFolder::shelf_chain_for`], which takes `&mut self`: a key borrowed
     /// from the folder would still be alive when the folder is mutated.
     pub fn shelf_key(&self, found: &FoundFile) -> String {
         if self.opts.groups {
@@ -249,20 +249,6 @@ impl WatchedFolder {
             };
             current = Some(id.clone());
         }
-        id
-    }
-
-    /// The shelf a found file belongs on, minting one through `mint` when this
-    /// is the first file from that subfolder and remembering it in
-    /// [`WatchedFolder::shelf_map`] so the next rescan reuses it. Called from
-    /// the frontend, which owns the shelf list and the id sequence; the shell's
-    /// walk only reports what it found.
-    pub fn shelf_for(&mut self, key: &str, mint: impl FnOnce(&str) -> String, name: &str) -> String {
-        if let Some(id) = self.shelf_map.get(key) {
-            return id.clone();
-        }
-        let id = mint(name);
-        self.shelf_map.insert(key.to_string(), id.clone());
         id
     }
 
@@ -517,11 +503,60 @@ mod tests {
     #[test]
     fn the_shelf_map_reuses_the_shelf_it_minted() {
         let mut f = folder("/books");
-        let first = f.shelf_for("scifi", |_| "s1".to_string(), "scifi");
-        let again = f.shelf_for("scifi", |_| "s2".to_string(), "scifi");
-        assert_eq!(first, "s1");
-        assert_eq!(again, "s1", "a rescan never mints a second shelf for a subfolder");
-        assert_eq!(f.shelf_map.len(), 1);
+        let mut made: Vec<(String, String, String, Option<String>)> = Vec::new();
+        let mut seq = 0usize;
+        // A file two subfolders deep mints the WHOLE chain — the folder's root
+        // shelf, the rung under it, and the leaf — reporting each rung with the
+        // parent above it, so an intermediate directory with no books of its
+        // own is an empty folder card rather than a missing rung.
+        let leaf = f.shelf_chain_for(
+            "scifi/deep",
+            |_| {
+                seq += 1;
+                format!("s{seq}")
+            },
+            |rung| rung.rsplit('/').next().unwrap_or(rung).to_string(),
+            |rung, id, name, parent| made.push((rung.to_string(), id.to_string(), name, parent)),
+        );
+        assert_eq!(
+            made.iter().map(|(rung, _, _, _)| rung.as_str()).collect::<Vec<_>>(),
+            vec!["", "scifi", "scifi/deep"]
+        );
+        assert_eq!(made[2].2, "deep", "the leaf is named by its own subfolder");
+        assert_eq!(made[0].3, None, "the folder's own shelf hangs at the level it was on");
+        assert_eq!(made[1].3.as_deref(), Some(made[0].1.as_str()));
+        assert_eq!(made[2].3.as_deref(), Some(made[1].1.as_str()));
+        assert_eq!(leaf, made[2].1);
+        assert_eq!(f.shelf_map.len(), 3);
+
+        // The second file reuses every rung it shares with the first: a rescan
+        // never mints a second shelf for a subfolder, and mints only the rung
+        // that is genuinely new.
+        made.clear();
+        let again = f.shelf_chain_for(
+            "scifi/deep",
+            |_| {
+                seq += 1;
+                format!("s{seq}")
+            },
+            |rung| rung.to_string(),
+            |rung, id, name, parent| made.push((rung.to_string(), id.to_string(), name, parent)),
+        );
+        assert_eq!(again, leaf);
+        assert!(made.is_empty(), "no rung was minted, so none was reported");
+
+        let sibling = f.shelf_chain_for(
+            "scifi/deep/er",
+            |_| {
+                seq += 1;
+                format!("s{seq}")
+            },
+            |rung| rung.to_string(),
+            |rung, id, name, parent| made.push((rung.to_string(), id.to_string(), name, parent)),
+        );
+        assert_eq!(made.len(), 1, "only the new leaf");
+        assert_eq!(made[0].3.as_deref(), Some(leaf.as_str()));
+        assert_ne!(sibling, leaf);
     }
 
     #[test]

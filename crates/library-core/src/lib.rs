@@ -61,7 +61,7 @@ pub use ledger::{
 pub use scan::{FoundFile, admits};
 pub use shelf::{ALL_SHELF, Shelf, ShelfKind, ancestors, can_nest, children_of, shelf_add};
 pub use sort::{SortKey, sort_books};
-pub use text::{human_age, human_size};
+pub use text::{human_age, human_size, plural};
 pub use view::{CoverFit, LibraryLayout, LibraryView};
 pub use wire::{
     Cover, GlossRow, ImportPhase, ImportProgress, LibrarySnapshot, PathCheck, SearchHit,

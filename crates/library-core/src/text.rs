@@ -1,10 +1,11 @@
-//! The two numbers the library shows as words: how big a file is, and how long
-//! ago something happened.
+//! The numbers the library shows as words: how big a file is, how long ago
+//! something happened, and how many of a thing there are.
 //!
-//! Both live here rather than in a view because both are rules rather than
-//! presentation — "12.4 MB" and "3 days ago" are answers a test can hold to
-//! account, and a restore row that said "12 MB" while the modal said "12.4 MB"
-//! would be two components disagreeing about one file.
+//! All three live here rather than in a view because all three are rules
+//! rather than presentation — "12.4 MB", "3 days ago" and "3 books" are
+//! answers a test can hold to account, and a restore row that said "12 MB"
+//! while the modal said "12.4 MB" would be two components disagreeing about
+//! one file.
 
 /// A byte count as a reader would say it.
 ///
@@ -50,28 +51,38 @@ pub fn human_age(then_ms: u64, now_ms: u64) -> String {
         return "just now".to_string();
     }
     if elapsed < HOUR {
-        return plural(elapsed / MINUTE, "minute");
+        return ago(elapsed / MINUTE, "minute", "minutes");
     }
     if elapsed < DAY {
-        return plural(elapsed / HOUR, "hour");
+        return ago(elapsed / HOUR, "hour", "hours");
     }
     if elapsed < WEEK {
-        return plural(elapsed / DAY, "day");
+        return ago(elapsed / DAY, "day", "days");
     }
-    plural(elapsed / WEEK, "week")
+    ago(elapsed / WEEK, "week", "weeks")
 }
 
-fn plural(count: u64, unit: &str) -> String {
+fn ago(count: u64, one: &str, many: &str) -> String {
+    format!("{} ago", plural(count as usize, one, many))
+}
+
+/// A count as a reader would say it: "1 book", "3 books".
+///
+/// One rule rather than a `match` per sentence, because the shelf says this in
+/// a folder's summary line, in the removal receipt, in the import dock's
+/// headline and in the search bar's promise — and the singular of "shelves" is
+/// easy to get wrong once and never notice.
+pub fn plural(count: usize, one: &str, many: &str) -> String {
     if count == 1 {
-        format!("1 {unit} ago")
+        format!("1 {one}")
     } else {
-        format!("{count} {unit}s ago")
+        format!("{count} {many}")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{human_age, human_size};
+    use super::{human_age, human_size, plural};
 
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
@@ -124,6 +135,16 @@ mod tests {
         assert_eq!(human_age(now - 6 * 24 * 60 * minute, now), "6 days ago");
         assert_eq!(human_age(now - 7 * 24 * 60 * minute, now), "1 week ago");
         assert_eq!(human_age(now - 21 * 24 * 60 * minute, now), "3 weeks ago");
+    }
+
+    #[test]
+    fn a_count_reads_as_one_thing_or_many() {
+        assert_eq!(plural(1, "book", "books"), "1 book");
+        assert_eq!(plural(3, "book", "books"), "3 books");
+        assert_eq!(plural(0, "shelf", "shelves"), "0 shelves");
+        // The irregular plural is the caller's to spell, which is the whole of
+        // why the rule takes both words.
+        assert_eq!(plural(2, "shelf", "shelves"), "2 shelves");
     }
 
     #[test]

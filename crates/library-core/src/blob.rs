@@ -48,12 +48,7 @@ pub struct LibraryBlob {
 }
 
 impl LibraryBlob {
-    /// An empty library with the default view.
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
-    /// Whether there is anything to show. What the page's empty state asks.
+    /// Whether the blob holds any books at all.
     pub fn is_empty(&self) -> bool {
         self.books.is_empty()
     }
@@ -207,7 +202,7 @@ mod tests {
 
     #[test]
     fn an_empty_library_is_the_default_one() {
-        let blob = LibraryBlob::empty();
+        let blob = LibraryBlob::default();
         assert!(blob.is_empty());
         assert!(blob.shelves.is_empty() && blob.folders.is_empty());
         assert_eq!(blob.view, LibraryView::default());

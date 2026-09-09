@@ -42,7 +42,8 @@ impl FoundFile {
     }
 
     /// The subfolder this file sits in, relative to the watched root — `""` at
-    /// the root. The key [`crate::folder::shelf_for`] maps to a shelf.
+    /// the root. The key [`crate::folder::WatchedFolder::shelf_key`] hands to
+    /// the shelf chain a file is placed on.
     pub fn subfolder(&self) -> &str {
         match self.rel.rsplit_once('/') {
             Some((dir, _)) => dir,
@@ -72,16 +73,6 @@ pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
     let selected = opts.formats.contains(&fmt);
     let wanted = if opts.include_selected { selected } else { !selected };
     wanted && size > opts.min_size
-}
-
-/// [`admits`] over a whole walk, in the order the walk produced it. Order is
-/// kept because it becomes the order books are placed on a new shelf, and a
-/// walk is depth-first-alphabetical — which reads as the folder's own listing.
-pub fn admitted<'a>(opts: &FolderOpts, found: &'a [FoundFile]) -> Vec<&'a FoundFile> {
-    found
-        .iter()
-        .filter(|f| admits(opts, &f.ext, f.size))
-        .collect()
 }
 
 /// The formats a folder may select, straight out of the registry and in its
@@ -210,19 +201,6 @@ mod tests {
         let formats = selectable_formats();
         assert_eq!(formats.len(), SUPPORTED.len());
         assert_eq!(formats, vec![Format::Pdf, Format::Text, Format::Markdown]);
-    }
-
-    #[test]
-    fn a_walk_keeps_its_own_order_through_the_filter() {
-        let o = opts(&[Format::Pdf], true, 100);
-        let walk = vec![
-            found("/r/a.pdf", "a.pdf", 500),
-            found("/r/small.pdf", "small.pdf", 10),
-            found("/r/b.md", "b.md", 500),
-            found("/r/sub/c.pdf", "sub/c.pdf", 500),
-        ];
-        let kept: Vec<&str> = admitted(&o, &walk).iter().map(|f| f.rel.as_str()).collect();
-        assert_eq!(kept, vec!["a.pdf", "sub/c.pdf"]);
     }
 
     #[test]

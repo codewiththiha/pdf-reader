@@ -335,6 +335,10 @@ pub fn set_missing(conn: &Connection, id: &str, missing: bool) -> Result<bool, S
 /// Record a read: the resume point, the stamp, and a title or author that only ever
 /// fills a gap — so the name a document gave at first open survives every later
 /// resume, and a scan that knows neither cannot blank what an open learned.
+///
+/// The point goes in through the crate's own `ReadPoint::settled`, so no writer —
+/// this catalog or the frontend's book list — can hand the library a page of zero
+/// or a fraction past the end. One definition, in the crate that owns the type.
 pub fn touch_read(
     conn: &Connection,
     id: &str,
@@ -343,7 +347,7 @@ pub fn touch_read(
     point: ReadPoint,
     now_ms: u64,
 ) -> Result<bool, String> {
-    let point = settle(point);
+    let point = point.settled();
     let changed = conn
         .execute(
             "UPDATE books SET last_page = ?2, num_pages = ?3, fraction = ?4, last_read_ms = ?5, \
@@ -363,18 +367,6 @@ pub fn touch_read(
         )
         .map_err(|e| format!("could not record a read of {id}: {e}"))?;
     Ok(changed > 0)
-}
-
-/// The settled form of a resume point, so no writer can hand the catalog a page of
-/// zero or a fraction past the end. One definition, in the crate that owns the
-/// type, would be better still — but `ReadPoint`'s settle is private to it and the
-/// database is the layer that has to be right.
-fn settle(point: ReadPoint) -> ReadPoint {
-    ReadPoint {
-        page: point.page.max(1),
-        num_pages: point.num_pages,
-        fraction: point.fraction.filter(|f| (0.0..=1.0).contains(f)),
-    }
 }
 
 /// Rewrite the manual order from a list of ids. Positions are dense and start at

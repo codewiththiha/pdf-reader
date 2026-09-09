@@ -3,17 +3,55 @@
 //! An id is the drag payload, the shelf member and the row a relink writes
 //! back to, so it has to be stable across sessions and unique across a library
 //! — but it never has to be unpredictable, sortable across machines, or
-//! anything else a ULID crate would sell. A timestamp plus the position the
-//! book was minted at is all the guarantee the library needs, and it keeps the
-//! wasm bundle free of a dependency whose only job here is to look random.
+//! anything else a ULID crate would sell. A timestamp plus a counter is all
+//! the guarantee the library needs, and it keeps the wasm bundle free of a
+//! dependency whose only job here is to look random.
+//!
+//! The counter is the crate's own ([`next_id`] and its siblings) rather than
+//! the caller's, and that is a correctness rule rather than a convenience:
+//! two folder imports run concurrently (every watched folder rescans on one
+//! focus), and a seq derived from the length of a list each task snapshotted
+//! BEFORE its own walk is the same number minted twice in the same
+//! millisecond — two different books wearing one id, which the next load's
+//! sanitize resolves by dropping one of them.
+
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// The process's own minting counter. Relaxed ordering: the webview is
+/// single-threaded, so this only has to hand out distinct numbers, never
+/// synchronise anything.
+static SEQ: AtomicU32 = AtomicU32::new(0);
+
+fn next_seq() -> u32 {
+    SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
+/// A fresh book id, minted from the crate's own counter. This is the id every
+/// joining book gets — a scan, a drop, a restore, a hand-open.
+pub fn next_id(now_ms: u64) -> String {
+    new_id(now_ms, next_seq())
+}
+
+/// A fresh shelf id, off the same counter as [`next_id`]: one sequence across
+/// the three kinds is one less thing two mints can disagree about.
+pub fn next_shelf_id(now_ms: u64) -> String {
+    new_shelf_id(now_ms, next_seq())
+}
+
+/// A fresh watched-folder id, off the same counter.
+pub fn next_folder_id(now_ms: u64) -> String {
+    new_folder_id(now_ms, next_seq())
+}
 
 /// A fresh id: the millisecond it was minted at, plus a per-millisecond
 /// counter so two books imported in the same tick differ.
 ///
-/// `seq` is the caller's own counter — the length of the list the book is
-/// joining is enough, since a scan mints in order and a millisecond holds at
-/// most a few thousand files. Rendered in lower-case hex, which is 11 + 4
-/// characters and reads as an opaque token in a shelf member list.
+/// The explicit-seq form, for the one mint that is deliberately deterministic:
+/// the `v1` migration ([`crate::blob::migrate_v1`]), which numbers a list it
+/// is handed in one pass and must produce the same ids if it ever runs twice
+/// over the same legacy blob. Everything else mints through [`next_id`].
+/// Rendered in lower-case hex, which is 11 + 4 characters and reads as an
+/// opaque token in a shelf member list.
 pub fn new_id(now_ms: u64, seq: u32) -> String {
     format!("b{now_ms:011x}{seq:04x}")
 }
@@ -37,6 +75,18 @@ mod tests {
     fn ids_from_one_tick_still_differ() {
         assert_ne!(new_id(1, 0), new_id(1, 1));
         assert_ne!(new_id(1, 0), new_id(2, 0));
+    }
+
+    #[test]
+    fn two_mints_in_one_tick_never_share_an_id() {
+        // Two import tasks finishing their walks in the same millisecond: the
+        // counter is the crate's, so the second mint differs from the first
+        // and no caller has to know what the other one minted.
+        let now = 1_700_000_000_000;
+        let mut all = vec![next_id(now), next_id(now), next_shelf_id(now), next_folder_id(now)];
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len(), 4);
     }
 
     #[test]
