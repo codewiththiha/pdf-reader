@@ -564,8 +564,69 @@ which is the rule that makes a bulk move one gesture. The visible half of that i
 card and a ghost of their covers — four tiles at most, fanned, with a count badge for the rest — drawn
 by `features::library::dnd::layer` above the content and below the sheets.
 
-Resting over a book while holding two or more items arms a fold after 650ms, and the drag's ghost
-becomes a folder card's own plate filling in: one lit cell per item the new shelf would hold and a `+`
-in the next. The dwell is longer than the hold that starts a selection on purpose — a reader crossing
-a shelf rests over cards, and a fold that armed at the hold's tuning would offer a new shelf on every
-drag that happened to slow down.
+Two dwells hang off the same target change, and they are NOT the same question at two depths — the
+difference is the whole of the design. The sink belongs to the title bar alone: at 420ms over a crumb,
+the ghost stops following the pointer and sits at a third of its size on that crumb's centre. A crumb
+is the one target on the page smaller than the ghost hovering it, so it is the one place where a
+full-size ghost covers the thing being aimed at — the name of the level the held items are about to go
+to. The shrink is also the only thing that CAN keep it readable, and that is not a stylistic
+preference: the bar and the fold menu are both in a lower lane than the drag overlay, so no z-step
+puts the ghost behind a crumb without putting it behind the whole shelf. A third-size plate needs no
+lane; it simply stops covering the label.
+
+Nothing on the shelf itself sinks. A folder card does not need to: it already wears the loudest marker
+in the shelf's vocabulary — the accent ring, the halo and the plate lifting — so a shrink on top of
+that is a second, slower answer to a question the ring answered on the frame the pointer arrived, and
+it takes the covers away from a reader at the moment they are checking what they are holding. A book
+is not a container at all: it is a position, which the insertion line beside it already draws, or a
+fold partner, which the plate draws instead of the ghost. And the level's empty space has a box the
+size of the scroll container, so its centre is the middle of the screen — sinking there is the ghost
+leaving the reader's hand for a place they are not pointing at.
+
+At 650ms a hot book arms a fold and the ghost becomes a folder card's own plate filling in — one lit
+cell per item the new shelf would hold and a `+` in the next — which outranks the sink, because a
+plate shrunk to a third of itself inside the card it is offering to replace is a plate nobody can
+read. The dwell is longer than the hold that starts a selection on purpose: a reader crossing a shelf
+rests over cards, and a fold that armed at the hold's tuning would offer a new shelf on every drag
+that happened to slow down.
+
+A sunk drag is a parked drag, and it is charged for nothing. The sink caches the crumb's box with the
+spot, and while the pointer stays inside that box a `pointermove` does one comparison and returns:
+no `getBoundingClientRect` per registered target, no signal write, no re-render. The cache is what
+makes parking free and it is stale under a scroll, which is the same promise the captured spot
+already makes — a sunk ghost says the pointer has stopped moving.
+
+The transition is the sunk state and nothing else, on one signal rather than two. A `left`/`top`
+transition left on for the follow would put every frame of it 200ms behind the hand AND cost a layout
+per frame, which is the one thing a drag must not spend; a second "is animating" flag kept alive for a
+grace beat after the sink lifts is exactly that, held for one beat too long. So the class comes off on
+the same frame the sink lifts and the follow resumes 1:1, while the grow-back stays soft on transform
+and opacity alone, which the compositor runs without touching layout. Both collapse under the app's
+two motion nets, so a reader who asked for no motion gets a ghost that lands in one step rather than
+gliding there.
+
+### A bar that can go deep
+
+A chain of levels has no end and a title bar does, so `features::library::breadcrumb` keeps four
+crumbs and folds the rest into a menu hung off the oldest one kept. The arrow sits on the crumb that
+carries the fold and nowhere else, so a shallow chain has no affordance it does not need. The menu is
+the `MenuPopover` every other anchored menu in the app uses — which matters more than it looks,
+because that primitive is the one place that knows the glass toolbar row's `backdrop-filter` makes it
+a containing block for `position: fixed`, and a hand-rolled panel anchored in the bar would be
+positioned against the row and not the viewport.
+
+It opens on hover and closes one beat after the pointer leaves, because a click is already taken by
+the crumb it lands on. The beat is owned by an effect on "is the pointer over it" rather than by a
+parked timer, so arming and cancelling the close are the same write and there is exactly one timer.
+
+Every crumb and every folded row is a drop target, which is the only way to reach a deep level with a
+hand full of books — and the reason the menu has to be openable DURING a drag. A drag cannot raise a
+`mouseenter`: the card the press began on holds the pointer capture, and a captured pointer reports
+its boundary events to the capture target alone. So while a drag is live the trigger opens from the
+session's hot target instead, which is the same geometry the drop is decided by and the one thing
+under a capture that still tells the truth.
+
+The current shelf's crumb used to carry the rename and remove popover, and that popover is now parked
+behind `SHOW_SHELF_CRUMB_MENU` while the crumb's shapes settle. It is parked rather than deleted for a
+reason that is not sentimental: `services::library::rename_shelf` has no other caller, and a service
+nothing calls is a service the next cleanup deletes.

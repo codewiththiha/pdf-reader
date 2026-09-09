@@ -321,6 +321,16 @@ the filesystem.
   folded into a new shelf by resting over a book for a moment — which is a gesture the browser's
   drag cannot report, because it never says how long a hover lasted. Escape puts everything back,
   and a card that fades while held always fades back.
+- **Resting on a crumb says so.** A crumb is the one place on the page smaller than the ghost
+  hovering it, so it is the one place the ghost shrinks: hold a drag still over a breadcrumb crumb for
+  420ms and it sits at a third of its size on the crumb's centre, leaving the name of the level you
+  are about to file onto readable instead of covered. Nothing on the shelf itself sinks — a folder
+  card already wears the loudest marker the shelf has, and a book is a position rather than a
+  container, so it answers at once with the insertion line and, after 650ms of resting with two or
+  more items held, with the folder card's own plate filling in, one cell per item the new shelf would
+  hold. While the ghost is parked a move costs one comparison against a cached box, and the
+  transition that glides it in is the parked state itself, so the follow resumes exactly under the
+  hand on the first move out.
 - **The view is a set of knobs, not a set of modes.** Grid or list, Auto or two to ten columns,
   covers fitted to their own aspect ratio or cropped to A4, and a sort by manual order, title,
   author, date added or last read. Titles sort with their volume numbers as numbers, so "Volume 2"
@@ -328,11 +338,19 @@ the filesystem.
 - **A missing book stays on the shelf.** An address that stops resolving is a badge and a Relink
   affordance, never a silent removal: the row keeps its resume point and every shelf it is on, so
   finding the file again puts you back on the page you were on.
-- **Shelves you make yourself.** The view menu's *New shelf* row creates one and drills into it, and
-  the breadcrumb's shelf crumb is its handle: *Rename…* swaps the crumb for a field in place, and
-  *Remove shelf* takes the shelf apart while every book on it stays in the library. Removing is only
-  offered for a shelf you made — a folder's shelf comes from its tree, so removing that one would be
-  undone by the next file that lands in it.
+- **Shelves you make yourself.** The view menu's *New shelf* row creates one and drills into it.
+  Taking a shelf apart is the selection bar's receipt: select the folder and *Remove* itemises what
+  survives it — every book stays in the library, the shelves inside it move up a level, and a shelf
+  cut from a watched folder says the folder keeps watching.
+  The crumb's own *Rename…* / *Remove shelf* popover is written and parked behind
+  `SHOW_SHELF_CRUMB_MENU` in `src/features/library/breadcrumb.rs` while the bar's crumb shapes
+  settle; flipping that one constant restores it, and until then renaming a shelf is not reachable
+  from the UI.
+- **The breadcrumb keeps four crumbs and folds the rest.** A chain has no end and a title bar does,
+  so past four levels the oldest crumbs fold into a menu hung off the oldest one still shown — opened
+  by hovering it, closed one beat after the pointer leaves, and the same width whatever shelf you are
+  in so it never moves under the pointer. Every crumb and every folded row is a drop target, which is
+  what makes a deep level reachable with a hand full of books.
 - **Removing a book shows you the receipt first.** The sheet itemises what goes with it — the resume
   point, the highlights, the cached cover, every shelf it was filed on — and leaves out the rows for
   things the book does not have. For a book the app copied there is a switch for the copy, on by
@@ -568,8 +586,9 @@ src/
                           and the folder cards a shelf nests in, the two ways in
                           (add card, empty state) and the sheet they open, the
                           import dock, and the drag both views share (the
-                          session, its targets, the table that decides what a
-                          drop means, and the layer that draws it)
+                          session and its sink, the targets, the table that
+                          decides what a drop means, and the layer that
+                          draws it)
     reader/               the reader page and its two virtualizers
   state/                  the reactive state tree: app (chrome + UI), reader
                           (document, viewer, zoom, search, gloss, AI selection),

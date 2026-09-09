@@ -21,7 +21,8 @@
 //!     is under the pointer, how long it has been there) → what a release means.
 //!   * [`commit`] — the only place a decision touches library state, through the
 //!     services a menu-driven move uses.
-//!   * [`layer`] — the overlay that carries the held covers and the fold preview.
+//!   * [`layer`] — the overlay that carries the held covers, sinks into the
+//!     title-bar crumb it is resting on, and draws the fold preview.
 //!
 //! The press itself stays with
 //! `crate::components::primitives::interactions::draggable_item`, which is what
@@ -46,3 +47,16 @@ pub mod target;
 /// cards, and a fold that armed at the hold's tuning would offer a new shelf on
 /// every drag that happened to slow down over a second book.
 pub const FOLD_DWELL_MS: i32 = 650;
+
+/// How long the pointer must rest on a title-bar crumb before the held ghost
+/// sinks into it. The crumb is the only target that gets this, and the reason is
+/// size: it is the one place on the page smaller than the ghost hovering it, so it
+/// is the one place where a full-size ghost hides the thing being aimed at.
+/// `crate::features::library::dnd::controller` gives the whole argument.
+///
+/// Shorter than [`FOLD_DWELL_MS`] and deliberately so: the two are answers to
+/// different questions and the reader asks them in order. "Is this where it
+/// lands" comes first and is answered by the sink; "release to make a shelf of
+/// these" is the second, rarer question, and offering it at the same moment would
+/// put two answers on the screen at once.
+pub const SINK_DWELL_MS: i32 = 420;

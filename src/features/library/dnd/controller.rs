@@ -30,7 +30,7 @@ use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
 
 use super::effect::{DropEffect, DropQuery, FoldPreview, drop_effect, fold_items, fold_preview};
 use super::target::{DropTargetId, DropTargetKind, DropTargetRegistry};
-use super::{FOLD_DWELL_MS, commit};
+use super::{FOLD_DWELL_MS, SINK_DWELL_MS, commit};
 use crate::features::library::selection::exit_selection;
 use crate::state::AppState;
 
@@ -78,6 +78,19 @@ pub struct GhostTile {
     pub folder: bool,
 }
 
+/// Where a sunk ghost sits: the centre of the target it is sinking into, in
+/// viewport coordinates.
+///
+/// Captured once, when the dwell runs out, rather than read per frame. A sunk
+/// ghost is a promise that the pointer has stopped moving — the reader is
+/// deciding, not dragging — so the target's box is not changing either, and a
+/// layout read on every animation frame would be a read nobody asked for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SinkSpot {
+    pub x: f64,
+    pub y: f64,
+}
+
 /// The library page's drag session.
 #[derive(Clone, Copy)]
 pub struct DragController {
@@ -98,6 +111,23 @@ pub struct DragController {
     effect: RwSignal<Option<DropEffect>>,
     /// The fold brewing under the pointer, if one is.
     fold: RwSignal<Option<FoldPreview>>,
+    /// Where the ghost has sunk to, while it has. `None` is the ghost following
+    /// the pointer, which is where it lives most of a drag — and the one fact the
+    /// layer's whole appearance is derived from, its transition included, so there
+    /// is no second signal free to disagree about whether the ghost is parked or
+    /// following.
+    sink: RwSignal<Option<SinkSpot>>,
+    /// The sunk target's box as `(left, top, right, bottom)`, cached when the sink
+    /// armed. While parked this is the ONLY thing a pointermove is tested against:
+    /// no DOM measurement, no signal write, no re-render, until the pointer leaves
+    /// the target it is sunk in. A held pointer on a crumb costs one comparison
+    /// per move instead of a `getBoundingClientRect` for every target on the shelf.
+    ///
+    /// A cache and not a live read, which makes it stale under a scroll — the same
+    /// promise [`SinkSpot`] already makes. A sunk ghost says the pointer has
+    /// stopped; a reader scrolling the shelf under a parked drag is asking
+    /// something else, and the first move out of the cached box resumes the follow.
+    sink_rect: RwSignal<Option<(f64, f64, f64, f64)>>,
     /// Whether the dwell over the hot target has run out.
     dwell: RwSignal<bool>,
     /// The target the dwell is counting against. Separate from [`Self::hot`]
@@ -121,6 +151,8 @@ impl DragController {
             hot: RwSignal::new(None),
             effect: RwSignal::new(None),
             fold: RwSignal::new(None),
+            sink: RwSignal::new(None),
+            sink_rect: RwSignal::new(None),
             dwell: RwSignal::new(false),
             dwell_target: RwSignal::new(None),
             registry: DropTargetRegistry::new(),
@@ -128,7 +160,7 @@ impl DragController {
         };
         provide_context(this);
         this.bind_session();
-        this.bind_dwell();
+        this.bind_dwells();
         this.bind_escape();
         this
     }
@@ -164,23 +196,80 @@ impl DragController {
         });
     }
 
-    /// The fold's dwell: one timer, owned by an effect on the target it counts
-    /// against, so moving to another card clears it and so does the drag ending.
+    /// The two dwells: one timer each, both owned by an effect on the target they
+    /// count against, so moving to another target clears them and so does the drag
+    /// ending.
     ///
-    /// Only a book brews a fold. A folder under the pointer is already a shelf,
-    /// and offering to make a second one out of what is held and the first would
-    /// be an offer with nothing in it.
-    fn bind_dwell(&self) {
+    /// They are not one question at two depths, and the difference is the point.
+    /// The sink belongs to the TITLE BAR alone: a crumb is the one target on the
+    /// page smaller than the ghost that hovers it, so a ghost at full size over a
+    /// crumb covers the only thing the reader is aiming at — the name of the level
+    /// the held items are about to go to. Shrinking to a third of its size on the
+    /// crumb's centre is what leaves that name sticking out on both sides, and it
+    /// is a picture of the drop, because a crumb IS the place things go into.
+    ///
+    /// Nothing on the shelf itself sinks. A folder card does not need it: it is
+    /// nine and a half remits across and it already wears the loudest marker in
+    /// the shelf's vocabulary — the accent ring, the halo and the plate lifting
+    /// (`folder-drag-over`) — so a shrink on top of that is a second, slower answer
+    /// to a question the ring answered on the frame the pointer arrived, and it
+    /// takes the covers away from a reader at the moment they are checking what
+    /// they are holding. A book is not a container at all: it is a position, which
+    /// the insertion line beside it already draws, or a fold partner, which the
+    /// plate draws instead of the ghost. And the level's empty space has a box the
+    /// size of the scroll container, so its centre is the middle of the screen —
+    /// sinking there is the ghost leaving the reader's hand for a place they are
+    /// not pointing at.
+    fn bind_dwells(&self) {
         let this = *self;
         Effect::new(move |_| {
             let Some(target) = this.dwell_target.get() else {
                 return;
             };
+            // A crumb that would refuse the drag wears no highlight, so it must
+            // not wear a ghost either: the two are the same promise. (No crumb
+            // refuses today — filing onto a level accepts anything — but the sink
+            // reads the answer rather than assuming it, so a refusal added to the
+            // table is a refusal the ghost honours without anybody remembering.)
+            let sinkable = target.0 == DropTargetKind::Shelf
+                && this.effect.get_untracked().as_ref() != Some(&DropEffect::Refused);
+            if sinkable
+                && let Some(rect) = this.registry.rect_of(&target)
+            {
+                let spot = SinkSpot {
+                    x: rect.left() + rect.width() / 2.0,
+                    y: rect.top() + rect.height() / 2.0,
+                };
+                let bounds = (rect.left(), rect.top(), rect.right(), rect.bottom());
+                let still = target.clone();
+                // A timer that would not schedule costs the sink and nothing else,
+                // so the fold below is armed either way.
+                if let Ok(sunk) = set_timeout_with_handle(
+                    move || {
+                        // Still the same target: the effect's own cleanup clears
+                        // this timer when the target changes, and a timer that
+                        // fired anyway would sink the ghost into a box the pointer
+                        // has already left.
+                        if this.dwell_target.get_untracked().as_ref() != Some(&still) {
+                            return;
+                        }
+                        this.sink.set(Some(spot));
+                        this.sink_rect.set(Some(bounds));
+                    },
+                    Duration::from_millis(SINK_DWELL_MS as u64),
+                ) {
+                    on_cleanup(move || sunk.clear());
+                }
+            }
             if target.0 != DropTargetKind::Book {
                 return;
             }
-            let Ok(handle) = set_timeout_with_handle(
+            let still = target;
+            let Ok(folded) = set_timeout_with_handle(
                 move || {
+                    if this.dwell_target.get_untracked().as_ref() != Some(&still) {
+                        return;
+                    }
                     this.dwell.set(true);
                     this.refresh();
                 },
@@ -188,7 +277,7 @@ impl DragController {
             ) else {
                 return;
             };
-            on_cleanup(move || handle.clear());
+            on_cleanup(move || folded.clear());
         });
     }
 
@@ -283,6 +372,11 @@ impl DragController {
         self.fold.into()
     }
 
+    /// Where the ghost has sunk to, or `None` while it follows the pointer.
+    pub fn sink(&self) -> Signal<Option<SinkSpot>> {
+        self.sink.into()
+    }
+
     /// Whether `id` is one of the items being held. What every held card fades
     /// on, which is the visible half of a multi-drag: the set the reader picked
     /// up stays readable as a set while the pointer carries it.
@@ -370,17 +464,50 @@ impl DragController {
 
     /// Move the pointer, and with it the answer to "what would a release mean".
     fn on_move(&self, x: f64, y: f64) {
+        // Parked on a crumb: the ghost is reading the target, not the hand.
+        // One cached rect test and a return — no measurement, no signal write, no
+        // re-render — so a held pointer on a crumb costs nothing per move. And
+        // the first move that LEAVES the box is the first one the follow resumes
+        // on: the sink lifts, the layer's transition lifts with it because the two
+        // are the same signal, and the ghost is back under the cursor with nothing
+        // trailing behind it.
+        if let Some((left, top, right, bottom)) = self.sink_rect.get_untracked() {
+            if x >= left && x <= right && y >= top && y <= bottom {
+                return;
+            }
+            // Out of the box that was cached, so follow the hand again even when
+            // the target underneath turns out to be the same one. A cached box can
+            // go stale without the target changing — a wheel scroll mid-drag, or a
+            // level re-laying itself out under an import — and a stale box is not
+            // a place to stay parked. What is NOT worth doing here is re-arming the
+            // dwell on a target the pointer never left: the drop itself is decided
+            // by the fresh hit-test in [`DragController::release`], so a ghost that
+            // follows the hand instead of re-parking costs a picture and never a
+            // move.
+            self.release_sink();
+        }
         self.pointer.set((x, y));
         let next = self.registry.hit_test(x, y);
         if next == self.hot.get_untracked() {
             return;
         }
         self.hot.set(next.clone());
-        // A new target starts its dwell from nothing, and the fold that was
-        // brewing over the last one goes with it.
+        // A new target starts both dwells from nothing, and the fold that was
+        // brewing over the last one goes with it. The sink and the box it cached go
+        // too: a ghost left sunk in a box the pointer has abandoned is a ghost
+        // parked in mid-air.
         self.dwell.set(false);
+        self.release_sink();
         self.dwell_target.set(next);
         self.refresh();
+    }
+
+    /// Lift the sink, in one place. The spot and the box it was cached from are one
+    /// fact, and clearing them apart would leave the fast path above testing a box
+    /// that nothing is sunk in — which is a drag that stops following the pointer.
+    fn release_sink(&self) {
+        self.sink.set(None);
+        self.sink_rect.set(None);
     }
 
     /// Re-answer "what would a release mean" from where the pointer is now.
@@ -421,6 +548,14 @@ impl DragController {
             }
             _ => None,
         });
+        // A brewing fold outranks the sink. The two are the same gesture at two
+        // depths — "it lands here", then "it becomes a shelf here" — and the
+        // second one is drawn as a plate the reader has to be able to read: a
+        // plate shrunk to a third of itself inside the card it is offering to
+        // replace is a plate that says nothing.
+        if self.fold.get_untracked().is_some() {
+            self.release_sink();
+        }
         self.effect.set(Some(effect));
     }
 
@@ -464,6 +599,7 @@ impl DragController {
         self.hot.set(None);
         self.dwell.set(false);
         self.dwell_target.set(None);
+        self.release_sink();
         self.clear_answer();
         if applied && self.state.library.selecting.get_untracked() {
             exit_selection(self.state);

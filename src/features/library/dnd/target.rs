@@ -55,6 +55,14 @@ pub struct DropTargetEntry {
     pub dom_id: String,
 }
 
+/// One registration: a target, and the token that says WHICH registration of it
+/// this is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Registered {
+    token: u64,
+    entry: DropTargetEntry,
+}
+
 /// Every target on the library page, in the order they registered.
 ///
 /// One per page and shared by every card, the way the single drop-target signal
@@ -62,33 +70,46 @@ pub struct DropTargetEntry {
 /// about any other for that to hold.
 #[derive(Clone, Copy)]
 pub struct DropTargetRegistry {
-    entries: RwSignal<Vec<DropTargetEntry>>,
+    entries: RwSignal<Vec<Registered>>,
+    /// The next registration token. Not a count of the entries: it has to keep
+    /// rising across a level the reader drilled out of and back into.
+    tokens: RwSignal<u64>,
 }
 
 impl DropTargetRegistry {
     pub fn new() -> Self {
         Self {
             entries: RwSignal::new(Vec::new()),
+            tokens: RwSignal::new(0),
         }
     }
 
     /// Add a target for the life of the owner that asks.
     ///
     /// The cleanup is the reason this is a method and not a write to a signal: a
-    /// card that unmounted without leaving the registry would keep a dead id in
-    /// it forever, and a shelf the reader drilled through twenty times would be
+    /// card that unmounted without leaving the registry would keep a dead id in it
+    /// forever, and a shelf the reader drilled through twenty times would be
     /// hit-tested against twenty levels of ghosts.
+    ///
+    /// The cleanup removes THIS registration by token and not the target by id,
+    /// because the two are not the same thing. A crumb is re-created whenever the
+    /// chain changes and a card whenever its level does, and the new one registers
+    /// the same id the old one is about to leave — so an unmount that removed by id
+    /// would take the replacement with it whenever the new owner is built before
+    /// the old one is disposed, and the target would silently stop being a target.
     pub fn register(&self, entry: DropTargetEntry) {
         let id = entry.id.clone();
+        self.tokens.update(|at| *at += 1);
+        let token = self.tokens.get_untracked();
         self.entries.update(|list| {
             // Replacing rather than refusing a duplicate: a card re-created under
             // the same key is the same target, and two entries for it would let
             // the older one win a hit-test after the newer one left.
-            list.retain(|each| each.id != id);
-            list.push(entry);
+            list.retain(|each| each.entry.id != id);
+            list.push(Registered { token, entry });
         });
         let entries = self.entries;
-        on_cleanup(move || entries.update(|list| list.retain(|each| each.id != id)));
+        on_cleanup(move || entries.update(|list| list.retain(|each| each.token != token)));
     }
 
     /// The topmost target under the pointer.
@@ -100,14 +121,29 @@ impl DropTargetRegistry {
     /// skipped rather than hit, because the element its id names is gone.
     pub fn hit_test(&self, x: f64, y: f64) -> Option<DropTargetId> {
         self.entries.with_untracked(|list| {
-            list.iter().rev().find_map(|entry| {
-                let rect = by_id(&entry.dom_id)?.get_bounding_client_rect();
+            list.iter().rev().find_map(|each| {
+                let rect = by_id(&each.entry.dom_id)?.get_bounding_client_rect();
                 let inside = x >= rect.left()
                     && x <= rect.right()
                     && y >= rect.top()
                     && y <= rect.bottom();
-                inside.then(|| entry.id.clone())
+                inside.then(|| each.entry.id.clone())
             })
+        })
+    }
+
+    /// The live box of one registered target.
+    ///
+    /// What the ghost's sink is aimed at: a sunk ghost sits at the CENTRE of the
+    /// thing it is landing on, and the centre has to be read rather than
+    /// remembered, because the shelf can scroll and a level can re-lay itself out
+    /// between the moment a drag starts and the moment it rests somewhere.
+    pub fn rect_of(&self, id: &DropTargetId) -> Option<web_sys::DomRect> {
+        self.entries.with_untracked(|list| {
+            list.iter()
+                .find(|each| &each.entry.id == id)
+                .and_then(|each| by_id(&each.entry.dom_id))
+                .map(|node| node.get_bounding_client_rect())
         })
     }
 }
