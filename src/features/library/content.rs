@@ -32,6 +32,7 @@ use crate::features::library::empty_state::EmptyState;
 use crate::features::library::grid::GridView;
 use crate::features::library::list::ListView;
 use crate::features::library::selection::{LibrarySelectBar, use_select_mode};
+use crate::services::library::backfill_missing;
 use crate::state::AppState;
 
 /// How long a revealed card stays lit. Long enough to find with the eye after the
@@ -194,6 +195,14 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     let folders = Signal::derive(move || visible_folders(state));
     provide_context(FolderOrder(folders));
     provide_context(DropTarget(RwSignal::new(None)));
+    // The shelf asks for the covers it is missing whenever it is looked at. The
+    // queue already skips what it has, so this reads as a question rather than a
+    // command, and a render that failed for a second's reason — or a book that
+    // arrived while the queue was drained elsewhere — converges on the next
+    // visit instead of never. No tracked reads inside, so it asks once per mount.
+    Effect::new(move |_| {
+        backfill_missing(state);
+    });
     install_reveal(state);
     // The exit paths for a selection a card started: Escape, a click on empty
     // shelf, and leaving the page. Installed here rather than per card because

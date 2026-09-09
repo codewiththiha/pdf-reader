@@ -58,6 +58,9 @@ pub(crate) fn library_effects(state: AppState) {
     crate::services::tauri_listen("tauri://focus", move |ev: web_sys::Event| {
         if focused(&ev) {
             rescan_once(state);
+            // Coming back to the window is also the moment a cover that failed
+            // while the reader was away deserves another attempt.
+            backfill_missing(state);
         }
     });
 }

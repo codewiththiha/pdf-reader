@@ -1,5 +1,6 @@
-//! A shelf on the page, drawn as a folder: the first four covers inside it on a
-//! 2×2 plate, its name, and what it holds.
+//! A shelf on the page, drawn as a folder: a 2×2 plate of what is inside it —
+//! covers for its books and a plate of their own for its folders, recursively —
+//! then its name and what it holds.
 //!
 //! It replaces the shelf tile, which spanned the whole grid as a row of spines
 //! on a board. That shape could not nest — a row is a section, and a section
@@ -39,10 +40,17 @@ use crate::features::library::selection::{enter_selection, toggle_selected};
 use crate::services::library::{move_to_shelf, nest_shelf};
 use crate::state::AppState;
 
-/// How many covers the plate shows. Two by two: a folder is recognised by the
-/// art inside it, and past four cells the plate is a mosaic nobody reads — the
-/// line under the name is the answer to "how much".
+/// How many cells a plate has, and the most it fills. Two by two: a folder is
+/// recognised by what is inside it, and past four cells the plate is a mosaic
+/// nobody reads — the line under the name is the answer to "how much". Always
+/// four cells whatever the folder holds, so one book is one cover and three
+/// hatched quarters rather than one big rectangle that reads as a book card.
 const THUMB_CAP: usize = 4;
+
+/// The deepest plate the preview recurses to: the folder's own plate, the plates
+/// of the folders inside it, and the plates of the folders inside those. Deeper
+/// than that a cell is a few pixels across, and draws a folder glyph instead.
+const PLATE_DEPTH: usize = 2;
 
 #[component]
 pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
@@ -64,28 +72,6 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                 .find(|s| s.id == name_id)
                 .map(|s| s.name.clone())
                 .unwrap_or_default()
-        })
-    });
-
-    // The plate's covers: this shelf's members resolved against the library, cut
-    // at the cap. A member that names no book is skipped rather than drawn as a
-    // blank cell, so the plate shows the art that is actually there.
-    let thumb_id = id.clone();
-    let thumbs = Signal::derive(move || {
-        let members: Vec<String> = state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == thumb_id)
-                .map(|s| s.books.clone())
-                .unwrap_or_default()
-        });
-        state.library.books.with(|books| {
-            members
-                .iter()
-                .filter_map(|member| books.iter().find(|b| &b.id == member))
-                .take(THUMB_CAP)
-                .cloned()
-                .collect::<Vec<Book>>()
         })
     });
 
@@ -320,29 +306,8 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
                 }
             }
         >
-            <div
-                class="folder-thumb-grid"
-                class=("folder-thumb-single", move || counts.get().0 == 1)
-            >
-                {move || {
-                    let shown = thumbs.get();
-                    (0..THUMB_CAP)
-                        .map(|at| {
-                            match shown.get(at) {
-                                Some(book) => {
-                                    view! { <FolderThumb state=state book=book.clone() /> }
-                                        .into_any()
-                                }
-                                None => {
-                                    view! {
-                                        <span class="folder-thumb-cell folder-thumb-empty"></span>
-                                    }
-                                        .into_any()
-                                }
-                            }
-                        })
-                        .collect_view()
-                }}
+            <div class="folder-thumb-grid">
+                <Plate state=state shelf_id=id.clone() depth=0 />
                 {move || {
                     selecting.get().then(|| {
                         view! {
@@ -376,22 +341,129 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     }
 }
 
-/// One cell of the plate holding a book: the cached cover when there is one, and
-/// nothing — the cell's own hatched background — when there is not yet.
-///
-/// All four cells are drawn whatever the folder holds, so a folder of two books
-/// and a folder of four are the same shape on the shelf and the plate never
-/// reflows as books arrive. The exception is a folder of exactly one, where a
-/// quarter-sized cover is a thumbnail of a thumbnail: the empty cells go and the
-/// one book takes the plate, which is what `.folder-thumb-single` says in
-/// `styles/library.css`.
-#[component]
-fn FolderThumb(state: AppState, book: Book) -> impl IntoView {
-    let path = book.path().to_string();
-    let alt = book.title();
+/// What fills one cell of a plate: a folder, previewed as a plate of its own, or
+/// a book, previewed as its cover.
+#[derive(Clone)]
+enum PlateItem {
+    Folder(String),
+    Book(Book),
+}
 
+/// The first four things inside a shelf, in the order the grid would show them —
+/// folders first, then books — because a plate that disagreed with the page about
+/// what is inside the folder would be a preview of something else.
+///
+/// Books and folders share the four cells rather than each having their own four:
+/// a folder holding two folders and a book is three cells full and one empty,
+/// exactly as the reader will find it.
+fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
+    let (folders, members): (Vec<String>, Vec<String>) =
+        state.library.shelves.with(|shelves| {
+            (
+                children_of(shelves, Some(shelf_id))
+                    .iter()
+                    .map(|s| s.id.clone())
+                    .collect(),
+                shelves
+                    .iter()
+                    .find(|s| s.id == shelf_id)
+                    .map(|s| s.books.clone())
+                    .unwrap_or_default(),
+            )
+        });
+    let books: Vec<Book> = state.library.books.with(|books| {
+        members
+            .iter()
+            .filter_map(|member| books.iter().find(|b| &b.id == member).cloned())
+            .collect()
+    });
+    let mut out: Vec<PlateItem> = folders
+        .into_iter()
+        .map(PlateItem::Folder)
+        .chain(books.into_iter().map(PlateItem::Book))
+        .collect();
+    out.truncate(THUMB_CAP);
+    out
+}
+
+/// One folder's plate: four cells, filled in order, the rest empty.
+///
+/// Recursive on purpose. A cell that holds a folder holds that folder's OWN plate
+/// — a folder of three books previews as three covers and an empty cell, inside
+/// the cell that previews it — because "what is inside this folder" is the same
+/// question at every depth, and a preview that flattened the subtree would show
+/// covers the reader will not find where the preview put them.
+///
+/// The recursion stops at [`PLATE_DEPTH`]: a cell four plates deep is a few pixels
+/// of something, and below that a folder is drawn as a folder rather than as a
+/// smear. The tree is finite — `library_core::shelf::sanitize` sees to that — but
+/// four cells per level is four to the power of the depth, and a preview is not
+/// worth an exponent.
+#[component]
+fn Plate(state: AppState, shelf_id: String, depth: usize) -> impl IntoView {
+    let items = Signal::derive(move || plate_items(state, &shelf_id));
     view! {
-        <span class="folder-thumb-cell">
+        {move || {
+            let items = items.get();
+            (0..THUMB_CAP)
+                .map(|at| match items.get(at) {
+                    Some(PlateItem::Folder(id)) => {
+                        let id = id.clone();
+                        if depth < PLATE_DEPTH {
+                            // The inner grid is the cell's own: a plate is four
+                            // cells and nothing else, so a plate inside a cell
+                            // needs the container that makes four cells a plate.
+                            view! {
+                                <span class="folder-thumb-cell">
+                                    <span class="folder-thumb-grid">
+                                        <Plate state=state shelf_id=id depth=depth + 1 />
+                                    </span>
+                                </span>
+                            }
+                                .into_any()
+                        } else {
+                            view! {
+                                <span
+                                    class="folder-thumb-cell folder-thumb-deep"
+                                    title="A folder, deeper than a preview can show"
+                                >
+                                    <Icon name=IconName::Open size=12 />
+                                </span>
+                            }
+                                .into_any()
+                        }
+                    }
+                    Some(PlateItem::Book(book)) => {
+                        view! { <CoverCell state=state book=book.clone() /> }.into_any()
+                    }
+                    None => {
+                        view! { <span class="folder-thumb-cell folder-thumb-empty"></span> }
+                            .into_any()
+                    }
+                })
+                .collect_view()
+        }}
+    }
+}
+
+/// One cell holding a book: the cached cover when there is one, and the empty
+/// cell's hatch when there is not yet — a cover is rendered away from the reader,
+/// so "nothing cached yet" is a state the plate has to look deliberate in.
+#[component]
+fn CoverCell(state: AppState, book: Book) -> impl IntoView {
+    let path = book.path().to_string();
+    let empty_path = path.clone();
+    let alt = book.title();
+    view! {
+        <span
+            class="folder-thumb-cell"
+            class=("folder-thumb-empty", move || {
+                state
+                    .library
+                    .covers
+                    .with(|covers| !covers.contains_key(&empty_path))
+            })
+        >
             {move || {
                 match state
                     .library

@@ -447,6 +447,10 @@
   box-shadow: 0 0 0 2px var(--color-accent);
 }
 
+/* Layout only: the plate is recursive, so a cell that holds a folder holds
+   another one of these, and the shadow, the rounding and the hover lift belong
+   to the OUTERMOST plate — the ones below are scoped to the card's direct
+   child. A nested plate that lifted with the card would lift twice. */
 .folder-thumb-grid {
   position: relative;
   display: grid;
@@ -457,16 +461,32 @@
   overflow: hidden;
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-surface) 80%, var(--color-line));
+}
+.folder-card > .folder-thumb-grid {
   box-shadow:
     0 1px 3px rgb(0 0 0 / 0.10),
     0 5px 14px -4px rgb(0 0 0 / 0.28);
   transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
 }
-.folder-card:hover .folder-thumb-grid {
+.folder-card:hover > .folder-thumb-grid {
   transform: translateY(-3px);
   box-shadow:
     0 3px 6px rgb(0 0 0 / 0.12),
     0 12px 26px -8px rgb(0 0 0 / 0.38);
+}
+
+/* A cell holding a folder is that folder's own plate, edge to edge: the preview
+   answers "what is inside" the same way at every depth, so a folder of three
+   books previews as three covers and a hatched quarter inside the cell that
+   previews it. No rounding and no shadow of its own — the outer plate clips. */
+.folder-thumb-cell > .folder-thumb-grid {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+  /* A quarter of a quarter is small enough that the outer plate's gutters would
+     eat it; the deeper the plate, the tighter the joinery. */
+  gap: 1px;
 }
 
 .folder-thumb-cell {
@@ -495,16 +515,15 @@
     color-mix(in srgb, var(--color-surface) 70%, transparent);
 }
 
-/* One book is a cover, not a quarter of one: the empty cells go and the book
-   takes the plate. Driven by a class the card writes rather than by `:has()` on
-   the cell, because the card already knows the count and a selector that has to
-   look inside its own subtree to size itself is one more thing to get wrong. */
-.folder-thumb-single {
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
-}
-.folder-thumb-single .folder-thumb-empty {
-  display: none;
+/* A folder deeper than the preview recurses: a few pixels of something is a
+   smear, so it draws as what it is — a folder — on a quieter ground than the
+   hatched empty cell, because "there is more in here" and "there is nothing
+   here" are opposite sentences and must not share a pattern. */
+.folder-thumb-deep {
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+  background: color-mix(in srgb, var(--color-surface) 60%, var(--color-line));
 }
 
 /* The one marker a folder-derived shelf carries, over the plate's top-right:
@@ -526,7 +545,7 @@
    decides anything; selected is membership of the set; drag-over is the drop
    this folder is about to accept, and it is the loudest of the three because it
    is the one answer the reader is waiting for. --- */
-.folder-pressing .folder-thumb-grid {
+.folder-pressing > .folder-thumb-grid {
   transform: scale(0.97);
 }
 .folder-selected {
@@ -539,7 +558,7 @@
     0 0 0 2px var(--color-accent),
     0 0 0 6px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
-.folder-drag-over .folder-thumb-grid {
+.folder-drag-over > .folder-thumb-grid {
   transform: translateY(-3px);
 }
 .folder-dragging {

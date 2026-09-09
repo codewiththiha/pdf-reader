@@ -9,6 +9,11 @@
 //! on it, and a folder card's plate of four covers stayed empty for as long as its
 //! books stayed unopened.
 //!
+//! A render that fails gets one retry at the back of the queue, and the shelf
+//! re-asks for whatever it is missing every time the library page is looked at and
+//! every time the window regains focus — so a cover that failed for a second's
+//! reason converges on the next visit rather than staying an empty cell forever.
+//!
 //! The renders run ONE at a time, off a queue, for two reasons. A cover is a
 //! `getDocument` in a worker plus a canvas paint on the main thread, and an import
 //! of three hundred books firing three hundred of them at once is an import the
@@ -23,6 +28,7 @@
 //! their cover.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -51,6 +57,12 @@ thread_local! {
     /// store once, when it empties, and not at all when every render in the batch
     /// failed.
     static DIRTY: RefCell<bool> = const { RefCell::new(false) };
+    /// Paths whose render has already failed once and been re-queued. One retry
+    /// each: a cover can fail for a reason that is true for a second — a file
+    /// still being copied, a worker still warming up — and a preview that gave up
+    /// on the first shrug stays empty forever, but a queue that re-attempts a
+    /// genuinely unrenderable file forever is a queue that never drains.
+    static RETRIES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
 /// Queue a cover render for every PDF book the shelf has no cover for.
@@ -77,6 +89,9 @@ fn wanted(books: &[Book], covers: &CoverMap) -> Vec<String> {
 }
 
 pub fn backfill_missing(state: AppState) {
+    // A new ask is a new retry budget: whatever failed last time is worth one
+    // more attempt now, because the most likely reason it failed was timing.
+    RETRIES.with(|retries| retries.borrow_mut().clear());
     let wanted = state.library.books.with_untracked(|books| {
         state.library.covers.with_untracked(|covers| wanted(books, covers))
     });
@@ -164,8 +179,17 @@ fn drain(state: AppState) {
             .covers
             .with_untracked(|covers| covers.contains_key(&path));
         if !have {
-            if let Ok(cover) = engine::cover_data_url(&path, COVER_WIDTH).await {
-                file_cover(state, path, cover.data_url, cover.width, cover.height);
+            match engine::cover_data_url(&path, COVER_WIDTH).await {
+                Ok(cover) => {
+                    RETRIES.with(|retries| retries.borrow_mut().remove(&path));
+                    file_cover(state, path, cover.data_url, cover.width, cover.height);
+                }
+                Err(_) => {
+                    let first_failure = RETRIES.with(|retries| retries.borrow_mut().insert(path.clone()));
+                    if first_failure {
+                        QUEUE.with(|queue| queue.borrow_mut().push(path.clone()));
+                    }
+                }
             }
         }
         drain(state);
