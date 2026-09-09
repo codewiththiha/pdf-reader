@@ -13,11 +13,12 @@
 //! `library_core`, and the two are different facts about the same row (see
 //! [`Shelf::parent`]'s note on `ShelfKind::Folder`).
 //!
-//! Three gestures share the card and one wrapper decides between them — see
-//! `crate::components::primitives::interactions::draggable_item`. A tap opens
-//! the shelf, a hold starts a multi-select with this shelf already in it, and a
-//! movement hands the press to `crate::features::library::dnd`, which is what
-//! files a book dropped on it or nests a shelf dropped on it.
+//! Three gestures share the card and the shelf's one wiring decides between
+//! them — `crate::features::library::gestures`, on the
+//! `crate::components::primitives::interactions::draggable_item` wrapper. A tap
+//! opens the shelf, a hold starts a multi-select with this shelf already in it,
+//! and a movement hands the press to `crate::features::library::dnd`, which is
+//! what files a book dropped on it or nests a shelf dropped on it.
 //!
 //! The one card that does not drag is a shelf cut from a watched folder: its rung
 //! in the library is the rung its directory has on disk, re-hung on every scan, so
@@ -36,15 +37,12 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
 use library_core::shelf::{Shelf, children_of};
+use library_core::text::plural;
 
-use crate::components::primitives::interactions::draggable_item::{
-    DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
-};
-use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
-use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
+use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
 use crate::state::AppState;
 
 /// How many cells a plate has, and the most it fills. Two by two: a folder is
@@ -131,48 +129,44 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     });
 
     let selecting = state.library.selecting;
-    let selected_set = state.library.selected;
-    let selected_id = id.clone();
-    let is_selected = Signal::derive(move || selected_set.with(|s| s.contains(&selected_id)));
 
-    // One wrapper, three gestures, and the mode is decided once per press.
-    let hold_id = id.clone();
-    let tap_id = id.clone();
-    let lift_id = id.clone();
-    let item = use_draggable_item(DraggableItemOptions {
-        press_ms: SELECT_PRESS_MS,
-        drag_threshold_px: DRAG_THRESHOLD_PX,
-        // A shelf the disk places is not one the pointer gets to place. A set
-        // being selected is not a reason to refuse: lifting one of three held
-        // folders is the whole of what a multi-drag is.
-        draggable: Signal::derive(move || !disk_bound.get()),
-        // A hold inside a selection would be a second way to do the thing a tap
-        // now does.
-        selectable: Signal::derive(move || !selecting.get()),
-        on_tap: Callback::new(move |_| {
-            if selecting.get_untracked() {
-                toggle_selected(state, &tap_id);
-                return;
-            }
-            state.library.shelf.set(tap_id.clone());
-        }),
-        on_long_press: Callback::new(move |_| enter_selection(state, &hold_id)),
-        on_drag_start: Callback::new(move |(x, y)| {
-            drag.begin(payload_for(state, &lift_id), x, y);
-        }),
-        // The session owns the move; see `crate::features::library::book_card`
-        // for why its listeners are on the window rather than on the card.
-        on_drag_move: Callback::new(move |_| {}),
-        on_drag_end: Callback::new(move |(x, y)| drag.release(x, y)),
-        on_drag_cancel: Callback::new(move |_| drag.cancel()),
-    });
-    let pressing = item.pressing;
-    let on_down = Rc::clone(&item.on_pointerdown);
-    let on_move = Rc::clone(&item.on_pointermove);
-    let on_up = Rc::clone(&item.on_pointerup);
-    let on_cancel = Rc::clone(&item.on_pointercancel);
-    let swallow_click = Rc::clone(&item.swallow_click);
-    let swallow_context = Rc::clone(&item.swallow_context);
+    // The shelf's one press contract, the same wiring a book wears (see
+    // `crate::features::library::gestures`) with the folder's own three
+    // answers: a shelf the disk places is not one the pointer gets to place,
+    // "open" drills the breadcrumb route, and the right-click asks about a
+    // folder. A set being selected is not a reason to refuse a drag: lifting
+    // one of three held folders is the whole of what a multi-drag is.
+    let open_id = id.clone();
+    let target_id = id.clone();
+    let gestures = use_shelf_item(
+        state,
+        drag,
+        menu,
+        ShelfItemPolicy {
+            id: id.clone(),
+            label: Signal::derive(move || format!("the {} shelf", name.get())),
+            draggable: Signal::derive(move || !disk_bound.get()),
+            open: Callback::new(move |_| state.library.shelf.set(open_id.clone())),
+            // `watched` is read at the ask rather than at the mount: a rescan
+            // can start or stop watching a folder between the two, and the
+            // menu's rows answer to now.
+            menu_target: Callback::new(move |_| MenuTarget::Folder {
+                id: target_id.clone(),
+                watched: watched.get_untracked(),
+            }),
+        },
+    );
+    let is_selected = gestures.is_selected;
+    let pressing = gestures.pressing;
+    let aria_label = gestures.aria_label;
+    let on_down = Rc::clone(&gestures.on_pointerdown);
+    let on_move = Rc::clone(&gestures.on_pointermove);
+    let on_up = Rc::clone(&gestures.on_pointerup);
+    let on_cancel = Rc::clone(&gestures.on_pointercancel);
+    let on_click = Rc::clone(&gestures.on_click);
+    let on_context = Rc::clone(&gestures.on_contextmenu);
+    let on_key = Rc::clone(&gestures.on_keydown);
+    let aria_pressed = gestures.aria_pressed;
 
     // A target as well as a payload: a drop here files the held books on this
     // shelf and nests the held folders inside it, unless doing that would close a
@@ -185,12 +179,8 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         shelf: None,
     });
 
-    let context_id = id.clone();
     let over_id = id.clone();
     let held_id = id.clone();
-    let key_id = id.clone();
-    let hold_key_id = id.clone();
-    let pressed_id = id.clone();
 
     view! {
         <div
@@ -202,83 +192,20 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             class=("folder-drag-over", move || drag.nests_into(&over_id))
             role="button"
             tabindex="0"
-            aria-label=move || {
-                let shown = name.get();
-                if selecting.get() {
-                    format!("Select the {shown} shelf")
-                } else {
-                    format!("Open the {shown} shelf")
-                }
-            }
-            aria-pressed=move || {
-                selecting.get().then(|| {
-                    if selected_set.with(|s| s.contains(&pressed_id)) {
-                        "true"
-                    } else {
-                        "false"
-                    }
-                })
-            }
+            aria-label=move || aria_label.get()
+            aria-pressed=move || aria_pressed.get()
             on:pointerdown=move |ev| (on_down)(&ev)
             on:pointermove=move |ev| (on_move)(&ev)
             on:pointerup=move |ev| (on_up)(&ev)
             on:pointercancel=move |ev| (on_cancel)(&ev)
-            on:click=move |ev: leptos::ev::MouseEvent| {
-                // The hold's exhaust and nothing else: the wrapper already
-                // decided what this press meant, and the click that follows a
-                // completed hold is not an intention to open the shelf.
-                if (swallow_click)() {
-                    ev.stop_propagation();
-                }
-            }
-            on:contextmenu=move |ev: leptos::ev::MouseEvent| {
-                // WebKit answers a hold with a contextmenu as well as with the
-                // selection, so the hold's exhaust is swallowed before anything is
-                // asked for. What is left is a real right-click, and it used to be
-                // kept down and nothing else — a shelf's rename and its removal
-                // lived on the crumb that names it, and that popover is parked. A
-                // folder is now a thing with a menu of its own, which is the only
-                // place a shelf can be taken apart from without selecting it first.
-                // Stopped before the swallow is asked; see `book_card`.
-                ev.prevent_default();
-                ev.stop_propagation();
-                if (swallow_context)() {
-                    return;
-                }
-                let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
-                let in_set = selecting.get_untracked()
-                    && selected_set.with_untracked(|set| set.contains(&context_id));
-                if in_set {
-                    menu.ask(x, y, MenuTarget::Selection);
-                    return;
-                }
-                menu.ask(
-                    x,
-                    y,
-                    MenuTarget::Folder {
-                        id: context_id.clone(),
-                        watched: watched.get_untracked(),
-                    },
-                );
-            }
-            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                if ev.key() != "Enter" {
-                    return;
-                }
-                // A keyboard has no hold to make, so it gets the gesture's two
-                // halves as two keys: Shift+Enter enters selection the way a
-                // hold does, and once inside, Enter toggles instead of opening.
-                if ev.shift_key() && !selecting.get_untracked() {
-                    ev.prevent_default();
-                    enter_selection(state, &hold_key_id);
-                    return;
-                }
-                if selecting.get_untracked() {
-                    toggle_selected(state, &key_id);
-                    return;
-                }
-                state.library.shelf.set(key_id.clone());
-            }
+            // The right-click's ask, the keyboard's halves and the hold's
+            // exhaust are the shared wiring's; a folder is a thing with a menu
+            // of its own, which is the only place a shelf can be taken apart
+            // from without selecting it first — see
+            // `crate::features::library::gestures`.
+            on:click=move |ev: leptos::ev::MouseEvent| (on_click)(&ev)
+            on:contextmenu=move |ev: leptos::ev::MouseEvent| (on_context)(&ev)
+            on:keydown=move |ev: leptos::ev::KeyboardEvent| (on_key)(&ev)
         >
             <div class="folder-thumb-grid">
                 <Plate state=state shelf_id=id.clone() depth=0 />
@@ -489,14 +416,6 @@ pub(crate) fn summary(counts: (usize, usize)) -> String {
         "Empty".to_string()
     } else {
         parts.join(" · ")
-    }
-}
-
-fn plural(count: usize, one: &str, many: &str) -> String {
-    if count == 1 {
-        format!("1 {one}")
-    } else {
-        format!("{count} {many}")
     }
 }
 

@@ -6,10 +6,10 @@ use wasm_bindgen_futures::spawn_local;
 use pdf_engine::api as engine;
 
 use crate::services::document::session;
+// The width is the cover queue's: one number for both renders of the same art,
+// so the cache the open files into is the cache the queue filled.
+use crate::services::library::covers::COVER_WIDTH;
 use crate::state::AppState;
-
-/// Width the shelf renders a cover at.
-const COVER_WIDTH: f64 = 240.0;
 
 /// Render and store this book's cover, unless the shelf already has one.
 /// Regenerating on every open re-rendered page 1 through the worker — against

@@ -12,6 +12,8 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 
+use library_core::text::plural;
+
 use crate::events::FOCUS_LIBRARY_SEARCH_EVENT;
 use crate::state::AppState;
 
@@ -22,8 +24,7 @@ fn placeholder(state: AppState) -> Signal<String> {
         let books = state.library.books.with(|b| b.len());
         match books {
             0 => "Search the library".to_string(),
-            1 => "Search 1 book".to_string(),
-            n => format!("Search {n} books"),
+            n => format!("Search {}", plural(n, "book", "books")),
         }
     })
 }

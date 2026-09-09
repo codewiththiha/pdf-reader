@@ -22,8 +22,8 @@ use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
 use library_core::wire::StoreRequest;
 
+use super::covers::prune_now;
 use crate::services::library as wire;
-use crate::state::library::prune_covers;
 use crate::state::{AppState, Toast};
 
 /// Move books: onto `to` at `index`, and off `from` when the two differ.
@@ -240,12 +240,7 @@ pub fn purge_books(state: AppState, book_ids: &[String], opts: PurgeOpts) {
 
     // The cover cap only holds if an eviction takes its art with it, and the blob
     // is written once for the batch.
-    state.library.books.with_untracked(|books| {
-        state
-            .library
-            .covers
-            .update(|covers| prune_covers(books, covers));
-    });
+    prune_now(state);
     crate::storage::persist_library(state.library);
     crate::storage::persist_covers(state.library);
 }
@@ -348,12 +343,7 @@ pub fn new_shelf(state: AppState) -> String {
 /// folder is a folder being subdivided and one made from the root is a new top
 /// level; "All" is not a shelf, so it is the root.
 pub fn create_shelf(state: AppState) -> String {
-    let now = js_sys::Date::now() as u64;
-    let seq = state
-        .library
-        .shelves
-        .with_untracked(|shelves| shelves.len() as u32);
-    let id = library_core::id::new_shelf_id(now, seq);
+    let id = library_core::id::next_shelf_id(js_sys::Date::now() as u64);
     let made = id.clone();
     let at = state.library.shelf.get_untracked();
     let parent = (at != ALL_SHELF).then_some(at);
@@ -643,12 +633,7 @@ pub fn relink_book(state: AppState, book_id: String, path: String) {
         });
         // Covers are keyed by address, so the old entry now belongs to nobody;
         // the prune drops it and the next open renders the new one.
-        state.library.books.with_untracked(|books| {
-            state
-                .library
-                .covers
-                .update(|covers| prune_covers(books, covers));
-        });
+        prune_now(state);
         crate::storage::persist_library(state.library);
         crate::storage::persist_covers(state.library);
         // The old address's cover belongs to nobody now, and the new one has

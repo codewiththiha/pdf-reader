@@ -51,6 +51,33 @@ pub(super) fn file_name(path: &str) -> String {
         .to_string()
 }
 
+/// What a folder is called wherever the library names one — a dock card, a
+/// menu row's sublabel, the shelf at a watched root: the last segment of its
+/// path, which is the name the reader picked it by. One rule rather than one
+/// spelling per surface, and the fallback is the path itself, because a root
+/// ("/", "C:\\") has no last segment to show.
+pub(crate) fn folder_label(root: &str) -> String {
+    let name = file_name(root);
+    if name.is_empty() {
+        root.to_string()
+    } else {
+        name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::folder_label;
+
+    #[test]
+    fn a_folder_is_called_by_the_name_it_was_picked_by() {
+        assert_eq!(folder_label("/Users/me/Books"), "Books");
+        assert_eq!(folder_label("/Users/me/Books/"), "Books");
+        assert_eq!(folder_label("C:\\Users\\me\\Books"), "Books");
+        assert_eq!(folder_label("/"), "/");
+    }
+}
+
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use wasm_bindgen::JsValue;

@@ -1,5 +1,5 @@
-//! Centered reader settings modal shell: the tab strip, the Escape handler and
-//! the body that hosts one tab at a time. The tabs live in `layout`, `theme`,
+//! Centered reader settings modal shell: the tab strip, the shared modal
+//! Escape rule and the body that hosts one tab at a time. The tabs live in `layout`, `theme`,
 //! `animations` and `fonts`, and the SET of them is not fixed — see `shown`.
 //!
 //! The `open` signal belongs to the page (two things open this modal: the gear
@@ -9,13 +9,13 @@
 //! see [`lanes`](crate::components::primitives::overlay::lanes).
 
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 
 use crate::components::settings::animations::AnimationsTab;
 use crate::components::settings::common::{Tab, TabButton};
 use crate::components::settings::fonts::FontsTab;
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
+use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
@@ -48,26 +48,9 @@ pub fn SettingsModal(
         Tab::Fonts if !fonts_on.get() => Tab::Layout,
         other => other,
     });
-    Effect::new(move |_| {
-        if !open.get() {
-            return;
-        }
-        let h = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
-            if let Ok(kev) = ev.dyn_into::<web_sys::KeyboardEvent>()
-                && kev.key() == "Escape"
-            {
-                // A dropdown (or any dismissable surface) opened inside
-                // the modal owns this press: its own handler peels it,
-                // and closing the modal underneath it in the same
-                // keydown would take both layers down at once.
-                if app_chrome::floating::dismiss::has_open_dismissable() {
-                    return;
-                }
-                open.set(false);
-            }
-        });
-        on_cleanup(move || h.remove());
-    });
+    // A dropdown opened inside the modal owns the press; the shared rule
+    // defers to it and closes the modal only once nothing sits on top.
+    use_modal_escape(open);
     view! {
         <Show when=move || open.get()>
             <div

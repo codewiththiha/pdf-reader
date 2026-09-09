@@ -29,6 +29,7 @@ use library_core::blob::LibraryBlob;
 use library_core::book::Book;
 use library_core::folder::WatchedFolder;
 use library_core::shelf::{ALL_SHELF, Shelf};
+use library_core::text::plural;
 use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
 
@@ -182,10 +183,9 @@ impl ImportTask {
         match self.phase {
             TaskPhase::Scanning => "Scanning…".to_string(),
             TaskPhase::Failed => "Import failed".to_string(),
-            TaskPhase::Done => match self.total {
-                1 => "Imported 1 book".to_string(),
-                n => format!("Imported {n} books"),
-            },
+            TaskPhase::Done => {
+                format!("Imported {}", plural(self.total as usize, "book", "books"))
+            }
             TaskPhase::Copying => match self.total {
                 0 => "Importing…".to_string(),
                 n => format!("Importing {} of {n}", self.done.min(n)),

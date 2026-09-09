@@ -72,12 +72,38 @@ fn is_topmost(id: u64) -> bool {
 }
 
 /// Whether any dismissable surface (dropdown, card, context menu) is open.
-/// Windows that are dismissable-but-not-stacked — the settings modal, which
-/// listens for Escape itself — read this to defer to the layer above: one
-/// press peels one layer, the dropdown first and the modal only once nothing
-/// sits on top.
+/// Windows that are dismissable-but-not-stacked — the app's modals, which
+/// answer to Escape through [`use_modal_escape`] — read this to defer to the
+/// layer above: one press peels one layer, the dropdown first and the modal
+/// only once nothing sits on top.
 pub fn has_open_dismissable() -> bool {
     DISMISS_STACK.with(|s| !s.borrow().is_empty())
+}
+
+/// Escape closes a modal — unless a dismissable surface is open, in which case
+/// THIS press is that surface's and peeling both layers in one keydown would
+/// take the modal down with the menu.
+///
+/// The rule every modal in an app shares, and one listener for it rather than
+/// one per dialog: the window listener exists exactly while `open` is true, so
+/// a closed modal hears nothing and two stacked modals cannot both eat one
+/// press (the lane registry keeps at most one modal open — see the app's
+/// overlay lanes). Install it inside the component that owns the signal, next
+/// to the lane registration.
+pub fn use_modal_escape(open: RwSignal<bool>) {
+    Effect::new(move |_| {
+        if !open.get() {
+            return;
+        }
+        use_window_event("keydown", move |ev: web_sys::Event| {
+            if let Ok(key) = ev.dyn_into::<web_sys::KeyboardEvent>()
+                && key.key() == "Escape"
+                && !has_open_dismissable()
+            {
+                open.set(false);
+            }
+        });
+    });
 }
 
 fn push_stack(id: u64) {

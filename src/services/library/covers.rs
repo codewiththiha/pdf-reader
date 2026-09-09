@@ -41,10 +41,11 @@ use crate::state::library::{CoverImage, CoverMap, prune_covers};
 use crate::state::AppState;
 use library_core::book::Book;
 
-/// Width the shelf renders a cover at. The same number
-/// `crate::services::document::open::cover` uses: two widths would be two renders
-/// of the same art and a cache that misses on the other one.
-const COVER_WIDTH: f64 = 240.0;
+/// Width the shelf renders a cover at. One number for both renders of the same
+/// art — the import queue's and the open pipeline's
+/// (`crate::services::document::open::cover`) — because two widths would be two
+/// renders of one cover and a cache that misses on the other one.
+pub(crate) const COVER_WIDTH: f64 = 240.0;
 
 thread_local! {
     /// Paths waiting for a render, in the order they were asked for.
@@ -65,13 +66,6 @@ thread_local! {
     static RETRIES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
-/// Queue a cover render for every PDF book the shelf has no cover for.
-///
-/// Idempotent and cheap to call with the whole library: the two filters — already
-/// covered, and not renderable — are applied before anything is queued, and a path
-/// already waiting its turn is not queued twice. What this means in practice is
-/// that an import, a restore, a relink and the startup pass all say the same one
-/// sentence: "the shelf should look like its books".
 /// The paths a backfill should queue: the books the engine can render a cover
 /// for, minus the ones the shelf already has, in the order the library holds
 /// them.
@@ -88,6 +82,13 @@ fn wanted(books: &[Book], covers: &CoverMap) -> Vec<String> {
         .collect()
 }
 
+/// Queue a cover render for every PDF book the shelf has no cover for.
+///
+/// Idempotent and cheap to call with the whole library: the two filters — already
+/// covered, and not renderable — are applied before anything is queued, and a path
+/// already waiting its turn is not queued twice. What this means in practice is
+/// that an import, a restore, a relink and the startup pass all say the same one
+/// sentence: "the shelf should look like its books".
 pub fn backfill_missing(state: AppState) {
     // A new ask is a new retry budget: whatever failed last time is worth one
     // more attempt now, because the most likely reason it failed was timing.
@@ -124,12 +125,27 @@ pub fn backfill_missing(state: AppState) {
     }
 }
 
+/// Bring the cover cache back inside its budget: one door, so every caller —
+/// a purge, a relink, a book joining, a cover landing — prunes the same way.
+///
+/// The cap in `crate::state::library::COVER_CAP` is a localStorage quota, and a
+/// quota only holds if the insert that crosses it is the one that pays for it:
+/// pruning on purge alone let a long shelf of opens grow the store past what
+/// fits. Does NOT persist — the caller decides when the store is written, and
+/// the queue below batches that to once per drain.
+pub(crate) fn prune_now(state: AppState) {
+    state.library.books.with_untracked(|books| {
+        state
+            .library
+            .covers
+            .update(|covers| prune_covers(books, covers));
+    });
+}
+
 /// File one rendered cover under its path, keeping the cache inside its budget.
 ///
-/// Shared by the queue below and by the open pipeline's own cover, because the
-/// cap in `crate::state::library::COVER_CAP` is a localStorage quota and a quota
-/// only holds if the insert that crosses it is the one that pays for it: pruning
-/// on purge alone let a long shelf of opens grow the store past what fits.
+/// Shared by the queue below and by the open pipeline's own cover: the two
+/// renders of one art go through one door, or the cache grows two ways.
 pub fn file_cover(state: AppState, path: String, data_url: String, width: f64, height: f64) {
     state.library.covers.update(|covers| {
         covers.insert(
@@ -141,12 +157,7 @@ pub fn file_cover(state: AppState, path: String, data_url: String, width: f64, h
             }),
         );
     });
-    state.library.books.with_untracked(|books| {
-        state
-            .library
-            .covers
-            .update(|covers| prune_covers(books, covers));
-    });
+    prune_now(state);
     DIRTY.with(|dirty| *dirty.borrow_mut() = true);
 }
 

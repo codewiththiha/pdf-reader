@@ -29,7 +29,7 @@ use crate::components::primitives::menu::separator::Separator;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::features::library::import_modal::ImportSheet;
 use crate::services::library::{
-    import_files, pick_documents, pick_documents_in, restore_deleted_book,
+    folder_label, import_files, pick_documents, pick_documents_in, restore_deleted_book,
 };
 use crate::state::{AppState, Toast};
 
@@ -364,16 +364,6 @@ fn deleted_path(row: &RestoreRow) -> Option<String> {
     }
 }
 
-/// What a folder is called on a menu row: the last segment of its path.
-fn folder_label(root: &str) -> String {
-    root.trim_end_matches(['/', '\\'])
-        .rsplit(['/', '\\'])
-        .next()
-        .filter(|name| !name.is_empty())
-        .unwrap_or(root)
-        .to_string()
-}
-
 /// The folder the page is drilled into, if it is one of a watched folder's
 /// shelves. Read at click time: a restore has to name the folder it restores
 /// through, and the menu outlives the render that built it.
@@ -507,7 +497,7 @@ fn Confirm(
 /// row's words are a rule, not decoration.
 #[cfg(test)]
 mod tests {
-    use super::{RestoreRow, folder_label};
+    use super::RestoreRow;
     use library_core::folder::Tombstone;
     use library_core::ledger::Recovered;
     use library_core::book::Fingerprint;
@@ -619,11 +609,4 @@ mod tests {
         assert!(row.hint().contains("filters"));
     }
 
-    #[test]
-    fn a_folder_is_named_by_its_last_segment() {
-        assert_eq!(folder_label("/Users/me/Books"), "Books");
-        assert_eq!(folder_label("/Users/me/Books/"), "Books");
-        assert_eq!(folder_label("C:\\Users\\me\\Books"), "Books");
-        assert_eq!(folder_label("/"), "/");
-    }
 }

@@ -12,9 +12,10 @@
 //! two pseudo-elements spent on a decoration, and the third is that a shelf of
 //! mixed page sizes reads calmer as one row of frames than as one row of volumes.
 //!
-//! Three gestures share the card and one wrapper decides between them — see
-//! `crate::components::primitives::interactions::draggable_item`. A tap opens the
-//! book, or toggles it once the shelf is in multi-select. A hold starts that
+//! Three gestures share the card and the shelf's one wiring decides between
+//! them — `crate::features::library::gestures`, on the
+//! `crate::components::primitives::interactions::draggable_item` wrapper. A tap
+//! opens the book, or toggles it once the shelf is in multi-select. A hold starts that
 //! multi-select with this book already in it. A right-click asks
 //! `crate::features::library::context_menu`, which is where the removal receipt now
 //! lives beside the rest of what a book can be asked to do. The hold is the same gesture, at the same tuning, that a highlighted
@@ -39,15 +40,11 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
 
-use crate::components::primitives::interactions::draggable_item::{
-    DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
-};
-use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
+use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
 use crate::features::library::remove_modal::RemoveSheet;
-use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
 use crate::services::document;
 use crate::services::library::relink_dialog;
 use crate::state::AppState;
@@ -67,12 +64,9 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
     let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
-    // Selection is a page-wide mode, so every card asks the same two signals rather
+    // Selection is a page-wide mode, so every card asks the same signal rather
     // than being told about itself.
     let selecting = state.library.selecting;
-    let selected_set = state.library.selected;
-    let selected_id = book.id.clone();
-    let is_selected = Signal::derive(move || selected_set.with(|s| s.contains(&selected_id)));
 
     // Owned copies so each closure below captures its own value: the card renders
     // a dozen closures that all outlive this function's frame.
@@ -111,54 +105,44 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         })
     };
 
-    // One wrapper, three gestures, and the mode is decided once per press: a
-    // movement is a drag, a hold is a selection, and a release that was neither
-    // is the open.
-    let press_id = id.clone();
-    let tap_id = id.clone();
-    let tap_path = path.clone();
-    let lift_id = id.clone();
-    let item = use_draggable_item(DraggableItemOptions {
-        press_ms: SELECT_PRESS_MS,
-        drag_threshold_px: DRAG_THRESHOLD_PX,
-        // A movement is always a drag here. It used to be off while a set was
-        // selected, on the reasoning that the pointer was choosing rather than
-        // filing — which is the reasoning that made a selection undraggable, and
-        // lifting one of three held books is the whole of what a multi-drag is.
-        draggable: Signal::derive(|| true),
-        // A hold inside a selection would be a second way to do the thing a tap
-        // now does.
-        selectable: Signal::derive(move || !selecting.get()),
-        on_tap: Callback::new(move |_| {
-            if selecting.get_untracked() {
-                toggle_selected(state, &tap_id);
-                return;
-            }
-            document::open_path(state, tap_path.clone());
-        }),
-        on_long_press: Callback::new(move |_| enter_selection(state, &press_id)),
-        on_drag_start: Callback::new(move |(x, y)| {
-            // What the press picks up: the whole set when this card is already in
-            // it, and this card alone when it is not.
-            drag.begin(payload_for(state, &lift_id), x, y);
-        }),
-        // The session owns the move. Its listeners are on the window rather than
-        // on this element, so a card that unmounts mid-drag — a focus rescan
-        // filing this book somewhere else while the reader is holding it — leaves
-        // a drag that can still end.
-        on_drag_move: Callback::new(move |_| {}),
-        // Both halves end the session and the first one there wins: this release
-        // bubbles ahead of the window's own.
-        on_drag_end: Callback::new(move |(x, y)| drag.release(x, y)),
-        on_drag_cancel: Callback::new(move |_| drag.cancel()),
-    });
-    let pressing = item.pressing;
-    let on_down = Rc::clone(&item.on_pointerdown);
-    let on_move = Rc::clone(&item.on_pointermove);
-    let on_up = Rc::clone(&item.on_pointerup);
-    let on_cancel = Rc::clone(&item.on_pointercancel);
-    let swallow_click = Rc::clone(&item.swallow_click);
-    let swallow_context = Rc::clone(&item.swallow_context);
+    // The shelf's one press contract: a tap opens, a hold selects, a movement
+    // hands the press to the session, and the keyboard and the right-click are
+    // the same answers on their own inputs (see
+    // `crate::features::library::gestures`). A movement is always a drag here.
+    // It used to be off while a set was selected, on the reasoning that the
+    // pointer was choosing rather than filing — which is the reasoning that made
+    // a selection undraggable, and lifting one of three held books is the whole
+    // of what a multi-drag is.
+    let open_path = path.clone();
+    let context_id = id.clone();
+    let context_path = path.clone();
+    let gestures = use_shelf_item(
+        state,
+        drag,
+        menu,
+        ShelfItemPolicy {
+            id: id.clone(),
+            label: Signal::stored(title.clone()),
+            draggable: Signal::derive(|| true),
+            open: Callback::new(move |_| document::open_path(state, open_path.clone())),
+            menu_target: Callback::new(move |_| MenuTarget::Book {
+                id: context_id.clone(),
+                path: context_path.clone(),
+                missing,
+            }),
+        },
+    );
+    let is_selected = gestures.is_selected;
+    let pressing = gestures.pressing;
+    let aria_label = gestures.aria_label;
+    let on_down = Rc::clone(&gestures.on_pointerdown);
+    let on_move = Rc::clone(&gestures.on_pointermove);
+    let on_up = Rc::clone(&gestures.on_pointerup);
+    let on_cancel = Rc::clone(&gestures.on_pointercancel);
+    let on_click = Rc::clone(&gestures.on_click);
+    let on_context = Rc::clone(&gestures.on_contextmenu);
+    let on_key = Rc::clone(&gestures.on_keydown);
+    let aria_pressed = gestures.aria_pressed;
 
     // A target as well as a payload: a drop here lands the held items at this
     // book's place in the level, and a rest here while holding two or more offers
@@ -173,66 +157,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         // nameless entry to.
         shelf: None,
     });
-
-    // A right-click is the shelf's answer to a stroke's remove menu, and the menu
-    // it opens is the library's one host rather than this card's own: the card says
-    // what was clicked and the host decides what that means. Inside a selection the
-    // same button on a card ALREADY in the set asks about the whole set, which is
-    // what a right-click on one of several things means everywhere else; on a card
-    // outside the set it asks about that card, because selecting it first would be
-    // a choice the reader did not make. Toggling stays on the left button, where
-    // selection mode already puts it.
-    let context_id = id.clone();
-    let context_path = path.clone();
-    let on_context = move |ev: leptos::ev::MouseEvent| {
-        // Stopped before the swallow is even asked: the card owns this event
-        // whether or not it acts on it, and a completed hold's synthetic
-        // contextmenu that went on to bubble would open the LEVEL's menu under the
-        // finger that was busy selecting.
-        ev.prevent_default();
-        ev.stop_propagation();
-        if (swallow_context)() {
-            return;
-        }
-        let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
-        let in_set = selecting.get_untracked()
-            && selected_set.with_untracked(|set| set.contains(&context_id));
-        if in_set {
-            menu.ask(x, y, MenuTarget::Selection);
-            return;
-        }
-        menu.ask(
-            x,
-            y,
-            MenuTarget::Book {
-                id: context_id.clone(),
-                path: context_path.clone(),
-                missing,
-            },
-        );
-    };
-
-    let key_path = path.clone();
-    let key_id = id.clone();
-    let select_key_id = id.clone();
-    let on_key = move |ev: leptos::ev::KeyboardEvent| {
-        if ev.key() != "Enter" {
-            return;
-        }
-        // A keyboard has no hold to make, so it gets the gesture's two halves as
-        // two keys: Shift+Enter enters selection the way a hold does, and once
-        // inside, Enter toggles instead of opening.
-        if ev.shift_key() && !selecting.get_untracked() {
-            ev.prevent_default();
-            enter_selection(state, &select_key_id);
-            return;
-        }
-        if selecting.get_untracked() {
-            toggle_selected(state, &key_id);
-            return;
-        }
-        document::open_path(state, key_path.clone());
-    };
 
     // A removal asks first. The card does not know what a removal costs — the
     // resume point, the placements, the highlights, the app's own copy — and the
@@ -249,7 +173,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     };
 
     let reveal_id = id.clone();
-    let aria_id = id.clone();
     let held_id = id.clone();
     let over_id = id.clone();
     let fold_id = id.clone();
@@ -258,7 +181,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     let meta_title = title.clone();
     let card_title = title.clone();
     let author_line = author.clone();
-    let aria_title = title.clone();
     let alt_path = path.clone();
     let progress_width = progress.map(|p| format!("{:.0}%", p * 100.0));
     let progress_now = progress.map(|p| format!("{:.0}", (p * 100.0).round()));
@@ -284,36 +206,15 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             class=("book-dragging", move || drag.holds(&held_id))
             role="button"
             tabindex="0"
-            aria-label=move || {
-                if selecting.get() {
-                    format!("Select {aria_title}")
-                } else {
-                    format!("Open {aria_title}")
-                }
-            }
-            aria-pressed=move || {
-                selecting.get().then(|| {
-                    if selected_set.with(|s| s.contains(&aria_id)) {
-                        "true"
-                    } else {
-                        "false"
-                    }
-                })
-            }
+            aria-label=move || aria_label.get()
+            aria-pressed=move || aria_pressed.get()
             on:pointerdown=move |ev| (on_down)(&ev)
             on:pointermove=move |ev| (on_move)(&ev)
             on:pointerup=move |ev| (on_up)(&ev)
             on:pointercancel=move |ev| (on_cancel)(&ev)
-            on:click=move |ev: leptos::ev::MouseEvent| {
-                // The hold's exhaust and nothing else: the wrapper already
-                // decided what this press meant, and the click that follows a
-                // completed hold is not an intention to open the book.
-                if (swallow_click)() {
-                    ev.stop_propagation();
-                }
-            }
-            on:contextmenu=on_context
-            on:keydown=on_key
+            on:click=move |ev: leptos::ev::MouseEvent| (on_click)(&ev)
+            on:contextmenu=move |ev: leptos::ev::MouseEvent| (on_context)(&ev)
+            on:keydown=move |ev: leptos::ev::KeyboardEvent| (on_key)(&ev)
         >
             <div class="book-cover-wrap">
                 <div

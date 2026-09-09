@@ -66,18 +66,14 @@ use library_core::sort;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
 
-use crate::components::primitives::interactions::draggable_item::{
-    DRAG_THRESHOLD_PX, DraggableItemOptions, use_draggable_item,
-};
-use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::add_menu::AddMenu;
 use crate::features::library::content::ShelfOrder;
 use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::folder_card::summary;
+use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
 use crate::features::library::remove_modal::RemoveSheet;
-use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
 use crate::services::document;
 use crate::state::AppState;
 
@@ -440,22 +436,18 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
 }
 
 /// The books on a shelf's member list, in the order the page shows books: the
-/// shelf's own order is the base and the view's sort rides over it — the same two
-/// steps `crate::features::library::content::visible` runs for a drilled-into
-/// shelf, so an unfolded row and the page it mirrors cannot disagree about what
-/// comes first.
+/// shelf's own order is the base and the view's sort rides over it — the same
+/// `library_core::sort::ordered` the page's own level runs in
+/// `crate::features::library::content::visible`, so an unfolded row and the
+/// page it mirrors cannot disagree about what comes first.
 fn member_books(state: AppState, members: Signal<Vec<String>>) -> Signal<Vec<Book>> {
     Signal::derive(move || {
         let ids = members.get();
         let view = state.library.view.get();
-        state.library.books.with(|books| {
-            let mut list: Vec<Book> = ids
-                .iter()
-                .filter_map(|id| books.iter().find(|b| &b.id == id).cloned())
-                .collect();
-            sort::sort_books(&mut list, view.sort, view.sort_asc);
-            list
-        })
+        state
+            .library
+            .books
+            .with(|books| sort::ordered(books, &ids, view.sort, view.sort_asc))
     })
 }
 
@@ -517,9 +509,6 @@ fn ListRow(
     let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
     let selecting = state.library.selecting;
-    let selected_set = state.library.selected;
-    let selected_id = book.id.clone();
-    let is_selected = Signal::derive(move || selected_set.with(|s| s.contains(&selected_id)));
 
     let id = book.id.clone();
     let path = book.path().to_string();
@@ -540,45 +529,42 @@ fn ListRow(
     let ext = book.format.label();
     let path_hint = book.path().to_string();
 
-    // One wrapper, three gestures, and the mode is decided once per press — the
-    // same wrapper the grid's cards use, so a row and a card answer a hold, a tap
-    // and a movement alike at two densities.
-    let press_id = id.clone();
-    let tap_id = id.clone();
-    let tap_path = path.clone();
-    let lift_id = id.clone();
-    let item = use_draggable_item(DraggableItemOptions {
-        press_ms: SELECT_PRESS_MS,
-        drag_threshold_px: DRAG_THRESHOLD_PX,
-        // A movement is always a drag here, including from inside a selection: a
-        // set that could not be lifted was a set the bar's "Add to shelf" was the
-        // only way to move.
-        draggable: Signal::derive(|| true),
-        selectable: Signal::derive(move || !selecting.get()),
-        on_tap: Callback::new(move |_| {
-            if selecting.get_untracked() {
-                toggle_selected(state, &tap_id);
-                return;
-            }
-            document::open_path(state, tap_path.clone());
-        }),
-        on_long_press: Callback::new(move |_| enter_selection(state, &press_id)),
-        on_drag_start: Callback::new(move |(x, y)| {
-            drag.begin(payload_for(state, &lift_id), x, y);
-        }),
-        // The session owns the move; see `crate::features::library::book_card` for
-        // why its listeners are on the window rather than on the row.
-        on_drag_move: Callback::new(move |_| {}),
-        on_drag_end: Callback::new(move |(x, y)| drag.release(x, y)),
-        on_drag_cancel: Callback::new(move |_| drag.cancel()),
-    });
-    let pressing = item.pressing;
-    let on_down = Rc::clone(&item.on_pointerdown);
-    let on_move = Rc::clone(&item.on_pointermove);
-    let on_up = Rc::clone(&item.on_pointerup);
-    let on_cancel = Rc::clone(&item.on_pointercancel);
-    let swallow_click = Rc::clone(&item.swallow_click);
-    let swallow_context = Rc::clone(&item.swallow_context);
+    // The shelf's one press contract, the same one the grid's cards wear — a
+    // row and a card answer a hold, a tap and a movement alike at two densities
+    // because they are ONE wiring (see `crate::features::library::gestures`). A
+    // movement is always a drag here, including from inside a selection: a set
+    // that could not be lifted was a set the bar's "Add to shelf" was the only
+    // way to move.
+    let open_path = path.clone();
+    let context_id = id.clone();
+    let context_path = path.clone();
+    let gestures = use_shelf_item(
+        state,
+        drag,
+        menu,
+        ShelfItemPolicy {
+            id: id.clone(),
+            label: Signal::stored(title.clone()),
+            draggable: Signal::derive(|| true),
+            open: Callback::new(move |_| document::open_path(state, open_path.clone())),
+            menu_target: Callback::new(move |_| MenuTarget::Book {
+                id: context_id.clone(),
+                path: context_path.clone(),
+                missing,
+            }),
+        },
+    );
+    let is_selected = gestures.is_selected;
+    let pressing = gestures.pressing;
+    let aria_label = gestures.aria_label;
+    let on_down = Rc::clone(&gestures.on_pointerdown);
+    let on_move = Rc::clone(&gestures.on_pointermove);
+    let on_up = Rc::clone(&gestures.on_pointerup);
+    let on_cancel = Rc::clone(&gestures.on_pointercancel);
+    let on_click = Rc::clone(&gestures.on_click);
+    let on_context = Rc::clone(&gestures.on_contextmenu);
+    let on_key = Rc::clone(&gestures.on_keydown);
+    let aria_pressed = gestures.aria_pressed;
 
     // The same target a card registers, under the same id scheme: a book is one
     // thing to a drag whatever density it is being shown at — plus the one fact
@@ -592,11 +578,6 @@ fn ListRow(
         shelf: parent,
     });
 
-    let context_id = id.clone();
-    let context_path = path.clone();
-    let key_id = id.clone();
-    let aria_id = id.clone();
-    let select_key_id = id.clone();
     let reveal_id = id.clone();
     let remove_id = id.clone();
     let over_id = id.clone();
@@ -607,7 +588,6 @@ fn ListRow(
     let alt_title = title.clone();
     let row_title = title.clone();
     let row_tooltip = title.clone();
-    let row_label = title.clone();
     let indent = row_indent(depth);
 
     view! {
@@ -630,75 +610,17 @@ fn ListRow(
             class=("library-row-dragging", move || drag.holds(&held_id))
             role="button"
             tabindex="0"
-            aria-label=move || {
-                if selecting.get() {
-                    format!("Select {row_label}")
-                } else {
-                    format!("Open {row_label}")
-                }
-            }
-            aria-pressed=move || {
-                selecting.get().then(|| {
-                    if selected_set.with(|s| s.contains(&aria_id)) {
-                        "true"
-                    } else {
-                        "false"
-                    }
-                })
-            }
+            aria-label=move || aria_label.get()
+            aria-pressed=move || aria_pressed.get()
             on:pointerdown=move |ev| (on_down)(&ev)
             on:pointermove=move |ev| (on_move)(&ev)
             on:pointerup=move |ev| (on_up)(&ev)
             on:pointercancel=move |ev| (on_cancel)(&ev)
-            on:click=move |ev: leptos::ev::MouseEvent| {
-                // The hold's exhaust and nothing else: the wrapper already
-                // decided what this press meant, and the click that follows a
-                // completed hold is not an intention to open the book.
-                if (swallow_click)() {
-                    ev.stop_propagation();
-                }
-            }
-            // The same answer a card gives, at this density; see `book_card`.
-            on:contextmenu=move |ev: leptos::ev::MouseEvent| {
-                // Stopped before the swallow is asked; see `book_card`.
-                ev.prevent_default();
-                ev.stop_propagation();
-                if (swallow_context)() {
-                    return;
-                }
-                let (x, y) = (ev.client_x() as f64, ev.client_y() as f64);
-                let in_set = selecting.get_untracked()
-                    && selected_set.with_untracked(|set| set.contains(&context_id));
-                if in_set {
-                    menu.ask(x, y, MenuTarget::Selection);
-                    return;
-                }
-                menu.ask(
-                    x,
-                    y,
-                    MenuTarget::Book {
-                        id: context_id.clone(),
-                        path: context_path.clone(),
-                        missing,
-                    },
-                );
-            }
-            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                if ev.key() != "Enter" {
-                    return;
-                }
-                // Shift+Enter is the keyboard's long-press; see `book_card`.
-                if ev.shift_key() && !selecting.get_untracked() {
-                    ev.prevent_default();
-                    enter_selection(state, &select_key_id);
-                    return;
-                }
-                if selecting.get_untracked() {
-                    toggle_selected(state, &key_id);
-                    return;
-                }
-                document::open_path(state, path.clone());
-            }
+            // The same answers a card gives, at this density; the wiring is the
+            // same wiring — see `crate::features::library::gestures`.
+            on:click=move |ev: leptos::ev::MouseEvent| (on_click)(&ev)
+            on:contextmenu=move |ev: leptos::ev::MouseEvent| (on_context)(&ev)
+            on:keydown=move |ev: leptos::ev::KeyboardEvent| (on_key)(&ev)
         >
             {if dense {
                 // The dense variant's cover: the extension chip, in the art's own

@@ -8,6 +8,9 @@
 //!   * [`content`] — the state the page is in (opening, failed, shelf) and the one
 //!     order every view below it renders
 //!   * [`grid`] / [`list`] / [`folder_card`] / [`book_card`] — the shelf itself
+//!   * [`gestures`] — the press contract every one of those items shares: one
+//!     wrapper's decision, the drag session's endpoints, the keyboard's halves
+//!     and the right-click's ask, wired once
 //!   * [`add_card`] / [`add_menu`] / [`empty_state`] — the two ways in
 //!   * [`import_modal`] — what a folder import is allowed to be
 //!   * [`remove_modal`] — what a removal costs, itemised
@@ -41,6 +44,7 @@ pub mod context_menu;
 pub mod dnd;
 pub mod empty_state;
 pub mod folder_card;
+pub mod gestures;
 pub mod grid;
 pub mod import_modal;
 pub mod list;

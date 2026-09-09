@@ -10,8 +10,8 @@ use leptos::prelude::*;
 
 use library_core::book::{ReadPoint, record_read};
 
+use crate::services::library::covers::prune_now;
 use crate::state::AppState;
-use crate::state::library::prune_covers;
 
 /// Record the open: the book's resume point, its name and author, and the stamp
 /// of the read. Persists immediately rather than on the progress debounce,
@@ -48,12 +48,7 @@ pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: 
         // Pruning here rather than on a timer is what makes the cap a cap: the
         // cache is largest exactly when a new book arrives, and the cover this
         // open is about to render (see `super::cover`) lands after the prune.
-        state.library.books.with_untracked(|books| {
-            state
-                .library
-                .covers
-                .update(|covers| prune_covers(books, covers));
-        });
+        prune_now(state);
         crate::storage::persist_covers(state.library);
     }
 }

@@ -11,8 +11,8 @@
 //! than disables, because a switch that cannot be turned on is noise.
 
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 
+use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::folder::{FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
@@ -88,24 +88,9 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     // folder usually wants it imported the same way as the first.
     let opts = RwSignal::new(FolderOpts::default());
 
-    Effect::new(move |_| {
-        if !sheet.open.get() {
-            return;
-        }
-        let handle = window_event_listener_untyped("keydown", move |ev: web_sys::Event| {
-            if let Ok(key) = ev.dyn_into::<web_sys::KeyboardEvent>()
-                && key.key() == "Escape"
-            {
-                // A popover opened inside the sheet owns this press; peeling both
-                // layers in one keydown takes the sheet down with the menu.
-                if app_chrome::floating::dismiss::has_open_dismissable() {
-                    return;
-                }
-                sheet.open.set(false);
-            }
-        });
-        on_cleanup(move || handle.remove());
-    });
+    // A popover opened inside the sheet owns the press; the shared rule peels
+    // one layer at a time.
+    use_modal_escape(sheet.open);
 
     let in_place = Signal::derive(move || opts.with(|o| o.in_place));
     let watching = Signal::derive(move || opts.with(|o| o.watch));

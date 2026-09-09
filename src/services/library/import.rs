@@ -33,6 +33,7 @@
 //!     emptying a watched folder's shelf and importing the folder again returns
 //!     nothing at all, silently: a broken import wearing a rule's clothes.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -48,7 +49,7 @@ use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
-use super::file_name;
+use super::{file_name, folder_label};
 use crate::services::library as wire;
 use crate::state::library::ImportTask;
 use crate::state::{AppState, Toast};
@@ -86,15 +87,35 @@ fn now_ms() -> u64 {
     js_sys::Date::now() as u64
 }
 
-/// What a folder is called on a dock card: the last segment of its path, which
-/// is the name the reader picked it by.
-fn folder_label(root: &str) -> String {
-    let name = file_name(root);
-    if name.is_empty() {
-        root.to_string()
-    } else {
-        name
+thread_local! {
+    /// The roots a folder run is currently walking. One run per root, claimed
+    /// synchronously and released when the run's future drops — see
+    /// [`claim_root`].
+    static RUNNING: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// A claimed root, released when the run's future ends however it ends — a
+/// completion, a failure or a panic all drop the guard the same way.
+struct RootClaim(String);
+
+impl Drop for RootClaim {
+    fn drop(&mut self) {
+        RUNNING.with(|running| running.borrow_mut().remove(&self.0));
     }
+}
+
+/// Claim `root` for one run, or answer `None` when one is already in flight.
+///
+/// Two concurrent walks of one folder are two snapshots of the same ledger row
+/// and two writes back to it, and the second write drops whatever the first
+/// run placed — a `placed` set that lost an entry re-adds a book the reader
+/// already filed, and a tombstone that lost one resurrects a book they
+/// removed. The check-and-claim is one synchronous step (the webview is
+/// single-threaded), so two runs started in the same tick cannot both pass it.
+fn claim_root(root: &str) -> Option<RootClaim> {
+    RUNNING
+        .with(|running| running.borrow_mut().insert(root.to_string()))
+        .then(|| RootClaim(root.to_string()))
 }
 
 /// What a shelf cut from a subfolder is called: the subfolder's own name, or the
@@ -165,9 +186,21 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
 /// Import a folder, with the options the sheet was filled in with. Returns
 /// immediately: the dock owns the feedback from here on.
 pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
+    // A folder already being imported is an import already answering this ask:
+    // its card is on the dock and its walk is the same tree. Racing it would
+    // clobber its ledger write, so the second ask says so instead.
+    let Some(claim) = claim_root(&root) else {
+        state.ui.toast.set(Some(Toast::new(format!(
+            "{} is already being imported.",
+            folder_label(&root)
+        ))));
+        return;
+    };
     let task = task_id();
     push_task(state, ImportTask::new(task.clone(), folder_label(&root)));
     spawn_local(async move {
+        // Held for the whole run: the drop is the release, on every exit path.
+        let _claim = claim;
         run_folder(state, task, root, opts, Asked::Explicitly).await;
     });
 }
@@ -219,8 +252,14 @@ pub fn rescan_watched(state: AppState) {
         .map(|f| (f.root.clone(), f.opts.clone()))
         .collect();
     for (root, opts) in watched {
+        // A folder a previous run is still walking keeps its walk: a rescan is
+        // a question, and the run in flight is already answering it.
+        let Some(claim) = claim_root(&root) else {
+            continue;
+        };
         let task = task_id();
         spawn_local(async move {
+            let _claim = claim;
             run_folder(state, task, root, opts, Asked::OnFocus).await;
         });
     }
@@ -343,7 +382,7 @@ async fn run_folder(
         .find(|f| f.root == root)
         .cloned()
         .unwrap_or_else(|| WatchedFolder {
-            id: id::new_folder_id(now_ms(), folders.len() as u32),
+            id: id::next_folder_id(now_ms()),
             root: root.clone(),
             opts: opts.clone(),
             placed: HashSet::new(),
@@ -471,10 +510,14 @@ async fn run_folder(
     }
 
     let now = now_ms();
+    // Minted off the crate's own counter rather than the snapshot's length: two
+    // watched folders rescan concurrently, and two tasks that both counted the
+    // library as it was BEFORE their walks would mint the same id twice in the
+    // same millisecond — two books wearing one id, which the next load's
+    // sanitize resolves by dropping one of them.
     let pending: Vec<(String, &FoundFile)> = adds
         .iter()
-        .enumerate()
-        .map(|(index, file)| (id::new_id(now, (books.len() + index) as u32), file))
+        .map(|file| (id::next_id(now), file))
         .collect();
     let expected = (pending.len() + relinked + healed) as u32;
     if quiet {
@@ -506,10 +549,6 @@ async fn run_folder(
     let mut relink_count = 0usize;
     let mut new_shelves: Vec<Shelf> = Vec::new();
     let mut placements: Vec<(String, String)> = Vec::new();
-    let mut shelf_seq = state
-        .library
-        .shelves
-        .with_untracked(|shelves| shelves.len() as u32);
     let in_place = folder.opts.in_place;
     let folder_id = folder.id.clone();
 
@@ -549,23 +588,15 @@ async fn run_folder(
                     store: store.clone(),
                 }
             };
-            let book = Book {
-                id: book_id,
-                // Measured by the shell's walk, so this is a real fingerprint and
-                // not a placeholder: nothing about this book is pending.
-                fp: file.fp,
-                title: None,
-                author: None,
-                format: file.format().unwrap_or(Format::Pdf),
+            // Measured by the shell's walk, so this is a real fingerprint and
+            // not a placeholder: nothing about this book is pending.
+            let book = Book::new(
+                book_id,
+                file.fp,
+                file.format().unwrap_or(Format::Pdf),
                 origin,
-                added_ms: now,
-                last_read_ms: 0,
-                page: 1,
-                num_pages: 0,
-                fraction: None,
-                missing: false,
-                fp_pending: false,
-            };
+                now,
+            );
             let placed_id = add_book(books, book);
             let key = folder.shelf_key(file);
             // The whole chain, not the leaf: importing "1" whose inside is "2",
@@ -576,11 +607,7 @@ async fn run_folder(
             // scan already minted.
             let shelf_id = folder.shelf_chain_for(
                 &key,
-                |_| {
-                    let seq = shelf_seq;
-                    shelf_seq += 1;
-                    id::new_shelf_id(now, seq)
-                },
+                |_| id::next_shelf_id(now),
                 |rung| shelf_name(rung, &root),
                 |rung, id, name, parent| {
                     new_shelves.push(Shelf {
@@ -620,7 +647,7 @@ async fn run_folder(
             // resolves to an id that is already a member: appending it again would
             // reshuffle the shelf the reader can see.
             if !shelf.books.iter().any(|m| m == book_id) {
-                library_core::shelf::place(&mut shelf.books, book_id, None);
+                shelves_ops::place(&mut shelf.books, book_id, None);
             }
         }
     });
@@ -681,8 +708,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
         };
 
         let now = now_ms();
-        let seq = state.library.books.with_untracked(|books| books.len() as u32);
-        let book_id = id::new_id(now, seq);
+        let book_id = id::next_id(now);
         let origin = if opts.in_place {
             Origin::Linked {
                 src: found.path.clone(),
@@ -713,22 +739,20 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
         };
 
         let book = Book {
-            id: book_id,
+            // The name the shelf showed before the removal, so a restored book
+            // comes back as the book the reader remembers rather than as a
+            // file stem.
+            title: entry.title.clone(),
             // The file's fingerprint as it is NOW, which is not necessarily the
             // one the tombstone carries: a book can be edited between being
             // removed and being asked for back.
-            fp: found.fp,
-            title: entry.title.clone(),
-            author: None,
-            format: found.format().unwrap_or(Format::Pdf),
-            origin,
-            added_ms: now,
-            last_read_ms: 0,
-            page: 1,
-            num_pages: 0,
-            fraction: None,
-            missing: false,
-            fp_pending: false,
+            ..Book::new(
+                book_id,
+                found.fp,
+                found.format().unwrap_or(Format::Pdf),
+                origin,
+                now,
+            )
         };
         let mut placed_id = String::new();
         state.library.books.update(|books| {
@@ -853,24 +877,16 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     let mut placed = 0u32;
     let mut placed_ids: Vec<String> = Vec::new();
     state.library.books.update(|books| {
-        for (index, file) in found.iter().enumerate() {
-            let book = Book {
-                id: id::new_id(now, (books.len() + index) as u32),
-                fp: file.fp,
-                title: None,
-                author: None,
-                format: file.format().unwrap_or(Format::Pdf),
-                origin: Origin::Linked {
+        for file in &found {
+            let book = Book::new(
+                id::next_id(now),
+                file.fp,
+                file.format().unwrap_or(Format::Pdf),
+                Origin::Linked {
                     src: file.path.clone(),
                 },
-                added_ms: now,
-                last_read_ms: 0,
-                page: 1,
-                num_pages: 0,
-                fraction: None,
-                missing: false,
-                fp_pending: false,
-            };
+                now,
+            );
             placed_ids.push(add_book(books, book));
             placed += 1;
         }
@@ -882,7 +898,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
             };
             for book_id in &placed_ids {
                 if !shelf.books.iter().any(|member| member == book_id) {
-                    library_core::shelf::place(&mut shelf.books, book_id, None);
+                    shelves_ops::place(&mut shelf.books, book_id, None);
                 }
             }
         });
@@ -937,14 +953,25 @@ fn write_folder(state: AppState, folder: WatchedFolder) {
 
 #[cfg(test)]
 mod tests {
-    use super::{folder_label, rel_of, shelf_name};
+    use super::{claim_root, rel_of, shelf_name};
 
     #[test]
-    fn a_folder_is_called_by_the_name_it_was_picked_by() {
-        assert_eq!(folder_label("/Users/me/Books"), "Books");
-        assert_eq!(folder_label("/Users/me/Books/"), "Books");
-        assert_eq!(folder_label("C:\\Users\\me\\Books"), "Books");
-        assert_eq!(folder_label("/"), "/");
+    fn one_root_is_one_run_at_a_time() {
+        let first = claim_root("/books");
+        assert!(first.is_some());
+        assert!(
+            claim_root("/books").is_none(),
+            "a second walk of the same tree is refused while the first is live"
+        );
+        assert!(
+            claim_root("/other").is_some(),
+            "a different folder is a different run"
+        );
+        drop(first);
+        assert!(
+            claim_root("/books").is_some(),
+            "and the release is the run ending, whatever ended it"
+        );
     }
 
     #[test]
