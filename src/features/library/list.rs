@@ -569,9 +569,10 @@ fn ListRow(
     // movement is always a drag here, including from inside a selection: a set
     // that could not be lifted was a set the bar's "Add to shelf" was the only
     // way to move.
-    let open_path = path.clone();
+    // Opening names the ROW, not its address: the library can hold two rows of
+    // one file, and the address cannot say which of them the reader clicked.
+    let open_id = id.clone();
     let context_id = id.clone();
-    let context_path = path.clone();
     let gestures = use_shelf_item(
         state,
         Some(drag),
@@ -580,10 +581,9 @@ fn ListRow(
             id: id.clone(),
             label: Signal::stored(title.clone()),
             draggable: Signal::derive(|| true),
-            open: Callback::new(move |_| document::open_path(state, open_path.clone())),
+            open: Callback::new(move |_| document::open_book(state, open_id.clone())),
             menu_target: Callback::new(move |_| MenuTarget::Book {
                 id: context_id.clone(),
-                path: context_path.clone(),
                 missing,
             }),
             // The tree's own fact: a nested row answers to its branch, a flat

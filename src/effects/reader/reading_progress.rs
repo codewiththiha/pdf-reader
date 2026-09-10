@@ -78,9 +78,21 @@ pub fn reading_progress(state: AppState) {
         // equal page) never dirty the list or trigger a save. A fraction
         // counts as moved past half a percent — finer steps are scroll noise
         // the debounce would coalesce anyway.
+        //
+        // Which rows move is `library_core::book::rows_for_read`'s answer and
+        // not the address's: the book the reader opened by name keeps its own
+        // position when it is a book of its own, and every shared row at the
+        // address moves otherwise. Read untracked on purpose — the id is
+        // written before the path in an open, so the tracked `path` above is
+        // already the subscription that re-runs this on a new document.
+        let book_id = state.reader.document.book_id.get_untracked();
         let mut changed = false;
         state.library.books.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path() == path) {
+            let rows = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
+            for i in rows {
+                let Some(b) = books.get_mut(i) else {
+                    continue;
+                };
                 let page_moved = b.page != page;
                 let fraction_moved = match (b.fraction, fraction) {
                     (Some(old), Some(new)) => (new - old).abs() > 0.005,

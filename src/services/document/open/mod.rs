@@ -1,5 +1,5 @@
-//! Opening a document: the dialog flow, the OS "Open with" handoff, and the
-//! shared open sequence.
+//! Opening a document: the dialog flow, the OS "Open with" handoff, the
+//! library's own row, and the shared open sequence.
 //!
 //! One orchestration here plus a module per step — [`seed`] fills the app
 //! state, [`shelf`] records the book, [`outline`] resolves the chapter tree,
@@ -34,7 +34,7 @@ use reader_core::format::{Format, format_of};
 use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
-use library_core::book::{ReadPoint, find_fraction, find_page};
+use library_core::book::{ReadPoint, resume_point};
 use crate::state::{AppState, Toast};
 
 use super::session;
@@ -97,6 +97,30 @@ pub fn open_dialog(state: AppState) {
         }
     });
 }
+
+/// Open a library row: the book's own address, and the row itself as the
+/// session's identity.
+///
+/// What a shelf surface calls — a card, a list row, the context menu's Open —
+/// and the only open that can say WHICH book the reader meant when the library
+/// holds two rows of one file. Everything downstream reads the row from
+/// [`crate::state::reader::document::DocumentState::book_id`]: the resume point
+/// to seed ([`library_core::book::resume_point`]), the key the highlights live
+/// under ([`crate::services::document::gloss_key`]) and the rows a progress
+/// write belongs to ([`library_core::book::rows_for_read`]).
+///
+/// A row that went between the click and the open is no open at all: there is
+/// no address to read, and an error toast for a book the library no longer has
+/// would be a sentence about nothing.
+pub fn open_book(state: AppState, book_id: String) {
+    let Some(path) = state.library.books.with_untracked(|books| {
+        library_core::book::find_by_id(books, &book_id).map(|b| b.path().to_string())
+    }) else {
+        return;
+    };
+    open_row(state, Some(book_id), path);
+}
+
 /// Shared open-flow: open `path` through the pipeline its format needs and
 /// populate the whole app state (document, viewer, search, library). Resumes
 /// at the saved page if this book was opened before, and records it in the
@@ -107,6 +131,13 @@ pub fn open_dialog(state: AppState) {
 /// converge on the same state contract, so everything downstream — viewer,
 /// navigation, shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
+    open_row(state, None, path);
+}
+
+/// The open itself, with the row the reader named when they named one. See
+/// [`open_book`] for what the id buys and [`open_path`] for the opens that
+/// have nothing but an address.
+fn open_row(state: AppState, book_id: Option<String>, path: String) {
     // Claim the document state for THIS attempt. Pick a second book while the
     // first is still resolving and the loser's tail would otherwise still run:
     // writing the old book's page count, geometry and scale over the new one's
@@ -115,6 +146,11 @@ pub fn open_path(state: AppState, path: String) {
     let stamp = session::claim();
     state.reader.document.status.set(DocStatus::Opening);
     state.reader.document.error.set(None);
+    // Named BEFORE the resume point is read and before any tail seeds the
+    // gloss: which row this open belongs to is a fact about the attempt, not
+    // something the tails discover later, and a write that ran first would be
+    // a write against the book that was open before this one.
+    state.reader.document.book_id.set(book_id.clone());
     // Re-arm the first-paint cover for THIS document: an open over a mounted
     // reader (drag-drop, "Open with") never passes through `close_document`'s
     // reset, and the gate belongs to the open, not the close.
@@ -123,12 +159,11 @@ pub fn open_path(state: AppState, path: String) {
     // The resume point is read BEFORE the open resolves so it can't be
     // clobbered by a concurrent page-tracking write from the closing document.
     // The reflowable tail also takes the fractional stream position, when the
-    // last session left one.
+    // last session left one. Which ROW answers is the id's business: a book of
+    // its own resumes where its own reader left off rather than where the twin
+    // at the address did.
     let (saved_page, saved_fraction) = state.library.books.with_untracked(|books| {
-        (
-            find_page(books, &path).unwrap_or(1),
-            find_fraction(books, &path),
-        )
+        resume_point(books, book_id.as_deref(), &path)
     });
 
     match format_of(&path) {

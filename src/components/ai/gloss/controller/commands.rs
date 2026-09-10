@@ -75,16 +75,19 @@ pub(super) fn build_commands(
     let popover_open = state.reader.ai_selection.popover_open;
     let processing_id = state.reader.gloss.processing_id;
     let marks = state.reader.gloss.marks;
-    let doc_path = state.reader.document.path;
 
     // The marks' one write to storage. There is no per-mark write: the stored
     // shape is a document's list, so every mutation of it persists the whole
-    // list, and a document with no path (nothing open) has nowhere to put it.
-    // Captures two signals, so it is `Copy` and each command below takes its
-    // own copy.
+    // list, and a document that is not open has nowhere to put it. The KEY is
+    // `crate::services::document::gloss_key`'s rather than the document's
+    // path, so a book of its own writes the list its own reader reads — the
+    // load at open asks the same question and the two cannot drift.
+    // Captures the state and one signal, so it is `Copy` and each command
+    // below takes its own copy.
     let persist = move || {
-        if let Some(path) = doc_path.get_untracked() {
-            crate::storage::persist_gloss(&path, &marks.get_untracked());
+        let key = crate::services::document::gloss_key(state);
+        if !key.is_empty() {
+            crate::storage::persist_gloss(&key, &marks.get_untracked());
         }
     };
 

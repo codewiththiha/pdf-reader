@@ -31,13 +31,22 @@ pub fn close_document(state: AppState) {
         && let Some(path) = state.reader.document.path.get_untracked()
     {
         let page = state.reader.viewer.page.get_untracked();
+        // The rows this read belongs to, by the same rule the progress debounce
+        // writes and the open records: the book the reader named when it is a
+        // book of its own, every shared row at the address otherwise
+        // (`library_core::book::rows_for_read`). Read before the reset below,
+        // which is what forgets the name.
+        let book_id = state.reader.document.book_id.get_untracked();
         let mut changed = false;
         state.library.books.update(|books| {
-            if let Some(b) = books.iter_mut().find(|b| b.path() == path)
-                && b.page != page
-            {
-                b.page = page;
-                changed = true;
+            let rows = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
+            for i in rows {
+                if let Some(b) = books.get_mut(i)
+                    && b.page != page
+                {
+                    b.page = page;
+                    changed = true;
+                }
             }
         });
         if changed {

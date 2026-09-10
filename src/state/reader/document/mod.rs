@@ -5,7 +5,8 @@
 //! The struct is three groups, named for what they hold rather than for the
 //! format they came from:
 //!
-//! * the identity — path, title, author, the format, the load status;
+//! * the identity — path, the library row it is, title, author, the format,
+//!   the load status;
 //! * the outline — the chapter tree, whatever produced it;
 //! * the content — [`page_metrics::PageMetrics`] (the page sizes BOTH pipelines
 //!   publish) and [`reflow::ReflowContent`] (the blocks, heights and page cut
@@ -53,6 +54,19 @@ pub struct DocumentState {
     pub format: RwSignal<Format>,
     pub error: RwSignal<Option<String>>,
     pub path: RwSignal<Option<String>>,
+    /// The library row the reader opened, when the open named one — a card, a
+    /// list row, the context menu's Open all carry an id, while a drop, an
+    /// "open with" and a dialog carry nothing but an address.
+    ///
+    /// The address cannot tell two rows of one file apart, and the library can
+    /// hold two: the twins a conflict sheet's *keep both* made, which share
+    /// everything an address holds, and the book of its own its *as new*
+    /// answer made, which shares nothing
+    /// ([`library_core::book::Book::independent`]). Every reader of a resume
+    /// point and every writer of a highlight asks which row this is rather
+    /// than guessing from the path — see `crate::services::document::gloss_key`
+    /// and [`library_core::book::rows_for_read`].
+    pub book_id: RwSignal<Option<String>>,
     pub title: RwSignal<Option<String>>,
     pub author: RwSignal<Option<String>>,
     /// How many pages the reader is currently navigating. Both pipelines
@@ -130,6 +144,7 @@ impl Default for DocumentState {
             format: RwSignal::new(Format::default()),
             error: RwSignal::new(None),
             path: RwSignal::new(None),
+            book_id: RwSignal::new(None),
             title: RwSignal::new(None),
             author: RwSignal::new(None),
             num_pages: RwSignal::new(0),
@@ -149,6 +164,7 @@ impl DocumentState {
         self.format.set(Format::default());
         self.error.set(None);
         self.path.set(None);
+        self.book_id.set(None);
         self.num_pages.set(0);
         self.title.set(None);
         self.author.set(None);
@@ -256,6 +272,7 @@ mod tests {
         // a close cannot leave the previous book's page sizes behind while the
         // next document's pages are already being measured.
         let state = DocumentState::default();
+        state.book_id.set(Some("b1".to_string()));
         state.content.metrics.css_heights.set(vec![792.0]);
         state.content.reflow.heights.set(Arc::new(vec![40.0]));
         state.num_pages.set(3);
@@ -263,6 +280,11 @@ mod tests {
         assert!(state.content.metrics.css_heights.get_untracked().is_empty());
         assert!(state.content.reflow.heights.get_untracked().is_empty());
         assert_eq!(state.num_pages.get_untracked(), 0);
+        assert_eq!(
+            state.book_id.get_untracked(),
+            None,
+            "a close cannot leave the last book's row named"
+        );
         assert!(state.content.metrics.page1_size.get_untracked().is_none());
     }
 }

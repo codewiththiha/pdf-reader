@@ -2,13 +2,14 @@
 //!
 //! The last step of both open tails, and the only place the reader's own progress
 //! becomes a library row. Everything about the DECISION — whether this address is
-//! a book the library already holds, what a resume point is allowed to be — is
-//! `library_core::book::record_read`; this is the wiring to the signals and the
-//! save.
+//! a book the library already holds, which rows a read belongs to, what a resume
+//! point is allowed to be — is `library_core::book::record_read` and its
+//! row-addressed `library_core::book::record_read_row`; this is the wiring to the
+//! signals and the save.
 
 use leptos::prelude::*;
 
-use library_core::book::{ReadPoint, record_read};
+use library_core::book::{ReadPoint, record_read, record_read_row};
 
 use crate::services::library::covers::prune_now;
 use crate::state::AppState;
@@ -33,8 +34,17 @@ pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: 
     // view, and a subscription would only re-run it on somebody else's change.
     let author = state.reader.document.author.get_untracked();
     let now = js_sys::Date::now() as u64;
+    // The row the reader opened by name — a card, a list row, the context
+    // menu's Open — records against that row, so a book of its own keeps the
+    // position its own reader reached instead of handing it to its twin at the
+    // address. An open that arrived as nothing but an address (a drop, an
+    // "open with", a dialog) has no row to name and follows the address.
+    let book_id = state.reader.document.book_id.get_untracked();
     let mut books = state.library.books.get_untracked();
-    let created = record_read(&mut books, path, title, author, point, now);
+    let created = match book_id.as_deref() {
+        Some(book_id) => record_read_row(&mut books, book_id, path, title, author, point, now),
+        None => record_read(&mut books, path, title, author, point, now),
+    };
     state.library.books.set(books);
     crate::storage::persist_library(state.library);
 

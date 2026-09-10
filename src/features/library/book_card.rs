@@ -113,9 +113,10 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // pointer was choosing rather than filing — which is the reasoning that made
     // a selection undraggable, and lifting one of three held books is the whole
     // of what a multi-drag is.
-    let open_path = path.clone();
+    // Opening names the ROW, not its address: the library can hold two rows of
+    // one file, and the address cannot say which of them the reader clicked.
+    let open_id = id.clone();
     let context_id = id.clone();
-    let context_path = path.clone();
     let gestures = use_shelf_item(
         state,
         Some(drag),
@@ -124,10 +125,9 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             id: id.clone(),
             label: Signal::stored(title.clone()),
             draggable: Signal::derive(|| true),
-            open: Callback::new(move |_| document::open_path(state, open_path.clone())),
+            open: Callback::new(move |_| document::open_book(state, open_id.clone())),
             menu_target: Callback::new(move |_| MenuTarget::Book {
                 id: context_id.clone(),
-                path: context_path.clone(),
                 missing,
             }),
             // No shelf of its own: a card is drawn by the open level, which is

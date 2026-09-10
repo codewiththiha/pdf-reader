@@ -75,10 +75,18 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
 /// character range for a reflowable document, which the page cut makes
 /// projectable. `reset` runs first so a field added to the gloss state cannot
 /// be missed here.
+///
+/// Which list "this document's" is, is [`crate::services::document::gloss_key`]'s
+/// answer and not the address's: a book of its own reads the marks its own
+/// reader made, and every other book at the address reads the address's. The
+/// address the tail measured is the fallback for the moment before the
+/// document's identity is on the state, and for an open that named no row.
 pub(super) fn load_marks(state: AppState, path: &str) {
     state.reader.gloss.reset();
+    let key = crate::services::document::gloss_key(state);
+    let key = if key.is_empty() { path } else { key.as_str() };
     let marks: Vec<GlossMark> = crate::storage::load_gloss()
-        .remove(path)
+        .remove(key)
         .unwrap_or_default();
     state.reader.gloss.marks.set(marks);
 }

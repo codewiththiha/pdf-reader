@@ -289,7 +289,11 @@ pub(super) fn receipt(
     let mut placement_names: Vec<String> = Vec::new();
     for book in &books {
         let path = book.path();
-        marks += gloss.get(path).map(Vec::len).unwrap_or(0);
+        // The row's OWN key, which is the address for every book but one that
+        // is a book of its own (`library_core::book::Book::gloss_key`): the
+        // receipt counts what the removal takes, and a private book's marks
+        // are the only ones at a key nothing else reads.
+        marks += gloss.get(&book.gloss_key()).map(Vec::len).unwrap_or(0);
         if state
             .library
             .covers

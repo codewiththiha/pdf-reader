@@ -306,10 +306,12 @@ impl Default for PurgeOpts {
 /// reason a batch is not one tombstone: two of a removed ten may have come from
 /// different watched folders, and each has to be kept out of its own.
 ///
-/// The cover, the highlights and the store copy go through [`sweep_path`]'s
-/// guard: a duplicate the reader chose to keep shares its address — and with
-/// it its art and its marks — with the row being removed, and a twin still on
-/// the shelf keeps them.
+/// The cover, the highlights and the store copy go through [`sweep_book`],
+/// which is [`sweep_path`]'s guard plus the marks only this row could read: a
+/// duplicate the reader chose to keep shares its address — and with it its art
+/// and its marks — with the row being removed, and a twin still on the shelf
+/// keeps them, while a book of its own takes its own marks with it whatever
+/// else is left at the address.
 ///
 /// One persist for the batch rather than one per book. A bulk removal writes the
 /// whole blob, and writing it nine times for ten books is nine chances for the
@@ -356,7 +358,6 @@ fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
         .as_deref()
         .and_then(|folder_id| folder_shelf_of(&shelves, folder_id, &book.id));
     let entry = Tombstone::of(book, home, js_sys::Date::now() as u64);
-    let path = book.path().to_string();
     let was_stored = book.origin.is_stored();
 
     state.library.books.update(|books| {
@@ -374,7 +375,7 @@ fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
         .library
         .folders
         .update(|folders| tombstone(folders, &entry));
-    sweep_path(state, &path, was_stored && opts.delete_store_copy);
+    sweep_book(state, book, was_stored && opts.delete_store_copy);
 }
 
 /// Drop the side data of an address no remaining row reads from: the
@@ -389,24 +390,51 @@ fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
 /// just gone — which is also what makes a bulk removal of both twins work:
 /// the first sweep sees the second row and stays its hand, the second sees
 /// nobody and finishes the job.
+///
+/// "Remaining" is a different list for the two tables, and the difference is
+/// a book of its own ([`Book::independent`]): the address's highlights belong
+/// to the rows that READ them, which is every row at it except a private one
+/// — that keeps its marks under a key of its id, so an address left with only
+/// private rows has a mark list nothing will ever paint again, and leaving it
+/// is the leak [`crate::storage::remove_gloss`] exists to prevent. The cover
+/// is the FILE's art, so any row at the address still earns it.
 pub(crate) fn sweep_path(state: AppState, path: &str, delete_store: bool) {
-    let in_use = state
-        .library
-        .books
-        .with_untracked(|books| books.iter().any(|b| b.path() == path));
-    if in_use {
-        return;
-    }
+    let (gloss_in_use, path_in_use) = state.library.books.with_untracked(|books| {
+        (
+            books.iter().any(|b| b.path() == path && !b.independent),
+            books.iter().any(|b| b.path() == path),
+        )
+    });
     // The highlights are the largest thing the library holds about a book
     // besides its cover, and they are keyed by an address nothing points at
     // any more.
-    crate::storage::remove_gloss(path);
+    if !gloss_in_use {
+        crate::storage::remove_gloss(path);
+    }
+    if path_in_use {
+        return;
+    }
     state.library.covers.update(|covers| {
         covers.remove(path);
     });
     if delete_store {
         wire::delete_stored(path);
     }
+}
+
+/// One removed row's side data: the marks that were its ALONE, and then the
+/// address's own sweep.
+///
+/// A private row's marks are keyed by its id
+/// ([`library_core::book::Book::gloss_key`]), which is why removing one takes
+/// nothing from its twin — and why [`sweep_path`]'s address guard can never
+/// see them. They go with the row that owned them, always, and the address's
+/// tables are then swept by their own rule.
+fn sweep_book(state: AppState, book: &Book, delete_store: bool) {
+    if book.independent {
+        crate::storage::remove_gloss(&book.gloss_key());
+    }
+    sweep_path(state, book.path(), delete_store);
 }
 
 /// Remove one row, everywhere it is filed, and sweep the side data only it
@@ -431,7 +459,7 @@ pub(crate) fn drop_row(state: AppState, book_id: &str) -> Option<Book> {
         .library
         .shelves
         .update(|shelves| shelf::forget_everywhere(shelves, book_id));
-    sweep_path(state, book.path(), book.origin.is_stored());
+    sweep_book(state, &book, book.origin.is_stored());
     Some(book)
 }
 

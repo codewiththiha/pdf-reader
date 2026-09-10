@@ -49,13 +49,13 @@ use crate::state::AppState;
 /// died, a shelf the disk places — are ones the card already knew.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuTarget {
-    /// A book: a card in the grid or a row in the list. `path` is what opening
-    /// needs, and it is not derivable from `id`.
-    Book {
-        id: String,
-        path: String,
-        missing: bool,
-    },
+    /// A book: a card in the grid or a row in the list. The id is all an open
+    /// needs — it is what says WHICH book the reader meant when the library
+    /// holds two rows of one file (see
+    /// `crate::services::document::open::open_book`) — and carrying the address
+    /// beside it would be a second answer to a question the row already
+    /// answered.
+    Book { id: String, missing: bool },
     /// A shelf drawn as a folder.
     Folder { id: String },
     /// A card that is already in the selection: the menu acts on the whole set,
@@ -125,8 +125,8 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
                     return ().into_any();
                 };
                 match at.target {
-                    MenuTarget::Book { id, path, missing } => {
-                        view! { <BookMenu state=state id=id path=path missing=missing close=close /> }
+                    MenuTarget::Book { id, missing } => {
+                        view! { <BookMenu state=state id=id missing=missing close=close /> }
                             .into_any()
                     }
                     MenuTarget::Folder { id } => {
@@ -160,17 +160,11 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
 /// mean, and a menu that explains itself on every line is one that has to be
 /// read before it can be used.
 #[component]
-fn BookMenu(
-    state: AppState,
-    id: String,
-    path: String,
-    missing: bool,
-    close: Callback<()>,
-) -> impl IntoView {
+fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
     // One owned id per row: each row's handler is a closure of its own and a
     // `move` takes what it captures.
-    let open_path = path;
+    let open_id = id.clone();
     let select_id = id.clone();
     let relink_id = id.clone();
     let remove_id = id;
@@ -186,7 +180,7 @@ fn BookMenu(
                 disabled=missing
                 on_click=move || {
                     close.run(());
-                    document::open_path(state, open_path.clone());
+                    document::open_book(state, open_id.clone());
                 }
             />
             <MenuItem
