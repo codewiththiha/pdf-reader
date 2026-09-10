@@ -30,6 +30,7 @@ use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use library_core::book::stem_of;
+use library_core::shelf::ALL_SHELF;
 use library_core::text::plural;
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
@@ -101,6 +102,11 @@ struct Info {
     /// The shelf copy's name — what a replace warns about.
     existing_name: String,
     shelf_name: String,
+    /// Whether the placement is aimed at the library's root — the unfiled
+    /// list — rather than a shelf. The sheet's sentences read "in your
+    /// library" there, because "on this shelf" would name a shelf that does
+    /// not exist.
+    root: bool,
     /// The name a Duplicate would mint, promised on its own row.
     dup_name: String,
     cover: Option<String>,
@@ -133,6 +139,7 @@ impl Info {
         let existing_name = existing
             .map(|b| b.title())
             .unwrap_or_else(|| incoming_name.clone());
+        let root = item.placement.shelf_id == ALL_SHELF;
         let shelf_name = state
             .library
             .shelves
@@ -187,6 +194,7 @@ impl Info {
             incoming_name,
             existing_name,
             shelf_name,
+            root,
             dup_name,
             cover,
             rest: ask.rest(),
@@ -208,17 +216,25 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
     let heading = info.incoming_name.clone();
     let tooltip = heading.clone();
     let cover_alt = heading.clone();
-    let subtitle = if info.rest > 0 {
-        format!(
-            "Already on “{}” · {} more waiting",
-            info.shelf_name, info.rest
-        )
+    // Where the copy already is: a shelf the sentence can name, or the
+    // library's own unfiled list, which has no name but "your library".
+    let where_line = if info.root {
+        "in your library".to_string()
     } else {
-        format!("Already on “{}”", info.shelf_name)
+        format!("on “{}”", info.shelf_name)
     };
-    let question = format!("“{}” on this shelf is the same book.", info.existing_name);
+    let subtitle = if info.rest > 0 {
+        format!("Already {where_line} · {} more waiting", info.rest)
+    } else {
+        format!("Already {where_line}")
+    };
+    let question = format!("“{}” {where_line} is the same book.", info.existing_name);
     let dup_note = format!("Keep both — this one becomes “{}”", info.dup_name);
-    let replace_note = "The one on the shelf gives its place to this one".to_string();
+    let replace_note = if info.root {
+        "The one in your library gives its place to this one".to_string()
+    } else {
+        "The one on the shelf gives its place to this one".to_string()
+    };
     let merge_note = "One book — both sides' highlights, the further position".to_string();
     let offers_all = info.rest > 0 && !confirm;
     let switch_label = match info.rest {
@@ -229,11 +245,19 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
 
     // The second ask's own words: what the shelf's copy loses, and — under
     // the switch — that the rest of the queue loses it the same way.
-    let replace_line = format!(
-        "“{}” will be replaced by the book arriving. Its place on this shelf, \
-         and on the others it is filed on, goes to the arrival.",
-        info.existing_name
-    );
+    let replace_line = if info.root {
+        format!(
+            "“{}” will be replaced by the book arriving. Its place in your \
+             library goes to the arrival.",
+            info.existing_name
+        )
+    } else {
+        format!(
+            "“{}” will be replaced by the book arriving. Its place on this shelf, \
+             and on the others it is filed on, goes to the arrival.",
+            info.existing_name
+        )
+    };
     let replace_losses = info.positions_differ && (info.started || info.marks > 0);
     let losses_line = "Only the shelf's copy held these; the arrival's own take their place:"
         .to_string();
@@ -257,7 +281,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
             style="width:min(92vw, 420px)"
             on:click=move |ev| ev.stop_propagation()
             role="dialog"
-            aria-label="This shelf already holds that book"
+            aria-label="The library already holds that book"
         >
             <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
                 {has_cover.then(|| {

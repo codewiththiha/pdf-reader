@@ -453,16 +453,26 @@ A placement — a drag, a bulk filing, a loose-file import — whose CONTENT a m
 shelf already holds is a question, not a skip. It used to be a skip: the import resolved the file
 to the row the library already had and the shelf, finding that row already a member, filed nothing,
 which to the reader was a book vanishing into the shelf it was dropped on. `services::library::conflict`
-is the replacement, and its `screen` is the whole rule: the target is a real shelf, the arrival is
-not already a member of it (that drop is a reorder), and some member holds the arrival's
-fingerprint. Same NAME with different content is not a collision — a second format of one title
-measures a different fingerprint and simply lands.
+is the replacement, and its `screen` is the whole rule: the arrival is not already a member of the
+target (that drop is a reorder), and some member of the target holds the arrival's fingerprint.
+Same NAME with different content is not a collision — a second format of one title measures a
+different fingerprint and simply lands. The root level counts as a target, with the unfiled books
+for its member list: an import dropped on the library beside its own unfiled twin asks like any
+shelf drop (that was the vanishing's last hiding place — the fingerprint dedupe swallowed it with
+nothing new on screen), while a twin that is FILED somewhere stays out of the way, because the
+reader looking at "All" already sees that row and the import resolves to it.
 
 Every placing surface hands its placements through the screen before writing anything
 (`arrange::move_many_to_shelf`, `arrange::file_many` — which `also_show` rides — and
-`import::run_files`), applies the clean half at once and raises the collisions onto a queue the
-reader answers one at a time; a watched folder's own rescan never asks, because staying quiet is
-the ledger's job. The sheet (`features::library::conflict_modal`) offers the three answers a file
+`import::run_files`, which screens against the root when the drop named no shelf), applies the
+clean half at once and raises the collisions onto a queue the reader answers one at a time; a
+watched folder's own rescan never asks, because staying quiet is the ledger's job. A folder
+filed INSIDE another is screened after the reparent lands (`conflict::screen_nest`, which
+`arrange::nest_shelf` / `arrange::nest_many` call): the nested folder's books that the parent
+holds directly under the same content become placements aimed at the parent, so the collision
+arriving sideways through the tree meets the same sheet as the one arriving by hand. The import
+card reports the wait — a finished run whose collisions went to the sheet says "1 book waiting
+for your choice" instead of claiming a drop that landed whole. The sheet (`features::library::conflict_modal`) offers the three answers a file
 manager teaches, and each is a row operation plus a sweep:
 
 - **Duplicate** keeps both: the arrival takes the first free `_1`, `_2`, … name

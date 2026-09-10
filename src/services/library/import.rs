@@ -46,7 +46,7 @@ use library_core::folder::{FolderOpts, WatchedFolder, parent_key};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
-use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
+use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind, ALL_SHELF};
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
@@ -864,8 +864,8 @@ async fn copy_batch(
 }
 
 /// Import loose files: measure them, then file them — except the ones whose
-/// content the target shelf already holds, which ask (see
-/// [`crate::services::library::conflict`]).
+/// content the target already holds, a shelf or the unfiled root alike,
+/// which ask (see [`crate::services::library::conflict`]).
 async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Option<String>) {
     let checks = match wire::verify_paths(paths).await {
         Ok(checks) => checks,
@@ -885,38 +885,35 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // below, which dedupe against exactly those fingerprints.
     apply_checks(state, &checks);
 
-    // A file whose content the TARGET SHELF already holds is not a placement
-    // this import may make quietly — the old rule resolved it to the row the
-    // shelf already had and skipped the placement, which to the reader was a
-    // book swallowed by the shelf it was dropped on. Here it asks instead:
+    // A file whose content the TARGET already holds is not a placement this
+    // import may make quietly — the old rule resolved it to the row the
+    // library already had and skipped the placement, which to the reader was
+    // a book swallowed by the shelf it was dropped on. Here it asks instead:
     // the clean files land below and the collisions go to the conflict sheet.
-    // An import with no target cannot collide — the root level has no member
-    // list — so it lands whole.
-    let (found, conflicts) = match &target {
-        Some(shelf_id) => {
-            let (clean, conflicts) = conflict::screen(
-                state,
-                found
-                    .iter()
-                    .map(|file| Placement {
-                        incoming: Incoming::Import { file: file.clone() },
-                        shelf_id: shelf_id.clone(),
-                        from: None,
-                        index: None,
-                    })
-                    .collect(),
-            );
-            let clean: Vec<FoundFile> = clean
-                .into_iter()
-                .filter_map(|placement| match placement.incoming {
-                    Incoming::Import { file } => Some(file),
-                    Incoming::Move { .. } => None,
-                })
-                .collect();
-            (clean, conflicts)
-        }
-        None => (found, Vec::new()),
-    };
+    // The root level is a target like any other — its member list is the
+    // unfiled books — so an import with no shelf screens against those, and
+    // a twin that is filed on a shelf stays out of the way (the import
+    // resolves to that row, which the reader can already see).
+    let target_shelf = target.clone().unwrap_or_else(|| ALL_SHELF.to_string());
+    let (clean, conflicts) = conflict::screen(
+        state,
+        found
+            .iter()
+            .map(|file| Placement {
+                incoming: Incoming::Import { file: file.clone() },
+                shelf_id: target_shelf.clone(),
+                from: None,
+                index: None,
+            })
+            .collect(),
+    );
+    let found: Vec<FoundFile> = clean
+        .into_iter()
+        .filter_map(|placement| match placement.incoming {
+            Incoming::Import { file } => Some(file),
+            Incoming::Move { .. } => None,
+        })
+        .collect();
 
     // Applied to the live list, for the same reason a folder import is: the
     // measurement round trip is an await, and the library is allowed to move
@@ -951,6 +948,10 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
             }
         });
     }
+    // What the sheet will ask about, counted before the queue takes it: the
+    // card's Done line reports the wait rather than claiming a placement
+    // that is still a question.
+    let waiting = conflicts.len() as u32;
     conflict::raise(state, conflicts);
     crate::storage::persist_library(state.library);
     // The shelf should look like its books the moment they are on it, not the
@@ -960,6 +961,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     update_task(state, &task, move |t| {
         t.total = placed;
         t.done = placed;
+        t.waiting = waiting;
         t.finish();
     });
 }

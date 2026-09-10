@@ -493,6 +493,12 @@ pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> boo
     });
     if moved {
         crate::storage::persist_library(state.library);
+        // The folder's books just parked one level down inside `parent`; if
+        // the parent holds the same content directly, that is the conflict
+        // sheet's question — see `conflict::screen_nest`.
+        if let Some(parent) = parent.filter(|p| *p != ALL_SHELF) {
+            conflict::screen_nest(state, &[folder_id.to_string()], parent);
+        }
     }
     moved
 }
@@ -504,17 +510,25 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     if folder_ids.is_empty() {
         return;
     }
-    let mut moved = false;
+    let mut moved_ids: Vec<String> = Vec::new();
     state.library.shelves.update(|shelves| {
         for folder_id in folder_ids {
             // Each one is asked separately: a batch that contained a folder and
             // one of its own children must file the first and refuse the second,
             // and a single all-or-nothing answer would lose one of the two.
-            moved |= shelf::reparent(shelves, folder_id, Some(parent));
+            if shelf::reparent(shelves, folder_id, Some(parent)) {
+                moved_ids.push(folder_id.clone());
+            }
         }
     });
-    if moved {
+    if !moved_ids.is_empty() {
         crate::storage::persist_library(state.library);
+        // What one nest owes the parent, the batch owes too: the folders
+        // that actually moved screen their books against it — see
+        // `conflict::screen_nest`.
+        if parent != ALL_SHELF {
+            conflict::screen_nest(state, &moved_ids, parent);
+        }
     }
 }
 

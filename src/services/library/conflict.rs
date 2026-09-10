@@ -31,16 +31,22 @@
 //! ## What is a conflict, precisely
 //!
 //! [`screen`] is the whole rule, and it is per placement rather than per
-//! import: the target is a real shelf (the root level has no member list to
-//! collide with), the arrival is not already a member (that drop is a
+//! import: the arrival is not already a member of the target (that drop is a
 //! reorder), and some member of the target holds the arrival's fingerprint.
-//! Every placing surface hands its placements through here BEFORE writing
-//! anything — a drag (`arrange::move_many_to_shelf`), a filing
-//! (`arrange::file_many`, `arrange::also_show`) and a loose-file import
-//! (`import::run_files`) — and each applies the clean half at once, so a drop
-//! of ten files with two collisions files eight and asks about two. A watched
-//! folder's own rescan never asks: it is the ledger's job to stay quiet, and
-//! its placements go through the folder shelf chain rather than a hand.
+//! The root level counts as a target — its member list is the unfiled books,
+//! the ones on no shelf — so an import dropped on the library beside its own
+//! unfiled twin asks exactly like one dropped on a shelf, and only a twin
+//! that is FILED somewhere stays out of the way (the import resolves to that
+//! row, which the reader can already see). Every placing surface hands its
+//! placements through here BEFORE writing anything — a drag
+//! (`arrange::move_many_to_shelf`), a filing (`arrange::file_many`,
+//! `arrange::also_show`), a loose-file import (`import::run_files`) and a
+//! folder's nest ([`screen_nest`], which `arrange::nest_shelf` and
+//! `arrange::nest_many` call after the reparent lands) — and each applies the
+//! clean half at once, so a drop of ten files with two collisions files
+//! eight and asks about two. A watched folder's own rescan never asks: it is
+//! the ledger's job to stay quiet, and its placements go through the folder
+//! shelf chain rather than a hand.
 //!
 //! ## The queue
 //!
@@ -187,28 +193,56 @@ pub fn screen(
     (clean, conflicts)
 }
 
+/// Whether the row sits on any shelf — the question whose "no" makes it a
+/// member of the root level's own list, the unfiled books the "All" view
+/// shows between the shelves.
+fn is_shelved(shelves: &[Shelf], book_id: &str) -> bool {
+    shelves
+        .iter()
+        .any(|shelf| shelf.books.iter().any(|member| member == book_id))
+}
+
 /// The member that makes a placement ask, when one does.
 ///
 /// Split out of [`screen`] because it is the whole of the rule and a rule
-/// this load-bearing is one a test can hold: the root level never conflicts
-/// (it has no member list), an arrival already on the shelf never conflicts
-/// (that drop is a reorder, and asking would be asking about a move that is
-/// not one), and the match is by CONTENT — a member whose fingerprint equals
-/// the arrival's, whatever the two are called.
+/// this load-bearing is one a test can hold: an arrival already on the
+/// target never conflicts (that drop is a reorder, and asking would be
+/// asking about a move that is not one), and the match is by CONTENT — a
+/// member whose fingerprint equals the arrival's, whatever the two are
+/// called.
+///
+/// The root level is a target like any other, with the unfiled books for its
+/// member list: a twin FILED on some shelf does not block a root placement
+/// (the reader looking at "All" already sees that row, and an import
+/// resolves to it), but an unfiled twin does — that is the drop that used to
+/// vanish, swallowed by the fingerprint dedupe with nothing new on screen to
+/// show for it.
 fn blocks(books: &[Book], shelves: &[Shelf], placement: &Placement) -> Option<String> {
-    if placement.shelf_id == shelf::ALL_SHELF {
-        return None;
-    }
-    let target = shelves.iter().find(|s| s.id == placement.shelf_id)?;
+    let at_root = placement.shelf_id == shelf::ALL_SHELF;
     let fp = match &placement.incoming {
         Incoming::Move { book_id } => {
-            if target.books.iter().any(|m| m == book_id) {
+            let already_there = if at_root {
+                !is_shelved(shelves, book_id)
+            } else {
+                shelves
+                    .iter()
+                    .find(|s| s.id == placement.shelf_id)
+                    .is_some_and(|s| s.books.iter().any(|m| m == book_id))
+            };
+            if already_there {
                 return None;
             }
             books.iter().find(|b| &b.id == book_id)?.fp
         }
         Incoming::Import { file } => file.fp,
     };
+    if at_root {
+        return books
+            .iter()
+            .find(|book| book.fp == fp && !is_shelved(shelves, &book.id))
+            .map(|book| book.id.clone());
+    }
+    let target = shelves.iter().find(|s| s.id == placement.shelf_id)?;
     target
         .books
         .iter()
@@ -240,6 +274,71 @@ pub fn raise(state: AppState, items: Vec<ConflictItem>) {
     if !open {
         state.library.conflict_open.set(true);
     }
+}
+
+/// The placements a folder's nest owes the new parent.
+///
+/// A folder filed inside another parks its books one level down, and the
+/// parent may hold the very same content directly: two rows of one file now
+/// sit inside one another's view, which is the collision the sheet exists
+/// for — only arriving sideways, through the tree instead of a hand. The
+/// placements are the nested folders' direct members the parent does not
+/// already hold, aimed AT the parent; what each answer does with them is the
+/// book pair's own business (a duplicate keeps both rows and gives the
+/// arrival a seat on the parent, a replace seats the arrival where the
+/// parent's copy was, a merge folds the arrival into that copy), while the
+/// nesting itself stands either way — the sheet answers about the BOOKS, not
+/// about the folder's new place. Pure reads over the shelf list, split out
+/// of [`screen_nest`] so a test can hold the rule without a runtime.
+pub fn nest_placements(shelves: &[Shelf], moved: &[String], target: &str) -> Vec<Placement> {
+    if target == shelf::ALL_SHELF || moved.is_empty() {
+        return Vec::new();
+    }
+    let Some(holder) = shelves.iter().find(|s| s.id == target) else {
+        return Vec::new();
+    };
+    let mut placements: Vec<Placement> = Vec::new();
+    for folder_id in moved {
+        let Some(moved_shelf) = shelves.iter().find(|s| &s.id == folder_id) else {
+            continue;
+        };
+        for book_id in &moved_shelf.books {
+            let seen = placements.iter().any(|placement| {
+                matches!(&placement.incoming, Incoming::Move { book_id: seen } if seen == book_id)
+            });
+            if seen || holder.books.iter().any(|member| member == book_id) {
+                continue;
+            }
+            placements.push(Placement {
+                incoming: Incoming::Move {
+                    book_id: book_id.clone(),
+                },
+                shelf_id: target.to_string(),
+                from: None,
+                index: None,
+            });
+        }
+    }
+    placements
+}
+
+/// Screen a finished nest: the moved folders' books against the parent they
+/// just landed inside. The clean half needs no action — the nest itself is
+/// already written and memberships do not move — so only the collisions go
+/// anywhere: onto the sheet.
+pub fn screen_nest(state: AppState, moved: &[String], target: &str) {
+    if target == shelf::ALL_SHELF || moved.is_empty() {
+        return;
+    }
+    let placements = state
+        .library
+        .shelves
+        .with_untracked(|shelves| nest_placements(shelves, moved, target));
+    if placements.is_empty() {
+        return;
+    }
+    let (_clean, conflicts) = screen(state, placements);
+    raise(state, conflicts);
 }
 
 // ---------------------------------------------------------------------------
@@ -684,8 +783,71 @@ fn transfer_cover(state: AppState, from: &str, into: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::union_marks;
+    use super::{Incoming, Placement, blocks, nest_placements, union_marks};
     use ai_core::gloss::{GlossBox, GlossMark, PageAnchor};
+    use library_core::book::{self, Book, Fingerprint, Origin};
+    use library_core::scan::FoundFile;
+    use library_core::shelf::{Shelf, ALL_SHELF};
+    use reader_core::format::Format;
+
+    fn fp(n: u32) -> Fingerprint {
+        Fingerprint {
+            size: u64::from(n),
+            mtime_ms: u64::from(n),
+            head_hash: n,
+        }
+    }
+
+    fn row(id: &str, fingerprint: Fingerprint) -> Book {
+        Book::new(
+            id.to_string(),
+            fingerprint,
+            Format::Pdf,
+            Origin::Linked {
+                src: format!("/books/{id}.pdf"),
+            },
+            0,
+        )
+    }
+
+    fn shelf(id: &str, members: &[&str]) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: id.to_string(),
+            kind: Default::default(),
+            books: members.iter().map(|m| m.to_string()).collect(),
+            parent: None,
+            manual_parent: false,
+        }
+    }
+
+    fn import(fingerprint: Fingerprint, shelf_id: &str) -> Placement {
+        Placement {
+            incoming: Incoming::Import {
+                file: FoundFile {
+                    path: "/incoming/new.pdf".to_string(),
+                    rel: String::new(),
+                    ext: "pdf".to_string(),
+                    size: fingerprint.size,
+                    fp: fingerprint,
+                },
+            },
+            shelf_id: shelf_id.to_string(),
+            from: None,
+            index: None,
+        }
+    }
+
+    fn r#move(book_id: &str, shelf_id: &str, from: Option<&str>) -> Placement {
+        Placement {
+            incoming: Incoming::Move {
+                book_id: book_id.to_string(),
+            },
+            shelf_id: shelf_id.to_string(),
+            from: from.map(str::to_string),
+            index: None,
+        }
+    }
 
     fn mark(id: &str, word: &str, page: u32, x: f64) -> GlossMark {
         GlossMark {
@@ -727,5 +889,137 @@ mod tests {
         let base = vec![mark("g1", "spice", 4, 100.0)];
         let extra = vec![mark("g2", "spice", 40, 100.0)];
         assert_eq!(union_marks(&base, &extra).len(), 2);
+    }
+
+    // -------------------------------------------------------------------
+    // The screen's rule: what asks, and what simply lands.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn a_move_into_a_shelf_holding_the_same_file_asks() {
+        let books = vec![row("b1", fp(1)), row("b2", fp(1))];
+        let shelves = vec![shelf("s", &["b1"])];
+        // b2 is the same content as b1, which the shelf holds: the drop is a
+        // question, and the question names the shelf's copy.
+        assert_eq!(
+            blocks(&books, &shelves, &r#move("b2", "s", None)).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn an_import_into_the_same_shelf_asks() {
+        let books = vec![row("b1", fp(1))];
+        let shelves = vec![shelf("s", &["b1"])];
+        assert_eq!(
+            blocks(&books, &shelves, &import(fp(1), "s")).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn same_name_different_fp_lands_silently() {
+        // Two books that merely rhyme are two books: the match is by
+        // CONTENT, never by name — a second format of one title measures a
+        // different fingerprint and simply lands.
+        let mut twin = row("b2", fp(2));
+        twin.title = Some("Dune".to_string());
+        let mut held = row("b1", fp(1));
+        held.title = Some("Dune".to_string());
+        let books = vec![held, twin];
+        let shelves = vec![shelf("s", &["b1"])];
+        assert_eq!(blocks(&books, &shelves, &r#move("b2", "s", None)), None);
+        assert_eq!(blocks(&books, &shelves, &import(fp(2), "s")), None);
+    }
+
+    #[test]
+    fn reordering_inside_its_own_shelf_never_asks() {
+        let books = vec![row("b1", fp(1))];
+        let shelves = vec![shelf("s", &["b1"])];
+        // The arrival is already the member: a reorder, not a placement.
+        assert_eq!(blocks(&books, &shelves, &r#move("b1", "s", Some("s"))), None);
+    }
+
+    #[test]
+    fn a_root_import_beside_an_unfiled_twin_asks() {
+        // The root level is a target like any other: its member list is the
+        // unfiled books. This is the drop that used to vanish — the
+        // fingerprint dedupe swallowed it with nothing new on screen.
+        let books = vec![row("b1", fp(1))];
+        let shelves: Vec<Shelf> = vec![shelf("s", &[])];
+        assert_eq!(
+            blocks(&books, &shelves, &import(fp(1), ALL_SHELF)).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn a_root_import_of_a_shelved_file_does_not_ask() {
+        // The twin is FILED: the reader looking at "All" already sees that
+        // row, and the import resolves to it — the rule the add keeps.
+        let books = vec![row("b1", fp(1))];
+        let shelves = vec![shelf("s", &["b1"])];
+        assert_eq!(blocks(&books, &shelves, &import(fp(1), ALL_SHELF)), None);
+        let mut rows = books.clone();
+        let placed = book::add_book(&mut rows, row("b2", fp(1)));
+        assert_eq!(placed, "b1");
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn an_unfiled_book_dropped_on_the_root_never_asks() {
+        let books = vec![row("b1", fp(1))];
+        let shelves: Vec<Shelf> = Vec::new();
+        assert_eq!(blocks(&books, &shelves, &r#move("b1", ALL_SHELF, None)), None);
+    }
+
+    #[test]
+    fn a_move_to_root_beside_its_unfiled_twin_asks() {
+        let books = vec![row("b1", fp(1)), row("b2", fp(1))];
+        let shelves = vec![shelf("s", &["b2"])];
+        // b2 leaving its shelf for the root lands beside b1, which is the
+        // same content and unfiled: the root's list would hold the file
+        // twice, so the root asks like a shelf does.
+        assert_eq!(
+            blocks(&books, &shelves, &r#move("b2", ALL_SHELF, Some("s"))).as_deref(),
+            Some("b1")
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // The nest: a folder parked inside another owes the parent a screen.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn a_nest_that_parks_a_duplicate_inside_asks() {
+        let books = vec![row("b1", fp(1)), row("b2", fp(1))];
+        let parent = shelf("p", &["b1"]);
+        let mut nested = shelf("f", &["b2", "b1"]);
+        nested.parent = Some("p".to_string());
+        let shelves = vec![parent, nested];
+        // b2 rides the folder into p's view and collides with p's own b1;
+        // b1 is already a direct member of the parent, so it screens out as
+        // the reorder it is.
+        let placements = nest_placements(&shelves, &["f".to_string()], "p");
+        assert_eq!(placements.len(), 1);
+        assert_eq!(
+            blocks(&books, &shelves, &placements[0]).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn a_nest_without_a_shared_content_screens_clean() {
+        let books = vec![row("b1", fp(1)), row("b2", fp(2))];
+        let parent = shelf("p", &["b1"]);
+        let mut nested = shelf("f", &["b2"]);
+        nested.parent = Some("p".to_string());
+        let shelves = vec![parent, nested];
+        let placements = nest_placements(&shelves, &["f".to_string()], "p");
+        assert_eq!(placements.len(), 1);
+        assert_eq!(blocks(&books, &shelves, &placements[0]), None);
+        // The root is not a nest target: un-filing a folder parks it beside
+        // the shelves, and the root's screen is the placement's own.
+        assert!(nest_placements(&shelves, &["f".to_string()], ALL_SHELF).is_empty());
     }
 }

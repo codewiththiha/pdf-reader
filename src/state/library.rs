@@ -129,6 +129,13 @@ pub struct ImportTask {
     /// The file being worked on — the card's second line.
     pub name: String,
     pub error: Option<String>,
+    /// Placements the run screened into the conflict sheet instead of
+    /// landing — the questions waiting on the reader's
+    /// duplicate/replace/merge answer (see
+    /// `crate::services::library::conflict`). The Done headline says so,
+    /// because a card that claims the whole drop landed while a book sits on
+    /// a sheet is a card that under-reports its own run.
+    pub waiting: u32,
 }
 
 impl ImportTask {
@@ -142,6 +149,7 @@ impl ImportTask {
             total: 0,
             name: String::new(),
             error: None,
+            waiting: 0,
         }
     }
 
@@ -180,13 +188,32 @@ impl ImportTask {
         self.fraction().map(|f| (f * 100.0).round() as u32)
     }
 
-    /// The card's first line: what is happening, and to how much.
+    /// The card's first line: what is happening, and to how much. A
+    /// finished run with questions on the conflict sheet says so — the wait
+    /// is part of the run's outcome, not a footnote the card hides.
     pub fn headline(&self) -> String {
         match self.phase {
             TaskPhase::Scanning => "Scanning…".to_string(),
             TaskPhase::Failed => "Import failed".to_string(),
             TaskPhase::Done => {
-                format!("Imported {}", plural(self.total as usize, "book", "books"))
+                let waiting_line = || {
+                    format!(
+                        "{} waiting for your choice",
+                        plural(self.waiting as usize, "book", "books")
+                    )
+                };
+                match (self.total, self.waiting) {
+                    (0, 0) => format!("Imported {}", plural(0, "book", "books")),
+                    (0, _) => waiting_line(),
+                    (_, 0) => {
+                        format!("Imported {}", plural(self.total as usize, "book", "books"))
+                    }
+                    _ => format!(
+                        "Imported {} · {}",
+                        plural(self.total as usize, "book", "books"),
+                        waiting_line()
+                    ),
+                }
             }
             TaskPhase::Copying => match self.total {
                 0 => "Importing…".to_string(),
@@ -407,6 +434,33 @@ mod tests {
         });
         task.finish();
         assert_eq!(task.headline(), "Imported 1 book");
+    }
+
+    #[test]
+    fn a_run_that_left_questions_on_the_sheet_says_so() {
+        // The conflict sheet's wait is part of the run's outcome: the card
+        // reports the placements it screened off instead of claiming a drop
+        // that landed whole.
+        let mut task = ImportTask::new("t1", "3 files");
+        task.total = 2;
+        task.done = 2;
+        task.waiting = 1;
+        task.finish();
+        assert_eq!(
+            task.headline(),
+            "Imported 2 books · 1 book waiting for your choice"
+        );
+
+        // A drop that was ALL collisions finishes on the wait alone.
+        let mut task = ImportTask::new("t1", "dune.pdf");
+        task.waiting = 1;
+        task.finish();
+        assert_eq!(task.headline(), "1 book waiting for your choice");
+
+        let mut task = ImportTask::new("t1", "2 files");
+        task.waiting = 2;
+        task.finish();
+        assert_eq!(task.headline(), "2 books waiting for your choice");
     }
 
     #[test]
