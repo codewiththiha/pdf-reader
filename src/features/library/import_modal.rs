@@ -102,6 +102,11 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     let at_floor = Signal::derive(move || min_size.get() == MIN_SIZE_FLOOR);
     let at_ceil = Signal::derive(move || min_size.get() >= MIN_SIZE_CEIL);
     let chosen = Signal::derive(move || sheet.root.with(|r| r.is_some()));
+    // The path row truncates to one line, and a deep folder is exactly the
+    // path a reader needs to READ before trusting the import with it — so
+    // the truncation has an adjuster: one control that unfolds the row to the
+    // whole path, wrapped, and folds it back.
+    let path_open = RwSignal::new(false);
 
     view! {
         <Show when=move || sheet.open.get()>
@@ -131,10 +136,16 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                     <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
                         // --- the folder ------------------------------------
                         <SectionLabel text="Folder" />
-                        <div class="mb-4 flex items-center gap-2 rounded-xl border border-line px-3 py-2.5">
-                            <Icon name=IconName::Open size=16 class="shrink-0 text-muted" />
+                        <div class="mb-4 flex items-start gap-2 rounded-xl border border-line px-3 py-2.5">
+                            <Icon name=IconName::Open size=16 class="mt-0.5 shrink-0 text-muted" />
                             <span
-                                class="min-w-0 flex-1 truncate text-sm text-ink"
+                                class=move || {
+                                    if path_open.get() {
+                                        "min-w-0 flex-1 break-all text-sm text-ink"
+                                    } else {
+                                        "min-w-0 flex-1 truncate text-sm text-ink"
+                                    }
+                                }
                                 title=move || sheet.root.get().unwrap_or_default()
                             >
                                 {move || {
@@ -144,6 +155,26 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                         .unwrap_or_else(|| "Choose a folder…".to_string())
                                 }}
                             </span>
+                            {move || {
+                                chosen.get().then(|| {
+                                    view! {
+                                        <IconButton
+                                            icon=if path_open.get() {
+                                                IconName::ChevronUp
+                                            } else {
+                                                IconName::ChevronDown
+                                            }
+                                            title=if path_open.get() {
+                                                "Show one line"
+                                            } else {
+                                                "Show the full path"
+                                            }
+                                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                                            on_click=move || path_open.set(!path_open.get())
+                                        />
+                                    }
+                                })
+                            }}
                             <Button
                                 on_click=move |_| {
                                     wasm_bindgen_futures::spawn_local(async move {
