@@ -135,12 +135,8 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             label: Signal::derive(move || format!("the {} shelf", name.get())),
             draggable: Signal::derive(|| true),
             open: Callback::new(move |_| state.library.shelf.set(open_id.clone())),
-            // `watched` is read at the ask rather than at the mount: a rescan
-            // can start or stop watching a folder between the two, and the
-            // menu's rows answer to now.
             menu_target: Callback::new(move |_| MenuTarget::Folder {
                 id: target_id.clone(),
-                watched: watched.get_untracked(),
             }),
             // A folder's lift is a nesting, which writes a parent rather than
             // a membership: there is no list to lift it off.

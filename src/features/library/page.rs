@@ -29,6 +29,7 @@ use crate::components::menus::appearance_menu::AppearanceMenu;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::features::library::breadcrumb::Breadcrumb;
+use crate::features::library::conflict_modal::ConflictModal;
 use crate::features::library::content::LibraryContent;
 use crate::features::library::context_menu::LibraryMenuHost;
 use crate::features::library::dnd::controller::DragController;
@@ -119,6 +120,11 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             <DragLayer />
             <ImportModal state=state sheet=sheet />
             <RemoveBookModal state=state sheet=remove_sheet />
+            // The shelf-already-has-it question. No handle to provide: the
+            // sheet opens off a signal on the library state, because the
+            // services that raise it — a drop, an import's spawned run — are
+            // nobody's component child.
+            <ConflictModal state=state />
             // Fixed, and mounted at the page rather than inside the content: an
             // import outlives the state the shelf is in, and a card that unmounted
             // with an "Opening…" would take its progress with it.

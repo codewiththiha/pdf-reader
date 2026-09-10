@@ -886,8 +886,9 @@
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
 
-/* The remove sheet's cover thumbnail: the book being talked about, at a size that
-   fits a receipt line rather than a shelf. */
+/* The sheets' cover thumbnail — the remove receipt and the conflict sheet both
+   wear it: the book being talked about, at a size that fits a receipt line
+   rather than a shelf. */
 .remove-cover {
   position: relative;
   display: block;

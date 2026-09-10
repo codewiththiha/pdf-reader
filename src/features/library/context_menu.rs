@@ -57,7 +57,7 @@ pub enum MenuTarget {
         missing: bool,
     },
     /// A shelf drawn as a folder.
-    Folder { id: String, watched: bool },
+    Folder { id: String },
     /// A card that is already in the selection: the menu acts on the whole set,
     /// which is what a right-click on one of several things means everywhere else.
     Selection,
@@ -129,8 +129,8 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
                         view! { <BookMenu state=state id=id path=path missing=missing close=close /> }
                             .into_any()
                     }
-                    MenuTarget::Folder { id, watched } => {
-                        view! { <FolderMenu state=state id=id watched=watched close=close /> }
+                    MenuTarget::Folder { id } => {
+                        view! { <FolderMenu state=state id=id close=close /> }
                             .into_any()
                     }
                     MenuTarget::Selection => {
@@ -155,6 +155,10 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
 }
 
 /// A book's menu.
+///
+/// No row carries a sublabel: a right-click is a reader who knows what the rows
+/// mean, and a menu that explains itself on every line is one that has to be
+/// read before it can be used.
 #[component]
 fn BookMenu(
     state: AppState,
@@ -188,7 +192,6 @@ fn BookMenu(
             <MenuItem
                 icon=IconName::Check
                 label="Select"
-                sublabel="Adds it to your selection"
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
@@ -199,7 +202,6 @@ fn BookMenu(
                     <MenuItem
                         icon=IconName::Search
                         label="Find again…"
-                        sublabel="Look for the file somewhere else"
                         on_click=move || {
                             close.run(());
                             relink_dialog(state, relink_id.clone());
@@ -229,7 +231,7 @@ fn BookMenu(
 /// filed inside the one that was asked, whichever level the page is on, because
 /// "new shelf" on a folder is an answer about that folder and not about the page.
 #[component]
-fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -> impl IntoView {
+fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView {
     let open_id = id.clone();
     let select_id = id.clone();
     let inside_id = id.clone();
@@ -248,7 +250,6 @@ fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -
             <MenuItem
                 icon=IconName::Check
                 label="Select"
-                sublabel="Adds it to your selection"
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
@@ -257,7 +258,6 @@ fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -
             <MenuItem
                 icon=IconName::Plus
                 label="New shelf"
-                sublabel="Made inside this shelf, and opened"
                 on_click=move || {
                     close.run(());
                     new_shelf_in(state, &inside_id);
@@ -268,20 +268,11 @@ fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -
                 icon=IconName::Close
                 label="Take shelf apart"
                 tone=MenuItemTone::Danger
-                sublabel="Its books stay in the library"
                 on_click=move || {
                     close.run(());
                     delete_shelf(state, &remove_id);
                 }
             />
-            {watched.then(|| {
-                view! {
-                    <p class="px-2 py-1.5 text-[11px] text-muted">
-                        "From a watched folder: it comes off the list, and returns when the
-                         folder gets new books."
-                    </p>
-                }
-            })}
         </>
     }
 }
@@ -353,7 +344,6 @@ fn LevelMenu(
             <MenuItem
                 icon=IconName::Plus
                 label="New shelf"
-                sublabel="Made here, and opened"
                 on_click=move || {
                     close.run(());
                     new_shelf(state);
@@ -380,7 +370,6 @@ fn LevelMenu(
                     <MenuItem
                         icon=IconName::Check
                         label="Select all"
-                        sublabel="Everything in view"
                         on_click=move || {
                             close.run(());
                             select_on_screen(state, order, folders);

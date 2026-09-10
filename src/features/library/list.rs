@@ -319,10 +319,6 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
             open: toggle,
             menu_target: Callback::new(move |_| MenuTarget::Folder {
                 id: target_id.clone(),
-                // Read at the ask rather than at the mount: a rescan can start
-                // or stop watching a folder between the two, and the menu's
-                // rows answer to now.
-                watched: shelf_is_watched(state, &target_id),
             }),
             // A folder's lift is a nesting, which writes a parent rather than
             // a membership: there is no list to lift it off.
@@ -471,24 +467,6 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
             </Show>
         </>
     }
-}
-
-/// Whether the folder this shelf was cut from is still being watched — the one
-/// fact the shelf's right-click menu carries, read when the menu is asked
-/// rather than when the row mounts.
-fn shelf_is_watched(state: AppState, shelf_id: &str) -> bool {
-    state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .find(|s| s.id == shelf_id)
-            .is_some_and(|s| {
-                s.kind.folder_id().is_some_and(|folder_id| {
-                    state.library.folders.with_untracked(|folders| {
-                        folders.iter().any(|f| f.id == folder_id && f.opts.watch)
-                    })
-                })
-            })
-    })
 }
 
 /// The books on a shelf's member list, in the order the page shows books: the

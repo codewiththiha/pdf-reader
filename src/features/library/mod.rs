@@ -14,6 +14,8 @@
 //!   * [`add_card`] / [`add_menu`] / [`empty_state`] — the two ways in
 //!   * [`import_modal`] — what a folder import is allowed to be
 //!   * [`remove_modal`] — what a removal costs, itemised
+//!   * [`conflict_modal`] — the shelf already holds that book: the
+//!     duplicate/replace/merge question, and the second ask a replace owes
 //!   * [`selection`] — the hold that starts a multi-select, and the bar that acts
 //!     on it
 //!   * [`context_menu`] — the right-click: one menu per kind of thing under the
@@ -41,6 +43,7 @@ pub mod add_card;
 pub mod add_menu;
 pub mod book_card;
 pub mod breadcrumb;
+pub mod conflict_modal;
 pub mod content;
 pub mod context_menu;
 pub mod dnd;
