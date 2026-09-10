@@ -14,6 +14,16 @@
 //! an answer the reader has to take on faith, and the merge's line is computed
 //! and promised the same way: how many highlights the fold would keep and
 //! where the survivor would resume, from a dry run of the fold itself.
+//!
+//! One sheet asks a different question, and the service says which
+//! (`ConflictAsk::linked_flow`): an arrival reading from the very address the
+//! shelf's row reads is not a copy of a book but that book's own file arriving
+//! again, and the three file-manager answers are the wrong three for it. That
+//! sheet offers *already imported* (place nothing, reveal the book the reader
+//! has), *as new* (a second row that is a book of its own — its own
+//! highlights, its own place) and *link them* (the duplicate's two shared
+//! rows, named for what they go on sharing). Same queue, same switch, same
+//! Cancel: only the rows and their words differ.
 //! Replace is the one destructive row, and it asks twice only when the shelf's
 //! copy takes something with it — a resume point or highlights at an address
 //! the arrival does not read from; the second step itemises exactly that, in
@@ -41,7 +51,7 @@ use crate::components::primitives::controls::button::{Button, ButtonTone, Button
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
 use crate::services::library::conflict::{
-    self, Choice, ConflictAsk, ConflictItem, Incoming, Step,
+    self, Choice, ConflictAsk, ConflictItem, Incoming, LinkedFileChoice, Step,
 };
 use crate::state::AppState;
 
@@ -111,6 +121,13 @@ struct Info {
     /// library" there, because "on this shelf" would name a shelf that does
     /// not exist.
     root: bool,
+    /// Whether the question on screen is the same-address one, which has its
+    /// own three answers and its own words for them.
+    linked_flow: bool,
+    /// Whether the whole queue asks that same question — the switch's
+    /// precondition, because "the same answer for the rest" means nothing
+    /// while the rest are being asked something else.
+    uniform: bool,
     /// The name a Duplicate would mint, promised on its own row.
     dup_name: String,
     /// What a Merge would keep, promised on its own row — the dry run of the
@@ -189,10 +206,14 @@ impl Info {
             Some(book) => format!("Page {}", book.page),
             None => String::new(),
         };
+        // The copy's OWN key, not its address: a book of its own keeps its
+        // marks under a key of its id, and a receipt that counted the address
+        // would promise a loss the removal cannot make
+        // (`library_core::book::Book::gloss_key`).
         let marks = existing
             .map(|b| {
                 crate::storage::load_gloss()
-                    .get(b.path())
+                    .get(&b.gloss_key())
                     .map(Vec::len)
                     .unwrap_or(0)
             })
@@ -203,6 +224,8 @@ impl Info {
             existing_name,
             shelf_name,
             root,
+            linked_flow: ask.linked_flow(),
+            uniform: ask.uniform(),
             dup_name,
             merge_note,
             cover,
@@ -222,6 +245,7 @@ impl Info {
 #[component]
 fn Sheet(state: AppState, info: Info) -> impl IntoView {
     let confirm = info.step == Step::ConfirmReplace;
+    let linked_flow = info.linked_flow;
     // The second ask names what is about to GO — the first sheet named what
     // is arriving, and the warning is about the copy, not the arrival.
     let heading = if confirm {
@@ -245,13 +269,27 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
     };
     let question = format!("“{}” {where_line} is the same book.", info.existing_name);
     let dup_note = format!("Keep both — this one becomes “{}”", info.dup_name);
+    // The same-address question's own words. Nothing about the file is in
+    // doubt here — the shelf's row reads the very address this arrival reads —
+    // so the sentence says THAT, and the three rows are the three things a
+    // reader can mean by importing a file they already have.
+    let linked_question = format!("“{}” {where_line} is this file.", info.existing_name);
+    let go_to_note = format!("Add nothing — go to “{}” where it already is", info.existing_name);
+    let as_new_note = format!(
+        "A book of its own — “{}”, with its own highlights and its own place in it",
+        info.dup_name
+    );
+    let link_note = format!(
+        "One book in two rows — “{}” shares these highlights, this place, and one removal",
+        info.dup_name
+    );
     let replace_note = if info.root {
         "The one in your library gives its place to this one".to_string()
     } else {
         "The one on the shelf gives its place to this one".to_string()
     };
     let merge_note = info.merge_note.clone();
-    let offers_all = info.rest > 0 && !confirm;
+    let offers_all = info.rest > 0 && !confirm && info.uniform;
     let switch_label = match info.rest {
         1 => "Do this for the other book too".to_string(),
         n => format!("Do this for the other {n} books too"),
@@ -354,6 +392,43 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                         </>
                     }
                         .into_any()
+                } else if linked_flow {
+                    // The same-address question: three rows, and none of them
+                    // is a warning, because two rows of ONE address share their
+                    // highlights and their position — there is nothing here
+                    // that can take something the reader was not told about.
+                    view! {
+                        <>
+                            <p class="text-xs text-muted">{linked_question}</p>
+                            <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+                                <ChoiceRow
+                                    label="Already imported"
+                                    note=go_to_note
+                                    on_click=Callback::new(move |_| {
+                                        conflict::choose_linked(state, LinkedFileChoice::GoToExisting)
+                                    })
+                                />
+                                <ChoiceRow
+                                    label="Add as new"
+                                    note=as_new_note
+                                    on_click=Callback::new(move |_| {
+                                        conflict::choose_linked(state, LinkedFileChoice::AsNew)
+                                    })
+                                />
+                                <ChoiceRow
+                                    label="Link them"
+                                    note=link_note
+                                    on_click=Callback::new(move |_| {
+                                        conflict::choose_linked(state, LinkedFileChoice::LinkShared)
+                                    })
+                                />
+                            </div>
+                            {offers_all.then(|| {
+                                view! { <ApplyAllRow state=state label=switch_label.clone() /> }
+                            })}
+                        </>
+                    }
+                        .into_any()
                 } else {
                     view! {
                         <>
@@ -382,23 +457,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                                 />
                             </div>
                             {offers_all.then(|| {
-                                view! {
-                                    <div class="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
-                                        <span class="text-sm text-ink">{switch_label}</span>
-                                        <Switch
-                                            checked=Signal::derive(move || {
-                                                state.library.conflict.with(|ask| {
-                                                    ask.as_ref().is_some_and(|a| a.apply_all)
-                                                })
-                                            })
-                                            on_change=Callback::new(move |on| {
-                                                conflict::set_apply_all(state, on)
-                                            })
-                                            title="Answer the rest of the queue the same way"
-                                                .to_string()
-                                        />
-                                    </div>
-                                }
+                                view! { <ApplyAllRow state=state label=switch_label.clone() /> }
                             })}
                         </>
                     }
@@ -441,6 +500,31 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                         .into_any()
                 }}
             </footer>
+        </div>
+    }
+}
+
+/// The queue's switch: the same answer for every question behind this one.
+///
+/// One component rather than a copy inside each of the two questions this
+/// sheet asks, because the switch is not part of either vocabulary — it is the
+/// queue's, and a second copy would be a second place for its words to drift.
+#[component]
+fn ApplyAllRow(state: AppState, label: String) -> impl IntoView {
+    view! {
+        <div class="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
+            <span class="text-sm text-ink">{label}</span>
+            <Switch
+                checked=Signal::derive(move || {
+                    state.library.conflict.with(|ask| {
+                        ask.as_ref().is_some_and(|a| a.apply_all)
+                    })
+                })
+                on_change=Callback::new(move |on| {
+                    conflict::set_apply_all(state, on)
+                })
+                title="Answer the rest of the queue the same way".to_string()
+            />
         </div>
     }
 }

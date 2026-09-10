@@ -36,6 +36,40 @@
 //! into a second format measures a different fingerprint and simply lands,
 //! which is the honest answer: two books that merely rhyme are two books.
 //!
+//! ## The question that is not about content
+//!
+//! One collision is different, and asking it the three questions above asks
+//! the wrong thing: the SAME FILE arriving at an address the library already
+//! reads it from. Import "dune.pdf" twice and the second arrival is not a
+//! copy of the shelf's book that might be worth replacing or folding — it IS
+//! that file, and the two rows would share its address, and with it the
+//! highlights keyed by the address, the resume point every writer at the
+//! address updates, and the removal that sweeps the address when the last row
+//! leaves it. The reader is not being asked what to do about a duplicate; they
+//! are being asked whether they want one book or two. So [`kind_of`] splits the
+//! queue by [`ConflictKind`], and a [`ConflictKind::SameLinkedFile`] item gets
+//! [`LinkedFileChoice`]'s three answers on the same sheet, in the same queue,
+//! behind the same switch:
+//!
+//!   * **Already imported** places nothing: it reveals the book the reader
+//!     already has ([`super::reveal`]), which is the answer that says "I did
+//!     not mean to add anything";
+//!   * **As new** is [`Choice::Duplicate`]'s row operation plus the one mark
+//!     that makes the arrival a book of its own
+//!     ([`library_core::book::Book::independent`]): its highlights live under a
+//!     key carrying its id, its resume point is written by itself, and removing
+//!     either row takes nothing from the other;
+//!   * **Linked** is [`Choice::Duplicate`] exactly, and says so — two rows that
+//!     go on sharing everything an address holds.
+//!
+//! The rule is the address and nothing else, which is why a stored copy never
+//! asks it: a stored book's address is the app's own and no import can arrive
+//! at it. Independence is a mark on a row rather than a second kind of row, so
+//! everything the library already knew about twins still holds — the ledger
+//! names a shared row before a private one, an import resolves to a shared row
+//! and never to a private one, and a fold ends the mark
+//! ([`library_core::merge::Policy::Folded`]).
+//!
 //! ## What is a conflict, precisely
 //!
 //! [`screen`] is the whole rule, and it is per placement rather than per
@@ -113,6 +147,42 @@ pub struct ConflictItem {
     /// The shelf member holding the same content — the row the answers act
     /// against, and the survivor of a merge.
     pub existing_id: String,
+    /// Which question this is, and so which three answers the sheet asks.
+    pub kind: ConflictKind,
+}
+
+/// Which question a blocked placement is. The sheet changes its whole
+/// vocabulary on this, so it is a value rather than something the view
+/// re-derives from the two rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictKind {
+    /// One content at two addresses: the file the arrival reads is a copy of
+    /// the one the shelf's row reads, and nothing else is known. The three
+    /// file-manager answers ([`Choice`]) are the question this was written
+    /// for.
+    Fingerprint,
+    /// The same ADDRESS arriving twice — a file imported onto a level that
+    /// already reads it, or a row dragged onto a level holding its own twin.
+    /// Nothing about the content is in doubt, so the three answers above are
+    /// the wrong three: what is in question is whether the reader wants one
+    /// book or two, which is [`LinkedFileChoice`].
+    SameLinkedFile,
+}
+
+/// The same-address question's answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkedFileChoice {
+    /// Nothing to place — take the reader to the book they already have: its
+    /// shelf, then its card, lit ([`super::reveal::reveal_book`]).
+    GoToExisting,
+    /// A book of its own: the arrival takes a counter name and the
+    /// independence mark, so its highlights, its resume point and its removal
+    /// are its own ([`library_core::book::Book::independent`]).
+    AsNew,
+    /// Two rows, one book: they share the address, and with it the highlights,
+    /// the position and the removal. The [`Choice::Duplicate`] answer wearing
+    /// this question's words.
+    LinkShared,
 }
 
 /// The reader's answer.
@@ -171,6 +241,30 @@ impl ConflictAsk {
     pub fn rest(&self) -> usize {
         self.items.len().saturating_sub(1)
     }
+
+    /// Whether the question on screen is the same-address one, which has its
+    /// own three answers.
+    ///
+    /// Derived from the item at the front rather than stored beside it: a
+    /// queue grows by extending whatever sheet is already up ([`raise`]), so a
+    /// flag set at construction would keep answering for the item that opened
+    /// the sheet long after the sheet had moved on to a different question.
+    pub fn linked_flow(&self) -> bool {
+        self.current()
+            .is_some_and(|item| item.kind == ConflictKind::SameLinkedFile)
+    }
+
+    /// Whether the whole queue asks the question on screen. The switch's
+    /// precondition: "the same answer for the rest" is a sentence that means
+    /// something only while the rest are being asked the same thing, and a
+    /// queue of two questions with three answers each and three with another
+    /// three is not one question asked five times.
+    pub fn uniform(&self) -> bool {
+        match self.current() {
+            Some(item) => self.items.iter().all(|other| other.kind == item.kind),
+            None => false,
+        }
+    }
 }
 
 /// Milliseconds since the epoch — the library's only clock, the import
@@ -208,14 +302,50 @@ pub fn screen(
     let mut conflicts = Vec::new();
     for placement in placements {
         match blocks(&books, &shelves, &placement) {
-            Some(existing_id) => conflicts.push(ConflictItem {
-                placement,
-                existing_id,
-            }),
+            Some(existing_id) => {
+                let kind = kind_of(&books, &placement, &existing_id);
+                conflicts.push(ConflictItem {
+                    placement,
+                    existing_id,
+                    kind,
+                });
+            }
             None => clean.push(placement),
         }
     }
     (clean, conflicts)
+}
+
+/// Which question a blocked placement is: the address decides.
+///
+/// An arrival reading from the very address the shelf's copy reads from is the
+/// same FILE arriving twice — one book the library already holds, and the only
+/// thing to ask is whether the reader wants a second one beside it. Two rows
+/// of one content at two ADDRESSES are the other question, the one the three
+/// file-manager answers were written for, because there the arrival's own file
+/// is a thing the reader has and the shelf's copy is a thing the reader has
+/// elsewhere.
+///
+/// Pure, and split out of [`screen`] for the reason [`blocks`] is: the sheet
+/// changes its whole vocabulary on this answer, so it is one a test can hold.
+fn kind_of(books: &[Book], placement: &Placement, existing_id: &str) -> ConflictKind {
+    let incoming = match &placement.incoming {
+        Incoming::Move { book_id } => books
+            .iter()
+            .find(|b| &b.id == book_id)
+            .map(|b| b.path().to_string()),
+        Incoming::Import { file } => Some(file.path.clone()),
+    };
+    let existing = books
+        .iter()
+        .find(|b| b.id == existing_id)
+        .map(|b| b.path().to_string());
+    match (incoming, existing) {
+        // A row that went while the sheet was being raised has no address to
+        // compare, and the answers below resolve that case on their own.
+        (Some(incoming), Some(existing)) if incoming == existing => ConflictKind::SameLinkedFile,
+        _ => ConflictKind::Fingerprint,
+    }
 }
 
 /// A folder filed inside another asks too.
@@ -382,6 +512,23 @@ pub fn choose(state: AppState, choice: Choice) {
     apply_choice(state, choice);
 }
 
+/// One of the same-address question's three rows — [`choose`] for a queue
+/// asking that question instead of the file-manager one.
+///
+/// No second ask belongs here, and that is the point of the question: two rows
+/// of ONE address share their highlights and their position, so nothing an
+/// answer here does can take something away that the row did not already say.
+/// *As new* is the only row that writes a mark of its own
+/// ([`library_core::book::Book::independent`]), and the mark is what keeps the
+/// two apart from then on.
+pub fn choose_linked(state: AppState, choice: LinkedFileChoice) {
+    apply_answer(
+        state,
+        ConflictKind::SameLinkedFile,
+        move |state, item| resolve_linked(state, item, choice),
+    );
+}
+
 /// Whether a Replace owes the second ask: the front of the queue — or, with
 /// the switch on, ANY item the batch is about to answer, because one warning
 /// covers the whole batch and a loss nobody warned about is a loss the sheet
@@ -426,7 +573,7 @@ fn replace_loses(state: AppState, item: &ConflictItem) -> bool {
     // nothing marked is nothing to warn about either way.
     let marks = if positions_differ && !started {
         crate::storage::load_gloss()
-            .get(existing.path())
+            .get(&existing.gloss_key())
             .map(Vec::len)
             .unwrap_or(0)
     } else {
@@ -480,14 +627,45 @@ fn set_step(state: AppState, step: Step) {
 
 /// Resolve the front of the queue — and behind it too, when the switch is on.
 fn apply_choice(state: AppState, choice: Choice) {
+    apply_answer(state, ConflictKind::Fingerprint, move |state, item| {
+        resolve(state, item, choice)
+    });
+}
+
+/// The queue's mechanics, shared by both questions: answer the item on screen,
+/// then the rest of them when the switch is on, and close the sheet when the
+/// queue runs out.
+///
+/// `kind` is the question `answer` answers, and it is also the guard the
+/// switch needs. "The same answer for the rest" is only offered for a queue
+/// that asks one kind of question ([`ConflictAsk::uniform`]); this is what
+/// makes a queue that somehow holds both kinds safe anyway — the items it can
+/// answer are answered and the ones it cannot keep their place on the sheet
+/// rather than being handed a word that does not belong to their question.
+fn apply_answer(
+    state: AppState,
+    kind: ConflictKind,
+    answer: impl Fn(AppState, &ConflictItem),
+) {
     let Some(mut ask) = state.library.conflict.get_untracked() else {
         return;
     };
     if ask.apply_all {
+        let mut rest = Vec::new();
         for item in std::mem::take(&mut ask.items) {
-            resolve(state, &item, choice);
+            if item.kind == kind {
+                answer(state, &item);
+            } else {
+                rest.push(item);
+            }
         }
-        cancel(state);
+        if rest.is_empty() {
+            cancel(state);
+        } else {
+            ask.items = rest;
+            ask.step = Step::Choose;
+            state.library.conflict.set(Some(ask));
+        }
         return;
     }
     let Some(item) = ask.items.first().cloned() else {
@@ -495,7 +673,7 @@ fn apply_choice(state: AppState, choice: Choice) {
         return;
     };
     ask.items.remove(0);
-    resolve(state, &item, choice);
+    answer(state, &item);
     if ask.items.is_empty() {
         cancel(state);
     } else {
@@ -506,9 +684,27 @@ fn apply_choice(state: AppState, choice: Choice) {
 
 fn resolve(state: AppState, item: &ConflictItem, choice: Choice) {
     match choice {
-        Choice::Duplicate => duplicate(state, item),
+        Choice::Duplicate => duplicate(state, item, false),
         Choice::Replace => replace(state, item),
         Choice::Merge => merge(state, item),
+    }
+}
+
+/// The same-address question's three answers.
+///
+/// Two of them are one row operation wearing two promises, and that is honest
+/// rather than lazy: *as new* and *linked* both keep two rows of one file on
+/// the shelf, and the difference between them is a single mark on the arrival
+/// — the one that decides whether the two go on sharing an address's
+/// highlights and resume point or each keep their own. The third writes no row
+/// at all.
+fn resolve_linked(state: AppState, item: &ConflictItem, choice: LinkedFileChoice) {
+    match choice {
+        // Nothing to place: the reader asked to be shown the book they already
+        // have, which is the library's own reveal — its shelf, then its card.
+        LinkedFileChoice::GoToExisting => super::reveal::reveal_book(state, &item.existing_id),
+        LinkedFileChoice::AsNew => duplicate(state, item, true),
+        LinkedFileChoice::LinkShared => duplicate(state, item, false),
     }
 }
 
@@ -517,7 +713,19 @@ fn resolve(state: AppState, item: &ConflictItem, choice: Choice) {
 // ---------------------------------------------------------------------------
 
 /// Keep both: the arrival takes the first free counter name and lands.
-fn duplicate(state: AppState, item: &ConflictItem) {
+///
+/// `independent` is the same-address question's *as new* answer and nothing
+/// else — the row it makes is the same row either way, and the mark is what
+/// makes it a book of its own instead of a twin
+/// ([`library_core::book::Book::independent`]). A moved row takes the mark on
+/// the row it already is; an imported file takes it on the row this mints.
+///
+/// The new book's highlight list starts empty, and that is the promise rather
+/// than a loss: the marks at the address belong to the book already there, and
+/// a book of its own is a book the reader reads separately. What it shares with
+/// its twin is the address's fate — the cover, which is the file's art, and a
+/// path check, which is a fact about the file.
+fn duplicate(state: AppState, item: &ConflictItem, independent: bool) {
     match &item.placement.incoming {
         Incoming::Move { book_id } => {
             // The row went while the sheet was up (a removal from another
@@ -532,6 +740,13 @@ fn duplicate(state: AppState, item: &ConflictItem) {
             state.library.books.update(|books| {
                 if let Some(row) = books.iter_mut().find(|b| &b.id == book_id) {
                     row.title = Some(name);
+                    // Added and never taken away: a row that is already a book
+                    // of its own stays one, whatever question this sheet is
+                    // asking. Clearing the mark would not merely re-share the
+                    // row — its highlights live under a key carrying its id, so
+                    // a row that stopped being independent would stop reading
+                    // the only list it has.
+                    row.independent = row.independent || independent;
                 }
             });
             land(state, &item.placement, book_id, item.placement.index);
@@ -541,6 +756,7 @@ fn duplicate(state: AppState, item: &ConflictItem) {
             let name = duplicate_name(state, item);
             let book = Book {
                 title: Some(name),
+                independent,
                 ..Book::new(
                     id::next_id(now),
                     file.fp,
@@ -664,12 +880,37 @@ fn merge(state: AppState, item: &ConflictItem) {
             left_behind.push((path.to_string(), book.origin.is_stored()));
         }
     }
+    // The keys a book of its own reads its marks from, and a fold ends both
+    // sides' independence ([`library_core::merge::Policy::Folded`]): the merged
+    // row reads the address like every other book, so the marks under an id
+    // have to travel there or the union the Merge row promised is a union with
+    // a hole in it. The survivor's key goes FIRST, which is what makes
+    // `fold_gloss`'s count read the address's own marks as kept rather than as
+    // arrived — and the arrival's private marks are its `drop_row`'s to remove
+    // afterwards, the sweep that already takes a private row's list with it.
+    let mut private_keys: Vec<String> = Vec::new();
+    for book in [&existing, &incoming] {
+        let key = book.gloss_key();
+        if book.independent && key != survivor && !private_keys.contains(&key) {
+            private_keys.push(key);
+        }
+    }
 
     state.library.books.update(|books| {
         if let Some(row) = books.iter_mut().find(|b| b.id == existing.id) {
             *row = merged;
         }
     });
+    for key in &private_keys {
+        merge_side::fold_gloss(key, &survivor, &mut notes);
+    }
+    if existing.independent {
+        // The union is at the address now; what is left under the id is the
+        // leak `crate::storage::remove_gloss` exists to prevent — the largest
+        // half of what a reader put into a book, waiting under a key no row
+        // can name any more.
+        crate::storage::remove_gloss(&existing.gloss_key());
+    }
     for (path, _) in &left_behind {
         merge_side::merge_side_tables(state, path, &survivor, &mut notes);
     }
@@ -786,14 +1027,24 @@ pub fn merge_preview(state: AppState, item: &ConflictItem) -> MergeNotes {
     };
     let (merged, mut notes) = merge_books(&existing, &incoming);
     let survivor = merged.path().to_string();
-    let mut left_behind: Vec<String> = Vec::new();
+    // Every key the fold gathers marks from, in the order [`merge`] folds
+    // them: a private row's id-keyed list first, the survivor's before the
+    // arrival's, and then the addresses the fold leaves behind. Same order,
+    // same counts — the promise on the sheet is the report the fold writes.
+    let mut from: Vec<String> = Vec::new();
     for book in [&existing, &incoming] {
-        let path = book.path().to_string();
-        if path != survivor && !left_behind.contains(&path) {
-            left_behind.push(path);
+        let key = book.gloss_key();
+        if book.independent && key != survivor && !from.contains(&key) {
+            from.push(key);
         }
     }
-    merge_side::count_marks(&left_behind, &survivor, &mut notes);
+    for book in [&existing, &incoming] {
+        let path = book.path().to_string();
+        if path != survivor && !from.contains(&path) {
+            from.push(path);
+        }
+    }
+    merge_side::count_marks(&from, &survivor, &mut notes);
     notes
 }
 
@@ -1186,6 +1437,163 @@ mod tests {
     }
 
     // -------------------------------------------------------------------
+    // The same address: the question that is not about content.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn the_same_address_asks_the_other_question() {
+        // An import of the very file the shelf's row reads: nothing about
+        // its content is in doubt, so the three file-manager answers are the
+        // wrong three.
+        let books = vec![md_row("b1", "/one/dune.md", 1)];
+        assert_eq!(
+            kind_of(&books, &md_import("/one/dune.md", 1, ALL_SHELF), "b1"),
+            ConflictKind::SameLinkedFile
+        );
+        // A copy of it elsewhere measures the same fingerprint and asks the
+        // question the answers were written for: two addresses, two files,
+        // one content.
+        assert_eq!(
+            kind_of(&books, &md_import("/two/dune.md", 1, ALL_SHELF), "b1"),
+            ConflictKind::Fingerprint
+        );
+        // A dragged row is the same question when it reads the same address,
+        // and the other one when it does not.
+        let twins = vec![md_row("b1", "/one/dune.md", 1), md_row("b2", "/one/dune.md", 1)];
+        assert_eq!(
+            kind_of(&twins, &r#move("b2", "s", None), "b1"),
+            ConflictKind::SameLinkedFile
+        );
+        let apart = vec![md_row("b1", "/one/dune.md", 1), md_row("b2", "/two/dune.md", 1)];
+        assert_eq!(
+            kind_of(&apart, &r#move("b2", "s", None), "b1"),
+            ConflictKind::Fingerprint
+        );
+    }
+
+    #[test]
+    fn a_row_that_went_is_the_question_that_still_has_answers() {
+        // Neither side readable: the generic three, because the answers below
+        // resolve a missing row on their own and the sheet has nothing to say
+        // about an address it cannot read.
+        let books: Vec<Book> = Vec::new();
+        assert_eq!(
+            kind_of(&books, &md_import("/one/dune.md", 1, ALL_SHELF), "gone"),
+            ConflictKind::Fingerprint
+        );
+        assert_eq!(
+            kind_of(&books, &r#move("gone", "s", None), "gone"),
+            ConflictKind::Fingerprint
+        );
+    }
+
+    #[test]
+    fn the_sheet_asks_the_question_at_the_front_of_its_queue() {
+        let linked = ConflictItem {
+            placement: md_import("/one/dune.md", 1, ALL_SHELF),
+            existing_id: "b1".to_string(),
+            kind: ConflictKind::SameLinkedFile,
+        };
+        let generic = ConflictItem {
+            placement: md_import("/two/dune.md", 1, ALL_SHELF),
+            existing_id: "b1".to_string(),
+            kind: ConflictKind::Fingerprint,
+        };
+        // The flow follows the item on screen rather than the one that opened
+        // the sheet: a queue grows by extending whatever sheet is already up.
+        let ask = ConflictAsk::new(vec![linked.clone(), generic.clone()]);
+        assert!(ask.linked_flow());
+        assert!(!ask.uniform(), "two questions, two sets of answers");
+        // And the other way round: the front of the queue is the question the
+        // sheet asks, whichever kind opened it.
+        let ask = ConflictAsk::new(vec![generic.clone(), linked]);
+        assert!(!ask.linked_flow());
+        assert!(!ask.uniform());
+        // One kind all the way down is what the switch needs to mean anything.
+        assert!(ConflictAsk::new(vec![generic.clone(), generic]).uniform());
+        assert!(!ConflictAsk::new(Vec::new()).uniform(), "no question, no switch");
+        assert!(!ConflictAsk::new(Vec::new()).linked_flow());
+    }
+
+    #[test]
+    fn already_imported_places_nothing_and_lights_the_book_it_names() {
+        // The one linked answer a host test can run: it writes no row and
+        // touches no storage, so the whole of it is signals.
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let books = vec![md_row("b1", "/one/dune.md", 1)];
+        state.library.books.set(books.clone());
+        state.library.shelves.set(vec![shelf("s", &["b1"])]);
+        let item = ConflictItem {
+            placement: md_import("/one/dune.md", 1, ALL_SHELF),
+            existing_id: "b1".to_string(),
+            kind: ConflictKind::SameLinkedFile,
+        };
+        state.library.conflict.set(Some(ConflictAsk::new(vec![item])));
+        state.library.conflict_open.set(true);
+
+        choose_linked(state, LinkedFileChoice::GoToExisting);
+
+        assert_eq!(state.library.books.get_untracked(), books, "no row was written");
+        assert_eq!(
+            state.library.shelf.get_untracked(),
+            "s",
+            "the breadcrumb moved to the shelf the book is on"
+        );
+        let (id, first) = state.library.reveal.get_untracked().expect("a reveal");
+        assert_eq!(id, "b1");
+        assert!(state.library.conflict.get_untracked().is_none(), "the queue ran out");
+        assert!(!state.library.conflict_open.get_untracked());
+
+        // Asking again is asking again: the nonce is what makes a second
+        // reveal of the same book a second gesture rather than an equal value
+        // nobody is told about.
+        raise(state, vec![ConflictItem {
+            placement: md_import("/one/dune.md", 1, ALL_SHELF),
+            existing_id: "b1".to_string(),
+            kind: ConflictKind::SameLinkedFile,
+        }]);
+        choose_linked(state, LinkedFileChoice::GoToExisting);
+        let (_, second) = state.library.reveal.get_untracked().expect("a second reveal");
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn the_switch_answers_the_questions_it_belongs_to() {
+        // A queue of both kinds with the switch on: the linked answers resolve
+        // the linked items and leave the others on the sheet, because a word
+        // from one question is not an answer to the other.
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        state.library.books.set(vec![md_row("b1", "/one/dune.md", 1)]);
+        state.library.shelves.set(vec![shelf("s", &["b1"])]);
+        let linked = ConflictItem {
+            placement: md_import("/one/dune.md", 1, ALL_SHELF),
+            existing_id: "b1".to_string(),
+            kind: ConflictKind::SameLinkedFile,
+        };
+        let generic = ConflictItem {
+            placement: md_import("/two/dune.md", 1, ALL_SHELF),
+            existing_id: "b1".to_string(),
+            kind: ConflictKind::Fingerprint,
+        };
+        let mut ask = ConflictAsk::new(vec![linked, generic]);
+        ask.apply_all = true;
+        state.library.conflict.set(Some(ask));
+        state.library.conflict_open.set(true);
+
+        choose_linked(state, LinkedFileChoice::GoToExisting);
+
+        let ask = state.library.conflict.get_untracked().expect("still asking");
+        assert_eq!(ask.items.len(), 1, "the linked answer took only the linked question");
+        assert_eq!(ask.items[0].kind, ConflictKind::Fingerprint);
+        assert_eq!(ask.step, Step::Choose);
+        assert!(state.library.reveal.get_untracked().is_some());
+    }
+
+    // -------------------------------------------------------------------
     // The second ask: a replace warns only over what it takes.
     // -------------------------------------------------------------------
 
@@ -1212,6 +1620,9 @@ mod tests {
         let item = ConflictItem {
             placement: r#move("b2", "s", None),
             existing_id: "b1".to_string(),
+            // Two addresses: the file-manager question, and the one whose
+            // second ask this test is about.
+            kind: ConflictKind::Fingerprint,
         };
         state.library.conflict.set(Some(ConflictAsk::new(vec![item])));
         state.library.conflict_open.set(true);

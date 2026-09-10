@@ -40,7 +40,10 @@ use crate::state::AppState;
 type SideMerger = fn(AppState, &str, &str, &mut MergeNotes);
 
 /// Every side table a merge folds, in the order they are folded. A new
-/// address-keyed table joins here and in nowhere else.
+/// address-keyed table joins here and in nowhere else. The gloss has one more
+/// caller than the registry — [`fold_gloss`], for the fold that moves a
+/// survivor's own marks out of its id-keyed store — and it is the same
+/// function the registry walks, so the two cannot disagree.
 const SIDE_MERGERS: &[SideMerger] = &[gloss_merger, cover_merger];
 
 /// Fold every side table from one left-behind address into the survivor's,
@@ -74,6 +77,17 @@ pub fn count_marks(from: &[String], into: &str, notes: &mut MergeNotes) {
 /// the AI answers ride the ids — a mark that travels arrives with the answer
 /// it already had, and a spot both rows marked keeps the survivor's mark.
 fn gloss_merger(_state: AppState, from: &str, into: &str, notes: &mut MergeNotes) {
+    fold_gloss(from, into, notes)
+}
+
+/// [`gloss_merger`] by itself, for the one fold that is not between two
+/// addresses: a survivor that was a book of its own kept its marks under a key
+/// carrying its id ([`library_core::book::Book::gloss_key`]), and a merge ends
+/// that — one book reads the address's list like every other book
+/// ([`library_core::merge::Policy::Folded`]). The count it reports into `notes`
+/// is the same one [`count_marks`] promises, so the sheet's dry run and the
+/// fold cannot drift over it either.
+pub fn fold_gloss(from: &str, into: &str, notes: &mut MergeNotes) {
     let all = crate::storage::load_gloss();
     let mine = all.get(into).cloned().unwrap_or_default();
     // `mine` already holds what an earlier pass moved, so the count of what
