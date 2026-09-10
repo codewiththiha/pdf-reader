@@ -374,9 +374,10 @@ the filesystem.
   hand full of books; the ellipsis itself is a place to rest and not a place to drop.
 - **A right-click is a menu, per kind of thing.** A book gets Open, Select, Find again when its
   address died, and Remove; a folder gets Open, Select, a New shelf filed inside the one you asked
-  whichever level the page is on, and Take shelf apart with the note about what survives it; a card already in a selection gets the set's menu — New shelf from these, Remove, Clear
+  whichever level the page is on, and Take shelf apart; a card already in a selection gets the set's menu — New shelf from these, Remove, Clear
   — because a right-click on one of several things means all of them; and the empty shelf gets New
-  shelf and Select all. One host answers all four, so the menu is the same menu wherever it was asked
+  shelf and Select all. No row carries a second line explaining itself: a right-click is a reader
+  who knows what the rows mean. One host answers all four, so the menu is the same menu wherever it was asked
   from, and a right-click never starts a drag: a menu row is clicked by a pointer that has already
   been released, and a session begun from one would have no release to end it.
 - **Removing a book shows you the receipt first.** The sheet itemises what goes with it — the resume
@@ -404,6 +405,19 @@ the filesystem.
   because the run outlives the page that started it.
 - **Dropping files on the library files them**; dropping them anywhere else still opens one. Both go
   through the same admission, which is the format registry.
+- **A shelf that already holds the book asks.** Importing a file, dragging a book or filing one onto
+  a shelf that already holds that same content — the same bytes by fingerprint, not the same name;
+  a second format of one title is a second book and is simply placed — used to do nothing at all,
+  which read as the book vanishing into the shelf. Now it asks, with the three answers a file
+  manager teaches: **Duplicate** keeps both and names the arrival `dune_1`, `dune_2` and so on;
+  **Replace** seats the arrival in the shelf copy's place — on every shelf it was filed on — and
+  asks a second time first, itemising what the copy loses; **Merge** folds the two rows into one
+  book by a written-down policy (`library_core::merge`): the resume point of whichever copy got
+  further, both sides' highlights, names that fill gaps rather than overwrite. A drop of ten files
+  with two collisions files eight and asks twice — one question at a time, with a switch that gives
+  the rest of the queue the same answer, and a Cancel that stops the remaining questions. Two rows
+  of one file share the file's own truth (read one to page 90 and both resume there), and removing
+  one keeps the highlights, the cover and the copied bytes while the other still reads them.
 
 ### Interface
 
@@ -682,8 +696,8 @@ crates/
                           store), shelves and watched folders, the scan
                           predicate, the rescan ledger that answers
                           add/relink/skip, the sort, the persisted blob and its
-                          migration, and the wire types the shell and the
-                          frontend share
+                          migration, the merge rule for two rows of one book,
+                          and the wire types the shell and the frontend share
   pdf-engine/             wasm-bindgen bridge to the imperative engine
   pdf-paper/              the blend backdrop's colour brain: the detection
                           area, dominant-colour detection (whole page or edge

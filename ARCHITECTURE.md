@@ -398,6 +398,15 @@ and the `fp_pending` mark. `library_core::blob::LibraryBlob::awaiting_check` is 
 that diffed real fingerprints against placeholders would match nothing and add a second copy of
 every book the folder already held.
 
+The fingerprint is the identity, and one identity is normally one row — but not by force. A reader
+who answers *keep both* on the conflict sheet below gets two rows of one file, so the sanitizer
+dedupes by *id* rather than by fingerprint, and every path-keyed writer treats the twins as the
+twins they are: a read and a path check update *all* the rows at an address (the reading position
+is a fact about the file, not about the row), and a removal sweeps the address's gloss, cover and
+store copy only when no remaining row reads from it (`services::library::arrange`'s `sweep_path`).
+The scans are unaffected either way: the ledger's registry is first-wins per fingerprint, and a
+content the library holds is a Skip whichever of its rows the index names.
+
 ### The ledger
 
 `library_core::ledger::diff_folder` is the module the edge cases live in. It takes a folder's
@@ -437,6 +446,50 @@ empty leaves the tombstone exactly where it was — losing it would lose the onl
 there. And it takes the tombstone out without touching `placed`, which the import that follows writes
 when the book actually lands: a fingerprint the ledger skips with no book behind it is the one state a
 folder cannot recover from on its own.
+
+### When the shelf already holds the book
+
+A placement — a drag, a bulk filing, a loose-file import — whose CONTENT a member of the target
+shelf already holds is a question, not a skip. It used to be a skip: the import resolved the file
+to the row the library already had and the shelf, finding that row already a member, filed nothing,
+which to the reader was a book vanishing into the shelf it was dropped on. `services::library::conflict`
+is the replacement, and its `screen` is the whole rule: the target is a real shelf, the arrival is
+not already a member of it (that drop is a reorder), and some member holds the arrival's
+fingerprint. Same NAME with different content is not a collision — a second format of one title
+measures a different fingerprint and simply lands.
+
+Every placing surface hands its placements through the screen before writing anything
+(`arrange::move_many_to_shelf`, `arrange::file_many` — which `also_show` rides — and
+`import::run_files`), applies the clean half at once and raises the collisions onto a queue the
+reader answers one at a time; a watched folder's own rescan never asks, because staying quiet is
+the ledger's job. The sheet (`features::library::conflict_modal`) offers the three answers a file
+manager teaches, and each is a row operation plus a sweep:
+
+- **Duplicate** keeps both: the arrival takes the first free `_1`, `_2`, … name
+  (`book::duplicate_title` — the counter extends the arrival's own name and steps rather than
+  stacks, and the minted name survives the sanitizer's filename rule through the trailing-counter
+  exemption in `reader_core::filename`). A moved row is renamed and lands; an imported file gets a
+  fresh row of its own.
+- **Replace** asks twice, and the second ask itemises what the shelf's copy loses. The answer:
+  that row goes, the arrival takes its SLOT and inherits every other shelf it was filed on — a
+  replace must not silently take a book off shelves the question never mentioned — and the side
+  data only the dead row's address held goes with it. Two rows of one address share their position
+  and their highlights, so between them the loss is a name and a row, and the sheet says exactly
+  that much.
+- **Merge** folds the arrival into the shelf's copy by `library_core::merge`: one `merge_books`
+  over the two rows, every field following a named `Policy` (the resume point is the FURTHER of
+  the two, names fill gaps, stamps keep the first join and the last read, a measurement beats a
+  placeholder, a dead address yields to a living one) written down as data in `merge::POLICIES` so
+  a future field gets a row there and a line in the function, which does not compile until it has
+  one. The side data follows the same instinct at the app layer: gloss marks union by
+  `same_spot` — the AI answers ride the marks' ids, so a mark that travels arrives with its answer
+  — covers move to the survivor's address, and the dissolving row's memberships transfer to the
+  survivor, minus the shelf the move was taking it off.
+
+The queue's switch gives the rest of the queue the same answer; Cancel stops the remaining
+questions rather than skipping one, which is what a file manager's copy dialog has always meant by
+Cancel. The state rides `state::library::LibraryState` (`conflict` + `conflict_open`) because the
+raisers are services: an import asks from inside a spawned future that outlived every component.
 
 ### Where the work happens
 
@@ -612,7 +665,8 @@ four books drags as whichever was pressed.
   would have promised the drop is never drawn.
 - `features::library::dnd::commit` is the only place an effect touches state, and it touches it
   through the services a menu row uses, so a dragged book persists and keeps its cover exactly as a
-  filed one does.
+  filed one does. The services screen what arrives: a drop onto a shelf that already holds the very
+  content goes to the conflict sheet instead of being skipped.
 
 What a press picks up is the set's business rather than the gesture's: `features::library::selection`'s
 `payload_for` answers "the whole selection when this card is in it, this card alone when it is not",
