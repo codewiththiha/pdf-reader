@@ -22,6 +22,7 @@ use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
 use library_core::wire::StoreRequest;
 
+use super::conflict::{self, Incoming, Placement};
 use super::covers::prune_now;
 use crate::services::library as wire;
 use crate::state::{AppState, Toast};
@@ -32,6 +33,13 @@ use crate::state::{AppState, Toast};
 /// from the reader's side, and the blob is written once for it — the rule
 /// [`purge_books`] gives for a bulk removal, for the same reason: a reader who
 /// closes the window halfway through a move should find all of it or none of it.
+///
+/// A shelf that already holds the very content being dropped is a question
+/// rather than a placement — this is the seam where a book used to vanish
+/// (the old rule filed the row the library already had, and a shelf that had
+/// it skipped the filing): the drag splits through [`conflict::screen`], the
+/// clean half lands now and the collisions go to the sheet. A drag of four
+/// books with one collision files three and asks about one.
 ///
 /// Dropping on the root ([`ALL_SHELF`]) re-orders the library's own list rather
 /// than a shelf, because "All" IS that list and not a shelf holding a copy of it.
@@ -65,19 +73,45 @@ pub fn move_many_to_shelf(
         return;
     }
 
-    state.library.shelves.update(|shelves| {
-        if let Some(from) = from.as_deref().filter(|id| *id != to)
-            && let Some(shelf) = shelves.iter_mut().find(|s| s.id == from)
-        {
-            for book_id in book_ids {
-                shelf::forget(&mut shelf.books, book_id);
+    let (clean, conflicts) = conflict::screen(
+        state,
+        book_ids
+            .iter()
+            .map(|book_id| Placement {
+                incoming: Incoming::Move {
+                    book_id: book_id.clone(),
+                },
+                shelf_id: to.clone(),
+                from: from.clone(),
+                index,
+            })
+            .collect(),
+    );
+    let book_ids: Vec<String> = clean
+        .into_iter()
+        .filter_map(|placement| match placement.incoming {
+            Incoming::Move { book_id } => Some(book_id),
+            Incoming::Import { .. } => None,
+        })
+        .collect();
+    if !book_ids.is_empty() {
+        state.library.shelves.update(|shelves| {
+            if let Some(from) = from.as_deref().filter(|id| *id != to)
+                && let Some(shelf) = shelves.iter_mut().find(|s| s.id == from)
+            {
+                for book_id in &book_ids {
+                    shelf::forget(&mut shelf.books, book_id);
+                }
             }
-        }
-        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == to) {
-            place_many(&mut shelf.books, book_ids, index);
-        }
-    });
-    crate::storage::persist_library(state.library);
+            if let Some(shelf) = shelves.iter_mut().find(|s| s.id == to) {
+                place_many(&mut shelf.books, &book_ids, index);
+            }
+        });
+        crate::storage::persist_library(state.library);
+    }
+    // Raised after the clean half landed: the sheet counts the questions, and
+    // a landing that shifted a member list is one the answers resolve against.
+    conflict::raise(state, conflicts);
 }
 
 /// Take books off a shelf without filing them anywhere else.
@@ -215,6 +249,11 @@ impl Default for PurgeOpts {
 /// reason a batch is not one tombstone: two of a removed ten may have come from
 /// different watched folders, and each has to be kept out of its own.
 ///
+/// The cover, the highlights and the store copy go through [`sweep_path`]'s
+/// guard: a duplicate the reader chose to keep shares its address — and with
+/// it its art and its marks — with the row being removed, and a twin still on
+/// the shelf keeps them.
+///
 /// One persist for the batch rather than one per book. A bulk removal writes the
 /// whole blob, and writing it nine times for ten books is nine chances for the
 /// reader to close the window mid-way through them.
@@ -261,10 +300,7 @@ fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
         .and_then(|folder_id| folder_shelf_of(&shelves, folder_id, &book.id));
     let entry = Tombstone::of(book, home, js_sys::Date::now() as u64);
     let path = book.path().to_string();
-    let stored_copy = match &book.origin {
-        Origin::Stored { store, .. } if opts.delete_store_copy => Some(store.clone()),
-        _ => None,
-    };
+    let was_stored = book.origin.is_stored();
 
     state.library.books.update(|books| {
         library_core::book::remove_book(books, book_id);
@@ -281,15 +317,65 @@ fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
         .library
         .folders
         .update(|folders| tombstone(folders, &entry));
-    state.library.covers.update(|covers| {
-        covers.remove(&path);
-    });
-    // The highlights are the largest thing the library holds about a book besides
-    // its cover, and they are keyed by an address nothing points at any more.
-    crate::storage::remove_gloss(&path);
-    if let Some(store) = stored_copy {
-        wire::delete_stored(&store);
+    sweep_path(state, &path, was_stored && opts.delete_store_copy);
+}
+
+/// Drop the side data of an address no remaining row reads from: the
+/// highlights, the cached cover and — when the address was the app's own
+/// store copy and `delete_store` says the bytes may go — the copy itself.
+///
+/// The guard is the duplicate rule's other half. Two rows of one file share
+/// an address, and with it the gloss and the cover keyed by that address: a
+/// sweep that forgot the twin would strip the highlights off a book still on
+/// the shelf, and delete the store copy out from under the row reading it.
+/// Callers remove their row FIRST, so "remaining" is everybody but the row
+/// just gone — which is also what makes a bulk removal of both twins work:
+/// the first sweep sees the second row and stays its hand, the second sees
+/// nobody and finishes the job.
+pub(crate) fn sweep_path(state: AppState, path: &str, delete_store: bool) {
+    let in_use = state
+        .library
+        .books
+        .with_untracked(|books| books.iter().any(|b| b.path() == path));
+    if in_use {
+        return;
     }
+    // The highlights are the largest thing the library holds about a book
+    // besides its cover, and they are keyed by an address nothing points at
+    // any more.
+    crate::storage::remove_gloss(path);
+    state.library.covers.update(|covers| {
+        covers.remove(path);
+    });
+    if delete_store {
+        wire::delete_stored(path);
+    }
+}
+
+/// Remove one row, everywhere it is filed, and sweep the side data only it
+/// used. Returns the row that went.
+///
+/// The conflict sheet's removal — a Replace's displaced copy and a Merge's
+/// dissolving row both go through here — and lighter than [`purge_one`] in
+/// exactly one way: no tombstone. The content stays in the library through
+/// the row on the other side of the question, and a folder rescan that
+/// re-found it would resolve to that row; a tombstone for a fingerprint the
+/// library still holds would be pruned on the very next scan, and until then
+/// it is noise in the folder's restore menu.
+pub(crate) fn drop_row(state: AppState, book_id: &str) -> Option<Book> {
+    let book = state
+        .library
+        .books
+        .with_untracked(|books| books.iter().find(|b| b.id == book_id).cloned())?;
+    state.library.books.update(|books| {
+        library_core::book::remove_book(books, book_id);
+    });
+    state
+        .library
+        .shelves
+        .update(|shelves| shelf::forget_everywhere(shelves, book_id));
+    sweep_path(state, book.path(), book.origin.is_stored());
+    Some(book)
 }
 
 /// The first of one folder's shelves a book is filed on, in shelf order.
@@ -306,19 +392,18 @@ fn folder_shelf_of(shelves: &[Shelf], folder_id: &str, book_id: &str) -> Option<
         .map(|s| s.id.clone())
 }
 
-/// File a book on a second shelf without moving it.
+/// File one book on a second shelf without moving it.
 ///
 /// One book, two memberships, and nothing copied anywhere — a shelf holds ids, so
 /// "also show it here" is the cheapest thing in the app and the one that cannot go
 /// wrong on disk. The folder's ledger is untouched too: the book stays placed
 /// where it was placed, which is what keeps the next rescan quiet about it.
+///
+/// Unless the shelf already holds the same CONTENT under another row — a
+/// duplicate the reader kept — and then it is [`file_many`]'s question, which
+/// is where this delegates.
 pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
-    state.library.shelves.update(|shelves| {
-        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
-            shelf_add(shelf, book_id);
-        }
-    });
-    crate::storage::persist_library(state.library);
+    file_many(state, &[book_id.to_string()], shelf_id);
 }
 
 /// Make a shelf the reader owns, at the level they are looking at, and drill
@@ -485,20 +570,47 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
 ///
 /// Membership only, so the same rule covers a bulk filing as covers a drag: a
 /// shelf holds ids, nothing here touches a filesystem, and a book already on the
-/// shelf is not moved to the end of it for being named twice.
+/// shelf is not moved to the end of it for being named twice. A book whose
+/// CONTENT the shelf already holds under another row is the conflict sheet's
+/// question rather than a member: the clean half of the batch files now and the
+/// collisions ask.
 pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
     }
-    state.library.shelves.update(|shelves| {
-        let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {
-            return;
-        };
-        for book_id in book_ids {
-            shelf_add(shelf, book_id);
-        }
-    });
-    crate::storage::persist_library(state.library);
+    let (clean, conflicts) = conflict::screen(
+        state,
+        book_ids
+            .iter()
+            .map(|book_id| Placement {
+                incoming: Incoming::Move {
+                    book_id: book_id.clone(),
+                },
+                shelf_id: shelf_id.to_string(),
+                from: None,
+                index: None,
+            })
+            .collect(),
+    );
+    let book_ids: Vec<String> = clean
+        .into_iter()
+        .filter_map(|placement| match placement.incoming {
+            Incoming::Move { book_id } => Some(book_id),
+            Incoming::Import { .. } => None,
+        })
+        .collect();
+    if !book_ids.is_empty() {
+        state.library.shelves.update(|shelves| {
+            let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {
+                return;
+            };
+            for book_id in &book_ids {
+                shelf_add(shelf, book_id);
+            }
+        });
+        crate::storage::persist_library(state.library);
+    }
+    conflict::raise(state, conflicts);
 }
 
 /// Rename a shelf. A blank name is refused rather than stored: a crumb with

@@ -33,6 +33,8 @@ use library_core::text::plural;
 use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
 
+use crate::services::library::conflict::ConflictAsk;
+
 /// How many covers the cache holds. A cover is a base64 JPEG of a few tens of
 /// kilobytes, so this — not [`library_core::BOOKS_CAP`](library_core::book::BOOKS_CAP)
 /// — is the library's real memory and quota budget. Past it the least recently
@@ -231,6 +233,20 @@ pub struct LibraryState {
     /// high-frequency operation and "is this one selected" is asked by every card
     /// on every repaint.
     pub selected: RwSignal<HashSet<String>>,
+    /// The placement that found its own content already on the shelf, waiting
+    /// for the reader's duplicate/replace/merge answer. Raised by the services
+    /// — a drop, a filing, an import — rather than by a component, which is why
+    /// it lives here and not in a sheet's own handle: an import asks from
+    /// inside a spawned future that outlived every component. See
+    /// `crate::services::library::conflict`.
+    pub conflict: RwSignal<Option<ConflictAsk>>,
+    /// The pair of [`Self::conflict`] that the overlay lane and the Escape rule
+    /// can hold: the lane registry speaks in booleans. Every writer of the two
+    /// goes through the conflict service's `raise` and `cancel`, so while the
+    /// sheet is up they cannot drift; a lane arbitration that closes the sheet
+    /// behind its back leaves a payload nobody reads, and the next raise
+    /// replaces it.
+    pub conflict_open: RwSignal<bool>,
 }
 
 impl Default for LibraryState {
@@ -251,6 +267,8 @@ impl Default for LibraryState {
             reveal: RwSignal::new(None),
             selecting: RwSignal::new(false),
             selected: RwSignal::new(HashSet::new()),
+            conflict: RwSignal::new(None),
+            conflict_open: RwSignal::new(false),
         }
     }
 }

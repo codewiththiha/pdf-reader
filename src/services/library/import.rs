@@ -50,6 +50,7 @@ use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
+use super::conflict::{self, Incoming, Placement};
 use super::{file_name, folder_label};
 use crate::services::library as wire;
 use crate::state::library::ImportTask;
@@ -862,7 +863,9 @@ async fn copy_batch(
     Ok(copies)
 }
 
-/// Import loose files: measure them, then file them.
+/// Import loose files: measure them, then file them — except the ones whose
+/// content the target shelf already holds, which ask (see
+/// [`crate::services::library::conflict`]).
 async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Option<String>) {
     let checks = match wire::verify_paths(paths).await {
         Ok(checks) => checks,
@@ -881,6 +884,39 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // clears a migrated book's pending mark; it has to land before the adds
     // below, which dedupe against exactly those fingerprints.
     apply_checks(state, &checks);
+
+    // A file whose content the TARGET SHELF already holds is not a placement
+    // this import may make quietly — the old rule resolved it to the row the
+    // shelf already had and skipped the placement, which to the reader was a
+    // book swallowed by the shelf it was dropped on. Here it asks instead:
+    // the clean files land below and the collisions go to the conflict sheet.
+    // An import with no target cannot collide — the root level has no member
+    // list — so it lands whole.
+    let (found, conflicts) = match &target {
+        Some(shelf_id) => {
+            let (clean, conflicts) = conflict::screen(
+                state,
+                found
+                    .iter()
+                    .map(|file| Placement {
+                        incoming: Incoming::Import { file: file.clone() },
+                        shelf_id: shelf_id.clone(),
+                        from: None,
+                        index: None,
+                    })
+                    .collect(),
+            );
+            let clean: Vec<FoundFile> = clean
+                .into_iter()
+                .filter_map(|placement| match placement.incoming {
+                    Incoming::Import { file } => Some(file),
+                    Incoming::Move { .. } => None,
+                })
+                .collect();
+            (clean, conflicts)
+        }
+        None => (found, Vec::new()),
+    };
 
     // Applied to the live list, for the same reason a folder import is: the
     // measurement round trip is an await, and the library is allowed to move
@@ -915,6 +951,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
             }
         });
     }
+    conflict::raise(state, conflicts);
     crate::storage::persist_library(state.library);
     // The shelf should look like its books the moment they are on it, not the
     // first time each of them is opened. One render at a time, behind the

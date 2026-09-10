@@ -16,14 +16,18 @@
 //!
 //! The deciding is NOT here. Which files a scan adds, where they land and what
 //! a rescan skips is `library_core`'s ledger; [`import`] runs it against the
-//! shell's answers and writes the result to the library state, and [`arrange`]
+//! shell's answers and writes the result to the library state, [`arrange`]
 //! holds the moves a reader makes by hand (a drag between shelves, a shelf filed
-//! inside another, a removal, a relink).
+//! inside another, a removal, a relink), and [`conflict`] is the question both
+//! ask before a placement lands on a shelf that already holds the very content:
+//! duplicate, replace or merge.
 //!
 //! [`import`]: crate::services::library::import
 //! [`arrange`]: crate::services::library::arrange
+//! [`conflict`]: crate::services::library::conflict
 
 pub mod arrange;
+pub mod conflict;
 pub mod covers;
 pub mod import;
 pub mod reveal;
