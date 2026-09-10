@@ -19,7 +19,9 @@
 //!   * [`context_menu`] — the right-click: one menu per kind of thing under the
 //!     pointer, and the one host every surface asks
 //!   * [`progress_dock`] — the run's ring, in the corner
-//!   * [`view_menu`] / [`breadcrumb`] / [`titlebar_search`] — the bar's three jobs
+//!   * [`view_menu`] / [`breadcrumb`] / [`titlebar_search`] — the bar's three jobs,
+//!     the last with [`search_suggest`] under it: the ranked, fuzzy answer to a
+//!     half-typed query
 //!   * [`dnd`] — the drag that moves things: the session, the targets it can land
 //!     on, the table that decides what a drop means, and the overlay it draws
 //!
@@ -51,6 +53,7 @@ pub mod list;
 pub mod page;
 pub mod progress_dock;
 pub mod remove_modal;
+pub mod search_suggest;
 pub mod selection;
 pub mod titlebar_search;
 pub mod view_menu;
