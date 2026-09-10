@@ -58,8 +58,31 @@ fn looks_like_file_name(t: &str) -> bool {
     {
         return true;
     }
-    // Snake-case: a title typed by a person has spaces.
-    t.contains('_') && !t.contains(' ')
+    // Snake-case: a title typed by a person has spaces. The exception is a
+    // trailing `_N` copy counter — the name file managers give the second of
+    // two files that would collide ("dune_1"), and the convention the
+    // library's own duplicate naming follows
+    // (`library_core::book::duplicate_title`). A name that convention minted
+    // has to survive the rule that hunts download debris.
+    strip_copy_counter(t).contains('_') && !t.contains(' ')
+}
+
+/// Drop a trailing `_N` copy counter ("dune_1" → "dune"), when there is one.
+/// One level, on purpose: a counter is appended to a name that had none, so
+/// "dune_1_2" is not a counter on "dune_1" but a snake-case name in its own
+/// right — and the duplicate namer never mints one (it strips the old counter
+/// before appending the next).
+fn strip_copy_counter(t: &str) -> &str {
+    match t.rsplit_once('_') {
+        Some((base, counter))
+            if !base.is_empty()
+                && !counter.is_empty()
+                && counter.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            base
+        }
+        _ => t,
+    }
 }
 
 /// Human-readable file name for `path`: last segment (splitting on both `/`
@@ -175,6 +198,12 @@ mod tests {
         );
         assert!(!super::looks_like_file_name("Discrete Mathematics"));
         assert!(super::looks_like_file_name("978-0-321-89407-3"));
+        // A trailing copy counter is the one snake-case shape that IS a name
+        // a person (or the library's duplicate namer) chose.
+        assert!(!super::looks_like_file_name("dune_1"));
+        assert!(!super::looks_like_file_name("Dune_12"));
+        // A counter on a mangled name does not launder the mangling.
+        assert!(super::looks_like_file_name("harry_potter_goblet_1"));
     }
 
     #[test]

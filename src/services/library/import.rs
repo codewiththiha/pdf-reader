@@ -329,7 +329,7 @@ fn apply_checks(state: AppState, checks: &[PathCheck]) {
     let mut changed = false;
     state.library.books.update(|books| {
         for check in checks {
-            if apply_check(books, check).is_some() {
+            if !apply_check(books, check).is_empty() {
                 changed = true;
             }
         }

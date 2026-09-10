@@ -149,12 +149,10 @@ pub fn sanitize(blob: &mut LibraryBlob) {
     crate::folder::sanitize(&mut blob.folders);
     crate::view::sanitize(&mut blob.view);
 
-    // Book ids are unique after the book sanitize dedupes by fingerprint, but
-    // a blob could still carry two rows with the same id; the first wins, and
-    // the shelves below resolve against whatever survived.
-    let mut ids = std::collections::HashSet::new();
-    blob.books.retain(|b| ids.insert(b.id.clone()));
-
+    // A blob could carry two rows with one id however valid its books look;
+    // `book::sanitize` dedupes by id, so by here the shelves below resolve
+    // against a list whose ids are unique — and whose fingerprints are NOT,
+    // because a duplicate the reader kept is two honest rows of one file.
     let known: std::collections::HashSet<&str> =
         blob.books.iter().map(|b| b.id.as_str()).collect();
     for shelf in blob.shelves.iter_mut() {
@@ -237,9 +235,9 @@ mod tests {
         assert!(blob.awaiting_check());
         assert!(blob.books.iter().all(|b| b.fp_pending));
         // The placeholder is derived from the address, so two migrated books
-        // never collide on it — the book sanitizer dedupes by fingerprint, and
-        // a migration that collapsed every row onto one stamp would empty the
-        // library on first load.
+        // never collide on it — the ledger's fingerprint index is first-wins,
+        // and a migration that collapsed every row onto one stamp would hide
+        // all of them but one from every scan.
         assert_ne!(
             Fingerprint::placeholder("/a.pdf"),
             Fingerprint::placeholder("/b.pdf")

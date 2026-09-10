@@ -62,8 +62,8 @@ impl Fingerprint {
     /// A stand-in for a book the library knows by address only: a row migrated
     /// from the `v1` schema, which stored a path and a resume point and
     /// measured nothing. Derived from the address so two different books can
-    /// never share one (the sanitizer dedupes by fingerprint), and stamped with
-    /// `mtime_ms == 0` so it reads as what it is — not a measurement.
+    /// never share one, and stamped with `mtime_ms == 0` so it reads as what
+    /// it is — not a measurement.
     ///
     /// Replaced by [`Fingerprint::of`] the first time the file is checked or
     /// read; [`Book::fp_pending`] says which books are still waiting for that.
@@ -291,9 +291,51 @@ pub fn stem_of(path: &str) -> String {
     reader_core::filename::file_stem_from_path(path).unwrap_or_else(|| path.to_string())
 }
 
-/// Record a read: the book at `path` moves to `now_ms` with the resume point
-/// the reader just reached, or joins the library as a linked book when the
-/// reader opened something the library did not know.
+/// The next free duplicate of `base`: `base_1`, `base_2`, and so on — the
+/// counter a file manager appends when a second file of one name has to live
+/// beside the first, and the name the library's conflict sheet gives a
+/// duplicate the reader chose to keep.
+///
+/// `in_use` is every name the library already shows. The counter starts at the
+/// first free number, and a trailing `_N` on `base` is stripped before
+/// counting, so duplicating a duplicate steps instead of stacking: "Dune_1"
+/// becomes "Dune_2" rather than "Dune_1_1" — the same reading a file manager
+/// gives it, where the counter is not part of the name.
+///
+/// The result is a title the shelf can keep: never empty (a blank `base`
+/// falls back to a word), and the trailing counter is exempt from the
+/// filename-shaped rule [`sanitize`] applies to document-supplied titles (the
+/// exemption is `reader_core::filename::is_usable_title`'s own — a name this
+/// function minted survives the load that reads it back).
+pub fn duplicate_title(base: &str, in_use: &std::collections::HashSet<String>) -> String {
+    let base = base.trim();
+    let root = if base.is_empty() { "Book" } else { base };
+    let root = match root.rsplit_once('_') {
+        Some((stem, counter))
+            if !stem.is_empty()
+                && !counter.is_empty()
+                && counter.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            stem
+        }
+        _ => root,
+    };
+    (1u32..)
+        .map(|n| format!("{root}_{n}"))
+        .find(|candidate| !in_use.contains(candidate))
+        .expect("an unbounded counter always finds a free name")
+}
+
+/// Record a read: every book at `path` moves to `now_ms` with the resume point
+/// the reader just reached, or the library gains a linked book when the reader
+/// opened something it did not know.
+///
+/// EVERY book at the path, because a shelf can hold two rows of one file — a
+/// duplicate the reader asked to keep (see [`duplicate_title`]) — and the
+/// reading position is a fact about the FILE, not about the row: both copies
+/// of "dune.pdf" resume where the reader left off in it. One row per address
+/// was the old rule and it is still the common case; this is what makes the
+/// uncommon one honest.
 ///
 /// Returns the new book when one was created, so the caller can put it at the
 /// front of the "All" order — an existing book keeps the position the reader
@@ -302,7 +344,8 @@ pub fn stem_of(path: &str) -> String {
 /// `point` is the reader's own truth, written through settled. `title` and
 /// `author` only ever fill a gap, so a name the document supplied at first open
 /// survives every later resume — a scan cannot know either, and a second open of
-/// the same file must not blank what the first one learned.
+/// the same file must not blank what the first one learned. A duplicate's own
+/// name is a value, not a gap, so a shared read never overwrites it.
 ///
 /// A NEW book gets a placeholder fingerprint and the pending mark, because the
 /// reader has proved the file opens and nothing more: it has measured no size,
@@ -319,20 +362,24 @@ pub fn record_read(
     let point = point.settled();
     let title = title.filter(|t| !t.trim().is_empty());
     let author = author.filter(|a| !a.trim().is_empty());
-    if let Some(book) = books.iter_mut().find(|b| b.path() == path) {
+    let mut found = false;
+    for book in books.iter_mut().filter(|b| b.path() == path) {
+        found = true;
         book.page = point.page;
         book.num_pages = point.num_pages;
         book.fraction = point.fraction;
         book.last_read_ms = now_ms;
         book.missing = false;
         if book.title.as_deref().map(str::trim).unwrap_or("").is_empty() {
-            if let Some(t) = title {
+            if let Some(t) = title.clone() {
                 book.title = Some(t);
             }
         }
         if book.author.is_none() {
-            book.author = author;
+            book.author = author.clone();
         }
+    }
+    if found {
         return None;
     }
     let book = Book {
@@ -357,8 +404,13 @@ pub fn record_read(
     Some(book)
 }
 
-/// Apply one path check to the book at that address, and say which book it
+/// Apply one path check to every book at that address, and say which books it
 /// touched.
+///
+/// Every book at the address, for [`record_read`]'s reason: two rows of one
+/// file — a duplicate the reader kept — share the address's fate, and a check
+/// that healed one and left the other pending would hold every watched
+/// folder's rescan off forever.
 ///
 /// Three outcomes, and the difference between them is the whole reason a
 /// library survives a moved folder:
@@ -372,34 +424,49 @@ pub fn record_read(
 ///     book left pending forever would hold every watched folder's rescan off;
 ///   * there is no book at that address — nothing to do.
 ///
-/// Returns `None` in the third case and when the check changed nothing, so a
-/// startup pass over a healthy library writes no state at all.
-pub fn apply_check(books: &mut [Book], check: &crate::wire::PathCheck) -> Option<String> {
-    let book = books.iter_mut().find(|b| b.path() == check.path)?;
-    match check.fingerprint() {
-        Some(fp) => {
-            let changed = book.fp != fp || book.missing || book.fp_pending;
-            book.fp = fp;
-            book.missing = false;
-            book.fp_pending = false;
-            changed.then(|| book.id.clone())
-        }
-        None => {
-            // Going missing is news; being told twice is not. A book that was
-            // still owed its first measurement is news too, because the pending
-            // mark is what holds a watched folder's rescan off.
-            let changed = !book.missing || book.fp_pending;
-            book.missing = true;
-            book.fp_pending = false;
-            changed.then(|| book.id.clone())
+/// Returns the ids the check CHANGED, empty in the third case and for a pass
+/// over rows nothing moved, so a startup sweep of a healthy library writes no
+/// state at all.
+pub fn apply_check(books: &mut [Book], check: &crate::wire::PathCheck) -> Vec<String> {
+    let measured = check.fingerprint();
+    let mut touched = Vec::new();
+    for book in books.iter_mut().filter(|b| b.path() == check.path) {
+        let changed = match measured {
+            Some(fp) => {
+                let changed = book.fp != fp || book.missing || book.fp_pending;
+                book.fp = fp;
+                book.missing = false;
+                book.fp_pending = false;
+                changed
+            }
+            None => {
+                // Going missing is news; being told twice is not. A book that
+                // was still owed its first measurement is news too, because the
+                // pending mark is what holds a watched folder's rescan off.
+                let changed = !book.missing || book.fp_pending;
+                book.missing = true;
+                book.fp_pending = false;
+                changed
+            }
+        };
+        if changed {
+            touched.push(book.id.clone());
         }
     }
+    touched
 }
 
 /// Add an imported book at the END of the library's order, or return the id of
 /// the one already there. Content identity decides, not the address: the same
 /// file reached through a second watched folder is the same book (see
 /// [`crate::ledger`]).
+///
+/// The first row wins when a shelf holds duplicates the reader asked to keep —
+/// an import that re-finds a file the library already has twice resolves to
+/// the row the library lists first, and which shelf the book then lands on is
+/// a question the app's conflict sheet asks BEFORE this is reached (a row
+/// whose fingerprint is already on the target shelf is a duplicate/replace/
+/// merge choice, not an add).
 ///
 /// Appended rather than pushed to the front, because an import arrives in the
 /// order the walk produced — depth-first and alphabetical, which is the order the
@@ -451,13 +518,19 @@ pub fn find_by_path<'a>(books: &'a [Book], path: &str) -> Option<&'a Book> {
 }
 
 /// Make a persisted list internally valid: drop books with no address or no
-/// id, dedupe by content identity (first wins — the reader's own order),
-/// clamp the resume point, and trim to [`BOOKS_CAP`] by least-recently-read.
-/// Idempotent.
+/// id, dedupe by id (first wins — the reader's own order), clamp the resume
+/// point, and trim to [`BOOKS_CAP`] by least-recently-read. Idempotent.
+///
+/// By ID and not by content identity: two rows are allowed to share one
+/// file's fingerprint when the reader asked to keep both — the library's
+/// conflict sheet mints such duplicates under [`duplicate_title`] names — and
+/// a sanitizer that deduped by fingerprint would silently undo a choice the
+/// reader made. A blob carrying two rows with one ID is the corrupt case this
+/// still heals.
 pub fn sanitize(books: &mut Vec<Book>) {
     let mut seen = std::collections::HashSet::new();
     books.retain(|b| {
-        !b.id.trim().is_empty() && !b.path().trim().is_empty() && seen.insert(b.fp)
+        !b.id.trim().is_empty() && !b.path().trim().is_empty() && seen.insert(b.id.clone())
     });
     for b in books.iter_mut() {
         b.page = b.page.max(1);
@@ -697,12 +770,12 @@ mod tests {
             &mut books,
             &check("/books/one.pdf", true, 20, 2, 8),
         );
-        assert_eq!(touched.as_deref(), Some("a"));
+        assert_eq!(touched, vec!["a".to_string()]);
         assert_eq!(books[0].fp, fp(20, 2, 8));
         assert!(!books[0].fp_pending, "the measurement replaces the placeholder");
         // A second pass over an unchanged file changes nothing, so a startup
         // check of a healthy library writes no state at all.
-        assert_eq!(apply_check(&mut books, &check("/books/one.pdf", true, 20, 2, 8)), None);
+        assert!(apply_check(&mut books, &check("/books/one.pdf", true, 20, 2, 8)).is_empty());
     }
 
     #[test]
@@ -713,8 +786,8 @@ mod tests {
             ..linked("a", "/books/one.pdf")
         }];
         assert_eq!(
-            apply_check(&mut books, &check("/books/one.pdf", false, 0, 0, 0)).as_deref(),
-            Some("a")
+            apply_check(&mut books, &check("/books/one.pdf", false, 0, 0, 0)),
+            vec!["a".to_string()]
         );
         assert!(books[0].missing);
         assert!(!books[0].fp_pending, "a check that ran is not a check still owed");
@@ -722,14 +795,57 @@ mod tests {
         assert_eq!(books[0].page, 42, "the resume point survives the address dying");
         assert_eq!(books[0].fp, fp(10, 1, 7), "and so does the last known identity");
         // The second pass is not news.
-        assert_eq!(apply_check(&mut books, &check("/books/one.pdf", false, 0, 0, 0)), None);
+        assert!(apply_check(&mut books, &check("/books/one.pdf", false, 0, 0, 0)).is_empty());
     }
 
     #[test]
     fn a_check_for_an_address_the_library_does_not_hold_does_nothing() {
         let mut books = vec![linked("a", "/books/one.pdf")];
-        assert_eq!(apply_check(&mut books, &check("/books/other.pdf", true, 1, 1, 1)), None);
+        assert!(apply_check(&mut books, &check("/books/other.pdf", true, 1, 1, 1)).is_empty());
         assert!(!books[0].missing);
+    }
+
+    #[test]
+    fn two_rows_of_one_file_share_its_reading_truth() {
+        // A duplicate the reader chose to keep is a second ROW, not a second
+        // file: the address is read, checked and resumed as one, and a heal
+        // that reached only the first row would leave its twin holding a
+        // watched folder's rescan off forever.
+        let mut books = vec![
+            Book {
+                fp_pending: true,
+                ..linked("a", "/books/dune.pdf")
+            },
+            Book {
+                id: "b".into(),
+                title: Some("dune_1".into()),
+                fp_pending: true,
+                ..linked("a", "/books/dune.pdf")
+            },
+        ];
+        assert!(record_read(
+            &mut books,
+            "/books/dune.pdf",
+            Some("Dune".into()),
+            None,
+            ReadPoint { page: 90, num_pages: 400, fraction: None },
+            700,
+        )
+        .is_none());
+        for book in &books {
+            assert_eq!(book.page, 90);
+            assert_eq!(book.last_read_ms, 700);
+        }
+        // The duplicate's own name is a value, not a gap: the shared read
+        // fills the first row's title and leaves the second row's alone.
+        assert_eq!(books[0].title.as_deref(), Some("Dune"));
+        assert_eq!(books[1].title.as_deref(), Some("dune_1"));
+        assert_eq!(
+            apply_check(&mut books, &check("/books/dune.pdf", true, 20, 2, 8)).len(),
+            2,
+            "one measurement heals every row at the address"
+        );
+        assert!(books.iter().all(|b| !b.fp_pending && b.fp == fp(20, 2, 8)));
     }
 
     #[test]
@@ -819,19 +935,25 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_dedupes_by_content_and_clamps_the_resume() {
+    fn sanitize_dedupes_by_id_and_clamps_the_resume() {
         let mut books = vec![
             Book {
                 page: 0,
                 ..linked("a", "/books/one.pdf")
             },
-            // Same fingerprint, different id and address: one book.
+            // Same id twice: one book, whichever address the second row wore.
             Book {
-                id: "dup".into(),
                 origin: Origin::Linked {
                     src: "/copies/one.pdf".into(),
                 },
                 ..linked("a", "/books/one.pdf")
+            },
+            // Same CONTENT twice under two ids: the duplicate a reader chose
+            // to keep, which a fingerprint dedupe would silently take back.
+            Book {
+                id: "dup".into(),
+                title: Some("one_1".into()),
+                ..linked("dup", "/books/one.pdf")
             },
             Book {
                 id: "  ".into(),
@@ -845,9 +967,37 @@ mod tests {
         ];
         sanitize(&mut books);
         let ids: Vec<&str> = books.iter().map(|b| b.id.as_str()).collect();
-        assert_eq!(ids, vec!["a", "c"]);
+        assert_eq!(ids, vec!["a", "dup", "c"]);
         assert_eq!(books[0].page, 1, "page 0 clamps to 1");
-        assert_eq!(books[1].fraction, None, "an impossible fraction is dropped");
+        assert_eq!(books[1].title.as_deref(), Some("one_1"), "a duplicate keeps the name it was minted with");
+        assert_eq!(books[2].fraction, None, "an impossible fraction is dropped");
+    }
+
+    #[test]
+    fn a_duplicate_is_named_by_the_first_free_counter() {
+        let in_use: std::collections::HashSet<String> =
+            ["Dune", "Dune_1", "Neuromancer"].iter().map(|s| s.to_string()).collect();
+        // The industry's counter: the first number nobody wears.
+        assert_eq!(duplicate_title("Dune", &in_use), "Dune_2");
+        assert_eq!(duplicate_title("Neuromancer", &in_use), "Neuromancer_1");
+        // Duplicating a duplicate steps instead of stacking: the counter is
+        // not part of the name.
+        assert_eq!(duplicate_title("Dune_1", &in_use), "Dune_2");
+        let stepped: std::collections::HashSet<String> = ["Dune", "Dune_1", "Dune_2"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(duplicate_title("Dune_2", &stepped), "Dune_3");
+        // Gaps are filled...
+        let gaps: std::collections::HashSet<String> =
+            ["Dune", "Dune_2"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(duplicate_title("Dune", &gaps), "Dune_1");
+        // ...and a blank base still gets a name a shelf can show.
+        assert_eq!(duplicate_title("  ", &std::collections::HashSet::new()), "Book_1");
+        // The minted name survives the sanitizer's title rule — the exemption
+        // in `reader_core::filename` is what makes the round trip honest.
+        assert!(reader_core::filename::is_usable_title("Dune_1"));
+        assert!(reader_core::filename::is_usable_title(&duplicate_title("dune", &in_use)));
     }
 
     #[test]
@@ -860,10 +1010,6 @@ mod tests {
                 }
             })
             .collect();
-        // Every fingerprint must differ or sanitize would dedupe them first.
-        for (i, b) in books.iter_mut().enumerate() {
-            b.fp = fp(i as u64 + 1, i as u64, i as u32);
-        }
         sanitize(&mut books);
         assert_eq!(books.len(), BOOKS_CAP);
         assert!(

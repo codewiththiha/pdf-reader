@@ -37,6 +37,7 @@ pub mod folder;
 pub mod hash;
 pub mod id;
 pub mod ledger;
+pub mod merge;
 pub mod query;
 pub mod scan;
 pub mod shelf;
@@ -52,12 +53,15 @@ pub mod wire;
 // second dependency edge and cannot drift.
 pub use reader_core::format::Format;
 pub use blob::{LibraryBlob, RecentBook, migrate_v1};
-pub use book::{BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, apply_check, record_read};
+pub use book::{
+    BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, apply_check, duplicate_title, record_read,
+};
 pub use folder::{FolderOpts, Tombstone, WatchedFolder};
 pub use ledger::{
     KnownBook, Recovered, ScanAction, diff_folder, find_tombstone, index_by_fp, prune_tombstones,
     recoverables, restore_deleted, tombstone,
 };
+pub use merge::{POLICIES, Policy, further_point, merge_books};
 pub use scan::{FoundFile, admits};
 pub use shelf::{ALL_SHELF, Shelf, ShelfKind, ancestors, can_nest, children_of, shelf_add};
 pub use sort::{SortKey, sort_books};

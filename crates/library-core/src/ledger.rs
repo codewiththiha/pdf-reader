@@ -70,10 +70,13 @@ pub struct KnownBook {
 /// cannot go stale.
 pub type Registry = HashMap<Fingerprint, KnownBook>;
 
-/// Build the [`Registry`] for a book list. Two books sharing a fingerprint
-/// cannot happen after [`crate::book::sanitize`], but a blob that predates it
-/// could carry one, and the first row wins — the same rule the sanitizer
-/// applies, so the index and the list agree.
+/// Build the [`Registry`] for a book list. Two rows CAN share a fingerprint —
+/// the duplicates a reader asked to keep (see [`crate::book::duplicate_title`])
+/// — and the first row wins, which is [`crate::book::add_book`]'s own
+/// resolution, so the index and an import agree about what "the book for this
+/// content" names. For a scan the answer is the same whichever twin is named:
+/// content the library holds is a Skip at its address and a Relink away from
+/// it.
 pub fn registry_of(books: &[crate::book::Book]) -> Registry {
     let mut out = Registry::with_capacity(books.len());
     for book in books {
@@ -240,7 +243,8 @@ pub fn restore_deleted(folder: &mut WatchedFolder, fp: &Fingerprint) -> Option<T
 /// Fingerprint to book, for the questions that start from a file rather than from
 /// an address. Borrowed rather than cloned: the menu that asks these opens on a
 /// click, and copying a whole library to answer one question about it is the kind
-/// of cost that turns a click into a frame drop.
+/// of cost that turns a click into a frame drop. Duplicates — the two rows a
+/// reader asked to keep — resolve to the first, the rule [`registry_of`] gives.
 pub fn index_by_fp(books: &[Book]) -> HashMap<Fingerprint, &Book> {
     let mut out = HashMap::with_capacity(books.len());
     for book in books {
