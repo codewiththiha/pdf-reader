@@ -342,6 +342,17 @@ the filesystem.
   covers fitted to their own aspect ratio or cropped to A4, and a sort by manual order, title,
   author, date added or last read. Titles sort with their volume numbers as numbers, so "Volume 2"
   comes before "Volume 10".
+- **The search bar answers while you type.** The shelf behind it filters on every keystroke — by
+  name, author or address, in any combination of words, case never mattering — and under the pill a
+  panel offers up to seven books the query is probably about, strongest match first, with the
+  characters that matched lit in the accent. The matching is fuzzy in the forgiving direction: a
+  dropped vowel or a half-remembered spelling still finds the book (`mthmtcl prfs` finds
+  *Mathematical Proofs*), but a query whose letters only sprinkle across a long title is not a
+  match — a search that matched everything would be a shuffle, not a search. `Up arrow` and
+  `Down arrow` move through the panel, `Enter` goes to the chosen book on its own shelf and lights
+  it up, and `Escape` peels one layer at a time — the suggestions first, the text second. Nothing
+  is indexed: the whole answer is one pass over the library per keystroke, computed when you type
+  and not a moment else.
 - **A missing book stays on the shelf.** An address that stops resolving is a badge and a Relink
   affordance, never a silent removal: the row keeps its resume point and every shelf it is on, so
   finding the file again puts you back on the page you were on.
@@ -398,8 +409,9 @@ the filesystem.
 
 - Glass toolbar with sidebar toggle, open button, document title, centred page navigation, zoom
   popover, view-mode switch, search and an overflow menu.
-- A library bar of its own: a breadcrumb starting at Home on the left, a shelf filter in the centre
-  slot, and a view menu and appearance menu on the right — the appearance menu without its page
+- A library bar of its own: a breadcrumb starting at Home on the left, a search bar in the centre
+  slot that filters the shelf as it is typed and suggests books underneath, and a view menu and
+  appearance menu on the right — the appearance menu without its page
   texture section, because the shelf has no page. No Open button and no settings gear: adding books
   is a shelf affordance ([Library](#library)), and settings are about reading, so the gear lives on
   the reader's bar. The bar's pin is remembered per route — the shelf's bar starts pinned, and
@@ -502,7 +514,9 @@ Writes are debounced by 350 milliseconds so dragging a slider does not hammer lo
 | Screen up / down | `Page Up` / `Page Down` |
 | Screen down / up | `Space` / `Shift` + `Space` |
 | Auto-scroll on or off (the two scrolling modes) | `Shift` + `A` |
-| Dismiss overlay or search; clear the library's search | `Escape` |
+| Move through the library's search suggestions | `Up arrow` / `Down arrow` in the search bar |
+| Go to the chosen suggestion's book, on its shelf | `Enter` in the search bar |
+| Dismiss overlay or search; close the library's suggestions, or clear its search | `Escape` |
 
 In continuous mode the reader owns the arrow keys and scrolls the page list directly. Leaving them
 to the browser meant scrolling whatever held focus, which was usually a text-layer span; when

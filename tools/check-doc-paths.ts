@@ -271,7 +271,7 @@ for (const file of CSS_FILES) {
  *  keyboard keys a shortcut table has to spell, and platform types the app
  *  talks to but does not define. Add only for those, never for something the
  *  tree should be declaring. */
-const PROSE_NAMES = new Set(["Shift", "Space", "Escape", "Range"]);
+const PROSE_NAMES = new Set(["Shift", "Space", "Escape", "Enter", "Range"]);
 
 const DECLARED = new Set<string>();
 const RS_ITEM = /\b(?:fn|struct|enum|trait|type|union|mod)\s+([A-Z][A-Za-z0-9_]*)/g;

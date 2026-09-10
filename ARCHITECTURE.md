@@ -475,6 +475,23 @@ A drop is only given a position while the order is the manual one
 next render and would undo the drop before the reader saw it land. A sorted shelf still accepts the
 drop; it appends rather than promising a slot it cannot keep.
 
+### One search, one rule
+
+The bar's filter and the panel under it are one rule in `library_core::query`, spelled once: every
+whitespace-separated term has to match one of a book's three fields — title, author, address —
+either as a substring, the way search always worked, or as an in-order subsequence that scores
+well enough, the fuzzy half. The score rewards the shapes readers type (consecutive runs, starts
+of words, the start of a field) and charges the gaps between hits; a subsequence that scores under
+two points a term character is too scattered to be a match, so fuzzy forgives a dropped vowel
+without forgiving everything. The shelf filters on the rule, the suggestion panel ranks with the
+same rule — title outweighing author outweighing address — and the matched character spans travel
+with the score, which `features::library::search_suggest` lights so the fuzzy half shows its work.
+
+There is no index, and the panel is no standing derivation. A few thousand one-pass string
+comparisons are well inside a frame, and an index would be a second thing to keep in step with the
+list it describes; the suggestions are computed at the keystroke, untracked, and stored, so
+nothing re-ranks while the reader is not typing and a closed panel costs nothing at all.
+
 ### A shelf is a level, not a row
 
 `Shelf::parent` makes the shelves a forest: the root level is the shelves with no parent, and a level
