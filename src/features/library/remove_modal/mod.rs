@@ -277,7 +277,7 @@ fn Sheet(
     // where a shelf holds no books at all and only empty folders, and there the
     // label has to say so or it promises less than the click does.
     let remove_label = match (info.books.len(), info.shelves.len()) {
-        (1, 0) => "Remove everything".to_string(),
+        (1, 0) => "Remove".to_string(),
         (0, 1) if cascade && inside_shelves > 0 => {
             "Remove the shelf and the ones inside".to_string()
         }
