@@ -462,6 +462,14 @@ pub fn sanitize(books: &mut Vec<Book>) {
     for b in books.iter_mut() {
         b.page = b.page.max(1);
         b.fraction = b.fraction.filter(|f| (0.0..=1.0).contains(f));
+        // A title that is really a filename — the download name a PDF carries
+        // in its metadata — is not a title: drop it and let the stem of the
+        // address show, which is the name the reader sees in their own file
+        // manager. This is also the heal for rows stored before the rule
+        // existed, on the load that first knows better.
+        if b.title.as_deref().is_some_and(|t| !reader_core::filename::is_usable_title(t)) {
+            b.title = None;
+        }
     }
     if books.len() <= BOOKS_CAP {
         return;

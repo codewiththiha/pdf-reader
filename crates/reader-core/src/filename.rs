@@ -15,8 +15,9 @@ pub fn display_name(title: Option<&str>, path: Option<&str>) -> Option<String> {
 }
 
 /// True when a title is worth showing instead of the file name: short enough,
-/// not URL- or path-shaped, not a known placeholder, and not all punctuation.
-fn is_usable_title(t: &str) -> bool {
+/// not URL- or path-shaped, not a known placeholder, not a filename wearing a
+/// title's clothes, and not all punctuation.
+pub fn is_usable_title(t: &str) -> bool {
     if t.is_empty() || t.chars().count() > MAX_TITLE_LEN {
         return false;
     }
@@ -28,7 +29,37 @@ fn is_usable_title(t: &str) -> bool {
     if t.contains("://") || t.contains('\\') || t.contains('%') {
         return false;
     }
+    if looks_like_file_name(t) {
+        return false;
+    }
     t.chars().any(|c| c.is_alphanumeric())
+}
+
+/// The shapes a downloader or a scanner leaves in `/Title`: the name the file
+/// arrived with, still wearing its extension ("0321894073.pdf"), a bare
+/// ISBN/UPC digit run, or a snake-case mangling with underscores where a
+/// person would have typed spaces. In every case the file on disk has usually
+/// been renamed to something a human can read since, so the stem of the
+/// address is the honest name and the metadata is the stale one.
+fn looks_like_file_name(t: &str) -> bool {
+    // A title does not carry its own extension.
+    if strip_doc_extension(t) != t {
+        return true;
+    }
+    // ISBN-10/13 and UPC digit runs, separators aside. Nine or more, so a
+    // real numeric title like "1984" stays a title; the trailing check-digit
+    // X of an ISBN-10 counts as a digit.
+    let run: String = t.chars().filter(|c| *c != '-' && *c != ' ').collect();
+    if run.len() >= 9
+        && run
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == 'x' || c == 'X')
+        && run.chars().any(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    // Snake-case: a title typed by a person has spaces.
+    t.contains('_') && !t.contains(' ')
 }
 
 /// Human-readable file name for `path`: last segment (splitting on both `/`
@@ -110,6 +141,42 @@ mod tests {
 
     /// Extracting a display name from a path: separators (both kinds), and
     /// extension stripping.
+    #[test]
+    fn a_download_name_is_not_a_title() {
+        // The /Title a downloader leaves behind — an ISBN wearing its
+        // extension, a bare ISBN, a snake-case mangling — loses to the stem of
+        // the address, which is the name the file has on disk now.
+        assert_eq!(
+            display_name(Some("0321894073.pdf"), Some("/d/mathematical-proofs.pdf")).as_deref(),
+            Some("mathematical-proofs")
+        );
+        assert_eq!(
+            display_name(Some("032190026X"), Some("/d/graphical-approach.pdf")).as_deref(),
+            Some("graphical-approach")
+        );
+        assert_eq!(
+            display_name(
+                Some("A_Graphical_Approach_to_Algebra_and_Trigonometry"),
+                Some("/d/approach.pdf")
+            )
+            .as_deref(),
+            Some("approach")
+        );
+        // Real titles stay titles, short numeric ones included, and a dot in
+        // the middle of a name is not an extension.
+        assert_eq!(display_name(Some("1984"), Some("/d/1984.pdf")).as_deref(), Some("1984"));
+        assert_eq!(
+            display_name(Some("Mathematical Proofs"), Some("/d/mp.pdf")).as_deref(),
+            Some("Mathematical Proofs")
+        );
+        assert_eq!(
+            display_name(Some("Mr. Smith Goes West"), Some("/d/msgw.pdf")).as_deref(),
+            Some("Mr. Smith Goes West")
+        );
+        assert!(!super::looks_like_file_name("Discrete Mathematics"));
+        assert!(super::looks_like_file_name("978-0-321-89407-3"));
+    }
+
     #[test]
     fn file_stem_extraction() {
         for (path, want) in [
