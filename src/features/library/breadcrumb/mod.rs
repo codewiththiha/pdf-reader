@@ -1,7 +1,7 @@
 //! The breadcrumb: the library page's only prose, and it is navigation.
 //!
-//! One crumb per level the page is drilled through, `All` first and the shelf the
-//! page is on last. "All" is always a button, because it is the way back, and so is
+//! One crumb per level the page is drilled through, `Home` first and the shelf
+//! the page is on last. "Home" is always a button, because it is the way back, and so is
 //! every crumb above the last one: a folder three levels down is three clicks from
 //! the root only if the reader can see all three. Before shelves could nest there
 //! were two crumbs at most and the chain was a single optional value; it is a list
@@ -149,7 +149,7 @@ fn shelf_name_now(state: AppState, shelf_id: &str) -> String {
 
 
 /// The levels the page is drilled through, root first and ending with the one it is
-/// on. Empty at the root, where "All" is the whole breadcrumb.
+/// on. Empty at the root, where "Home" is the whole breadcrumb.
 ///
 /// Tracked: the breadcrumb is a view, and a drill in or out is one of the two things
 /// that change it (a rename is the other).
@@ -398,9 +398,12 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
 }
 
 
-/// The root crumb. Always a button, because it is the way back, and a target with
-/// an empty id — the library's spelling of "no shelf", which is what makes a drop
-/// here take a book OFF the shelf it was dragged out of.
+/// The root crumb, shown as "Home": the library's front door, and the name a
+/// reader gives the level that holds everything. Always a button, because it is
+/// the way back, and a target with an empty id — the library's spelling of "no
+/// shelf", which is what makes a drop here take a book OFF the shelf it was
+/// dragged out of. The pseudo-shelf's own id stays `all`; only the word the bar
+/// shows is the friendly one.
 #[component]
 fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
     let dom_id = register_crumb(&ctrl, "");
@@ -410,7 +413,7 @@ fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
         <button
             id=dom_id
             type="button"
-            title="The top level of the library"
+            title="The top of your library"
             on:click=move |_| state.library.shelf.set(ALL_SHELF.to_string())
             class=move || {
                 let base = "shrink-0 rounded-md px-1.5 py-0.5 transition-colors \
@@ -427,7 +430,7 @@ fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
                 }
             }
         >
-            "All"
+            "Home"
         </button>
     }
 }

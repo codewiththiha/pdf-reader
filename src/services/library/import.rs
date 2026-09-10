@@ -873,7 +873,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         return fail(
             state,
             &task,
-            "None of those files could be read as documents.".to_string(),
+            "None of those files could be opened.".to_string(),
             false,
         );
     }

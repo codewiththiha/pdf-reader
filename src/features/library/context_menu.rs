@@ -188,7 +188,7 @@ fn BookMenu(
             <MenuItem
                 icon=IconName::Check
                 label="Select"
-                sublabel="Picks it up with the rest of the set"
+                sublabel="Adds it to your selection"
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
@@ -199,7 +199,7 @@ fn BookMenu(
                     <MenuItem
                         icon=IconName::Search
                         label="Find again…"
-                        sublabel="Points the book at a file you pick"
+                        sublabel="Look for the file somewhere else"
                         on_click=move || {
                             close.run(());
                             relink_dialog(state, relink_id.clone());
@@ -248,7 +248,7 @@ fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -
             <MenuItem
                 icon=IconName::Check
                 label="Select"
-                sublabel="Picks it up with the rest of the set"
+                sublabel="Adds it to your selection"
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
@@ -277,8 +277,8 @@ fn FolderMenu(state: AppState, id: String, watched: bool, close: Callback<()>) -
             {watched.then(|| {
                 view! {
                     <p class="px-2 py-1.5 text-[11px] text-muted">
-                        "Cut from a watched folder: it comes off the list, and returns if the
-                         folder places a book here again."
+                        "From a watched folder: it comes off the list, and returns when the
+                         folder gets new books."
                     </p>
                 }
             })}
@@ -380,7 +380,7 @@ fn LevelMenu(
                     <MenuItem
                         icon=IconName::Check
                         label="Select all"
-                        sublabel="Everything on this level"
+                        sublabel="Everything in view"
                         on_click=move || {
                             close.run(());
                             select_on_screen(state, order, folders);

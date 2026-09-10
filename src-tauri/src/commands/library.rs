@@ -241,7 +241,7 @@ fn scan(
     state.walk(&root_path, 0);
     if state.truncated {
         return Err(format!(
-            "More than {MAX_FOUND} documents in this folder. Import a narrower one."
+            "This folder has more than {MAX_FOUND} documents — try importing a smaller folder."
         ));
     }
     // The last beat carries the real total, so the ring ends on the count

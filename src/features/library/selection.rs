@@ -366,7 +366,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                     active=Signal::derive(move || shelf_menu.get())
                     disabled=Signal::derive(move || count.get() == 0)
                     class="rounded-full px-3"
-                    title="File the selection on a shelf"
+                    title="Add the selected items to a shelf"
                 >
                     "Add to shelf"
                 </Button>
@@ -380,7 +380,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                     hold_titlebar=false
                     class="max-h-72 overflow-y-auto p-1".to_string()
                 >
-                    <SectionLabel text="File the selection on" />
+                    <SectionLabel text="Add to shelf" />
                     {move || {
                         choices.get().into_iter().map(|shelf| {
                             let label = shelf.name.clone();
@@ -416,7 +416,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                 compact=true
                 class="rounded-full px-3"
                 disabled=Signal::derive(move || count.get() == 0)
-                title="Remove the selected books, and take the selected shelves apart"
+                title="Remove the selected books and shelves"
             >
                 {move || format!("Remove ({})", count.get())}
             </Button>

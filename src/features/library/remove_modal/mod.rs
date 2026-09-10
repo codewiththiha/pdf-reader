@@ -250,7 +250,9 @@ fn Sheet(
     let marks_line = plural(marks, "mark", "marks");
     // Hoisted out of the view: an `if` in attribute position is an expression the
     // macro has to guess the end of, and a label is a string either way.
-    let covers_label = if many { "Cached covers" } else { "Cached cover" };
+    // "Cover art" rather than "cached cover(s)": the cache is the app's
+    // business, the picture is the reader's.
+    let covers_label = "Cover art";
     let covers_line = plural(covers, "image", "images");
     let books_line = plural(info.books.len(), "book", "books");
     let copy_label = match stored_count {
@@ -425,7 +427,7 @@ fn Sheet(
                         view! {
                             <ReceiptRow
                                 icon=IconName::Outline
-                                label="Shelf placements"
+                                label="Filed on"
                                 value=placements_line.clone()
                             />
                         }
@@ -475,9 +477,9 @@ fn Sheet(
                 {shelf_watched.then(|| {
                     view! {
                         <p class="mt-3 text-xs text-muted">
-                            "A shelf here was cut from a watched folder. Removing takes it off the
-                             list; the folder keeps watching, and the shelf returns if the folder
-                             places a book in it again."
+                            "A shelf here came from a watched folder. Removing takes it off the
+                             list; the folder keeps watching, and the shelf returns when the
+                             folder gets new books."
                         </p>
                     }
                 })}
@@ -509,8 +511,8 @@ fn Sheet(
                 {watched.then(|| {
                     view! {
                         <p class="mt-3 text-xs text-muted">
-                            "A watched folder placed at least one of these. Removing keeps them out of
-                             future auto-imports; the folder's import menu can offer them back."
+                            "Some of these came from a watched folder. Removing keeps them out of
+                             future auto-imports — the folder's Add menu can give them back."
                         </p>
                     }
                 })}

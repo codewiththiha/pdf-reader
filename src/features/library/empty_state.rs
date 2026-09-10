@@ -44,7 +44,7 @@ pub(crate) fn EmptyState(state: AppState) -> impl IntoView {
                         <p class="text-xs text-muted">
                             {move || {
                                 format!(
-                                    "…or drop a {} file anywhere in the window",
+                                    "Or drop a {} file anywhere in the window",
                                     reader_core::format::kind_list()
                                 )
                             }}

@@ -220,7 +220,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         // --- how the books are held -------------------------
                         <SectionLabel text="Books" />
                         <div class="divide-y divide-line rounded-xl border border-line">
-                            <Row label="Read in place">
+                            <Row label="Keep books where they are">
                                 <Switch
                                     checked=in_place
                                     on_change=Callback::new(move |on| {
@@ -234,7 +234,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                             }
                                         });
                                     })
-                                    title="Read in place".to_string()
+                                    title="Read the books from their own folders, without copying".to_string()
                                 />
                             </Row>
                             <Show when=move || in_place.get() fallback=|| ()>
@@ -245,7 +245,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                                 "Watch for new books"
                                             </span>
                                             <span class="mt-0.5 block text-xs text-muted">
-                                                "Rescans when the app opens or returns to the foreground."
+                                                "Checks for new books when the app opens or you come back to it."
                                             </span>
                                         </div>
                                         <Switch
@@ -267,7 +267,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                         variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
                                     >
                                         <Dot on=Signal::derive(move || grouped.get()) />
-                                        <span>"A shelf per subfolder"</span>
+                                        <span>"A shelf for each folder"</span>
                                     </OptionButton>
                                     <OptionButton
                                         selected=Signal::derive(move || !grouped.get())
@@ -275,7 +275,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                         variant_class="flex items-center gap-2 px-2.5 py-1.5 text-xs"
                                     >
                                         <Dot on=Signal::derive(move || !grouped.get()) />
-                                        <span>"One flat shelf"</span>
+                                        <span>"One shelf for everything"</span>
                                     </OptionButton>
                                 </div>
                             </div>
@@ -284,11 +284,12 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         <p class="mt-3 text-xs text-muted">
                             {move || {
                                 if in_place.get() {
-                                    "Books stay where they are; the library keeps their address."
+                                    "Books stay where they are — the library just remembers \
+                                     where they live."
                                         .to_string()
                                 } else {
-                                    "Books are copied into the app's own store, so they survive \
-                                     the folder being moved or deleted."
+                                    "Books are copied into the app's own files, so they keep \
+                                     working even if the folder moves or is deleted."
                                         .to_string()
                                 }
                             }}

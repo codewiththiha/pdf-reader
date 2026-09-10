@@ -136,7 +136,7 @@ pub(super) fn EllipsisCrumb(
     let anchor: NodeRef<html::Div> = NodeRef::new();
     let live = ctrl.live();
     // `elide_at` never answers one, so this is always the plural.
-    let tooltip = format!("{} levels above, folded", elided.len());
+    let tooltip = format!("Show the {} levels above", elided.len());
     let aria = tooltip.clone();
     // Parked in a `StoredValue` rather than captured: a component's children are an
     // `Fn`, and a children closure that owned the list would be an `FnOnce` the

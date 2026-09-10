@@ -57,7 +57,7 @@ impl RestoreRow {
 
     fn sublabel(&self, now_ms: u64) -> String {
         if self.gone {
-            return "file no longer there".to_string();
+            return "not there any more".to_string();
         }
         match &self.item {
             Recovered::Deleted(entry) => {
@@ -90,7 +90,7 @@ impl RestoreRow {
     fn hint(&self) -> &'static str {
         match self.item {
             Recovered::Deleted(_) => {
-                "Import this file back, whatever the folder's format and size filters say"
+                "Add this file back, even if it doesn't match the folder's filters"
             }
             Recovered::Moved { .. } => "This book moved to another shelf",
         }
@@ -283,7 +283,7 @@ pub(crate) fn AddMenu(
                     <>
                         <MenuItem
                             icon=IconName::Open
-                            label="From Local File"
+                            label="Choose files…"
                             on_click=move || {
                                 open.set(false);
                                 from_files(state, target.get_untracked());
@@ -291,7 +291,7 @@ pub(crate) fn AddMenu(
                         />
                         <MenuItem
                             icon=IconName::Library
-                            label="From Local Directory"
+                            label="Choose a folder…"
                             on_click=move || {
                                 open.set(false);
                                 from_directory(sheet);
@@ -305,7 +305,7 @@ pub(crate) fn AddMenu(
                                         <div class="my-1"><Separator /></div>
                                         <MenuItem
                                             icon=IconName::Drop
-                                            label="Open file picker here"
+                                            label="Choose files from this folder"
                                             sublabel=folder_label(&root)
                                             on_click=move || {
                                                 open.set(false);
@@ -450,7 +450,7 @@ fn Confirm(
     let label = title.clone().unwrap_or_else(|| "This book".to_string());
     let go_label = match &home {
         Some(name) => format!("Show it in {name}"),
-        None => "Show it in All".to_string(),
+        None => "Show it in Home".to_string(),
     };
     let here_id = book_id.clone();
     let go_id = book_id;
@@ -571,7 +571,7 @@ mod tests {
             gone: true,
             ..removed(Some("Dune"), "/books/dune.pdf", 1, MINUTE)
         };
-        assert_eq!(row.sublabel(NOW), "file no longer there");
+        assert_eq!(row.sublabel(NOW), "not there any more");
     }
 
     #[test]
