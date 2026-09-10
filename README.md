@@ -418,6 +418,18 @@ the filesystem.
   the rest of the queue the same answer, and a Cancel that stops the remaining questions. Two rows
   of one file share the file's own truth (read one to page 90 and both resume there), and removing
   one keeps the highlights, the cover and the copied bytes while the other still reads them.
+- **Importing the same file twice asks a different question.** Drop `dune.pdf` on a shelf that
+  already reads it and the sheet does not offer Duplicate, Replace and Merge: nothing about the
+  content is in doubt, because the arrival *is* the file the shelf's book reads, so the question is
+  whether you want one book or two. **Already imported** adds nothing and takes you to the book you
+  have — its shelf, then its card, lit up. **Add as new** keeps both and makes the arrival a book of
+  its own: it takes the `dune_1` name, and then its highlights, its reading position and its removal
+  are its own, so reading one to page 90 leaves the other where it was and removing either takes
+  nothing from the other. **Link them** keeps both as one book — the two rows share the file's
+  highlights, its position and one removal, which is what the sheet above has always meant by
+  keeping both. Which question a collision asks is the address: the same file arriving where the
+  library already reads it from asks this one, and one content at two different addresses asks the
+  three answers above.
 
 ### Interface
 

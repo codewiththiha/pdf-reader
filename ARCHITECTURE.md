@@ -407,6 +407,24 @@ store copy only when no remaining row reads from it (`services::library::arrange
 The scans are unaffected either way: the ledger's registry is first-wins per fingerprint, and a
 content the library holds is a Skip whichever of its rows the index names.
 
+Two rows can also stop being twins, and that is a mark on the row rather than a second kind of row.
+`Book::independent` is what the conflict sheet's *as new* answer writes, and it opts the row out of
+exactly half of the sharing above: its resume point becomes its own, and its highlights move to a
+key carrying its id (`Book::gloss_key`), so no other row can name them and a removal of either row
+takes nothing from the other. It does not opt out of the address's fate — whether the file resolves
+is a fact about the file, so `book::apply_check` still writes every row at it, and the cover stays
+the file's art. Which rows a read belongs to is one function (`book::rows_for_read`, indices so a
+caller can hold the answer across the write it is about to make), and the three writers of a resume
+point all read it: the open's record, the progress debounce and the close's flush. That is also why
+an open carries the row it came from — `document::open_book` for a card, a list row or the menu's
+Open, `document::open_path` for a drop, an *open with* and a dialog — because an address cannot say
+which of two rows the reader clicked, and a reader who asked for a book of its own is a reader who
+means that book. The rest of the library prefers a shared row wherever it resolves a content: the
+ledger's registry indexes shared rows first and a private one only for a content nothing else holds,
+`book::add_book` resolves an import to a shared row and never to a private one, and a merge ends
+the mark outright (`merge::Policy::Folded`) — one book is one book, so the survivor's marks come
+back to the address the fold writes them to.
+
 ### The ledger
 
 `library_core::ledger::diff_folder` is the module the edge cases live in. It takes a folder's
@@ -498,6 +516,33 @@ a row operation plus a sweep:
   travels arrives with its answer — and covers move to the survivor's address. Removal of the
   address the fold leaves behind stays with `arrange::sweep_path`'s twin guard, and the dissolving
   row's memberships transfer to the survivor, minus the shelf the move was taking it off.
+
+One collision is not about content at all, and asking it those three questions asks the wrong
+thing: the SAME FILE arriving at an address the library already reads it from. Import `dune.pdf`
+twice and the second arrival is not a copy that might be worth replacing or folding — it *is* that
+file, and the two rows would share its address, and with it the highlights keyed by the address,
+the resume point every writer at the address updates and the removal that sweeps the address when
+the last row leaves it. So `conflict::kind_of` — pure, and tested, because the sheet changes its
+whole vocabulary on the answer — splits the queue by `ConflictKind`, and the rule is the address
+and nothing else: an arrival reading from the very address the shelf's copy reads from is
+`SameLinkedFile`, and one content at two addresses is the `Fingerprint` question above. A stored
+copy never asks it, because a stored book's address is the app's own and no import can arrive at it.
+
+The same-address sheet offers `LinkedFileChoice`'s three answers on the same queue, behind the same
+switch and the same Cancel, and none of them owes a second ask — two rows of one address share
+their highlights and their position, so there is nothing here that can take something the row did
+not already say:
+
+- **Already imported** places nothing: it reveals the book the reader has (`services::library::reveal`
+  — its shelf, then its card, lit), which is the answer that means *I did not intend to add anything*.
+- **As new** is Duplicate's row operation plus the one mark that makes the arrival a book of its own
+  (`Book::independent`), promised on the row the same way: the name it will take, and that its
+  highlights and its place will be its own.
+- **Link them** *is* Duplicate, named for what the two rows go on sharing.
+
+The switch is offered only while the queue asks one kind of question (`ConflictAsk::uniform`), and
+`conflict::apply_answer` is the guard behind that: a queue holding both kinds answers the items it
+can and leaves the others on the sheet rather than handing a word from one question to another.
 
 The queue's switch gives the rest of the queue the same answer — a Replace warned under the
 switch warns once for the whole batch, because one warning covering three identical questions is
