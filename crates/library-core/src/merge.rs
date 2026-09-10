@@ -34,6 +34,17 @@
 //! the `Union` policy below (both sides' marks, deduped by spot). This crate
 //! stays free of that dependency; the policy is named here so the table tells
 //! the whole truth about a merge.
+//!
+//! ## What the fold reports
+//!
+//! [`merge_books`] answers with the merged row AND a [`MergeNotes`]: what the
+//! fold kept and where the survivor's resume point came from. The notes exist
+//! because a merge is the one answer a reader can never inspect after the
+//! fact — the two rows became one — so the surface that offers it says what
+//! it will keep BEFORE the click (the conflict sheet's Merge row is built
+//! from a dry run of exactly this). The resume half is computed here, beside
+//! the rule it reports; the marks half is the app layer's to fill in, because
+//! the marks live in the app's storage and this crate has no window into it.
 
 use serde::{Deserialize, Serialize};
 
@@ -101,6 +112,31 @@ pub const POLICIES: &[(&str, Policy)] = &[
     ("gloss answers", Policy::Union), // ride the marks' ids, so unioning marks unions them
 ];
 
+/// What a fold kept, and where the survivor's values came from — the report
+/// [`merge_books`] answers with beside the merged row.
+///
+/// The sheet-facing half of the merge: a Merge row that promises "4
+/// highlights kept · resumes at page 12 (the further of the two)" is built
+/// from a dry run of the very fold it offers, so the promise and the write
+/// cannot drift. The resume fields are filled by [`merge_books`] itself; the
+/// mark counts are the app layer's to fill, because the marks live in the
+/// app's own address-keyed storage (see the module docs).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MergeNotes {
+    /// Marks the survivor's address already held — the ones nothing had to
+    /// move for the fold to keep.
+    pub marks_kept: usize,
+    /// Marks that travelled over from an address the fold leaves behind.
+    pub marks_added: usize,
+    /// The merged book's resume page — the further of the two, per
+    /// [`Policy::Furthest`].
+    pub resume_page: u32,
+    /// True when the resume point came from the dissolving row: the reader
+    /// got further in the copy that is about to disappear, and the survivor
+    /// carries that reading forward.
+    pub resume_from_incoming: bool,
+}
+
 /// Fold two rows of the same book into the survivor.
 ///
 /// `existing` is the row that stays — the merged book carries its id, and the
@@ -116,13 +152,26 @@ pub const POLICIES: &[(&str, Policy)] = &[
 /// progress, and differ only in whose identity survives, which is the
 /// caller's choice to make once (the row already on the shelf is the
 /// survivor) rather than a coin toss per field.
-pub fn merge_books(existing: &Book, incoming: &Book) -> Book {
+///
+/// The [`MergeNotes`] that come back report the resume decision; the mark
+/// counts in them are the app layer's half of the fold to fill in.
+pub fn merge_books(existing: &Book, incoming: &Book) -> (Book, MergeNotes) {
     // The resume point is decided as one unit — page, count and fraction
     // travel together, because a page without its count is a position the
     // progress bar cannot draw and a fraction without its page is half a
     // stream reading.
-    let point = further_point(read_point(existing), read_point(incoming));
-    Book {
+    let mine = read_point(existing);
+    let theirs = read_point(incoming);
+    let point = further_point(mine, theirs);
+    let notes = MergeNotes {
+        resume_page: point.page,
+        // A full tie keeps the survivor's own point, so "from incoming" is
+        // the point travelling AND the two actually differing — a fold of
+        // two untouched copies reports nothing travelling.
+        resume_from_incoming: point == theirs && mine != theirs,
+        ..MergeNotes::default()
+    };
+    let book = Book {
         id: existing.id.clone(),
         fp: measured_fp(existing, incoming),
         title: fill_gap(existing.title.clone(), incoming.title.clone()),
@@ -139,7 +188,8 @@ pub fn merge_books(existing: &Book, incoming: &Book) -> Book {
         fraction: point.fraction,
         missing: existing.missing && incoming.missing,
         fp_pending: existing.fp_pending && incoming.fp_pending,
-    }
+    };
+    (book, notes)
 }
 
 /// The resume point of a row, as the reader's own value.
@@ -245,7 +295,7 @@ mod tests {
 
     #[test]
     fn the_survivor_keeps_its_identity() {
-        let merged = merge_books(&book("keep", "/a.pdf"), &book("gone", "/a.pdf"));
+        let (merged, _) = merge_books(&book("keep", "/a.pdf"), &book("gone", "/a.pdf"));
         assert_eq!(merged.id, "keep");
         assert_eq!(merged.format, Format::Pdf);
         assert_eq!(merged.path(), "/a.pdf");
@@ -260,18 +310,28 @@ mod tests {
         incoming.page = 240;
         incoming.num_pages = 300;
         // Either order agrees on the point: the furthest read is a fact about
-        // the reader, not about which row the caller named first.
-        for merged in [
-            merge_books(&existing, &incoming),
-            merge_books(&incoming, &existing),
-        ] {
-            assert_eq!(merged.page, 240, "a merge never sends a reader backwards");
-            assert_eq!(merged.num_pages, 300);
-        }
+        // the reader, not about which row the caller named first. The notes
+        // say which side it travelled from.
+        let (merged, notes) = merge_books(&existing, &incoming);
+        assert_eq!(merged.page, 240, "a merge never sends a reader backwards");
+        assert_eq!(merged.num_pages, 300);
+        assert!(notes.resume_from_incoming, "the point came from the arrival");
+        assert_eq!(notes.resume_page, 240);
+        let (merged, notes) = merge_books(&incoming, &existing);
+        assert_eq!(merged.page, 240);
+        assert!(
+            !notes.resume_from_incoming,
+            "the further point was already the survivor's"
+        );
+        // A full tie keeps the survivor's own point, and reports nothing
+        // travelling.
+        let (_, notes) = merge_books(&existing, &existing);
+        assert!(!notes.resume_from_incoming);
+        assert_eq!(notes.resume_page, 12);
         // The page count survives from whichever row knew it, even when the
         // resume point came from the row that did not.
         incoming.num_pages = 0;
-        let merged = merge_books(&existing, &incoming);
+        let (merged, _) = merge_books(&existing, &incoming);
         assert_eq!(merged.page, 240);
         assert_eq!(merged.num_pages, 300);
     }
@@ -297,15 +357,15 @@ mod tests {
         existing.title = Some("Dune".into());
         let mut incoming = book("b", "/one.pdf");
         incoming.author = Some("Frank Herbert".into());
-        let merged = merge_books(&existing, &incoming);
+        let (merged, _) = merge_books(&existing, &incoming);
         assert_eq!(merged.title.as_deref(), Some("Dune"));
         assert_eq!(merged.author.as_deref(), Some("Frank Herbert"));
         // The incoming name only ever fills: a survivor that has one keeps it.
         incoming.title = Some("Dune_1".into());
-        assert_eq!(merge_books(&existing, &incoming).title.as_deref(), Some("Dune"));
+        assert_eq!(merge_books(&existing, &incoming).0.title.as_deref(), Some("Dune"));
         // A blank is a gap, not a value.
         existing.title = Some("   ".into());
-        assert_eq!(merge_books(&existing, &incoming).title.as_deref(), Some("Dune_1"));
+        assert_eq!(merge_books(&existing, &incoming).0.title.as_deref(), Some("Dune_1"));
     }
 
     #[test]
@@ -314,16 +374,16 @@ mod tests {
         pending.fp = Fingerprint::placeholder("/one.pdf");
         pending.fp_pending = true;
         let measured = book("b", "/one.pdf");
-        let merged = merge_books(&pending, &measured);
+        let (merged, _) = merge_books(&pending, &measured);
         assert_eq!(merged.fp, measured.fp);
         assert!(!merged.fp_pending, "the merged row has been weighed");
         // And the other way round changes nothing: the measured row leads.
-        let merged = merge_books(&measured, &pending);
+        let (merged, _) = merge_books(&measured, &pending);
         assert_eq!(merged.fp, measured.fp);
         assert!(!merged.fp_pending);
         // Two placeholders stay one: nothing has been measured, so the
         // survivor's stands until the check that follows.
-        let both = merge_books(&pending, &pending);
+        let (both, _) = merge_books(&pending, &pending);
         assert!(both.fp_pending);
         assert_eq!(both.fp, pending.fp);
     }
@@ -333,15 +393,15 @@ mod tests {
         let mut dead = book("a", "/gone/dune.pdf");
         dead.missing = true;
         let alive = book("b", "/books/dune.pdf");
-        let merged = merge_books(&dead, &alive);
+        let (merged, _) = merge_books(&dead, &alive);
         assert_eq!(merged.path(), "/books/dune.pdf", "the merged book opens");
         assert!(!merged.missing);
         // A living survivor keeps its address whatever the incoming row is.
-        assert_eq!(merge_books(&alive, &dead).path(), "/books/dune.pdf");
+        assert_eq!(merge_books(&alive, &dead).0.path(), "/books/dune.pdf");
         // Only missing when both are.
         let mut also_dead = book("c", "/gone/two.pdf");
         also_dead.missing = true;
-        assert!(merge_books(&dead, &also_dead).missing);
+        assert!(merge_books(&dead, &also_dead).0.missing);
     }
 
     #[test]
@@ -352,15 +412,15 @@ mod tests {
         let mut incoming = book("b", "/one.pdf");
         incoming.added_ms = 300;
         incoming.last_read_ms = 700;
-        let merged = merge_books(&existing, &incoming);
+        let (merged, _) = merge_books(&existing, &incoming);
         assert_eq!(merged.added_ms, 300, "the book joined when it first joined");
         assert_eq!(merged.last_read_ms, 900, "and was read as recently as it was");
         // Zero is "never", not the epoch: a migrated row's blank stamp does
         // not outdate a real one.
         incoming.added_ms = 0;
-        assert_eq!(merge_books(&existing, &incoming).added_ms, 500);
+        assert_eq!(merge_books(&existing, &incoming).0.added_ms, 500);
         existing.added_ms = 0;
-        assert_eq!(merge_books(&existing, &incoming).added_ms, 0, "neither knows, so neither invents");
+        assert_eq!(merge_books(&existing, &incoming).0.added_ms, 0, "neither knows, so neither invents");
     }
 
     #[test]

@@ -61,7 +61,7 @@ pub use ledger::{
     KnownBook, Recovered, ScanAction, diff_folder, find_tombstone, index_by_fp, prune_tombstones,
     recoverables, restore_deleted, tombstone,
 };
-pub use merge::{POLICIES, Policy, further_point, merge_books};
+pub use merge::{MergeNotes, POLICIES, Policy, further_point, merge_books};
 pub use scan::{FoundFile, admits};
 pub use shelf::{ALL_SHELF, Shelf, ShelfKind, ancestors, can_nest, children_of, shelf_add};
 pub use sort::{SortKey, sort_books};

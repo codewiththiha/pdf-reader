@@ -11,13 +11,17 @@
 //!
 //! The rows say what they DO in one line each — the duplicate's new name is
 //! computed and promised on the row, because "keep both" without the name is
-//! an answer the reader has to take on faith. Replace is the one destructive
-//! row and the only one that asks twice: the second step itemises what the
-//! shelf's copy loses, in the remove sheet's own receipt idiom, and only the
-//! lines that are actually at stake — two copies of one file share their
+//! an answer the reader has to take on faith, and the merge's line is computed
+//! and promised the same way: how many highlights the fold would keep and
+//! where the survivor would resume, from a dry run of the fold itself.
+//! Replace is the one destructive row, and it asks twice only when the shelf's
+//! copy takes something with it — a resume point or highlights at an address
+//! the arrival does not read from; the second step itemises exactly that, in
+//! the remove sheet's own receipt idiom. Two copies of one file share their
 //! highlights and their position (both are keyed by the address, and every
 //! writer updates all the rows at it), so a replace between them loses a name
-//! and a row and nothing else, and says so.
+//! and a row and nothing else — the first sheet said that much, and resolves
+//! on the spot.
 //!
 //! Cancel — the button, the backdrop and the Escape key — stops the remaining
 //! questions rather than skipping one: the placements already answered keep
@@ -109,6 +113,9 @@ struct Info {
     root: bool,
     /// The name a Duplicate would mint, promised on its own row.
     dup_name: String,
+    /// What a Merge would keep, promised on its own row — the dry run of the
+    /// fold, counted live (see `crate::services::library::conflict::merge_note`).
+    merge_note: String,
     cover: Option<String>,
     rest: usize,
     apply_all: bool,
@@ -151,6 +158,7 @@ impl Info {
             })
             .unwrap_or_else(|| "this shelf".to_string());
         let dup_name = conflict::duplicate_name(state, item);
+        let merge_note = conflict::merge_note(state, item);
         let cover = existing.and_then(|b| {
             state
                 .library
@@ -196,6 +204,7 @@ impl Info {
             shelf_name,
             root,
             dup_name,
+            merge_note,
             cover,
             rest: ask.rest(),
             apply_all: ask.apply_all,
@@ -213,7 +222,13 @@ impl Info {
 #[component]
 fn Sheet(state: AppState, info: Info) -> impl IntoView {
     let confirm = info.step == Step::ConfirmReplace;
-    let heading = info.incoming_name.clone();
+    // The second ask names what is about to GO — the first sheet named what
+    // is arriving, and the warning is about the copy, not the arrival.
+    let heading = if confirm {
+        format!("Replace “{}”?", info.existing_name)
+    } else {
+        info.incoming_name.clone()
+    };
     let tooltip = heading.clone();
     let cover_alt = heading.clone();
     // Where the copy already is: a shelf the sentence can name, or the
@@ -235,7 +250,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
     } else {
         "The one on the shelf gives its place to this one".to_string()
     };
-    let merge_note = "One book — both sides' highlights, the further position".to_string();
+    let merge_note = info.merge_note.clone();
     let offers_all = info.rest > 0 && !confirm;
     let switch_label = match info.rest {
         1 => "Do this for the other book too".to_string(),
@@ -408,7 +423,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                                 tone=ButtonTone::Danger
                                 title="Replace the copy on the shelf"
                             >
-                                <span>"Replace"</span>
+                                <span>"Replace anyway"</span>
                             </Button>
                         </>
                     }

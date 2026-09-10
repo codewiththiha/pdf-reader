@@ -46,7 +46,7 @@ use library_core::folder::{FolderOpts, WatchedFolder, parent_key};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
-use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind, ALL_SHELF};
+use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
@@ -864,8 +864,8 @@ async fn copy_batch(
 }
 
 /// Import loose files: measure them, then file them — except the ones whose
-/// content the target already holds, a shelf or the unfiled root alike,
-/// which ask (see [`crate::services::library::conflict`]).
+/// content the target level already holds, which ask (see
+/// [`crate::services::library::conflict`]).
 async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Option<String>) {
     let checks = match wire::verify_paths(paths).await {
         Ok(checks) => checks,
@@ -885,79 +885,36 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // below, which dedupe against exactly those fingerprints.
     apply_checks(state, &checks);
 
-    // A file whose content the TARGET already holds is not a placement this
-    // import may make quietly — the old rule resolved it to the row the
+    // Every file whose content the TARGET LEVEL already holds is a question
+    // rather than a placement — the old rule resolved the file to the row the
     // library already had and skipped the placement, which to the reader was
-    // a book swallowed by the shelf it was dropped on. Here it asks instead:
-    // the clean files land below and the collisions go to the conflict sheet.
-    // The root level is a target like any other — its member list is the
-    // unfiled books — so an import with no shelf screens against those, and
-    // a twin that is filed on a shelf stays out of the way (the import
-    // resolves to that row, which the reader can already see).
-    let target_shelf = target.clone().unwrap_or_else(|| ALL_SHELF.to_string());
-    let (clean, conflicts) = conflict::screen(
-        state,
-        found
-            .iter()
-            .map(|file| Placement {
-                incoming: Incoming::Import { file: file.clone() },
-                shelf_id: target_shelf.clone(),
-                from: None,
-                index: None,
-            })
-            .collect(),
-    );
-    let found: Vec<FoundFile> = clean
-        .into_iter()
-        .filter_map(|placement| match placement.incoming {
-            Incoming::Import { file } => Some(file),
-            Incoming::Move { .. } => None,
+    // a book swallowed by the shelf it was dropped on. The target level is a
+    // shelf's member list, or the root's own: the unfiled rows. An import
+    // with no target screens against those like any other, and a file whose
+    // twin is only SHELVED lands as its own row — the clean half below goes
+    // through the conflict module's one landing rule, which is the only
+    // place that distinction is written down.
+    let placements: Vec<Placement> = found
+        .iter()
+        .map(|file| Placement {
+            incoming: Incoming::Import { file: file.clone() },
+            shelf_id: target
+                .clone()
+                .unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string()),
+            from: None,
+            index: None,
         })
         .collect();
-
-    // Applied to the live list, for the same reason a folder import is: the
-    // measurement round trip is an await, and the library is allowed to move
-    // during one.
-    let now = now_ms();
-    let mut placed = 0u32;
-    let mut placed_ids: Vec<String> = Vec::new();
-    state.library.books.update(|books| {
-        for file in &found {
-            let book = Book::new(
-                id::next_id(now),
-                file.fp,
-                file.format().unwrap_or(Format::Pdf),
-                Origin::Linked {
-                    src: file.path.clone(),
-                },
-                now,
-            );
-            placed_ids.push(add_book(books, book));
-            placed += 1;
-        }
-    });
-    if let Some(target) = target {
-        state.library.shelves.update(|shelves| {
-            let Some(shelf) = shelves.iter_mut().find(|s| s.id == target) else {
-                return;
-            };
-            for book_id in &placed_ids {
-                if !shelf.books.iter().any(|member| member == book_id) {
-                    shelves_ops::place(&mut shelf.books, book_id, None);
-                }
-            }
-        });
-    }
-    // What the sheet will ask about, counted before the queue takes it: the
-    // card's Done line reports the wait rather than claiming a placement
-    // that is still a question.
+    let (clean, conflicts) = conflict::screen(state, placements);
+    let placed = clean.len() as u32;
     let waiting = conflicts.len() as u32;
+    for placement in &clean {
+        conflict::land_clean(state, placement);
+    }
+    // Raised after the clean half landed: the sheet counts the questions, and
+    // a landing that shifted a member list is one the answers resolve against.
     conflict::raise(state, conflicts);
     crate::storage::persist_library(state.library);
-    // The shelf should look like its books the moment they are on it, not the
-    // first time each of them is opened. One render at a time, behind the
-    // reader, however many arrived — see `covers`.
-    super::covers::backfill_missing(state);
     update_task(state, &task, move |t| {
         t.total = placed;
         t.done = placed;

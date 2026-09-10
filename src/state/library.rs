@@ -126,16 +126,14 @@ pub struct ImportTask {
     pub phase: TaskPhase,
     pub done: u32,
     pub total: u32,
+    /// How many of the run's files went to the conflict sheet instead of
+    /// landing — questions the reader still owes an answer to. The finished
+    /// card says so rather than claiming an import that is waiting on
+    /// somebody; see `crate::services::library::conflict`.
+    pub waiting: u32,
     /// The file being worked on — the card's second line.
     pub name: String,
     pub error: Option<String>,
-    /// Placements the run screened into the conflict sheet instead of
-    /// landing — the questions waiting on the reader's
-    /// duplicate/replace/merge answer (see
-    /// `crate::services::library::conflict`). The Done headline says so,
-    /// because a card that claims the whole drop landed while a book sits on
-    /// a sheet is a card that under-reports its own run.
-    pub waiting: u32,
 }
 
 impl ImportTask {
@@ -147,9 +145,9 @@ impl ImportTask {
             phase: TaskPhase::Scanning,
             done: 0,
             total: 0,
+            waiting: 0,
             name: String::new(),
             error: None,
-            waiting: 0,
         }
     }
 
@@ -188,31 +186,23 @@ impl ImportTask {
         self.fraction().map(|f| (f * 100.0).round() as u32)
     }
 
-    /// The card's first line: what is happening, and to how much. A
-    /// finished run with questions on the conflict sheet says so — the wait
-    /// is part of the run's outcome, not a footnote the card hides.
+    /// The card's first line: what is happening, and to how much.
     pub fn headline(&self) -> String {
         match self.phase {
             TaskPhase::Scanning => "Scanning…".to_string(),
             TaskPhase::Failed => "Import failed".to_string(),
             TaskPhase::Done => {
-                let waiting_line = || {
+                // A run that raised questions is not an import that finished:
+                // the books it asked about are waiting on the reader, and a
+                // card that said "Imported" over them would be a promise the
+                // shelf has to take back.
+                if self.waiting > 0 {
                     format!(
                         "{} waiting for your choice",
                         plural(self.waiting as usize, "book", "books")
                     )
-                };
-                match (self.total, self.waiting) {
-                    (0, 0) => format!("Imported {}", plural(0, "book", "books")),
-                    (0, _) => waiting_line(),
-                    (_, 0) => {
-                        format!("Imported {}", plural(self.total as usize, "book", "books"))
-                    }
-                    _ => format!(
-                        "Imported {} · {}",
-                        plural(self.total as usize, "book", "books"),
-                        waiting_line()
-                    ),
+                } else {
+                    format!("Imported {}", plural(self.total as usize, "book", "books"))
                 }
             }
             TaskPhase::Copying => match self.total {
@@ -437,30 +427,21 @@ mod tests {
     }
 
     #[test]
-    fn a_run_that_left_questions_on_the_sheet_says_so() {
-        // The conflict sheet's wait is part of the run's outcome: the card
-        // reports the placements it screened off instead of claiming a drop
-        // that landed whole.
-        let mut task = ImportTask::new("t1", "3 files");
-        task.total = 2;
-        task.done = 2;
-        task.waiting = 1;
-        task.finish();
-        assert_eq!(
-            task.headline(),
-            "Imported 2 books · 1 book waiting for your choice"
-        );
-
-        // A drop that was ALL collisions finishes on the wait alone.
-        let mut task = ImportTask::new("t1", "dune.pdf");
-        task.waiting = 1;
-        task.finish();
-        assert_eq!(task.headline(), "1 book waiting for your choice");
-
-        let mut task = ImportTask::new("t1", "2 files");
+    fn a_run_that_asked_ends_on_the_question() {
+        // Ten files measured, eight landed, two went to the conflict sheet:
+        // the card counts what landed and ends on what is still owed.
+        let mut task = ImportTask::new("t1", "10 files");
+        task.total = 8;
+        task.done = 8;
         task.waiting = 2;
         task.finish();
         assert_eq!(task.headline(), "2 books waiting for your choice");
+        // One question reads as one book...
+        task.waiting = 1;
+        assert_eq!(task.headline(), "1 book waiting for your choice");
+        // ...and an import that asked nothing claims its books as before.
+        task.waiting = 0;
+        assert_eq!(task.headline(), "Imported 8 books");
     }
 
     #[test]

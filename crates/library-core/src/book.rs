@@ -1001,6 +1001,25 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_titles_count_up_1_2_3() {
+        // Three of one file in a row: each duplicate takes the next free
+        // counter, the way a file manager copies the same name three times.
+        let mut in_use: std::collections::HashSet<String> =
+            ["Dune"].iter().map(|s| s.to_string()).collect();
+        let mut minted = Vec::new();
+        for expected in ["Dune_1", "Dune_2", "Dune_3"] {
+            let next = duplicate_title("Dune", &in_use);
+            assert_eq!(next, expected);
+            in_use.insert(next.clone());
+            minted.push(next);
+        }
+        assert_eq!(minted, vec!["Dune_1", "Dune_2", "Dune_3"]);
+        // And a duplicate OF a duplicate keeps counting on the same stem
+        // rather than stacking counters.
+        assert_eq!(duplicate_title("Dune_2", &in_use), "Dune_4");
+    }
+
+    #[test]
     fn the_storage_cap_evicts_the_least_recently_read() {
         let mut books: Vec<Book> = (0..(BOOKS_CAP + 2))
             .map(|i| {

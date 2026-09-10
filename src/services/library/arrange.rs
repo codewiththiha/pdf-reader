@@ -44,6 +44,11 @@ use crate::state::{AppState, Toast};
 /// Dropping on the root ([`ALL_SHELF`]) re-orders the library's own list rather
 /// than a shelf, because "All" IS that list and not a shelf holding a copy of it.
 /// `index` is `None` for "append", which is what a drop on empty space means.
+/// The root screens like any shelf before it reorders — its member list is the
+/// unfiled rows, and a shelved book dropped at the root where its own content
+/// already lies unfiled is the sheet's question (see
+/// `crate::services::library::conflict`) rather than a second silent twin; a
+/// row already unfiled is a reorder and never asks.
 ///
 /// `index` counts the level the reader pointed at BEFORE the lift, and the two
 /// placements below correct for the books the lift shifts left — a correction one
@@ -65,11 +70,33 @@ pub fn move_many_to_shelf(
         return;
     }
     if to == ALL_SHELF {
-        state
-            .library
-            .books
-            .update(|books| reorder_root(books, book_ids, index));
-        crate::storage::persist_library(state.library);
+        // Screened like a shelf: the unfiled list IS the root's member list.
+        // The common case — rows already unfiled, reordering among themselves
+        // — screens clean by the rule's own reorder arm and reorders exactly
+        // as before.
+        let (clean, conflicts) = conflict::screen(
+            state,
+            book_ids
+                .iter()
+                .map(|book_id| Placement {
+                    incoming: Incoming::Move {
+                        book_id: book_id.clone(),
+                    },
+                    shelf_id: ALL_SHELF.to_string(),
+                    from: from.clone(),
+                    index,
+                })
+                .collect(),
+        );
+        let clean_ids = clean_move_ids(clean);
+        if !clean_ids.is_empty() {
+            state
+                .library
+                .books
+                .update(|books| reorder_root(books, &clean_ids, index));
+            crate::storage::persist_library(state.library);
+        }
+        conflict::raise(state, conflicts);
         return;
     }
 
@@ -87,13 +114,7 @@ pub fn move_many_to_shelf(
             })
             .collect(),
     );
-    let book_ids: Vec<String> = clean
-        .into_iter()
-        .filter_map(|placement| match placement.incoming {
-            Incoming::Move { book_id } => Some(book_id),
-            Incoming::Import { .. } => None,
-        })
-        .collect();
+    let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
             if let Some(from) = from.as_deref().filter(|id| *id != to)
@@ -114,6 +135,19 @@ pub fn move_many_to_shelf(
     conflict::raise(state, conflicts);
 }
 
+/// The book ids of a screened clean half — the moves that may land now. The
+/// import half of a screen is [`conflict::land_clean`]'s business instead;
+/// nothing in this module raises one.
+fn clean_move_ids(clean: Vec<Placement>) -> Vec<String> {
+    clean
+        .into_iter()
+        .filter_map(|placement| match placement.incoming {
+            Incoming::Move { book_id } => Some(book_id),
+            Incoming::Import { .. } => None,
+        })
+        .collect()
+}
+
 /// Take books off a shelf without filing them anywhere else.
 ///
 /// What a drop on the root crumb means from inside a shelf: the reader lifted
@@ -122,16 +156,38 @@ pub fn move_many_to_shelf(
 /// never held a byte — and the folder ledger is untouched, so a watched folder
 /// that placed one of them still has its fingerprint and will not offer it back
 /// on the next rescan.
+///
+/// Screened first, because the root DOES have a member list to collide with —
+/// the unfiled rows the "All" level renders: a book lifted out beside an
+/// unfiled twin of its own content is the sheet's question (see
+/// [`conflict::screen`]) rather than a second silent row at the top of the
+/// library. The clean half comes off the shelf at once; the collisions ask,
+/// and their answers land through the conflict module's own mechanics.
 pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
     }
+    let (clean, conflicts) = conflict::screen(
+        state,
+        book_ids
+            .iter()
+            .map(|book_id| Placement {
+                incoming: Incoming::Move {
+                    book_id: book_id.clone(),
+                },
+                shelf_id: ALL_SHELF.to_string(),
+                from: Some(shelf_id.to_string()),
+                index: None,
+            })
+            .collect(),
+    );
+    let book_ids = clean_move_ids(clean);
     let mut moved = false;
     state.library.shelves.update(|shelves| {
         let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {
             return;
         };
-        for book_id in book_ids {
+        for book_id in &book_ids {
             moved |= shelf::forget(&mut shelf.books, book_id);
         }
     });
@@ -141,6 +197,7 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     if moved {
         crate::storage::persist_library(state.library);
     }
+    conflict::raise(state, conflicts);
 }
 
 /// Re-order the library's own list, which IS the "All" level.
@@ -486,6 +543,11 @@ fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
 /// again, so the rule has to hold for every caller rather than for every caller
 /// that remembered. A refusal writes nothing and persists nothing, which is what
 /// lets a drop answer "no" by doing nothing.
+///
+/// A move that lands the shelf inside a parent already holding the content one
+/// of its books carries asks about the pair — [`conflict::screen_nest`]'s rule —
+/// because the nesting itself writes no membership and would otherwise park the
+/// duplicate where the parent's own level cannot see it.
 pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> bool {
     let mut moved = false;
     state.library.shelves.update(|shelves| {
@@ -493,9 +555,6 @@ pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> boo
     });
     if moved {
         crate::storage::persist_library(state.library);
-        // The folder's books just parked one level down inside `parent`; if
-        // the parent holds the same content directly, that is the conflict
-        // sheet's question — see `conflict::screen_nest`.
         if let Some(parent) = parent.filter(|p| *p != ALL_SHELF) {
             conflict::screen_nest(state, &[folder_id.to_string()], parent);
         }
@@ -506,6 +565,11 @@ pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> boo
 /// File several shelves inside one at once. What a bulk "add to shelf" does with
 /// the folders in the set: the books are memberships and the folders are nestings,
 /// and one persist covers the batch.
+///
+/// The folders that actually moved are screened against the new parent, one
+/// question per duplicate pair rather than one per folder — a batch nesting two
+/// folders that hold the same content twice asks about the content, not about
+/// the folders.
 pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     if folder_ids.is_empty() {
         return;
@@ -523,12 +587,7 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     });
     if !moved_ids.is_empty() {
         crate::storage::persist_library(state.library);
-        // What one nest owes the parent, the batch owes too: the folders
-        // that actually moved screen their books against it — see
-        // `conflict::screen_nest`.
-        if parent != ALL_SHELF {
-            conflict::screen_nest(state, &moved_ids, parent);
-        }
+        conflict::screen_nest(state, &moved_ids, parent);
     }
 }
 
@@ -606,13 +665,7 @@ pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
             })
             .collect(),
     );
-    let book_ids: Vec<String> = clean
-        .into_iter()
-        .filter_map(|placement| match placement.incoming {
-            Incoming::Move { book_id } => Some(book_id),
-            Incoming::Import { .. } => None,
-        })
-        .collect();
+    let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
             let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {

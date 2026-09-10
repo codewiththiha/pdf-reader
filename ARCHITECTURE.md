@@ -449,57 +449,64 @@ folder cannot recover from on its own.
 
 ### When the shelf already holds the book
 
-A placement — a drag, a bulk filing, a loose-file import — whose CONTENT a member of the target
-shelf already holds is a question, not a skip. It used to be a skip: the import resolved the file
-to the row the library already had and the shelf, finding that row already a member, filed nothing,
-which to the reader was a book vanishing into the shelf it was dropped on. `services::library::conflict`
-is the replacement, and its `screen` is the whole rule: the arrival is not already a member of the
-target (that drop is a reorder), and some member of the target holds the arrival's fingerprint.
-Same NAME with different content is not a collision — a second format of one title measures a
-different fingerprint and simply lands. The root level counts as a target, with the unfiled books
-for its member list: an import dropped on the library beside its own unfiled twin asks like any
-shelf drop (that was the vanishing's last hiding place — the fingerprint dedupe swallowed it with
-nothing new on screen), while a twin that is FILED somewhere stays out of the way, because the
-reader looking at "All" already sees that row and the import resolves to it.
+A placement — a drag, a lift out to the root, a bulk filing, a folder filed inside another, a
+loose-file import — whose CONTENT a member of the target level already holds is a question, not a
+skip. It used to be a skip: the import resolved the file to the row the library already had and
+the shelf, finding that row already a member, filed nothing, which to the reader was a book
+vanishing into the shelf it was dropped on. `services::library::conflict` is the replacement, and
+its `screen` is the whole rule. Every level has a member list, including the root, whose list is
+the unfiled books the "All" level renders — that list used to be the one place a duplicate could
+still vanish — and the rule is the same on all of them: the arrival is not already a member of the
+target (that drop is a reorder), and some member holds the arrival's fingerprint. Same NAME with
+different content is not a collision — a second format of one title measures a different
+fingerprint and simply lands.
 
 Every placing surface hands its placements through the screen before writing anything
-(`arrange::move_many_to_shelf`, `arrange::file_many` — which `also_show` rides — and
-`import::run_files`, which screens against the root when the drop named no shelf), applies the
-clean half at once and raises the collisions onto a queue the reader answers one at a time; a
-watched folder's own rescan never asks, because staying quiet is the ledger's job. A folder
-filed INSIDE another is screened after the reparent lands (`conflict::screen_nest`, which
-`arrange::nest_shelf` / `arrange::nest_many` call): the nested folder's books that the parent
-holds directly under the same content become placements aimed at the parent, so the collision
-arriving sideways through the tree meets the same sheet as the one arriving by hand. The import
-card reports the wait — a finished run whose collisions went to the sheet says "1 book waiting
-for your choice" instead of claiming a drop that landed whole. The sheet (`features::library::conflict_modal`) offers the three answers a file
-manager teaches, and each is a row operation plus a sweep:
+(`arrange::move_many_to_shelf`, `arrange::unfile_books`, `arrange::file_many` — which `also_show`
+rides — and `import::run_files`, whose clean half lands through `conflict::land_clean`), applies
+the clean half at once and raises the collisions onto a queue the reader answers one at a time. A
+nesting asks too, one step behind the reparent: `conflict::screen_nest` screens the moved folder's
+direct members against the new parent's own list, which the nesting writes nothing to and would
+otherwise park a duplicate where the parent's level cannot see it. A watched folder's own rescan
+never asks, because staying quiet is the ledger's job. The sheet
+(`features::library::conflict_modal`) offers the three answers a file manager teaches, and each is
+a row operation plus a sweep:
 
 - **Duplicate** keeps both: the arrival takes the first free `_1`, `_2`, … name
   (`book::duplicate_title` — the counter extends the arrival's own name and steps rather than
   stacks, and the minted name survives the sanitizer's filename rule through the trailing-counter
   exemption in `reader_core::filename`). A moved row is renamed and lands; an imported file gets a
   fresh row of its own.
-- **Replace** asks twice, and the second ask itemises what the shelf's copy loses. The answer:
-  that row goes, the arrival takes its SLOT and inherits every other shelf it was filed on — a
-  replace must not silently take a book off shelves the question never mentioned — and the side
-  data only the dead row's address held goes with it. Two rows of one address share their position
-  and their highlights, so between them the loss is a name and a row, and the sheet says exactly
-  that much.
+- **Replace** asks twice only when the shelf's copy takes something with it — a resume point, or
+  highlights at an address the arrival does not read from — and the second ask itemises exactly
+  that (`conflict::replace_has_losses` is the rule, pure and tested). The answer: that row goes,
+  the arrival takes its SLOT and inherits every other shelf it was filed on — a replace must not
+  silently take a book off shelves the question never mentioned — and the side data only the dead
+  row's address held goes with it. Two rows of one address share their position and their
+  highlights, so between them the loss is a name and a row, the first sheet says exactly that
+  much, and the replace resolves on the spot.
 - **Merge** folds the arrival into the shelf's copy by `library_core::merge`: one `merge_books`
   over the two rows, every field following a named `Policy` (the resume point is the FURTHER of
   the two, names fill gaps, stamps keep the first join and the last read, a measurement beats a
   placeholder, a dead address yields to a living one) written down as data in `merge::POLICIES` so
   a future field gets a row there and a line in the function, which does not compile until it has
-  one. The side data follows the same instinct at the app layer: gloss marks union by
-  `same_spot` — the AI answers ride the marks' ids, so a mark that travels arrives with its answer
-  — covers move to the survivor's address, and the dissolving row's memberships transfer to the
-  survivor, minus the shelf the move was taking it off.
+  one. The fold answers with a `merge::MergeNotes` beside the merged row — the resume page and
+  which side it came from — and the sheet's Merge row promises the fold's totals BEFORE the click
+  (`conflict::merge_note`, off a dry run of the same fold). The side data follows the same instinct
+  at the app layer, through the registry in `services::library::merge_side`: gloss marks union by
+  `same_spot` and fill the notes' mark counts — the AI answers ride the marks' ids, so a mark that
+  travels arrives with its answer — and covers move to the survivor's address. Removal of the
+  address the fold leaves behind stays with `arrange::sweep_path`'s twin guard, and the dissolving
+  row's memberships transfer to the survivor, minus the shelf the move was taking it off.
 
-The queue's switch gives the rest of the queue the same answer; Cancel stops the remaining
-questions rather than skipping one, which is what a file manager's copy dialog has always meant by
-Cancel. The state rides `state::library::LibraryState` (`conflict` + `conflict_open`) because the
-raisers are services: an import asks from inside a spawned future that outlived every component.
+The queue's switch gives the rest of the queue the same answer — a Replace warned under the
+switch warns once for the whole batch, because one warning covering three identical questions is
+the point of the switch; Cancel stops the remaining questions rather than skipping one, which is
+what a file manager's copy dialog has always meant by Cancel. An import that raised questions
+counts what landed on its dock card and ends on what is still owed — "2 books waiting for your
+choice" rather than "Imported" (`state::library::ImportTask::headline`). The state rides
+`state::library::LibraryState` (`conflict` + `conflict_open`) because the raisers are services: an
+import asks from inside a spawned future that outlived every component.
 
 ### Where the work happens
 
