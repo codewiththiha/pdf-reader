@@ -398,9 +398,12 @@ the filesystem.
 
 - Glass toolbar with sidebar toggle, open button, document title, centred page navigation, zoom
   popover, view-mode switch, search and an overflow menu.
-- A library bar of its own: a breadcrumb on the left, a shelf filter in the centre slot, and a view
-  menu, appearance menu and settings on the right. No Open button — adding books is a shelf
-  affordance ([Library](#library)), and a bar button would hide the door that is already on screen.
+- A library bar of its own: a breadcrumb starting at Home on the left, a shelf filter in the centre
+  slot, and a view menu and appearance menu on the right — the appearance menu without its page
+  texture section, because the shelf has no page. No Open button and no settings gear: adding books
+  is a shelf affordance ([Library](#library)), and settings are about reading, so the gear lives on
+  the reader's bar. The bar's pin is remembered per route — the shelf's bar starts pinned, and
+  unhitching the reader's bar does not move it.
 - Overflow menu with fullscreen and a keyboard shortcut reference.
 - Animated sidebar with an outline and thumbnails rail. Panels stay mounted while the sidebar is
   collapsed, so thumbnails survive a toggle without re-rendering.
@@ -413,8 +416,9 @@ the filesystem.
 ### Persistence
 
 Settings are stored in local storage under `pdfreader.settings.v1` and cover appearance, the
-active preset, user presets, default zoom, the layout and motion switches, and the last opened
-path. A group added later simply defaults: a document opened by an older build keeps the behaviour
+active preset, user presets, default zoom, the layout and motion switches, the two title-bar pins
+(the reader's and the library's — separate memories, and the library's starts pinned), and the
+last opened path. A group added later simply defaults: a document opened by an older build keeps the behaviour
 it had, because every new switch defaults to what the app used to do.
 
 The appearance model changed shape during development, from six fixed themes to base mode plus
