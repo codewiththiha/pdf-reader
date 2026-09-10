@@ -44,7 +44,6 @@ use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use library_core::book::stem_of;
-use library_core::shelf::ALL_SHELF;
 use library_core::text::plural;
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
@@ -53,6 +52,7 @@ use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_l
 use crate::services::library::conflict::{
     self, Choice, ConflictAsk, ConflictItem, Incoming, LinkedFileChoice, Step,
 };
+use crate::services::library::memberships;
 use crate::state::AppState;
 
 /// The sheet, mounted once by the library page.
@@ -115,12 +115,14 @@ struct Info {
     incoming_name: String,
     /// The shelf copy's name — what a replace warns about.
     existing_name: String,
-    shelf_name: String,
-    /// Whether the placement is aimed at the library's root — the unfiled
-    /// list — rather than a shelf. The sheet's sentences read "in your
-    /// library" there, because "on this shelf" would name a shelf that does
-    /// not exist.
-    root: bool,
+    /// The shelf the copy is FILED on, by name, or `None` when it is one of the
+    /// library's unfiled rows. The sheet's sentences name this and never the
+    /// drop's own target: the screen is the library's rather than the level's
+    /// (`crate::services::library::conflict`), so the copy the arrival collided
+    /// with can be filed somewhere else entirely, and "already on “Fiction”"
+    /// over a drop onto "Sci-Fi" would be a sentence about the wrong shelf.
+    /// `None` reads "in your library", which is where an unfiled row is.
+    home: Option<String>,
     /// Whether the question on screen is the same-address one, which has its
     /// own three answers and its own words for them.
     linked_flow: bool,
@@ -163,17 +165,12 @@ impl Info {
         let existing_name = existing
             .map(|b| b.title())
             .unwrap_or_else(|| incoming_name.clone());
-        let root = item.placement.shelf_id == ALL_SHELF;
-        let shelf_name = state
-            .library
-            .shelves
-            .with(|shelves| {
-                shelves
-                    .iter()
-                    .find(|s| s.id == item.placement.shelf_id)
-                    .map(|s| s.name.clone())
-            })
-            .unwrap_or_else(|| "this shelf".to_string());
+        // The first shelf the copy is filed on, in shelf order — the same
+        // answer a reveal gives when it takes the reader to a book.
+        let home = memberships(state, &item.existing_id)
+            .into_iter()
+            .next()
+            .map(|(_, name)| name);
         let dup_name = conflict::duplicate_name(state, item);
         let merge_note = conflict::merge_note(state, item);
         let cover = existing.and_then(|b| {
@@ -222,8 +219,7 @@ impl Info {
             step: ask.step,
             incoming_name,
             existing_name,
-            shelf_name,
-            root,
+            home,
             linked_flow: ask.linked_flow(),
             uniform: ask.uniform(),
             dup_name,
@@ -257,10 +253,9 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
     let cover_alt = heading.clone();
     // Where the copy already is: a shelf the sentence can name, or the
     // library's own unfiled list, which has no name but "your library".
-    let where_line = if info.root {
-        "in your library".to_string()
-    } else {
-        format!("on “{}”", info.shelf_name)
+    let where_line = match &info.home {
+        Some(name) => format!("on “{name}”"),
+        None => "in your library".to_string(),
     };
     let subtitle = if info.rest > 0 {
         format!("Already {where_line} · {} more waiting", info.rest)
@@ -283,10 +278,9 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
         "One book in two rows — “{}” shares these highlights, this place, and one removal",
         info.dup_name
     );
-    let replace_note = if info.root {
-        "The one in your library gives its place to this one".to_string()
-    } else {
-        "The one on the shelf gives its place to this one".to_string()
+    let replace_note = match &info.home {
+        Some(name) => format!("The one on “{name}” gives its place to this one"),
+        None => "The one in your library gives its place to this one".to_string(),
     };
     let merge_note = info.merge_note.clone();
     let offers_all = info.rest > 0 && !confirm && info.uniform;
@@ -298,18 +292,17 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
 
     // The second ask's own words: what the shelf's copy loses, and — under
     // the switch — that the rest of the queue loses it the same way.
-    let replace_line = if info.root {
-        format!(
+    let replace_line = match &info.home {
+        None => format!(
             "“{}” will be replaced by the book arriving. Its place in your \
              library goes to the arrival.",
             info.existing_name
-        )
-    } else {
-        format!(
-            "“{}” will be replaced by the book arriving. Its place on this shelf, \
+        ),
+        Some(name) => format!(
+            "“{}” will be replaced by the book arriving. Its place on “{}”, \
              and on the others it is filed on, goes to the arrival.",
-            info.existing_name
-        )
+            info.existing_name, name
+        ),
     };
     let replace_losses = info.positions_differ && (info.started || info.marks > 0);
     let losses_line = "Only the shelf's copy held these; the arrival's own take their place:"

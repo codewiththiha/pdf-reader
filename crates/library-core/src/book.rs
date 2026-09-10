@@ -617,9 +617,12 @@ pub fn apply_check(books: &mut [Book], check: &crate::wire::PathCheck) -> Vec<St
 /// The first row wins when a shelf holds duplicates the reader asked to keep —
 /// an import that re-finds a file the library already has twice resolves to
 /// the row the library lists first, and which shelf the book then lands on is
-/// a question the app's conflict sheet asks BEFORE this is reached (a row
-/// whose fingerprint is already on the target shelf is a duplicate/replace/
-/// merge choice, not an add).
+/// a question the app's conflict sheet asks BEFORE this is reached: a
+/// fingerprint already FILED on a shelf is a duplicate/replace/merge choice and
+/// not an add, so an import that reaches this with one is either a row nobody
+/// has filed — the library's own row for that content, which the arrival
+/// becomes a second membership of — or a second file of one content inside a
+/// single batch.
 ///
 /// Appended rather than pushed to the front, because an import arrives in the
 /// order the walk produced — depth-first and alphabetical, which is the order the

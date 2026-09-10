@@ -34,21 +34,24 @@ use crate::state::{AppState, Toast};
 /// [`purge_books`] gives for a bulk removal, for the same reason: a reader who
 /// closes the window halfway through a move should find all of it or none of it.
 ///
-/// A shelf that already holds the very content being dropped is a question
+/// A library that already holds the very content being dropped is a question
 /// rather than a placement — this is the seam where a book used to vanish
 /// (the old rule filed the row the library already had, and a shelf that had
 /// it skipped the filing): the drag splits through [`conflict::screen`], the
 /// clean half lands now and the collisions go to the sheet. A drag of four
-/// books with one collision files three and asks about one.
+/// books with one collision files three and asks about one. The screen is the
+/// library's and not the target's, so the twin that asks can be filed on a
+/// parent, a child or a sibling of the shelf the hand is over.
 ///
 /// Dropping on the root ([`ALL_SHELF`]) re-orders the library's own list rather
 /// than a shelf, because "All" IS that list and not a shelf holding a copy of it.
 /// `index` is `None` for "append", which is what a drop on empty space means.
-/// The root screens like any shelf before it reorders — its member list is the
-/// unfiled rows, and a shelved book dropped at the root where its own content
-/// already lies unfiled is the sheet's question (see
-/// `crate::services::library::conflict`) rather than a second silent twin; a
-/// row already unfiled is a reorder and never asks.
+/// The root screens before it reorders, and it is the one level that screens
+/// against its OWN list — the unfiled rows — so a book dropped at the root
+/// where its own content already lies unfiled is the sheet's question (see
+/// `crate::services::library::conflict`) rather than a second silent twin,
+/// while a twin filed on a shelf leaves the drop to land as its own row; a row
+/// already unfiled is a reorder and never asks.
 ///
 /// `index` counts the level the reader pointed at BEFORE the lift, and the two
 /// placements below correct for the books the lift shifts left — a correction one
@@ -484,9 +487,9 @@ fn folder_shelf_of(shelves: &[Shelf], folder_id: &str, book_id: &str) -> Option<
 /// wrong on disk. The folder's ledger is untouched too: the book stays placed
 /// where it was placed, which is what keeps the next rescan quiet about it.
 ///
-/// Unless the shelf already holds the same CONTENT under another row — a
-/// duplicate the reader kept — and then it is [`file_many`]'s question, which
-/// is where this delegates.
+/// Unless the library already holds the same CONTENT under another row — a
+/// duplicate the reader kept, or the same file filed anywhere else — and then
+/// it is [`file_many`]'s question, which is where this delegates.
 pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
     file_many(state, &[book_id.to_string()], shelf_id);
 }
@@ -572,7 +575,7 @@ fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
 /// that remembered. A refusal writes nothing and persists nothing, which is what
 /// lets a drop answer "no" by doing nothing.
 ///
-/// A move that lands the shelf inside a parent already holding the content one
+/// A move that lands the shelf while the library already holds the content one
 /// of its books carries asks about the pair — [`conflict::screen_nest`]'s rule —
 /// because the nesting itself writes no membership and would otherwise park the
 /// duplicate where the parent's own level cannot see it.
@@ -672,9 +675,9 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
 /// Membership only, so the same rule covers a bulk filing as covers a drag: a
 /// shelf holds ids, nothing here touches a filesystem, and a book already on the
 /// shelf is not moved to the end of it for being named twice. A book whose
-/// CONTENT the shelf already holds under another row is the conflict sheet's
-/// question rather than a member: the clean half of the batch files now and the
-/// collisions ask.
+/// CONTENT another shelf already holds under another row is the conflict
+/// sheet's question rather than a member: the clean half of the batch files now
+/// and the collisions ask.
 pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;

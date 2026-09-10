@@ -885,15 +885,17 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // below, which dedupe against exactly those fingerprints.
     apply_checks(state, &checks);
 
-    // Every file whose content the TARGET LEVEL already holds is a question
-    // rather than a placement — the old rule resolved the file to the row the
-    // library already had and skipped the placement, which to the reader was
-    // a book swallowed by the shelf it was dropped on. The target level is a
-    // shelf's member list, or the root's own: the unfiled rows. An import
-    // with no target screens against those like any other, and a file whose
-    // twin is only SHELVED lands as its own row — the clean half below goes
-    // through the conflict module's one landing rule, which is the only
-    // place that distinction is written down.
+    // Every file whose content the LIBRARY already holds is a question rather
+    // than a placement — the old rule resolved the file to the row the library
+    // already had and skipped the placement, which to the reader was a book
+    // swallowed by the shelf it was dropped on. Onto a shelf the question is
+    // asked of EVERY shelf, so a twin filed on a parent, a child or a sibling
+    // asks too. At the root it is asked of the root's own list alone — the
+    // unfiled rows — so a file whose twin is only SHELVED lands as its own row
+    // there, and onto a shelf a file whose twin nobody has filed resolves to
+    // that row and files it: the clean half below goes through the conflict
+    // module's one landing rule, which is the only place either distinction is
+    // written down.
     let placements: Vec<Placement> = found
         .iter()
         .map(|file| Placement {

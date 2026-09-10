@@ -73,11 +73,27 @@
 //! ## What is a conflict, precisely
 //!
 //! [`screen`] is the whole rule, and it is per placement rather than per
-//! import. Every level has a member list — a shelf's own, and at the root
-//! level the unfiled books, which the "All" list renders and which used to
-//! make the root a level a duplicate could vanish into — and the rule is the
-//! same on all of them: the arrival is not already a member of the target
-//! (that drop is a reorder), and some member holds the arrival's fingerprint.
+//! import. Two things exempt a placement and both are about the TARGET: the
+//! arrival is already a member of the shelf it is dropped on, or it is an
+//! unfiled row dropped on the root — either is a reorder and not an arrival.
+//! Past those the question is asked of the LIBRARY rather than of the level:
+//! some row filed on ANY shelf holds the arrival's fingerprint. It used to be
+//! asked of one member list, the target's own, and a twin filed on a parent, a
+//! child or a sibling was invisible to it, so the placement landed silently:
+//! an import resolved to the row the library already had and filed that row on
+//! a shelf the reader never saw it leave for, and a drag set a second row down
+//! beside a first one nobody had been asked about.
+//!
+//! Two lists stay out of the wider question, and both for one reason: an
+//! answer has to leave something on the screen the reader dropped on. The root
+//! asks of its OWN list — the unfiled rows the "All" level renders — because a
+//! shelved twin is not on that level, and neither a resolve to it nor a merge
+//! into it would leave the root anything to show; an import beside a shelved
+//! twin lands as its own row there, which is the honest landing. And an
+//! unfiled twin does not ask at a shelf, because a row nobody has filed is the
+//! library's own row for that content, which the clean half files on the
+//! target — the landing the reader asked for, and one they can see.
+//!
 //! Every placing surface hands its placements through here BEFORE writing
 //! anything — a drag (`arrange::move_many_to_shelf`), a lift out to the root
 //! (`arrange::unfile_books`), a filing (`arrange::file_many`,
@@ -85,8 +101,8 @@
 //! each applies the clean half at once, so a drop of ten files with two
 //! collisions files eight and asks about two. A folder filed inside another
 //! asks too, through [`screen_nest`]: the nesting itself writes no
-//! membership, but the parent's own list may already hold the content one of
-//! the folder's books carries, and the pair is the sheet's question like any
+//! membership, but the library may already hold the content one of the
+//! folder's books carries, and the pair is the sheet's question like any
 //! other. A watched folder's own rescan never asks: it is the ledger's job to
 //! stay quiet, and its placements go through the folder shelf chain rather
 //! than a hand.
@@ -102,11 +118,11 @@
 //! than in a component's handle because the raisers are services: an import
 //! asks from inside a spawned future that outlived every component.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 
-use library_core::book::{Book, Origin, add_book, duplicate_title, stem_of};
+use library_core::book::{Book, Fingerprint, Origin, add_book, duplicate_title, stem_of};
 use library_core::id;
 use library_core::merge::{MergeNotes, merge_books};
 use library_core::scan::FoundFile;
@@ -298,10 +314,14 @@ pub fn screen(
 ) -> (Vec<Placement>, Vec<ConflictItem>) {
     let books = state.library.books.get_untracked();
     let shelves = state.library.shelves.get_untracked();
+    // One index for the whole batch: the screen asks what the LIBRARY holds,
+    // and a folder import hands it a placement per file, so a walk of every
+    // shelf's every member per placement is a walk of the library per file.
+    let held = Held::of(&books, &shelves);
     let mut clean = Vec::with_capacity(placements.len());
     let mut conflicts = Vec::new();
     for placement in placements {
-        match blocks(&books, &shelves, &placement) {
+        match blocks(&books, &shelves, &held, &placement) {
             Some(existing_id) => {
                 let kind = kind_of(&books, &placement, &existing_id);
                 conflicts.push(ConflictItem {
@@ -341,8 +361,13 @@ fn kind_of(books: &[Book], placement: &Placement, existing_id: &str) -> Conflict
         .find(|b| b.id == existing_id)
         .map(|b| b.path().to_string());
     match (incoming, existing) {
-        // A row that went while the sheet was being raised has no address to
-        // compare, and the answers below resolve that case on their own.
+        // Compared as ADDRESSES and never as "the row still exists": a move's
+        // own row can have been dissolved by an earlier answer in this queue
+        // before the sheet reaches it, and a fold or a replace that already
+        // happened is not a reason to ask the file-manager question about a
+        // placement that was the same file arriving twice. A row that is
+        // genuinely gone has no address to compare, and the answers below
+        // resolve that case on their own.
         (Some(incoming), Some(existing)) if incoming == existing => ConflictKind::SameLinkedFile,
         _ => ConflictKind::Fingerprint,
     }
@@ -351,7 +376,7 @@ fn kind_of(books: &[Book], placement: &Placement, existing_id: &str) -> Conflict
 /// A folder filed inside another asks too.
 ///
 /// The nesting itself writes no membership — the folder's shelf hangs inside
-/// the parent and keeps its own member list — but the parent may ALREADY hold
+/// the parent and keeps its own member list — but the library may ALREADY hold
 /// the content one of the folder's direct members carries, and that pair is
 /// the sheet's question like any other: without it, the duplicate sits
 /// silently inside the parent, invisible at the parent's own level and
@@ -362,9 +387,10 @@ fn kind_of(books: &[Book], placement: &Placement, existing_id: &str) -> Conflict
 /// The clean half needs no action here — that is the whole difference from
 /// [`screen`]'s other callers: a member that does not collide is exactly
 /// where the nesting already put it. The collisions go on the queue, and
-/// their answers are the usual three, resolved against the parent's copy:
-/// Duplicate renames the folder's book and files it beside that copy,
-/// Replace seats the folder's book in the copy's place, Merge folds it in.
+/// their answers are the usual three, resolved against the copy the library
+/// already has: Duplicate renames the folder's book and files it beside that
+/// copy, Replace seats the folder's book in the copy's place, Merge folds it
+/// in and seats the survivor on the parent.
 pub fn screen_nest(state: AppState, moved: &[String], target: &str) {
     if target == shelf::ALL_SHELF || moved.is_empty() {
         return;
@@ -422,18 +448,49 @@ fn is_shelved(shelves: &[Shelf], book_id: &str) -> bool {
     shelves.iter().any(|s| s.books.iter().any(|m| m == book_id))
 }
 
-/// The member that makes a placement ask, when one does.
+/// The row that makes a placement ask, when one does.
 ///
 /// Split out of [`screen`] because it is the whole of the rule and a rule
-/// this load-bearing is one a test can hold: every level has a member list —
-/// a shelf's own, and at the root the unfiled rows — an arrival already on
-/// the list never conflicts (that drop is a reorder, and asking would be
-/// asking about a move that is not one), and the match is by CONTENT — a
-/// member whose fingerprint equals the arrival's, whatever the two are
-/// called. Same name with a different fingerprint lands silently: two books
-/// that merely rhyme are two books.
-fn blocks(books: &[Book], shelves: &[Shelf], placement: &Placement) -> Option<String> {
-    let fp = match &placement.incoming {
+/// this load-bearing is one a test can hold. Two exemptions keep the quiet
+/// paths quiet, and both are about the TARGET: an arrival already a member of
+/// the list it is dropped on is a reorder and not an arrival, and an unfiled
+/// row dropped on the root is the same reorder in the root's own list. Past
+/// those, the match is by CONTENT — a fingerprint, whatever the two rows are
+/// called, since same name with a different fingerprint lands silently: two
+/// books that merely rhyme are two books.
+///
+/// Which rows are consulted is the library's shelves, not the level's own. A
+/// shelf's question used to be asked of that shelf's member list alone, so a
+/// twin filed on a parent, a child or a sibling was invisible to it and the
+/// placement landed silently: an import resolved to the row the library already
+/// had and filed THAT, on a shelf the reader never saw it leave for, and a drag
+/// put a second row beside a first one nobody had been asked about. The
+/// arrival's own row is skipped in the look-up, because a duplicate the reader
+/// already keeps is filed on more than one shelf by design and must not be told
+/// it collides with itself.
+///
+/// The root is the one level that keeps its own rule, and it is the reason the
+/// root's list is the unfiled rows: a shelved twin is not on this level, and
+/// an import landing beside it as its own row is the honest landing — resolving
+/// it to the shelved row instead would land nothing the reader can see, which
+/// is the vanishing this module exists to stop. Asking there would not help
+/// either, because one of the three answers (a merge into a copy that stays
+/// filed on its own shelf) could still leave the root with nothing to show.
+///
+/// An UNFILED twin does not ask at a shelf either, and that is the same
+/// reasoning rather than an exception to it: a row nobody has filed is the
+/// library's own row for that content, and [`land_clean`] resolves the arrival
+/// to it and files it on the target — a landing the reader can see, and the one
+/// they asked for by dropping here. Making that a question would make it a
+/// question for every file of a folder import that overlaps the root, and the
+/// answer that means "file the book I already have" is the silence.
+fn blocks(
+    books: &[Book],
+    shelves: &[Shelf],
+    held: &Held,
+    placement: &Placement,
+) -> Option<String> {
+    let (fp, own) = match &placement.incoming {
         Incoming::Move { book_id } => {
             let in_target = shelves
                 .iter()
@@ -444,29 +501,80 @@ fn blocks(books: &[Book], shelves: &[Shelf], placement: &Placement) -> Option<St
                 // A row already on the list it is dropped on is a reorder,
                 // not an arrival — at the root as much as on a shelf.
                 (true, true, _) | (false, _, true) => return None,
-                _ => books.iter().find(|b| &b.id == book_id)?.fp,
+                _ => (
+                    books.iter().find(|b| &b.id == book_id)?.fp,
+                    Some(book_id.as_str()),
+                ),
             }
         }
-        Incoming::Import { file } => file.fp,
+        Incoming::Import { file } => (file.fp, None),
     };
     if placement.shelf_id == shelf::ALL_SHELF {
-        // The root's members are the unfiled rows. A shelved twin does NOT
-        // collide here: it is not on this level, and an import landing
-        // beside it as its own row is the honest landing — resolving it to
-        // the shelved row instead would land nothing the reader can see,
-        // which is the vanishing this rule exists to stop.
-        return books
-            .iter()
-            .find(|b| b.fp == fp && !is_shelved(shelves, &b.id))
-            .map(|b| b.id.clone());
+        return held.unfiled(&fp, own);
     }
-    let target = shelves.iter().find(|s| s.id == placement.shelf_id)?;
-    target
-        .books
+    held.shelved(&fp, own)
+}
+
+/// What the library holds, by content: the fingerprints on a shelf and the
+/// fingerprints of the unfiled rows, each with the rows that hold it, in the
+/// library's own order.
+///
+/// Two tables rather than one because the root's member list IS the unfiled
+/// rows, and a shelf's question is the library's — see [`blocks`] for which
+/// table a placement reads and why the root reads only one of them.
+#[derive(Default)]
+struct Held {
+    shelved: HashMap<Fingerprint, Vec<String>>,
+    unfiled: HashMap<Fingerprint, Vec<String>>,
+}
+
+impl Held {
+    /// One pass over the memberships and one over the rows. Built per screen
+    /// rather than per placement: a folder import is a placement per file.
+    fn of(books: &[Book], shelves: &[Shelf]) -> Self {
+        let on_a_shelf: HashSet<&str> = shelves
+            .iter()
+            .flat_map(|s| s.books.iter().map(String::as_str))
+            .collect();
+        let mut held = Self::default();
+        for book in books {
+            let table = if on_a_shelf.contains(book.id.as_str()) {
+                &mut held.shelved
+            } else {
+                &mut held.unfiled
+            };
+            table.entry(book.fp).or_default().push(book.id.clone());
+        }
+        held
+    }
+
+    /// The first row FILED on a shelf holding `fp`, other than the arrival's
+    /// own.
+    fn shelved(&self, fp: &Fingerprint, own: Option<&str>) -> Option<String> {
+        first_other_than(&self.shelved, fp, own)
+    }
+
+    /// The same among the unfiled rows — the root's own member list, and the
+    /// library's row for a content nothing has filed.
+    fn unfiled(&self, fp: &Fingerprint, own: Option<&str>) -> Option<String> {
+        first_other_than(&self.unfiled, fp, own)
+    }
+}
+
+/// The first row of a content that is not the arrival itself, in the library's
+/// own order — the order [`add_book`] and the "All" list both keep, so the
+/// sheet always asks about the row the reader sees first.
+fn first_other_than(
+    table: &HashMap<Fingerprint, Vec<String>>,
+    fp: &Fingerprint,
+    own: Option<&str>,
+) -> Option<String> {
+    table
+        .get(fp)?
         .iter()
-        .filter_map(|member| books.iter().find(|b| &b.id == member))
-        .find(|book| book.fp == fp)
-        .map(|book| book.id.clone())
+        .map(String::as_str)
+        .find(|id| Some(*id) != own)
+        .map(str::to_string)
 }
 
 /// Put questions in front of the reader. A sheet already up takes the items
@@ -829,10 +937,12 @@ fn replace(state: AppState, item: &ConflictItem) {
     }
 }
 
-/// Fold the arrival into the shelf's copy: the copy survives with its id and
+/// Fold the arrival into the library's copy: the copy survives with its id and
 /// its memberships, the arrival's row (when it has one) dissolves and its
 /// memberships transfer, and every value — the row's and the side data's —
-/// follows its policy.
+/// follows its policy. The survivor is then seated on the shelf the arrival was
+/// going to when it is not on it already ([`seat_survivor`]), because the copy
+/// a fold dissolves into can be filed anywhere in the library now.
 fn merge(state: AppState, item: &ConflictItem) {
     let Some(existing) = book_by_id(state, &item.existing_id) else {
         // The shelf's copy went while the sheet was up: the conflict it was
@@ -922,6 +1032,7 @@ fn merge(state: AppState, item: &ConflictItem) {
         transfer_memberships(state, incoming_id, &existing.id, item.placement.from.as_deref());
         drop_row(state, incoming_id);
     }
+    seat_survivor(state, item, &existing.id);
     for (path, was_stored) in &left_behind {
         // The arrival's address was swept by `drop_row` when it had a row;
         // the survivor's OLD address (a dead one the fold healed past) has no
@@ -1075,6 +1186,42 @@ pub fn merge_note(state: AppState, item: &ConflictItem) -> String {
     parts.join(" · ")
 }
 
+/// Put the survivor of a fold on the shelf the arrival was going to, when it
+/// is not on it already.
+///
+/// The screen is the library's rather than the level's ([`blocks`]), so the
+/// copy an arrival dissolves into can be filed somewhere else entirely — and a
+/// merge that left the target shelf without the book would be the vanishing
+/// this module exists to stop, wearing a sheet's clothes. Only a shelf can be
+/// seated: the root is the unfiled rows, and taking a survivor off its own
+/// shelf to put it "at the root" would be a removal the question never asked
+/// for, which is the same reason the root never asks about a shelved twin at
+/// all.
+///
+/// A survivor already on the target is left where it is: the slot the drop
+/// pointed at was the ARRIVAL's, and moving a row the reader can already see
+/// to answer a question about a different one is a rearrangement nobody asked
+/// for either.
+fn seat_survivor(state: AppState, item: &ConflictItem, survivor_id: &str) {
+    if item.placement.shelf_id == shelf::ALL_SHELF {
+        return;
+    }
+    let already = state.library.shelves.with_untracked(|shelves| {
+        shelves
+            .iter()
+            .find(|s| s.id == item.placement.shelf_id)
+            .is_some_and(|s| s.books.iter().any(|m| m == survivor_id))
+    });
+    if already {
+        return;
+    }
+    state.library.shelves.update(|shelves| {
+        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == item.placement.shelf_id) {
+            shelf::place(&mut shelf.books, survivor_id, item.placement.index);
+        }
+    });
+}
+
 /// Land one placement: off `from` when the move named one, onto the shelf at
 /// the slot the answer gave. The whole of a deferred move — the same two
 /// edits [`super::arrange::move_many_to_shelf`] makes for the half of a drag
@@ -1093,13 +1240,19 @@ fn land(state: AppState, placement: &Placement, book_id: &str, index: Option<usi
 }
 
 /// Land a placement that no longer has anything to collide with: the move
-/// lands as the move it was, the import files through [`add_book`] — which
-/// may resolve it to a row the library already holds elsewhere, the rule an
-/// import has always followed. At the ROOT, however, an import lands as its
-/// own row: the root's member list is the unfiled rows, the screen has just
-/// said none of them holds this content, and a resolve to a shelved twin
-/// would land nothing the reader can see. `import::run_files` walks its clean
-/// half through here rather than repeating any of it.
+/// lands as the move it was, the import files through [`add_book`]. A resolve
+/// to a row the library already holds is rarer than it was — the screen asks
+/// every shelf now, so a clean placement onto one is a placement no FILED row
+/// holds — and what is left of it is two cases: a twin nobody has filed, which
+/// is the library's own row for the content and what the arrival resolves to,
+/// and one batch's own twins, where a folder holding two byte-identical files
+/// screens both clean against the library it had before the walk and the
+/// second of them resolves to the row the first one just made. At the ROOT an
+/// import lands as its own row: the root's
+/// member list is the unfiled rows, the screen has just said none of them
+/// holds this content, and a resolve to a shelved twin would land nothing the
+/// reader can see. `import::run_files` walks its clean half through here
+/// rather than repeating any of it.
 pub(super) fn land_clean(state: AppState, placement: &Placement) {
     match &placement.incoming {
         Incoming::Move { book_id } => {
@@ -1193,6 +1346,13 @@ mod tests {
             },
             0,
         )
+    }
+
+    /// The screen's `blocks` with the index a batch builds once for it. The
+    /// tests hold the RULE, and the index is how a screen of four hundred
+    /// placements avoids four hundred walks of the library.
+    fn blocks(books: &[Book], shelves: &[Shelf], placement: &Placement) -> Option<String> {
+        super::blocks(books, shelves, &Held::of(books, shelves), placement)
     }
 
     fn shelf(id: &str, members: &[&str]) -> Shelf {
@@ -1291,10 +1451,80 @@ mod tests {
             blocks(&books, &shelves, &import(fp(1), "s")).as_deref(),
             Some("b1")
         );
-        // A shelf that does NOT hold the content lets the same file in: the
-        // import resolves to the row the library already has and files that.
-        let shelves2 = vec![shelf("s", &["b1"]), shelf("t", &[])];
-        assert_eq!(blocks(&books, &shelves2, &import(fp(1), "t")), None);
+    }
+
+    #[test]
+    fn a_twin_on_any_shelf_asks() {
+        // The widening. A screen asked of one member list could not see a twin
+        // on a parent, a child or a sibling, so the placement landed silently:
+        // an import resolved to the row the library already had and filed THAT
+        // on a shelf the reader never saw it leave for, and a drag put a second
+        // row beside a first one nobody had been asked about.
+        let books = vec![row("b1", fp(1))];
+        let elsewhere = vec![shelf("s", &["b1"]), shelf("t", &[])];
+        assert_eq!(
+            blocks(&books, &elsewhere, &import(fp(1), "t")).as_deref(),
+            Some("b1"),
+            "a sibling shelf's twin is the library's, not that shelf's"
+        );
+        // A library that holds no FILED row of the content lets the file in.
+        assert_eq!(blocks(&books, &elsewhere, &import(fp(2), "t")), None);
+    }
+
+    #[test]
+    fn an_unfiled_twin_is_the_librarys_own_row_and_simply_files() {
+        // The boundary's other half. A row nobody has filed is the library's
+        // own row for that content, and the clean half resolves the arrival to
+        // it and files it on the target — a landing the reader can see, and the
+        // one they asked for by dropping here. Asking instead would ask about
+        // every file of a folder import that overlaps the root.
+        let books = vec![row("b1", fp(1))];
+        let empty = vec![shelf("s", &[]), shelf("t", &[])];
+        assert_eq!(blocks(&books, &empty, &import(fp(1), "s")), None);
+        // At the root the same twin DOES ask: there the unfiled rows are the
+        // level's own member list, and this is the rule that was already true.
+        assert_eq!(
+            blocks(&books, &empty, &import(fp(1), ALL_SHELF)).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn a_twin_on_an_outer_shelf_blocks_an_import_into_an_inner_one() {
+        let books = vec![row("b1", fp(1))];
+        let mut inner = shelf("inner", &[]);
+        inner.parent = Some("outer".to_string());
+        let shelves = vec![shelf("outer", &["b1"]), inner];
+        assert_eq!(
+            blocks(&books, &shelves, &import(fp(1), "inner")).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn a_twin_on_an_inner_shelf_blocks_a_move_onto_its_parent() {
+        let books = vec![row("b1", fp(1)), row("b2", fp(1))];
+        let mut inner = shelf("inner", &["b1"]);
+        inner.parent = Some("outer".to_string());
+        let shelves = vec![shelf("outer", &[]), inner];
+        assert_eq!(
+            blocks(&books, &shelves, &r#move("b2", "outer", None)).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn a_book_never_collides_with_itself() {
+        // A duplicate the reader chose to keep is filed on more than one shelf
+        // by design, and a drag of it onto a third must not be told it collides
+        // with itself — the arrival's own row is skipped in the look-up.
+        let books = vec![row("b1", fp(1))];
+        let shelves = vec![shelf("a", &["b1"]), shelf("b", &["b1"]), shelf("c", &[])];
+        assert_eq!(blocks(&books, &shelves, &r#move("b1", "c", Some("a"))), None);
+        // Lifting it out to the root is the same silence: the root asks about
+        // its OWN list — the unfiled rows — and a twin filed on a shelf is not
+        // on it, which is the one level the widening leaves alone.
+        assert_eq!(blocks(&books, &shelves, &r#move("b1", ALL_SHELF, Some("a"))), None);
     }
 
     #[test]
@@ -1591,6 +1821,92 @@ mod tests {
         assert_eq!(ask.items[0].kind, ConflictKind::Fingerprint);
         assert_eq!(ask.step, Step::Choose);
         assert!(state.library.reveal.get_untracked().is_some());
+    }
+
+    #[test]
+    fn a_merge_seats_the_survivor_where_the_arrival_was_going() {
+        // The screen is the library's, so the copy an arrival dissolves into
+        // can be filed nowhere near the shelf the hand was over — and a fold
+        // that left the target without the book would be the vanishing this
+        // module exists to stop, wearing a sheet's clothes.
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        state.library.books.set(vec![
+            md_row("b1", "/one/dune.md", 1),
+            md_row("b2", "/two/dune.md", 1),
+        ]);
+        state
+            .library
+            .shelves
+            .set(vec![shelf("here", &["b2"]), shelf("elsewhere", &["b1"])]);
+        let item = ConflictItem {
+            placement: md_import("/two/dune.md", 1, "here"),
+            existing_id: "b1".to_string(),
+            kind: ConflictKind::Fingerprint,
+        };
+
+        seat_survivor(state, &item, "b1");
+
+        let at = |id: &str| {
+            state
+                .library
+                .shelves
+                .get_untracked()
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.books.clone())
+        };
+        assert_eq!(
+            at("here"),
+            Some(vec!["b2".to_string(), "b1".to_string()]),
+            "the survivor is on the shelf the arrival was going to"
+        );
+        assert_eq!(
+            at("elsewhere"),
+            Some(vec!["b1".to_string()]),
+            "and it keeps every shelf it was already on"
+        );
+
+        // Already there: the slot the drop pointed at was the ARRIVAL's, so a
+        // survivor the reader can see is not rearranged to answer a question
+        // about a row that is now gone.
+        let mut seated = md_import("/two/dune.md", 1, "here");
+        seated.index = Some(0);
+        seat_survivor(
+            state,
+            &ConflictItem {
+                placement: seated,
+                existing_id: "b1".to_string(),
+                kind: ConflictKind::Fingerprint,
+            },
+            "b1",
+        );
+        assert_eq!(
+            at("here"),
+            Some(vec!["b2".to_string(), "b1".to_string()]),
+            "seated once, and not moved to the drop's slot afterwards"
+        );
+
+        // The root is the unfiled rows: there is no member list to seat on,
+        // and taking a survivor off its own shelf to put it "at the root"
+        // would be a removal the question never asked for. It is also why the
+        // root never asks about a shelved twin at all.
+        seat_survivor(
+            state,
+            &ConflictItem {
+                placement: md_import("/two/dune.md", 1, ALL_SHELF),
+                existing_id: "b1".to_string(),
+                kind: ConflictKind::Fingerprint,
+            },
+            "b1",
+        );
+        assert_eq!(at("elsewhere"), Some(vec!["b1".to_string()]));
+        assert_eq!(
+            at("here"),
+            Some(vec!["b2".to_string(), "b1".to_string()]),
+            "a root placement seats nothing"
+        );
     }
 
     // -------------------------------------------------------------------
