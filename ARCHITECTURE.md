@@ -465,19 +465,44 @@ there. And it takes the tombstone out without touching `placed`, which the impor
 when the book actually lands: a fingerprint the ledger skips with no book behind it is the one state a
 folder cannot recover from on its own.
 
-### When the shelf already holds the book
+### When the library already holds the book
 
 A placement — a drag, a lift out to the root, a bulk filing, a folder filed inside another, a
-loose-file import — whose CONTENT a member of the target level already holds is a question, not a
-skip. It used to be a skip: the import resolved the file to the row the library already had and
-the shelf, finding that row already a member, filed nothing, which to the reader was a book
-vanishing into the shelf it was dropped on. `services::library::conflict` is the replacement, and
-its `screen` is the whole rule. Every level has a member list, including the root, whose list is
-the unfiled books the "All" level renders — that list used to be the one place a duplicate could
-still vanish — and the rule is the same on all of them: the arrival is not already a member of the
-target (that drop is a reorder), and some member holds the arrival's fingerprint. Same NAME with
-different content is not a collision — a second format of one title measures a different
-fingerprint and simply lands.
+loose-file import — whose CONTENT the library already holds on a shelf, or at the root among its
+own unfiled rows, is a question, not a skip. It used to
+be a skip twice over. The first was the vanishing the sheet exists for: the import resolved the
+file to the row the library already had and the shelf, finding that row already a member, filed
+nothing, which to the reader was a book disappearing into the shelf it was dropped on. The second
+was quieter and lasted longer — the question was asked of ONE member list, the target's own, so a
+twin filed on a parent, a child or a sibling was invisible to it and the placement landed: an
+import filed the library's existing row onto a shelf the reader never saw it leave for, and a drag
+set a second row down beside a first one nobody had been asked about.
+
+`services::library::conflict` is the replacement, and its `screen` is the whole rule. Two things
+exempt a placement and both are about the TARGET: the arrival is already a member of the shelf it
+is dropped on, or it is an unfiled row dropped on the root — either is a reorder and not an
+arrival. Past those the question is asked of the LIBRARY rather than of the level: some row filed
+on *any* shelf holds the arrival's fingerprint. The arrival's own row is skipped in that look-up,
+because a duplicate the reader chose to keep is filed on more than one shelf by design and must not
+be told it collides with itself.
+
+Two lists stay out of the wider question, for one reason: an answer has to leave something on the
+screen the reader dropped on. The root asks of its own list alone — the unfiled books the "All"
+level renders — because a shelved twin is not on that level, so an import landing beside it as its
+own row is the honest landing and asking would not mend it: a merge into a copy that stays filed on
+its own shelf leaves the root with nothing to show. And an unfiled twin does not ask at a shelf,
+because a row nobody has filed is the library's own row for that content, which the clean half
+files on the target — the landing the reader asked for, and one they can see; asking there would
+ask about every file of a folder import that overlaps the root. Same NAME with different content is
+not a collision anywhere in it: a second format of one title measures a different fingerprint and
+simply lands.
+
+Because the screen is the library's, the answers have to be answers about the library rather than
+about the level, and two of them needed widening to stay honest. The sheet names the shelf the COPY
+is filed on rather than the one the hand was over, since the two are no longer the same shelf. And
+a merge seats the survivor on the target when it is not on it already — the arrival dissolved into
+a book filed somewhere else, and a fold that left the target shelf without the book would be the
+vanishing wearing a sheet's clothes.
 
 Every placing surface hands its placements through the screen before writing anything
 (`arrange::move_many_to_shelf`, `arrange::unfile_books`, `arrange::file_many` — which `also_show`
@@ -515,7 +540,8 @@ a row operation plus a sweep:
   `same_spot` and fill the notes' mark counts — the AI answers ride the marks' ids, so a mark that
   travels arrives with its answer — and covers move to the survivor's address. Removal of the
   address the fold leaves behind stays with `arrange::sweep_path`'s twin guard, and the dissolving
-  row's memberships transfer to the survivor, minus the shelf the move was taking it off.
+  row's memberships transfer to the survivor, minus the shelf the move was taking it off, and the
+  survivor is seated on the target when the copy it folded into was filed nowhere near it.
 
 One collision is not about content at all, and asking it those three questions asks the wrong
 thing: the SAME FILE arriving at an address the library already reads it from. Import `dune.pdf`

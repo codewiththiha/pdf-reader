@@ -405,11 +405,16 @@ the filesystem.
   because the run outlives the page that started it.
 - **Dropping files on the library files them**; dropping them anywhere else still opens one. Both go
   through the same admission, which is the format registry.
-- **A shelf that already holds the book asks.** Importing a file, dragging a book or filing one onto
-  a shelf that already holds that same content — the same bytes by fingerprint, not the same name;
-  a second format of one title is a second book and is simply placed — used to do nothing at all,
-  which read as the book vanishing into the shelf. Now it asks, with the three answers a file
-  manager teaches: **Duplicate** keeps both and names the arrival `dune_1`, `dune_2` and so on;
+- **A library that already holds the book asks.** Importing a file, dragging a book or filing one
+  when the library already holds that same content — the same bytes by fingerprint, not the same
+  name; a second format of one title is a second book and is simply placed — used to do nothing at
+  all, which read as the book vanishing into the shelf. The question was asked of one shelf's own
+  list, so a copy filed on a parent, a child or a sibling shelf stayed invisible to it and the drop
+  landed silently: the import filed the row the library already had onto a shelf it was never seen
+  to leave for, and a drag set a second row beside a first one nobody had been asked about. It is
+  asked of every shelf now, and the sheet names the shelf the copy it found is actually on. The
+  three answers are the ones a file manager teaches: **Duplicate** keeps both and names the arrival
+  `dune_1`, `dune_2` and so on;
   **Replace** seats the arrival in the shelf copy's place — on every shelf it was filed on — and
   asks a second time first, itemising what the copy loses; **Merge** folds the two rows into one
   book by a written-down policy (`library_core::merge`): the resume point of whichever copy got
