@@ -54,7 +54,11 @@
 //! [`ShellController::titlebar_only`], which answers every rail question "no
 //! rail" — the bar keeps the full window width, its 88px gutter and its
 //! lights. The no-rail answers stay in the same rulebook instead of an
-//! `Option`-shaped fork in every consumer. The traffic-light questions are
+//! `Option`-shaped fork in every consumer. Which of the two a controller is
+//! lives in it as a [`ChromeSurface`], and everything that differs per route
+//! reads THAT rather than being told twice: where the bar's pin is remembered
+//! (one settings field per surface), and whether the surface has a rail at
+//! all. The traffic-light questions are
 //! macOS-only at heart (`app_chrome::platform`): frameless Windows/Linux
 //! answer constant `false` and the row's leading control starts at the resting
 //! padding.
@@ -112,6 +116,32 @@ const TRAFFIC_LIGHTS_GUTTER_PX: f64 = 88.0;
 /// (`pl-3` in the classes this replaced).
 const TITLEBAR_REST_PADDING_PX: f64 = 12.0;
 
+/// Which route's chrome this is: one name for the ways the two pages differ,
+/// so every per-route rule is an answer derived from the surface rather than
+/// a second fact each consumer is handed.
+///
+/// The bar's pin memory reads it (one settings field per surface — unhitching
+/// the reader's bar out of a document's way says nothing about the shelf's),
+/// the rail questions read it, and the appearance menu reads it on the page's
+/// behalf to know which of its sections have anything on this surface to
+/// paint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChromeSurface {
+    /// The reader route: a document is open and the shell has a rail.
+    #[default]
+    Reader,
+    /// The library route: the shelf — no rail, and a bar that is navigation
+    /// rather than document chrome.
+    Library,
+}
+
+impl ChromeSurface {
+    /// Whether this surface's shell has a sidebar rail at all.
+    pub fn has_rail(self) -> bool {
+        matches!(self, ChromeSurface::Reader)
+    }
+}
+
 /// The single source of truth for shell layout state. Built once per page
 /// and provided as context; see the module docs for the question API.
 #[derive(Clone, Copy)]
@@ -120,14 +150,17 @@ pub struct ShellController {
     /// `AppState::ui` — the controller centralizes the QUESTIONS about it,
     /// not the storage.
     pub sidebar_mode: RwSignal<SidebarMode>,
-    /// Pin state for the title bar (persisted through the controller so
-    /// both routes share one wiring).
+    /// Pin state for THIS surface's title bar. One wiring, two memories:
+    /// [`set_titlebar_pinned`](Self::set_titlebar_pinned) persists to the
+    /// settings field the surface owns, so the reader's bar and the shelf's
+    /// bar unhitch independently — and the shelf's starts pinned, because it
+    /// is how the reader moves.
     pub titlebar_pinned: RwSignal<bool>,
 
     /// Settings write-back + persistence.
     settings: RwSignal<Settings>,
-    /// Whether this page mounts a rail at all (reader: yes, library: no).
-    has_rail: bool,
+    /// Which route's chrome this controller drives.
+    surface: ChromeSurface,
     /// Push or Overlay, from Settings → Layout.
     layout: Signal<SidebarLayout>,
     /// Whether the rail's slide tween is frozen (Settings → Animations,
@@ -152,20 +185,33 @@ impl ShellController {
     /// Must run inside the page's reactive owner (the machine installs an
     /// effect and a debouncer).
     pub fn reader(state: AppState) -> Self {
-        Self::build(state, true)
+        Self::build(state, ChromeSurface::Reader)
     }
 
     /// A page with a titlebar but no rail (the library): every rail
     /// question answers "no", so the bar keeps its full width, its gutter
-    /// and its lights.
+    /// and its lights — and the bar's pin is the library's own memory.
     pub fn titlebar_only(state: AppState) -> Self {
-        Self::build(state, false)
+        Self::build(state, ChromeSurface::Library)
     }
 
-    fn build(state: AppState, has_rail: bool) -> Self {
+    /// Which surface this controller drives. What the per-route rules below
+    /// read, and what a page hands the chrome that differs per route (the
+    /// appearance menu's sections).
+    pub fn surface(&self) -> ChromeSurface {
+        self.surface
+    }
+
+    fn build(state: AppState, surface: ChromeSurface) -> Self {
         let settings = state.settings;
         let sidebar_mode = state.ui.sidebar;
-        let titlebar_pinned = RwSignal::new(settings.with(|s| s.titlebar_pinned));
+        // Each surface's bar remembers its own pin, in its own settings
+        // field: one shared bit made unhitching the reader's bar unhitch the
+        // shelf's with it, and the two are not one decision.
+        let titlebar_pinned = RwSignal::new(match surface {
+            ChromeSurface::Reader => settings.with(|s| s.titlebar_pinned),
+            ChromeSurface::Library => settings.with(|s| s.library_titlebar_pinned),
+        });
         let layout = Signal::derive(move || {
             if settings.with(|st| st.layout.sidebar_overlay) {
                 SidebarLayout::Overlay
@@ -260,7 +306,7 @@ impl ShellController {
             sidebar_mode,
             titlebar_pinned,
             settings,
-            has_rail,
+            surface,
             layout,
             no_slide,
             last_panel,
@@ -285,7 +331,9 @@ impl ShellController {
     /// always no.
     pub fn is_overlay(&self) -> Signal<bool> {
         let this = *self;
-        Signal::derive(move || this.has_rail && matches!(this.layout.get(), SidebarLayout::Overlay))
+        Signal::derive(move || {
+            this.surface.has_rail() && matches!(this.layout.get(), SidebarLayout::Overlay)
+        })
     }
 
     /// The rail is on screen: open, or its close motion is still running —
@@ -296,7 +344,8 @@ impl ShellController {
     pub fn rail_present(&self) -> Signal<bool> {
         let this = *self;
         Signal::derive(move || {
-            this.has_rail && sidebar_is_present(this.sidebar_mode.get(), this.collapsing.get())
+            this.surface.has_rail()
+                && sidebar_is_present(this.sidebar_mode.get(), this.collapsing.get())
         })
     }
 
@@ -449,12 +498,16 @@ impl ShellController {
         self.sidebar_mode.set(SidebarMode::None);
     }
 
-    /// Pin the title bar. Persistence goes through the debounced settings
-    /// effect like every other settings write — a direct save here would
-    /// double-write and race ahead of the debounce.
+    /// Pin the title bar — THIS surface's bar, into THIS surface's settings
+    /// field. Persistence goes through the debounced settings effect like
+    /// every other settings write — a direct save here would double-write and
+    /// race ahead of the debounce.
     pub fn set_titlebar_pinned(&self, pinned: bool) {
         self.titlebar_pinned.set(pinned);
-        self.settings.update(|s| s.titlebar_pinned = pinned);
+        self.settings.update(|s| match self.surface {
+            ChromeSurface::Reader => s.titlebar_pinned = pinned,
+            ChromeSurface::Library => s.library_titlebar_pinned = pinned,
+        });
     }
 }
 

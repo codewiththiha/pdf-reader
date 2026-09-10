@@ -4,10 +4,18 @@
 //! The bar keeps the reader's shape — leading cluster, centred slot, trailing
 //! cluster, the built-in pin — and changes what each is for. Left is where you
 //! are (the breadcrumb), centre is how to narrow it (the search), right is how it
-//! looks (the view menu) plus the app's own appearance and settings. There is no
-//! Open button and no Import button: adding books is a shelf affordance (the `+`
-//! card, the empty state, a drop) rather than a title-bar one, because a bar
-//! button that opens a picker is a button that hides the library's real door.
+//! looks (the view menu) plus the app's own colours (the appearance menu, which
+//! drops its page-texture section here: the shelf has no page to texture). Its
+//! pin is the library's OWN memory, kept in its own settings field and defaulted
+//! to pinned — the shelf's bar is how the reader moves, and unhitching the
+//! reader's bar out of a document's way says nothing about it.
+//!
+//! There is no Open button and no Import button: adding books is a shelf
+//! affordance (the `+` card, the empty state, a drop) rather than a title-bar
+//! one, because a bar button that opens a picker is a button that hides the
+//! library's real door. And no settings button: settings are the reader's —
+//! zoom, typography, motion, the AI — and none of them paints a pixel of the
+//! shelf, so the gear lives on the bar that has something for it to say.
 //!
 //! No sidebar, no zoom, no mode, no document search: those are reader-only, so
 //! the shell controller this page provides is rail-less and the bar keeps the
@@ -16,11 +24,8 @@
 use leptos::prelude::*;
 
 use app_chrome::hooks::dom::TOOLBAR_LEADING_ID;
-use app_chrome::icon::IconName;
-use app_chrome::icon_button::IconButton;
 
 use crate::components::menus::appearance_menu::AppearanceMenu;
-use crate::components::settings::modal::SettingsModal;
 use crate::components::shell::controller::ShellController;
 use crate::components::shell::titlebar::app_title_bar::AppTitleBar;
 use crate::features::library::breadcrumb::Breadcrumb;
@@ -48,8 +53,6 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // child of it, because a ghost inside a scrolling grid is a ghost that scrolls.
     DragController::install(state);
 
-    // The library is rail-less, so settings open straight from its title bar.
-    let settings_open = RwSignal::new(false);
     // The import sheet's handles, provided here so the three surfaces that can
     // open it (the add card, the empty state, a dropped folder) never have to
     // pass two signals through the grid to reach it.
@@ -97,12 +100,10 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             // cluster + the pin), so the page only styles its own cluster here.
             <div data-tauri-drag-region="true" class="flex shrink-0 items-center gap-1">
                 <ViewMenu state=state />
-                <AppearanceMenu state=state />
-                <IconButton
-                    icon=IconName::Settings
-                    title="Reader settings"
-                    on_click=move || settings_open.set(true)
-                />
+                // The surface is asked of the controller rather than named a
+                // second time here — `titlebar_only` already said which route
+                // this is, and the texture section stands down on the answer.
+                <AppearanceMenu state=state surface=shell.surface() />
             </div>
         }
     };
@@ -116,7 +117,6 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             // when a modal opens, and a ghost floating on top of a receipt would
             // be a ghost of something the reader has already put down.
             <DragLayer />
-            <SettingsModal state=state open=settings_open />
             <ImportModal state=state sheet=sheet />
             <RemoveBookModal state=state sheet=remove_sheet />
             // Fixed, and mounted at the page rather than inside the content: an

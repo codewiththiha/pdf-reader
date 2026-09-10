@@ -62,10 +62,22 @@ pub struct Settings {
     pub user_presets: Vec<Preset>,
     pub default_zoom: f64,
     pub last_path: Option<String>,
-    /// Pin the titlebar open (no auto-hide). Persisted; `serde(default)`
-    /// migrates pre-pin blobs to unpinned.
+    /// Pin the READER's titlebar open (no auto-hide). Persisted;
+    /// `serde(default)` migrates pre-pin blobs to unpinned. One field per bar
+    /// rather than one for both, because the two routes are two surfaces with
+    /// two lives: unhitching the bar out of a document's way says nothing
+    /// about the shelf, whose bar is navigation and starts pinned — see
+    /// [`Settings::library_titlebar_pinned`].
     #[serde(default)]
     pub titlebar_pinned: bool,
+    /// Pin the LIBRARY's own titlebar. The shelf's bar is how you move
+    /// (breadcrumb, search, view), so it defaults to pinned: navigation a
+    /// reader has to hover to find is navigation the shelf is hiding. Blobs
+    /// saved before the two bars had separate memories load pinned, which is
+    /// also what the one shared pin meant for the shelf while the bar shared
+    /// one field.
+    #[serde(default = "default_library_titlebar_pinned")]
+    pub library_titlebar_pinned: bool,
     #[serde(default)]
     pub layout: LayoutSettings,
     #[serde(default)]
@@ -102,6 +114,7 @@ impl Default for Settings {
             default_zoom: 1.0,
             last_path: None,
             titlebar_pinned: false,
+            library_titlebar_pinned: default_library_titlebar_pinned(),
             layout: LayoutSettings::default(),
             animations: AnimationSettings::default(),
             gloss_color: GlossColor::default(),
@@ -111,6 +124,12 @@ impl Default for Settings {
             text: TextSettings::default(),
         }
     }
+}
+
+/// The library's bar starts pinned: it is the shelf's way of moving, and a
+/// bar a reader has to hover to find is a bar the shelf is hiding.
+fn default_library_titlebar_pinned() -> bool {
+    true
 }
 
 impl Settings {

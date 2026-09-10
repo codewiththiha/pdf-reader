@@ -21,11 +21,26 @@
 //!
 //! The panel scrolls and is clamped/flipped by the Popover, so it can never
 //! overflow off-screen.
+//!
+//! ## Which sections show is a question about the surface
+//!
+//! Not every knob paints anything on every route, and a section that changes
+//! something no pixel on screen reads is a section the reader has to read and
+//! then ignore. So the menu is told WHICH surface mounted it
+//! ([`ChromeSurface`], the shell controller's name for the route) and gates
+//! the one section that is a document's business — page texture paints the
+//! PDF's paper bitmaps, so it shows on the reader surface and only while a
+//! raster document is the one open: the same two facts the settings modal's
+//! Paper section gates itself on (`crate::components::settings::paper`). The
+//! shelf has no page to texture; a reflowable document paints its paper from
+//! the theme tokens. Mode, tint, presets and grain are the window's own and
+//! show everywhere.
 
 use leptos::html;
 use leptos::prelude::*;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::components::shell::controller::ChromeSurface;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
@@ -63,9 +78,20 @@ use texture_section::TextureSection;
 pub fn AppearanceMenu(
     state: AppState,
     #[prop(optional)] open: Option<RwSignal<bool>>,
+    /// Which route's bar mounted the menu. The reader's is the default; the
+    /// shelf names itself, and the texture section stands down there — and on
+    /// the reader too, while a reflowable document is the one open.
+    #[prop(optional)] surface: ChromeSurface,
 ) -> impl IntoView {
     let open = open.unwrap_or_else(|| RwSignal::new(false));
     let root_ref: NodeRef<html::Div> = NodeRef::new();
+    // The texture section's two facts, in one derive: this surface has pages
+    // to texture, and the document open on it is a raster one. Tracked, so a
+    // text document swapping in takes the section out (and a PDF swaps it
+    // back) without the menu being remounted.
+    let texture_applies = Signal::derive(move || {
+        surface == ChromeSurface::Reader && !state.reader.reflowable()
+    });
 
     view! {
         <div node_ref=root_ref class="relative inline-flex">
@@ -93,9 +119,11 @@ pub fn AppearanceMenu(
                 <div class="my-3"><Separator vertical=false /></div>
                 <SectionLabel text="Mode & colour" />
                 <BaseSection state=state />
-                <div class="my-3"><Separator vertical=false /></div>
-                <SectionLabel text="Page texture" />
-                <TextureSection state=state />
+                <Show when=move || texture_applies.get()>
+                    <div class="my-3"><Separator vertical=false /></div>
+                    <SectionLabel text="Page texture" />
+                    <TextureSection state=state />
+                </Show>
                 <div class="my-3"><Separator vertical=false /></div>
                 <SectionLabel text="Film grain" />
                 <NoiseSection state=state />
