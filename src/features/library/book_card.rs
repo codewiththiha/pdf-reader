@@ -125,7 +125,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             id: id.clone(),
             label: Signal::stored(title.clone()),
             draggable: Signal::derive(|| true),
-            open: Callback::new(move |_| document::open_book(state, open_id.clone())),
+            open: Callback::new(move |_| document::open_row(state, open_id.clone())),
             menu_target: Callback::new(move |_| MenuTarget::Book {
                 id: context_id.clone(),
                 missing,

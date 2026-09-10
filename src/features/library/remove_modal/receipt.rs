@@ -8,7 +8,7 @@
 
 use leptos::prelude::*;
 
-use library_core::book::Book;
+use library_core::book::{Book, Row};
 use library_core::shelf::{Shelf, ancestors, children_of};
 use library_core::text::{human_size, plural};
 
@@ -18,6 +18,12 @@ use crate::state::AppState;
 /// Everything the receipt lines are made of, read once per open.
 pub(super) struct Receipt {
     pub(super) books: Vec<Book>,
+    /// The names of the LINK rows the removal takes. A pointer costs nothing
+    /// but itself — no resume point, no highlights, no cover, no store copy —
+    /// and the book it points at stays in the library, which is a sentence the
+    /// sheet owes a reader who clicked a link's ✕ and got a receipt about
+    /// books.
+    pub(super) links: Vec<String>,
     /// The ids the confirm button will purge: what was asked, plus everything
     /// inside the asked shelves when the cascade is on. Separate from [`Self::books`]
     /// only because the button needs ids and the rows need the rows' own facts.
@@ -73,7 +79,7 @@ pub(super) struct ShelfLine {
 
 impl Receipt {
     pub(super) fn many(&self) -> bool {
-        self.books.len() + self.shelves.len() != 1
+        self.books.len() + self.links.len() + self.shelves.len() != 1
     }
 
     /// The heading: one thing's own name, or a count.
@@ -81,11 +87,22 @@ impl Receipt {
         if let Some(name) = &self.asked_name {
             return name.clone();
         }
-        if !self.books.is_empty() {
+        if !self.books.is_empty() && self.links.is_empty() {
             match self.books.first() {
                 Some(book) if !self.many() => book.title(),
                 _ => plural(self.books.len(), "book", "books"),
             }
+        } else if !self.links.is_empty() && self.books.is_empty() {
+            match self.links.first() {
+                Some(name) if !self.many() => name.clone(),
+                _ => plural(self.links.len(), "link", "links"),
+            }
+        } else if !self.books.is_empty() {
+            format!(
+                "{} and {}",
+                plural(self.books.len(), "book", "books"),
+                plural(self.links.len(), "link", "links")
+            )
         } else {
             match self.shelves.first() {
                 Some(shelf) if !self.many() => shelf.name.clone(),
@@ -101,6 +118,10 @@ impl Receipt {
     /// thing a reader worries about: that nothing else goes with them.
     pub(super) fn subtitle(&self) -> String {
         if self.books.is_empty() {
+            if !self.links.is_empty() {
+                return "A link is a pointer: the book it goes to stays in the library"
+                    .to_string();
+            }
             let kept: usize = self.shelves.iter().map(|s| s.books).sum();
             return if kept == 0 {
                 "Nothing else goes with them".to_string()
@@ -256,13 +277,19 @@ pub(super) fn receipt(
             }
         }
     }
-    let books: Vec<Book> = state.library.books.with_untracked(|all| {
-        all.iter()
-            .filter(|b| effective.contains(&b.id))
-            .cloned()
-            .collect()
-    });
-    if books.is_empty() && asked.is_empty() {
+    let (books, links): (Vec<Book>, Vec<String>) =
+        state.library.books.with_untracked(|all| {
+            let mut books = Vec::new();
+            let mut links = Vec::new();
+            for row in all.iter().filter(|r| effective.iter().any(|id| id == r.id())) {
+                match row {
+                    Row::Book(b) => books.push(b.clone()),
+                    Row::Link { name, .. } => links.push(name.clone()),
+                }
+            }
+            (books, links)
+        });
+    if books.is_empty() && links.is_empty() && asked.is_empty() {
         return None;
     }
     let shelf_lines: Vec<ShelfLine> = delete_shelves
@@ -325,8 +352,9 @@ pub(super) fn receipt(
             })
         });
     Some(Receipt {
-        book_ids: books.iter().map(|b| b.id.clone()).collect(),
+        book_ids: effective.clone(),
         books,
+        links,
         shelf_ids: delete_shelves.iter().map(|s| s.id.clone()).collect(),
         cascade,
         asked_name: match asked.as_slice() {

@@ -398,14 +398,23 @@ and the `fp_pending` mark. `library_core::blob::LibraryBlob::awaiting_check` is 
 that diffed real fingerprints against placeholders would match nothing and add a second copy of
 every book the folder already held.
 
-The fingerprint is the identity, and one identity is normally one row — but not by force. A reader
-who answers *keep both* on the conflict sheet below gets two rows of one file, so the sanitizer
-dedupes by *id* rather than by fingerprint, and every path-keyed writer treats the twins as the
-twins they are: a read and a path check update *all* the rows at an address (the reading position
-is a fact about the file, not about the row), and a removal sweeps the address's gloss, cover and
-store copy only when no remaining row reads from it (`services::library::arrange`'s `sweep_path`).
-The scans are unaffected either way: the ledger's registry is first-wins per fingerprint, and a
-content the library holds is a Skip whichever of its rows the index names.
+The fingerprint is the identity, and one identity is normally one row — but not by force. Two rows
+of one file are allowed, so the sanitizer dedupes by *id* rather than by fingerprint, and every
+path-keyed writer treats the twins as the twins they are: a read and a path check update *all* the
+rows at an address (the reading position is a fact about the file, not about the row), and a
+removal sweeps the address's gloss, cover and store copy only when no remaining row reads from it
+(`services::library::arrange`'s `sweep_path`). The scans are unaffected either way: the ledger's
+registry is first-wins per fingerprint, and a content the library holds is a Skip whichever of its
+rows the index names.
+
+The list those rules run over is a list of ROWS, not of books. `book::Row` is either a `Book` or a
+`Row::Link` — a name, a target and a stamp, and nothing else — and the split is what every rule in
+this crate reads first. A content rule walks the book rows and steps over the links
+(`book::book_rows`), because a pointer has no fingerprint to compare, no address to check and no
+resume point to write; a place rule — a membership, a drag, a removal, the order a level renders
+in — walks the rows, because a link is on a shelf exactly as a book is. A link is dropped by the
+sanitizer when the book it points at is gone, and by a removal that takes that book, because the
+one failure mode a pointer has is pointing at nothing.
 
 Two rows can also stop being twins, and that is a mark on the row rather than a second kind of row.
 `Book::independent` is what the conflict sheet's *as new* answer writes, and it opts the row out of
@@ -416,14 +425,12 @@ is a fact about the file, so `book::apply_check` still writes every row at it, a
 the file's art. Which rows a read belongs to is one function (`book::rows_for_read`, indices so a
 caller can hold the answer across the write it is about to make), and the three writers of a resume
 point all read it: the open's record, the progress debounce and the close's flush. That is also why
-an open carries the row it came from — `document::open_book` for a card, a list row or the menu's
-Open, `document::open_path` for a drop, an *open with* and a dialog — because an address cannot say
-which of two rows the reader clicked, and a reader who asked for a book of its own is a reader who
-means that book. The rest of the library prefers a shared row wherever it resolves a content: the
-ledger's registry indexes shared rows first and a private one only for a content nothing else holds,
-`book::add_book` resolves an import to a shared row and never to a private one, and a merge ends
-the mark outright (`merge::Policy::Folded`) — one book is one book, so the survivor's marks come
-back to the address the fold writes them to.
+an open carries the row it came from — `document::open_row` for a card, a list row or the menu's
+Open, which opens a book and reveals the target of a link, and `document::open_path` for a drop, an
+*open with* and a dialog — because an address cannot say which of two rows the reader clicked, and a
+reader who asked for a book of its own is a reader who means that book. The rest of the library prefers a shared row wherever it resolves a content: the
+ledger's registry indexes shared rows first and a private one only for a content nothing else
+holds, and `book::add_book` resolves an import to a shared row and never to a private one.
 
 ### The ledger
 
@@ -465,119 +472,66 @@ there. And it takes the tombstone out without touching `placed`, which the impor
 when the book actually lands: a fingerprint the ledger skips with no book behind it is the one state a
 folder cannot recover from on its own.
 
-### When the library already holds the book
+### When the level already holds the name
 
-A placement — a drag, a lift out to the root, a bulk filing, a folder filed inside another, a
-loose-file import — whose CONTENT the library already holds on a shelf, or at the root among its
-own unfiled rows, is a question, not a skip. It used to
-be a skip twice over. The first was the vanishing the sheet exists for: the import resolved the
-file to the row the library already had and the shelf, finding that row already a member, filed
-nothing, which to the reader was a book disappearing into the shelf it was dropped on. The second
-was quieter and lasted longer — the question was asked of ONE member list, the target's own, so a
-twin filed on a parent, a child or a sibling was invisible to it and the placement landed: an
-import filed the library's existing row onto a shelf the reader never saw it leave for, and a drag
-set a second row down beside a first one nobody had been asked about.
+A placement — a drag, a lift out to the root, a bulk filing, a loose-file import — whose NAME the
+level it is going to already holds is a question, not a skip. It used to be a skip, and the skip
+was the bug the sheet exists for: the placement resolved the arrival to the row the library already
+had, the level found that row already a member of itself, and nothing at all happened — which to
+the reader was a book disappearing into the shelf it was dropped on.
 
-`services::library::conflict` is the replacement, and its `screen` is the whole rule. Two things
-exempt a placement and both are about the TARGET: the arrival is already a member of the shelf it
-is dropped on, or it is an unfiled row dropped on the root — either is a reorder and not an
-arrival. Past those the question is asked of the LIBRARY rather than of the level: some row filed
-on *any* shelf holds the arrival's fingerprint. The arrival's own row is skipped in that look-up,
-because a duplicate the reader chose to keep is filed on more than one shelf by design and must not
-be told it collides with itself.
+The question is about a name on a level, and nothing else. `library_core::conflict` is the whole
+rule and it is pure: `collide` compares the arrival's name against the BOOK rows of the target
+level, case-insensitively, and answers with the row that holds it. A shelf's level is its own
+member list; the root is a level too and its list is the unfiled rows the "All" view renders, so a
+drop on Home beside an unfiled row of one name asks exactly as a drop on a shelf does. Four things
+never ask, and each is a rule rather than a patch:
 
-Two lists stay out of the wider question, for one reason: an answer has to leave something on the
-screen the reader dropped on. The root asks of its own list alone — the unfiled books the "All"
-level renders — because a shelved twin is not on that level, so an import landing beside it as its
-own row is the honest landing and asking would not mend it: a merge into a copy that stays filed on
-its own shelf leaves the root with nothing to show. And an unfiled twin does not ask at a shelf,
-because a row nobody has filed is the library's own row for that content, which the clean half
-files on the target — the landing the reader asked for, and one they can see; asking there would
-ask about every file of a folder import that overlaps the root. Same NAME with different content is
-not a collision anywhere in it: a second format of one title measures a different fingerprint and
-simply lands.
+- a **link** row, on either side — it is not a book, so it never collides and never blocks, which
+  is what lets a reader put a pointer on a shelf beside the book it points at;
+- the row **being moved** itself, so a reorder and a duplicate filed on three shelves both stay
+  quiet;
+- a level that holds **no book of that name**, which includes an empty folder;
+- a **counter** name, so `1_1` arriving beside `1` is the second book it already is and not a
+  reason to ask again.
 
-Because the screen is the library's, the answers have to be answers about the library rather than
-about the level, and two of them needed widening to stay honest. The sheet names the shelf the COPY
-is filed on rather than the one the hand was over, since the two are no longer the same shelf. And
-a merge seats the survivor on the target when it is not on it already — the arrival dissolved into
-a book filed somewhere else, and a fold that left the target shelf without the book would be the
-vanishing wearing a sheet's clothes.
+Names and not fingerprints, and the reason is what a shelf is. Two rows of one file were two books
+the reader could not tell apart: same name, same cover, same resume point, same highlights, and a
+removal of one that took the other's marks with it. A collision asked of a fingerprint could only
+answer with row operations — keep both, replace, fold — and "keep both" meant two rows of one
+address sharing everything an address holds. A collision asked of a name answers with a name: the
+arrival becomes `1_1`, and the two rows are two books a reader can see are two books. Fingerprints
+are not gone from the library, they are gone from *this* question — a watched folder's rescan
+(`library_core::ledger`) and a path check (`book::apply_check`) still need one, because "is this
+the file I already placed" is a question about bytes and only bytes can answer it.
 
-Every placing surface hands its placements through the screen before writing anything
-(`arrange::move_many_to_shelf`, `arrange::unfile_books`, `arrange::file_many` — which `also_show`
-rides — and `import::run_files`, whose clean half lands through `conflict::land_clean`), applies
-the clean half at once and raises the collisions onto a queue the reader answers one at a time. A
-nesting asks too, one step behind the reparent: `conflict::screen_nest` screens the moved folder's
-direct members against the new parent's own list, which the nesting writes nothing to and would
-otherwise park a duplicate where the parent's level cannot see it. A watched folder's own rescan
-never asks, because staying quiet is the ledger's job. The sheet
-(`features::library::conflict_modal`) offers the three answers a file manager teaches, and each is
-a row operation plus a sweep:
+The sheet (`features::library::conflict_modal`) offers the three things a reader can mean, and
+none of them is destructive, which is why there is no second ask anywhere in it:
 
-- **Duplicate** keeps both: the arrival takes the first free `_1`, `_2`, … name
-  (`book::duplicate_title` — the counter extends the arrival's own name and steps rather than
-  stacks, and the minted name survives the sanitizer's filename rule through the trailing-counter
-  exemption in `reader_core::filename`). A moved row is renamed and lands; an imported file gets a
-  fresh row of its own.
-- **Replace** asks twice only when the shelf's copy takes something with it — a resume point, or
-  highlights at an address the arrival does not read from — and the second ask itemises exactly
-  that (`conflict::replace_has_losses` is the rule, pure and tested). The answer: that row goes,
-  the arrival takes its SLOT and inherits every other shelf it was filed on — a replace must not
-  silently take a book off shelves the question never mentioned — and the side data only the dead
-  row's address held goes with it. Two rows of one address share their position and their
-  highlights, so between them the loss is a name and a row, the first sheet says exactly that
-  much, and the replace resolves on the spot.
-- **Merge** folds the arrival into the shelf's copy by `library_core::merge`: one `merge_books`
-  over the two rows, every field following a named `Policy` (the resume point is the FURTHER of
-  the two, names fill gaps, stamps keep the first join and the last read, a measurement beats a
-  placeholder, a dead address yields to a living one) written down as data in `merge::POLICIES` so
-  a future field gets a row there and a line in the function, which does not compile until it has
-  one. The fold answers with a `merge::MergeNotes` beside the merged row — the resume page and
-  which side it came from — and the sheet's Merge row promises the fold's totals BEFORE the click
-  (`conflict::merge_note`, off a dry run of the same fold). The side data follows the same instinct
-  at the app layer, through the registry in `services::library::merge_side`: gloss marks union by
-  `same_spot` and fill the notes' mark counts — the AI answers ride the marks' ids, so a mark that
-  travels arrives with its answer — and covers move to the survivor's address. Removal of the
-  address the fold leaves behind stays with `arrange::sweep_path`'s twin guard, and the dissolving
-  row's memberships transfer to the survivor, minus the shelf the move was taking it off, and the
-  survivor is seated on the target when the copy it folded into was filed nowhere near it.
+- **Already imported** places nothing and reveals the row that is already there
+  (`services::library::reveal` — its shelf, then its card, lit). It is the answer that means *I did
+  not intend to add anything*, and it is what the old silence should have been.
+- **Add as new** places the arrival under the next free name (`conflict::next_name`, counted
+  against that level's own names and promised on the row before the click). A moved row is renamed
+  and then moved; an imported file becomes a second book of the address, marked
+  `Book::independent` so its highlights and its resume point are its own rather than the first
+  copy's.
+- **Make link** places a `Row::Link` instead of a copy: a row on this level with the book's name,
+  no fingerprint, no page, no cover and no storage, which opens by revealing the book wherever it
+  is filed. It is the answer for "I want it reachable from here" that used to be a second copy of a
+  two-gigabyte file, or nothing.
 
-One collision is not about content at all, and asking it those three questions asks the wrong
-thing: the SAME FILE arriving at an address the library already reads it from. Import `dune.pdf`
-twice and the second arrival is not a copy that might be worth replacing or folding — it *is* that
-file, and the two rows would share its address, and with it the highlights keyed by the address,
-the resume point every writer at the address updates and the removal that sweeps the address when
-the last row leaves it. So `conflict::kind_of` — pure, and tested, because the sheet changes its
-whole vocabulary on the answer — splits the queue by `ConflictKind`, and the rule is the address
-and nothing else: an arrival reading from the very address the shelf's copy reads from is
-`SameLinkedFile`, and one content at two addresses is the `Fingerprint` question above. A stored
-copy never asks it, because a stored book's address is the app's own and no import can arrive at it.
+One question at a time, and a batch — a drag of four, an import of ten — lands its clean half at
+once and queues the rest on `state::library::LibraryState::conflict_waiting`: answering pops the
+next onto the screen, and Cancel drops them, which is what Cancel has always meant. There is no
+"apply to all" and no queue bookkeeping beyond the list, because there is no answer here that
+needs a batch to be consistent — the worst one can do is add a row.
 
-The same-address sheet offers `LinkedFileChoice`'s three answers on the same queue, behind the same
-switch and the same Cancel, and none of them owes a second ask — two rows of one address share
-their highlights and their position, so there is nothing here that can take something the row did
-not already say:
-
-- **Already imported** places nothing: it reveals the book the reader has (`services::library::reveal`
-  — its shelf, then its card, lit), which is the answer that means *I did not intend to add anything*.
-- **As new** is Duplicate's row operation plus the one mark that makes the arrival a book of its own
-  (`Book::independent`), promised on the row the same way: the name it will take, and that its
-  highlights and its place will be its own.
-- **Link them** *is* Duplicate, named for what the two rows go on sharing.
-
-The switch is offered only while the queue asks one kind of question (`ConflictAsk::uniform`), and
-`conflict::apply_answer` is the guard behind that: a queue holding both kinds answers the items it
-can and leaves the others on the sheet rather than handing a word from one question to another.
-
-The queue's switch gives the rest of the queue the same answer — a Replace warned under the
-switch warns once for the whole batch, because one warning covering three identical questions is
-the point of the switch; Cancel stops the remaining questions rather than skipping one, which is
-what a file manager's copy dialog has always meant by Cancel. An import that raised questions
-counts what landed on its dock card and ends on what is still owed — "2 books waiting for your
-choice" rather than "Imported" (`state::library::ImportTask::headline`). The state rides
-`state::library::LibraryState` (`conflict` + `conflict_open`) because the raisers are services: an
-import asks from inside a spawned future that outlived every component.
+Nesting asks nothing at all, and that is the rule rather than an oversight: filing a folder inside
+another writes no membership, so nothing arrives on the parent's level for a name to collide with.
+A watched folder's own rescan never asks either — staying quiet is the ledger's job — and a folder
+walk keeps the fingerprint dedupe it always had, because four hundred files are not four hundred
+questions.
 
 ### Where the work happens
 

@@ -48,7 +48,10 @@ use crate::state::AppState;
 /// many books a query is being run against.
 fn placeholder(state: AppState) -> Signal<String> {
     Signal::derive(move || {
-        let books = state.library.books.with(|b| b.len());
+        let books = state
+            .library
+            .books
+            .with(|rows| library_core::book::book_rows(rows).count());
         match books {
             0 => "Search the library".to_string(),
             n => format!("Search {}", plural(n, "book", "books")),
@@ -84,7 +87,7 @@ pub(crate) fn TitlebarSearch(state: AppState) -> impl IntoView {
             state
                 .library
                 .books
-                .with_untracked(|books| query::suggest(books, &q, SUGGEST_LIMIT))
+                .with_untracked(|rows| query::suggest(rows, &q, SUGGEST_LIMIT))
         } else {
             Vec::new()
         };

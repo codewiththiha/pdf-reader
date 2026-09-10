@@ -107,9 +107,11 @@ fn candidates(state: AppState, folder_id: &str) -> Vec<RestoreRow> {
     let Some(folder) = folder else {
         return Vec::new();
     };
-    let books = state.library.books.get_untracked();
+    let rows = state.library.books.get_untracked();
     let shelves = state.library.shelves.get_untracked();
-    let index = index_by_fp(&books);
+    // A link has no fingerprint, so it is not in this index and a folder can
+    // never offer one back: it is a pointer at a book, not a copy of a file.
+    let index = index_by_fp(&rows);
     let owned = folder_shelf_ids(&shelves, folder_id);
     let membership = |book_id: &str| -> Vec<(String, String)> {
         shelves

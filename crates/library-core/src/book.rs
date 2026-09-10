@@ -191,16 +191,165 @@ pub struct Book {
     /// the file resolves is still a fact about the file, so [`apply_check`]
     /// writes every row at the address whatever this says.
     ///
-    /// A fold ends it — [`crate::merge::merge_books`] answers with a shared row
-    /// whichever side carried the mark, because a reader answering *merge* is
-    /// saying the two are one book, which is the opposite of what this field
-    /// says.
     #[serde(default)]
     pub independent: bool,
 }
 
 fn default_page() -> u32 {
     1
+}
+
+/// One row of the library's list: a [`Book`], or a [`Row::Link`] that points at
+/// one.
+///
+/// The list is what a shelf holds and what the "All" level renders, and it
+/// used to be a list of books — which is why a second copy of one file had to
+/// be a second BOOK, with a fingerprint, a resume point, a path check and a
+/// cover of its own, and every rule about twins had to be written down twice
+/// over. A link is the row that is not a book: it has a name and a target and
+/// nothing else, so it is invisible to every content check the library runs —
+/// a fingerprint scan, a path check, a folder rescan, a name collision — and
+/// clicking it takes the reader to the book it points at, wherever that is
+/// filed.
+///
+/// Tagged on the wire (`{"kind":"book"…}` / `{"kind":"link"…}`) rather than
+/// flattened into one struct with optional halves, because a link with a
+/// fingerprint of zero and a book with an empty target are both rows a reader
+/// could never have meant and a parser should refuse.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Row {
+    /// A book: an address, a fingerprint, a resume point.
+    Book(Book),
+    /// A pointer at a book. Not a book: no fingerprint, no page, no address of
+    /// its own and no cover, and nothing in the library measures it, checks it
+    /// or collides with it. Its name is the name it shows, which is the
+    /// target's own at the moment the link was made — a link is a row a reader
+    /// can recognise, not a live view of a title that may be renamed later.
+    #[serde(rename_all = "camelCase")]
+    Link {
+        id: String,
+        name: String,
+        /// The id of the book row this points at.
+        target: String,
+        #[serde(default)]
+        added_ms: u64,
+    },
+}
+
+impl Row {
+    /// A link row. The id is minted by the caller, like every other row's.
+    pub fn link(id: String, name: String, target: String, added_ms: u64) -> Self {
+        Row::Link {
+            id,
+            name,
+            target,
+            added_ms,
+        }
+    }
+
+    /// The row's identity. Shelves hold these, a drag payload carries one, and
+    /// a removal names one — for a link exactly as for a book.
+    pub fn id(&self) -> &str {
+        match self {
+            Row::Book(b) => &b.id,
+            Row::Link { id, .. } => id,
+        }
+    }
+
+    /// The name the shelf shows, and the name a collision compares. A book's
+    /// is its own title or the stem of its address ([`Book::title`], never
+    /// empty); a link's is the name it was made with.
+    pub fn display_name(&self) -> String {
+        match self {
+            Row::Book(b) => b.title(),
+            Row::Link { name, .. } => name.clone(),
+        }
+    }
+
+    pub fn is_link(&self) -> bool {
+        matches!(self, Row::Link { .. })
+    }
+
+    pub fn is_book(&self) -> bool {
+        !self.is_link()
+    }
+
+    /// The book this row is, or `None` for a link — the one question every
+    /// content rule in the library asks before it looks at a row.
+    pub fn book(&self) -> Option<&Book> {
+        match self {
+            Row::Book(b) => Some(b),
+            Row::Link { .. } => None,
+        }
+    }
+
+    /// The same, for a write.
+    pub fn as_book_mut(&mut self) -> Option<&mut Book> {
+        match self {
+            Row::Book(b) => Some(b),
+            Row::Link { .. } => None,
+        }
+    }
+
+    /// The book this row was, taking it out. What a removal does with the row
+    /// it just lifted, when it needs the address and the origin to finish the
+    /// job.
+    pub fn into_book(self) -> Option<Book> {
+        match self {
+            Row::Book(b) => Some(b),
+            Row::Link { .. } => None,
+        }
+    }
+
+    /// Content identity, and the reason a link can never enter a content
+    /// check: it has none.
+    pub fn fp(&self) -> Option<Fingerprint> {
+        match self {
+            Row::Book(b) => Some(b.fp),
+            Row::Link { .. } => None,
+        }
+    }
+
+    /// The id of the book a link points at.
+    pub fn target(&self) -> Option<&str> {
+        match self {
+            Row::Link { target, .. } => Some(target),
+            Row::Book(_) => None,
+        }
+    }
+
+    /// When the row joined the library — the "Date added" sort's key, which a
+    /// link has and a book has.
+    pub fn added_ms(&self) -> u64 {
+        match self {
+            Row::Book(b) => b.added_ms,
+            Row::Link { added_ms, .. } => *added_ms,
+        }
+    }
+}
+
+/// The book rows of a list, in order. Every content rule in the library walks
+/// this rather than the list: a link has no fingerprint to compare, no address
+/// to check and no resume point to write.
+pub fn book_rows(rows: &[Row]) -> impl Iterator<Item = &Book> {
+    rows.iter().filter_map(Row::book)
+}
+
+/// The same, for a write.
+pub fn book_rows_mut(rows: &mut [Row]) -> impl Iterator<Item = &mut Book> {
+    rows.iter_mut().filter_map(Row::as_book_mut)
+}
+
+/// The row an id names, whatever kind it is. What a shelf render, a drag and a
+/// removal ask; [`find_by_id`] is the question a content rule asks instead.
+pub fn find_row<'a>(rows: &'a [Row], id: &str) -> Option<&'a Row> {
+    rows.iter().find(|r| r.id() == id)
+}
+
+/// The same, for a write.
+pub fn find_row_mut<'a>(rows: &'a mut [Row], id: &str) -> Option<&'a mut Row> {
+    rows.iter_mut().find(|r| r.id() == id)
 }
 
 impl Book {
@@ -270,6 +419,14 @@ impl Book {
             .filter(|t| !t.trim().is_empty())
             .or_else(|| file_stem_from_path(self.path()))
             .unwrap_or_else(|| self.path().to_string())
+    }
+
+    /// The human-readable stem of this book's address — the file's own name
+    /// without its extension, which is the name a book with no title of its
+    /// own shows and the name a collision compares. [`stem_of`] over
+    /// [`Book::path`].
+    pub fn stem(&self) -> String {
+        stem_of(self.path())
     }
 
     /// The author line, when there is one to show.
@@ -400,15 +557,15 @@ pub fn duplicate_title(base: &str, in_use: &std::collections::HashSet<String>) -
 /// no stamp and no bytes. [`apply_check`] is the only thing that writes a
 /// measured fingerprint, and it runs on the path check that follows.
 pub fn record_read(
-    books: &mut Vec<Book>,
+    rows: &mut Vec<Row>,
     path: &str,
     title: Option<String>,
     author: Option<String>,
     point: ReadPoint,
     now_ms: u64,
 ) -> Option<Book> {
-    let rows = rows_for_read(books, None, path);
-    if write_read(books, &rows, &title, &author, point, now_ms) {
+    let at = rows_for_read(rows, None, path);
+    if write_read(rows, &at, &title, &author, point, now_ms) {
         return None;
     }
     let point = point.settled();
@@ -432,7 +589,7 @@ pub fn record_read(
             now_ms,
         )
     };
-    books.insert(0, book.clone());
+    rows.insert(0, Row::Book(book.clone()));
     Some(book)
 }
 
@@ -440,21 +597,24 @@ pub fn record_read(
 /// wrote anything, which is the caller's whole question: a read that found its
 /// rows is done, and one that found none owes the library a book.
 fn write_read(
-    books: &mut [Book],
-    rows: &[usize],
+    rows: &mut [Row],
+    at: &[usize],
     title: &Option<String>,
     author: &Option<String>,
     point: ReadPoint,
     now_ms: u64,
 ) -> bool {
-    if rows.is_empty() {
+    if at.is_empty() {
         return false;
     }
     let point = point.settled();
     let title = title.as_deref().filter(|t| !t.trim().is_empty());
     let author = author.as_deref().filter(|a| !a.trim().is_empty());
-    for i in rows {
-        let Some(book) = books.get_mut(*i) else {
+    for i in at {
+        // A link is never in the list `rows_for_read` answers with, and the
+        // `else` is the guard that keeps that a property of this function
+        // rather than of its caller.
+        let Some(book) = rows.get_mut(*i).and_then(Row::as_book_mut) else {
             continue;
         };
         book.page = point.page;
@@ -493,34 +653,33 @@ fn write_read(
 /// mutable write it is about to make, and so the three writers of a resume
 /// point — the open's record ([`record_read`]), the progress debounce and the
 /// close's flush — read one rule rather than three.
-pub fn rows_for_read(books: &[Book], book_id: Option<&str>, path: &str) -> Vec<usize> {
+pub fn rows_for_read(rows: &[Row], book_id: Option<&str>, path: &str) -> Vec<usize> {
     let named = book_id
-        .and_then(|id| find_by_id(books, id))
+        .and_then(|id| find_by_id(rows, id))
         .filter(|b| b.path() == path);
     if let Some(book) = named
         && book.independent
     {
         let id = book.id.clone();
-        return books
+        return rows
             .iter()
             .enumerate()
-            .filter(|(_, b)| b.id == id)
+            .filter(|(_, r)| r.id() == id)
             .map(|(i, _)| i)
             .collect();
     }
-    let shared: Vec<usize> = books
+    let shared: Vec<usize> = rows
         .iter()
         .enumerate()
-        .filter(|(_, b)| b.path() == path && !b.independent)
+        .filter(|(_, r)| r.book().is_some_and(|b| b.path() == path && !b.independent))
         .map(|(i, _)| i)
         .collect();
     if !shared.is_empty() {
         return shared;
     }
-    books
-        .iter()
+    rows.iter()
         .enumerate()
-        .filter(|(_, b)| b.path() == path)
+        .filter(|(_, r)| r.book().is_some_and(|b| b.path() == path))
         .map(|(i, _)| i)
         .collect()
 }
@@ -539,7 +698,7 @@ pub fn rows_for_read(books: &[Book], book_id: Option<&str>, path: &str) -> Vec<u
 /// Returns the new book when one was created, for the same reason
 /// [`record_read`] does.
 pub fn record_read_row(
-    books: &mut Vec<Book>,
+    rows: &mut Vec<Row>,
     book_id: &str,
     path: &str,
     title: Option<String>,
@@ -547,11 +706,11 @@ pub fn record_read_row(
     point: ReadPoint,
     now_ms: u64,
 ) -> Option<Book> {
-    let rows = rows_for_read(books, Some(book_id), path);
-    if write_read(books, &rows, &title, &author, point, now_ms) {
+    let at = rows_for_read(rows, Some(book_id), path);
+    if write_read(rows, &at, &title, &author, point, now_ms) {
         return None;
     }
-    record_read(books, path, title, author, point, now_ms)
+    record_read(rows, path, title, author, point, now_ms)
 }
 
 /// Apply one path check to every book at that address, and say which books it
@@ -580,10 +739,10 @@ pub fn record_read_row(
 /// Returns the ids the check CHANGED, empty in the third case and for a pass
 /// over rows nothing moved, so a startup sweep of a healthy library writes no
 /// state at all.
-pub fn apply_check(books: &mut [Book], check: &crate::wire::PathCheck) -> Vec<String> {
+pub fn apply_check(rows: &mut [Row], check: &crate::wire::PathCheck) -> Vec<String> {
     let measured = check.fingerprint();
     let mut touched = Vec::new();
-    for book in books.iter_mut().filter(|b| b.path() == check.path) {
+    for book in book_rows_mut(rows).filter(|b| b.path() == check.path) {
         let changed = match measured {
             Some(fp) => {
                 let changed = book.fp != fp || book.missing || book.fp_pending;
@@ -630,33 +789,51 @@ pub fn apply_check(books: &mut [Book], check: &crate::wire::PathCheck) -> Vec<St
 /// would hand the reader that order backwards. A book the reader OPENED goes to
 /// the front instead, through [`record_read`]: that is a "what was I reading"
 /// question, and this is a "what is on the shelf" one.
-pub fn add_book(books: &mut Vec<Book>, book: Book) -> String {
+pub fn add_book(rows: &mut Vec<Row>, book: Book) -> String {
     // A shared row and never an independent one: an independent row is a
     // reader's private book of the file, and an import that resolved to it
     // would file that private book on a shelf the question never mentioned.
     // A content only a private row holds is a content this import adds, which
-    // is what the reader asked for by importing it again.
-    if let Some(existing) = books.iter().find(|b| b.fp == book.fp && !b.independent) {
+    // is what the reader asked for by importing it again. A link has no
+    // fingerprint at all, so it is never the answer either.
+    if let Some(existing) = book_rows(rows).find(|b| b.fp == book.fp && !b.independent) {
         return existing.id.clone();
     }
     let id = book.id.clone();
-    books.push(book);
+    rows.push(Row::Book(book));
     id
 }
 
-/// Remove a book by id, returning it. The caller decides what else the removal
-/// implies: a folder ledger tombstone ([`crate::ledger::tombstone`]), a shelf
-/// membership ([`crate::shelf::forget`]), and the store copy when the app owns
-/// the bytes.
-pub fn remove_book(books: &mut Vec<Book>, id: &str) -> Option<Book> {
-    let at = books.iter().position(|b| b.id == id)?;
-    Some(books.remove(at))
+/// Remove a ROW by id, returning it — a book or a link, since a shelf holds
+/// both and a removal is the same act on either. The caller decides what else
+/// the removal implies: a folder ledger tombstone ([`crate::ledger::tombstone`]),
+/// a shelf membership ([`crate::shelf::forget`]), the store copy when the app
+/// owns the bytes, and — for a book — every link that pointed at it, which is
+/// [`drop_dangling_links`]'s job and not this one.
+pub fn remove_row(rows: &mut Vec<Row>, id: &str) -> Option<Row> {
+    let at = rows.iter().position(|r| r.id() == id)?;
+    Some(rows.remove(at))
+}
+
+/// Drop every link whose target is no longer a book in the list.
+///
+/// A link is a pointer, and a pointer at nothing is a row that renders, is
+/// clicked, and does nothing — the one failure mode a link has. Called after
+/// any removal that could have taken a book a link was pointing at, and by
+/// [`sanitize`] on every load, which is what makes a hand-edited blob or a
+/// library written by a build that removed rows differently still open on a
+/// shelf with no dead rows in it.
+pub fn drop_dangling_links(rows: &mut Vec<Row>) {
+    // Owned ids, so the set does not hold a borrow of the list the retain below
+    // is about to walk mutably.
+    let books: std::collections::HashSet<String> =
+        book_rows(rows).map(|b| b.id.clone()).collect();
+    rows.retain(|r| !matches!(r, Row::Link { target, .. } if !books.contains(target)));
 }
 
 /// The resume page for an address, if the library knows it.
-pub fn find_page(books: &[Book], path: &str) -> Option<u32> {
-    books
-        .iter()
+pub fn find_page(rows: &[Row], path: &str) -> Option<u32> {
+    book_rows(rows)
         .find(|b| b.path() == path)
         .map(|b| b.page.max(1))
 }
@@ -664,9 +841,8 @@ pub fn find_page(books: &[Book], path: &str) -> Option<u32> {
 /// The saved fractional stream position for an address (see
 /// [`Book::fraction`]), for a reflowable document opening back into the
 /// continuous mode.
-pub fn find_fraction(books: &[Book], path: &str) -> Option<f64> {
-    books
-        .iter()
+pub fn find_fraction(rows: &[Row], path: &str) -> Option<f64> {
+    book_rows(rows)
         .find(|b| b.path() == path)
         .and_then(|b| b.fraction)
         .filter(|f| (0.0..=1.0).contains(f))
@@ -679,15 +855,15 @@ pub fn find_fraction(books: &[Book], path: &str) -> Option<f64> {
 /// every shared row there agrees. A caller that knows which row the reader
 /// means wants [`find_by_id`] instead — an address can hold a book of its own
 /// beside its twins, and the two do not agree about anything.
-pub fn find_by_path<'a>(books: &'a [Book], path: &str) -> Option<&'a Book> {
-    books.iter().find(|b| b.path() == path)
+pub fn find_by_path<'a>(rows: &'a [Row], path: &str) -> Option<&'a Book> {
+    book_rows(rows).find(|b| b.path() == path)
 }
 
 /// The book an id names. The lookup every row-addressed caller should make:
 /// an id survives a relink, a rename and a move between shelves, and it is the
 /// only thing that tells two rows of one address apart.
-pub fn find_by_id<'a>(books: &'a [Book], id: &str) -> Option<&'a Book> {
-    books.iter().find(|b| b.id == id)
+pub fn find_by_id<'a>(rows: &'a [Row], id: &str) -> Option<&'a Book> {
+    book_rows(rows).find(|b| b.id == id)
 }
 
 /// The key the highlights of the book being opened are stored under.
@@ -698,9 +874,9 @@ pub fn find_by_id<'a>(books: &'a [Book], id: &str) -> Option<&'a Book> {
 /// list, and every other book at the address reads the address's — and the
 /// address is the answer otherwise, which is the shared rule and the honest
 /// fallback when the row went.
-pub fn gloss_key_of(books: &[Book], book_id: Option<&str>, path: &str) -> String {
+pub fn gloss_key_of(rows: &[Row], book_id: Option<&str>, path: &str) -> String {
     book_id
-        .and_then(|id| find_by_id(books, id))
+        .and_then(|id| find_by_id(rows, id))
         .filter(|b| b.path() == path)
         .map_or_else(|| path.to_string(), Book::gloss_key)
 }
@@ -713,9 +889,9 @@ pub fn gloss_key_of(books: &[Book], book_id: Option<&str>, path: &str) -> String
 /// a private book resumes where its own reader left off rather than where the
 /// twin did. With no row named — a drop, an "open with", a dialog — the
 /// address's own rule answers, which every shared row agrees on.
-pub fn resume_point(books: &[Book], book_id: Option<&str>, path: &str) -> (u32, Option<f64>) {
+pub fn resume_point(rows: &[Row], book_id: Option<&str>, path: &str) -> (u32, Option<f64>) {
     if let Some(book) = book_id
-        .and_then(|id| find_by_id(books, id))
+        .and_then(|id| find_by_id(rows, id))
         .filter(|b| b.path() == path)
     {
         return (
@@ -723,56 +899,103 @@ pub fn resume_point(books: &[Book], book_id: Option<&str>, path: &str) -> (u32, 
             book.fraction.filter(|f| (0.0..=1.0).contains(f)),
         );
     }
-    (
-        find_page(books, path).unwrap_or(1),
-        find_fraction(books, path),
-    )
+    (find_page(rows, path).unwrap_or(1), find_fraction(rows, path))
 }
 
-/// Make a persisted list internally valid: drop books with no address or no
-/// id, dedupe by id (first wins — the reader's own order), clamp the resume
-/// point, and trim to [`BOOKS_CAP`] by least-recently-read. Idempotent.
+/// Make a persisted list internally valid: drop rows with no id, books with no
+/// address and links with no name or no target, dedupe by id (first wins — the
+/// reader's own order), clamp the resume point, drop the links whose book is
+/// gone, and trim to [`BOOKS_CAP`] by least-recently-read. Idempotent.
 ///
 /// By ID and not by content identity: two rows are allowed to share one
 /// file's fingerprint when the reader asked to keep both — the library's
 /// conflict sheet mints such duplicates under [`duplicate_title`] names — and
 /// a sanitizer that deduped by fingerprint would silently undo a choice the
 /// reader made. A blob carrying two rows with one ID is the corrupt case this
-/// still heals.
-pub fn sanitize(books: &mut Vec<Book>) {
+/// still heals. A link is not deduped against its book either: two links at
+/// one book on two shelves are two pointers, and both work.
+pub fn sanitize(rows: &mut Vec<Row>) {
     let mut seen = std::collections::HashSet::new();
-    books.retain(|b| {
-        !b.id.trim().is_empty() && !b.path().trim().is_empty() && seen.insert(b.id.clone())
+    rows.retain(|r| {
+        if r.id().trim().is_empty() || !seen.insert(r.id().to_string()) {
+            return false;
+        }
+        match r {
+            Row::Book(b) => !b.path().trim().is_empty(),
+            // A link with no name is a row the shelf cannot label, and one
+            // with no target is a row that cannot be clicked.
+            Row::Link { name, target, .. } => {
+                !name.trim().is_empty() && !target.trim().is_empty()
+            }
+        }
     });
-    for b in books.iter_mut() {
+    for row in rows.iter_mut() {
+        let Some(b) = row.as_book_mut() else {
+            continue;
+        };
         b.page = b.page.max(1);
         b.fraction = b.fraction.filter(|f| (0.0..=1.0).contains(f));
         // A title that is really a filename — the download name a PDF carries
         // in its metadata — is not a title: drop it and let the stem of the
         // address show, which is the name the reader sees in their own file
         // manager. This is also the heal for rows stored before the rule
-        // existed, on the load that first knows better.
+        // existed, on the load that first knows better. A name a duplicate
+        // namer minted survives it, through the trailing-counter exemption in
+        // `reader_core::filename`.
         if b.title.as_deref().is_some_and(|t| !reader_core::filename::is_usable_title(t)) {
             b.title = None;
         }
     }
-    if books.len() <= BOOKS_CAP {
+    drop_dangling_links(rows);
+    if rows.len() <= BOOKS_CAP {
         return;
     }
     // Trim by least-recently-read rather than by position: the tail of the
     // list is the reader's own arrangement, and rearranging is not the same
-    // promise as "I have not opened this in a year".
-    let mut by_age: Vec<usize> = (0..books.len()).collect();
-    by_age.sort_by_key(|&i| books[i].last_read_ms);
-    for i in by_age.into_iter().take(books.len() - BOOKS_CAP) {
-        books[i].id = String::new();
+    // promise as "I have not opened this in a year". Taken from the back so
+    // the indices ahead of a removal stay the indices they were.
+    let mut by_age: Vec<usize> = (0..rows.len()).collect();
+    by_age.sort_by_key(|&i| recency(&rows[i]));
+    let mut evict: Vec<usize> = by_age.into_iter().take(rows.len() - BOOKS_CAP).collect();
+    evict.sort_unstable_by(|a, b| b.cmp(a));
+    for i in evict {
+        rows.remove(i);
     }
-    books.retain(|b| !b.id.is_empty());
+    // An evicted book can be the one a link was pointing at.
+    drop_dangling_links(rows);
+}
+
+/// What the storage cap evicts by: when a book was last read, and when a link
+/// was made. A link has no reading of its own, and neither has a book nobody
+/// has opened, so both sit at the bottom of a list that has to lose rows —
+/// which is the honest order for a cap that exists to keep a blob inside a
+/// browser's quota.
+fn recency(row: &Row) -> u64 {
+    match row {
+        Row::Book(b) => b.last_read_ms,
+        Row::Link { added_ms, .. } => *added_ms,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The rows a list of books makes: the library's list holds rows, and a
+    /// link is a row too — the tests that build one say so.
+    fn rows(books: impl IntoIterator<Item = Book>) -> Vec<Row> {
+        books.into_iter().map(Row::Book).collect()
+    }
+
+    /// The book a row holds. Every row these tests build is a book unless the
+    /// test is about a link.
+    fn at(rows: &[Row], i: usize) -> &Book {
+        rows[i].book().expect("a book row")
+    }
+
+    fn at_mut(rows: &mut [Row], i: usize) -> &mut Book {
+        rows[i].as_book_mut().expect("a book row")
+    }
 
     fn fp(size: u64, mtime: u64, head: u32) -> Fingerprint {
         Fingerprint {
@@ -854,7 +1077,7 @@ mod tests {
 
     #[test]
     fn an_author_fills_a_gap_and_never_overwrites_one() {
-        let mut books = vec![linked("a", "/books/one.pdf")];
+        let mut books = rows([linked("a", "/books/one.pdf")]);
         record_read(
             &mut books,
             "/books/one.pdf",
@@ -863,7 +1086,7 @@ mod tests {
             ReadPoint::fresh(),
             1,
         );
-        assert_eq!(books[0].author.as_deref(), Some("Frank Herbert"));
+        assert_eq!(at(&books, 0).author.as_deref(), Some("Frank Herbert"));
         record_read(
             &mut books,
             "/books/one.pdf",
@@ -873,12 +1096,12 @@ mod tests {
             2,
         );
         assert_eq!(
-            books[0].author.as_deref(),
+            at(&books, 0).author.as_deref(),
             Some("Frank Herbert"),
             "the first author the document gave is the one the shelf keeps"
         );
         // A blank author is no author at all.
-        let mut books = vec![linked("b", "/books/two.pdf")];
+        let mut books = rows([linked("b", "/books/two.pdf")]);
         record_read(
             &mut books,
             "/books/two.pdf",
@@ -887,12 +1110,12 @@ mod tests {
             ReadPoint::fresh(),
             1,
         );
-        assert_eq!(books[0].author, None);
+        assert_eq!(at(&books, 0).author, None);
     }
 
     #[test]
     fn reading_a_known_book_updates_it_in_place() {
-        let mut books = vec![linked("a", "/books/one.pdf"), linked("b", "/books/two.pdf")];
+        let mut books = rows([linked("a", "/books/one.pdf"), linked("b", "/books/two.pdf")]);
         let created = record_read(
             &mut books,
             "/books/two.pdf",
@@ -904,19 +1127,19 @@ mod tests {
         assert!(created.is_none(), "an existing book is not created again");
         assert_eq!(books.len(), 2);
         // The order the reader arranged is untouched.
-        assert_eq!(books[0].id, "a");
-        assert_eq!(books[1].page, 42);
-        assert_eq!(books[1].last_read_ms, 500);
-        assert_eq!(books[1].title.as_deref(), Some("Two"));
+        assert_eq!(at(&books, 0).id, "a");
+        assert_eq!(at(&books, 1).page, 42);
+        assert_eq!(at(&books, 1).last_read_ms, 500);
+        assert_eq!(at(&books, 1).title.as_deref(), Some("Two"));
         // A read is not a measurement: the fingerprint is whatever the last
         // path check found, and this book has already been checked.
-        assert_eq!(books[1].fp, fp(10, 1, 7));
-        assert!(!books[1].fp_pending);
+        assert_eq!(at(&books, 1).fp, fp(10, 1, 7));
+        assert!(!at(&books, 1).fp_pending);
     }
 
     #[test]
     fn reading_an_unknown_book_creates_a_linked_one_at_the_front() {
-        let mut books = vec![linked("a", "/books/one.pdf")];
+        let mut books = rows([linked("a", "/books/one.pdf")]);
         let created = record_read(
             &mut books,
             "/books/new.md",
@@ -927,7 +1150,7 @@ mod tests {
         )
         .expect("a new book");
         assert_eq!(books.len(), 2);
-        assert_eq!(books[0].id, created.id);
+        assert_eq!(at(&books, 0).id, created.id);
         assert_eq!(created.format, Format::Markdown);
         assert_eq!(created.path(), "/books/new.md");
         assert!(!created.origin.is_stored());
@@ -939,10 +1162,10 @@ mod tests {
 
     #[test]
     fn a_title_only_ever_fills_a_gap() {
-        let mut books = vec![Book {
+        let mut books = rows([Book {
             title: Some("Named by the document".into()),
             ..linked("a", "/books/one.pdf")
-        }];
+        }]);
         record_read(
             &mut books,
             "/books/one.pdf",
@@ -951,7 +1174,7 @@ mod tests {
             ReadPoint { page: 3, num_pages: 10, fraction: None },
             10,
         );
-        assert_eq!(books[0].title.as_deref(), Some("Named by the document"));
+        assert_eq!(at(&books, 0).title.as_deref(), Some("Named by the document"));
     }
 
     #[test]
@@ -959,7 +1182,7 @@ mod tests {
         // The reader hands over whatever the document said; the library is the
         // thing that has to stay valid, so the clamping happens on the way in
         // rather than at every read of the row.
-        let mut books = vec![linked("a", "/books/one.pdf")];
+        let mut books = rows([linked("a", "/books/one.pdf")]);
         record_read(
             &mut books,
             "/books/one.pdf",
@@ -968,24 +1191,24 @@ mod tests {
             ReadPoint { page: 0, num_pages: 10, fraction: Some(1.4) },
             1,
         );
-        assert_eq!(books[0].page, 1);
-        assert_eq!(books[0].fraction, None);
+        assert_eq!(at(&books, 0).page, 1);
+        assert_eq!(at(&books, 0).fraction, None);
         assert_eq!(ReadPoint::fresh(), ReadPoint { page: 1, num_pages: 0, fraction: None });
     }
 
     #[test]
     fn a_path_check_is_what_measures_a_book() {
-        let mut books = vec![Book {
+        let mut books = rows([Book {
             fp_pending: true,
             ..linked("a", "/books/one.pdf")
-        }];
+        }]);
         let touched = apply_check(
             &mut books,
             &check("/books/one.pdf", true, 20, 2, 8),
         );
         assert_eq!(touched, vec!["a".to_string()]);
-        assert_eq!(books[0].fp, fp(20, 2, 8));
-        assert!(!books[0].fp_pending, "the measurement replaces the placeholder");
+        assert_eq!(at(&books, 0).fp, fp(20, 2, 8));
+        assert!(!at(&books, 0).fp_pending, "the measurement replaces the placeholder");
         // A second pass over an unchanged file changes nothing, so a startup
         // check of a healthy library writes no state at all.
         assert!(apply_check(&mut books, &check("/books/one.pdf", true, 20, 2, 8)).is_empty());
@@ -993,29 +1216,29 @@ mod tests {
 
     #[test]
     fn a_path_that_does_not_resolve_marks_the_book_missing_and_keeps_it() {
-        let mut books = vec![Book {
+        let mut books = rows([Book {
             page: 42,
             num_pages: 100,
             ..linked("a", "/books/one.pdf")
-        }];
+        }]);
         assert_eq!(
             apply_check(&mut books, &check("/books/one.pdf", false, 0, 0, 0)),
             vec!["a".to_string()]
         );
-        assert!(books[0].missing);
-        assert!(!books[0].fp_pending, "a check that ran is not a check still owed");
+        assert!(at(&books, 0).missing);
+        assert!(!at(&books, 0).fp_pending, "a check that ran is not a check still owed");
         assert_eq!(books.len(), 1, "a missing book is not a removed one");
-        assert_eq!(books[0].page, 42, "the resume point survives the address dying");
-        assert_eq!(books[0].fp, fp(10, 1, 7), "and so does the last known identity");
+        assert_eq!(at(&books, 0).page, 42, "the resume point survives the address dying");
+        assert_eq!(at(&books, 0).fp, fp(10, 1, 7), "and so does the last known identity");
         // The second pass is not news.
         assert!(apply_check(&mut books, &check("/books/one.pdf", false, 0, 0, 0)).is_empty());
     }
 
     #[test]
     fn a_check_for_an_address_the_library_does_not_hold_does_nothing() {
-        let mut books = vec![linked("a", "/books/one.pdf")];
+        let mut books = rows([linked("a", "/books/one.pdf")]);
         assert!(apply_check(&mut books, &check("/books/other.pdf", true, 1, 1, 1)).is_empty());
-        assert!(!books[0].missing);
+        assert!(!at(&books, 0).missing);
     }
 
     #[test]
@@ -1024,7 +1247,7 @@ mod tests {
         // file: the address is read, checked and resumed as one, and a heal
         // that reached only the first row would leave its twin holding a
         // watched folder's rescan off forever.
-        let mut books = vec![
+        let mut books = rows([
             Book {
                 fp_pending: true,
                 ..linked("a", "/books/dune.pdf")
@@ -1035,7 +1258,7 @@ mod tests {
                 fp_pending: true,
                 ..linked("a", "/books/dune.pdf")
             },
-        ];
+        ]);
         assert!(record_read(
             &mut books,
             "/books/dune.pdf",
@@ -1045,20 +1268,20 @@ mod tests {
             700,
         )
         .is_none());
-        for book in &books {
+        for book in book_rows(&books) {
             assert_eq!(book.page, 90);
             assert_eq!(book.last_read_ms, 700);
         }
         // The duplicate's own name is a value, not a gap: the shared read
         // fills the first row's title and leaves the second row's alone.
-        assert_eq!(books[0].title.as_deref(), Some("Dune"));
-        assert_eq!(books[1].title.as_deref(), Some("dune_1"));
+        assert_eq!(at(&books, 0).title.as_deref(), Some("Dune"));
+        assert_eq!(at(&books, 1).title.as_deref(), Some("dune_1"));
         assert_eq!(
             apply_check(&mut books, &check("/books/dune.pdf", true, 20, 2, 8)).len(),
             2,
             "one measurement heals every row at the address"
         );
-        assert!(books.iter().all(|b| !b.fp_pending && b.fp == fp(20, 2, 8)));
+        assert!(book_rows(&books).all(|b| !b.fp_pending && b.fp == fp(20, 2, 8)));
     }
 
     // -------------------------------------------------------------------
@@ -1084,7 +1307,7 @@ mod tests {
         // The reader names the row, so the key follows the row — and an id
         // that is not there, or is there at another address, falls back to
         // the address rather than to a key nothing can read back.
-        let books = vec![shared.clone(), own.clone()];
+        let books = rows([shared.clone(), own.clone()]);
         assert_eq!(gloss_key_of(&books, Some("b"), "/books/dune.pdf"), "b::/books/dune.pdf");
         assert_eq!(gloss_key_of(&books, Some("a"), "/books/dune.pdf"), "/books/dune.pdf");
         assert_eq!(gloss_key_of(&books, None, "/books/dune.pdf"), "/books/dune.pdf");
@@ -1101,8 +1324,8 @@ mod tests {
         // Two rows of one file share their position — unless one of them is a
         // book of its own, whose position is the reader's answer for THAT book
         // and is not a fact about the file.
-        let mut books = vec![linked("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")];
-        books[1].page = 240;
+        let mut books = rows([linked("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
+        at_mut(&mut books, 1).page = 240;
         record_read(
             &mut books,
             "/books/dune.pdf",
@@ -1111,10 +1334,10 @@ mod tests {
             ReadPoint { page: 90, num_pages: 400, fraction: None },
             700,
         );
-        assert_eq!(books[0].page, 90, "the shared row moves");
-        assert_eq!(books[1].page, 240, "and the private one does not");
-        assert_eq!(books[0].last_read_ms, 700);
-        assert_eq!(books[1].last_read_ms, 1, "its stamp is its own too");
+        assert_eq!(at(&books, 0).page, 90, "the shared row moves");
+        assert_eq!(at(&books, 1).page, 240, "and the private one does not");
+        assert_eq!(at(&books, 0).last_read_ms, 700);
+        assert_eq!(at(&books, 1).last_read_ms, 1, "its stamp is its own too");
         // A path check is the address's fate rather than the reader's, so it
         // still writes every row: a private book of a file that resolved is
         // not missing, and one of a file that did not is.
@@ -1122,7 +1345,7 @@ mod tests {
             apply_check(&mut books, &check("/books/dune.pdf", true, 20, 2, 8)).len(),
             2
         );
-        assert!(books.iter().all(|b| !b.missing && b.fp == fp(20, 2, 8)));
+        assert!(book_rows(&books).all(|b| !b.missing && b.fp == fp(20, 2, 8)));
     }
 
     #[test]
@@ -1133,7 +1356,7 @@ mod tests {
         // ask it falls back to the address, which is the rule it has always
         // followed. The alternative is a second row minted for a file the
         // library already holds.
-        let mut books = vec![private("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")];
+        let mut books = rows([private("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
         assert_eq!(rows_for_read(&books, None, "/books/dune.pdf"), vec![0, 1]);
         assert!(record_read(
             &mut books,
@@ -1145,7 +1368,7 @@ mod tests {
         )
         .is_none());
         assert_eq!(books.len(), 2, "nothing was minted for a file already held");
-        assert!(books.iter().all(|b| b.page == 12));
+        assert!(book_rows(&books).all(|b| b.page == 12));
         // Naming one of them is the question the address cannot answer, and
         // the answer is that book alone.
         assert_eq!(rows_for_read(&books, Some("b"), "/books/dune.pdf"), vec![1]);
@@ -1153,12 +1376,12 @@ mod tests {
 
     #[test]
     fn the_rows_a_read_belongs_to_are_the_rows_it_writes() {
-        let books = vec![
+        let books = rows([
             linked("a", "/books/dune.pdf"),
             private("b", "/books/dune.pdf"),
             linked("c", "/books/dune.pdf"),
             linked("d", "/books/other.pdf"),
-        ];
+        ]);
         // No row named: every shared row at the address, and the private one
         // is not a twin of anything.
         assert_eq!(rows_for_read(&books, None, "/books/dune.pdf"), vec![0, 2]);
@@ -1176,22 +1399,22 @@ mod tests {
 
     #[test]
     fn a_read_that_names_its_row_writes_that_row() {
-        let mut books = vec![linked("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")];
+        let mut books = rows([linked("a", "/books/dune.pdf"), private("b", "/books/dune.pdf")]);
         let point = ReadPoint { page: 240, num_pages: 400, fraction: None };
         // Naming a shared row is the address's rule: every shared row moves.
         assert!(record_read_row(&mut books, "a", "/books/dune.pdf", None, None, point, 9).is_none());
-        assert_eq!(books[0].page, 240);
-        assert_eq!(books[1].page, 1, "the private row is not a twin of it");
+        assert_eq!(at(&books, 0).page, 240);
+        assert_eq!(at(&books, 1).page, 1, "the private row is not a twin of it");
         // Naming the private row moves that row and nothing else.
         let further = ReadPoint { page: 380, num_pages: 400, fraction: None };
         assert!(record_read_row(&mut books, "b", "/books/dune.pdf", None, None, further, 11).is_none());
-        assert_eq!(books[1].page, 380);
-        assert_eq!(books[1].last_read_ms, 11);
-        assert_eq!(books[0].page, 240, "the shared row keeps the read it was given");
+        assert_eq!(at(&books, 1).page, 380);
+        assert_eq!(at(&books, 1).last_read_ms, 11);
+        assert_eq!(at(&books, 0).page, 240, "the shared row keeps the read it was given");
         // A row that went while the document was open falls back to the
         // address, rather than dropping the read or minting a row.
         assert!(record_read_row(&mut books, "zzz", "/books/dune.pdf", None, None, point, 12).is_none());
-        assert_eq!(books[0].page, 240);
+        assert_eq!(at(&books, 0).page, 240);
         assert_eq!(books.len(), 2);
         // And an address nothing holds still gains a book, whichever way in.
         let created = record_read_row(
@@ -1214,7 +1437,7 @@ mod tests {
         let mut own = private("b", "/books/dune.pdf");
         own.page = 240;
         own.fraction = Some(0.5);
-        let books = vec![shared, own];
+        let books = rows([shared, own]);
         // Named: that row's own truth, clamped the way the address's lookups
         // clamp it.
         assert_eq!(resume_point(&books, Some("b"), "/books/dune.pdf"), (240, Some(0.5)));
@@ -1231,7 +1454,7 @@ mod tests {
         // A private book is not the library's answer to "the book for this
         // content": an import that resolved to it would file the reader's own
         // book on a shelf the question never mentioned.
-        let mut books = vec![private("a", "/one/dune.pdf")];
+        let mut books = rows([private("a", "/one/dune.pdf")]);
         let arrival = Book {
             origin: Origin::Linked { src: "/two/dune.pdf".into() },
             ..linked("new", "/two/dune.pdf")
@@ -1246,7 +1469,7 @@ mod tests {
 
     #[test]
     fn a_scan_names_the_shared_row_and_only_falls_back_to_a_private_one() {
-        let books = vec![private("a", "/one/dune.pdf"), linked("b", "/two/dune.pdf")];
+        let books = rows([private("a", "/one/dune.pdf"), linked("b", "/two/dune.pdf")]);
         let registry = crate::ledger::registry_of(&books);
         assert_eq!(
             registry.get(&fp(10, 1, 7)).map(|k| k.id.as_str()),
@@ -1255,7 +1478,7 @@ mod tests {
         );
         // A content only a private book holds is still held: a scan that could
         // not see it would add a second row for a file already on the shelf.
-        let only = vec![private("a", "/one/dune.pdf")];
+        let only = rows([private("a", "/one/dune.pdf")]);
         assert_eq!(
             crate::ledger::registry_of(&only).get(&fp(10, 1, 7)).map(|k| k.id.as_str()),
             Some("a")
@@ -1264,13 +1487,13 @@ mod tests {
 
     #[test]
     fn a_relink_heals_a_missing_book() {
-        let mut books = vec![Book {
+        let mut books = rows([Book {
             missing: true,
             ..linked("a", "/gone/one.pdf")
-        }];
+        }]);
         assert!(crate::ledger::relink(&mut books, "a", "/books/one.pdf"));
-        assert!(!books[0].missing);
-        assert_eq!(books[0].path(), "/books/one.pdf");
+        assert!(!at(&books, 0).missing);
+        assert_eq!(at(&books, 0).path(), "/books/one.pdf");
     }
 
     fn check(path: &str, exists: bool, size: u64, mtime: u64, head: u32) -> crate::wire::PathCheck {
@@ -1285,7 +1508,7 @@ mod tests {
 
     #[test]
     fn the_same_content_is_the_same_book_whatever_its_address() {
-        let mut books = vec![linked("a", "/books/one.pdf")];
+        let mut books = rows([linked("a", "/books/one.pdf")]);
         let twin = Book {
             id: "twin".into(),
             origin: Origin::Linked {
@@ -1299,7 +1522,7 @@ mod tests {
 
     #[test]
     fn different_content_is_a_different_book() {
-        let mut books = vec![linked("a", "/books/one.pdf")];
+        let mut books = rows([linked("a", "/books/one.pdf")]);
         let other = Book {
             fp: fp(11, 1, 7),
             ..linked("b", "/books/one.pdf")
@@ -1313,7 +1536,7 @@ mod tests {
         // One insert at the front per file would reverse a whole folder, which is
         // the difference between a shelf that reads like the folder and one that
         // reads like its mirror.
-        let mut books: Vec<Book> = Vec::new();
+        let mut books: Vec<Row> = Vec::new();
         for name in ["a", "b", "c", "d"] {
             let book = Book {
                 fp: fp(name.as_bytes()[0] as u64, 1, 1),
@@ -1321,27 +1544,27 @@ mod tests {
             };
             add_book(&mut books, book);
         }
-        let ids: Vec<&str> = books.iter().map(|b| b.id.as_str()).collect();
+        let ids: Vec<&str> = books.iter().map(Row::id).collect();
         assert_eq!(ids, vec!["a", "b", "c", "d"]);
     }
 
     #[test]
     fn removing_returns_the_book_so_the_caller_can_finish_the_job() {
-        let mut books = vec![linked("a", "/books/one.pdf"), linked("b", "/books/two.pdf")];
-        let gone = remove_book(&mut books, "a").expect("present");
-        assert_eq!(gone.path(), "/books/one.pdf");
+        let mut books = rows([linked("a", "/books/one.pdf"), linked("b", "/books/two.pdf")]);
+        let gone = remove_row(&mut books, "a").expect("present");
+        assert_eq!(gone.book().expect("a book row").path(), "/books/one.pdf");
         assert_eq!(books.len(), 1);
-        assert!(remove_book(&mut books, "zzz").is_none());
+        assert!(remove_row(&mut books, "zzz").is_none());
     }
 
     #[test]
     fn the_resume_point_is_looked_up_by_address() {
-        let books = vec![Book {
+        let books = rows([Book {
             page: 42,
             num_pages: 100,
             fraction: Some(0.5),
             ..linked("a", "/books/one.pdf")
-        }];
+        }]);
         assert_eq!(find_page(&books, "/books/one.pdf"), Some(42));
         assert_eq!(find_page(&books, "/books/zzz.pdf"), None);
         assert_eq!(find_fraction(&books, "/books/one.pdf"), Some(0.5));
@@ -1350,7 +1573,7 @@ mod tests {
 
     #[test]
     fn sanitize_dedupes_by_id_and_clamps_the_resume() {
-        let mut books = vec![
+        let mut books = rows([
             Book {
                 page: 0,
                 ..linked("a", "/books/one.pdf")
@@ -1378,13 +1601,13 @@ mod tests {
                 fraction: Some(2.0),
                 ..linked("c", "/books/four.md")
             },
-        ];
+        ]);
         sanitize(&mut books);
-        let ids: Vec<&str> = books.iter().map(|b| b.id.as_str()).collect();
+        let ids: Vec<&str> = books.iter().map(Row::id).collect();
         assert_eq!(ids, vec!["a", "dup", "c"]);
-        assert_eq!(books[0].page, 1, "page 0 clamps to 1");
-        assert_eq!(books[1].title.as_deref(), Some("one_1"), "a duplicate keeps the name it was minted with");
-        assert_eq!(books[2].fraction, None, "an impossible fraction is dropped");
+        assert_eq!(at(&books, 0).page, 1, "page 0 clamps to 1");
+        assert_eq!(at(&books, 1).title.as_deref(), Some("one_1"), "a duplicate keeps the name it was minted with");
+        assert_eq!(at(&books, 2).fraction, None, "an impossible fraction is dropped");
     }
 
     #[test]
@@ -1435,18 +1658,18 @@ mod tests {
 
     #[test]
     fn the_storage_cap_evicts_the_least_recently_read() {
-        let mut books: Vec<Book> = (0..(BOOKS_CAP + 2))
+        let mut books: Vec<Row> = (0..(BOOKS_CAP + 2))
             .map(|i| {
-                Book {
+                Row::Book(Book {
                     last_read_ms: i as u64,
                     ..linked(&format!("b{i}"), &format!("/books/{i}.pdf"))
-                }
+                })
             })
             .collect();
         sanitize(&mut books);
         assert_eq!(books.len(), BOOKS_CAP);
         assert!(
-            books.iter().all(|b| b.last_read_ms >= 2),
+            book_rows(&books).all(|b| b.last_read_ms >= 2),
             "the two never-read books go first"
         );
     }

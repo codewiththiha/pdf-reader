@@ -113,7 +113,10 @@ impl StoreResult {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibrarySnapshot {
-    pub books: Vec<crate::book::Book>,
+    /// Every row the catalog holds, in the order the frontend's own list keeps
+    /// them. A catalog answers with book rows only: a link has no table in it
+    /// yet, for the reason `src-tauri/src/db/repo.rs`'s `bootstrap` gives.
+    pub books: Vec<crate::book::Row>,
     pub shelves: Vec<crate::shelf::Shelf>,
     pub folders: Vec<crate::folder::WatchedFolder>,
 }

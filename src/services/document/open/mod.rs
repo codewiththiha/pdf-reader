@@ -98,7 +98,23 @@ pub fn open_dialog(state: AppState) {
     });
 }
 
-/// Open a library row: the book's own address, and the row itself as the
+/// Open a library ROW, which is what every surface on the shelf calls: a book
+/// opens, and a link takes the reader to the book it points at instead
+/// ([`crate::services::library::reveal_book`] — its shelf, then its card, lit),
+/// because a pointer is not a file and there is nothing to open. A row that
+/// went between the click and the open opens nothing at all.
+pub fn open_row(state: AppState, row_id: String) {
+    let target = state
+        .library
+        .row(&row_id)
+        .and_then(|row| row.target().map(str::to_string));
+    match target {
+        Some(target) => crate::services::library::reveal_book(state, &target),
+        None => open_book(state, row_id),
+    }
+}
+
+/// Open a library book: the book's own address, and the row itself as the
 /// session's identity.
 ///
 /// What a shelf surface calls — a card, a list row, the context menu's Open —
@@ -118,7 +134,7 @@ pub fn open_book(state: AppState, book_id: String) {
     }) else {
         return;
     };
-    open_row(state, Some(book_id), path);
+    open_at(state, Some(book_id), path);
 }
 
 /// Shared open-flow: open `path` through the pipeline its format needs and
@@ -131,13 +147,13 @@ pub fn open_book(state: AppState, book_id: String) {
 /// converge on the same state contract, so everything downstream — viewer,
 /// navigation, shelf — is format-agnostic.
 pub fn open_path(state: AppState, path: String) {
-    open_row(state, None, path);
+    open_at(state, None, path);
 }
 
 /// The open itself, with the row the reader named when they named one. See
 /// [`open_book`] for what the id buys and [`open_path`] for the opens that
 /// have nothing but an address.
-fn open_row(state: AppState, book_id: Option<String>, path: String) {
+fn open_at(state: AppState, book_id: Option<String>, path: String) {
     // Claim the document state for THIS attempt. Pick a second book while the
     // first is still resolving and the loser's tail would otherwise still run:
     // writing the old book's page count, geometry and scale over the new one's

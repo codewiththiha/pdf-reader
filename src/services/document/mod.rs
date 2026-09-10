@@ -13,7 +13,7 @@ pub mod open;
 pub(crate) mod session;
 
 pub use close::close_document;
-pub use open::{init_open_file_handling, open_book, open_dialog, open_path};
+pub use open::{init_open_file_handling, open_dialog, open_path, open_row};
 
 use leptos::prelude::*;
 

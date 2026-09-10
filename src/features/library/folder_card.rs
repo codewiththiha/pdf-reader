@@ -259,10 +259,13 @@ fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
                     .unwrap_or_default(),
             )
         });
-    let books: Vec<Book> = state.library.books.with(|books| {
+    // The plate is covers, and a link has none: it is a pointer at a book
+    // whose own row is in this list already when the book is inside the folder.
+    let books: Vec<Book> = state.library.books.with(|rows| {
         members
             .iter()
-            .filter_map(|member| books.iter().find(|b| &b.id == member).cloned())
+            .filter_map(|member| library_core::book::find_row(rows, member))
+            .filter_map(|row| row.book().cloned())
             .collect()
     });
     let mut out: Vec<PlateItem> = folders

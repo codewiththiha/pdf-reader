@@ -18,21 +18,20 @@
 //! a rescan skips is `library_core`'s ledger; [`import`] runs it against the
 //! shell's answers and writes the result to the library state, [`arrange`]
 //! holds the moves a reader makes by hand (a drag between shelves, a shelf filed
-//! inside another, a removal, a relink), and [`conflict`] is the question both
-//! ask before a placement lands on a shelf that already holds the very content:
-//! duplicate, replace or merge. The merge's own side tables — the marks and the
-//! art keyed by an address rather than a row — fold through [`merge_side`].
+//! inside another, a removal, a relink), and [`conflict`] is the one question
+//! both ask before a placement lands: does the level this is going to already
+//! hold a book of this name? The rule itself is `library_core::conflict`'s —
+//! pure, and host-tested — and [`conflict`] is the wiring between it and the
+//! three answers the sheet offers.
 //!
 //! [`import`]: crate::services::library::import
 //! [`arrange`]: crate::services::library::arrange
 //! [`conflict`]: crate::services::library::conflict
-//! [`merge_side`]: crate::services::library::merge_side
 
 pub mod arrange;
 pub mod conflict;
 pub mod covers;
 pub mod import;
-pub mod merge_side;
 pub mod reveal;
 
 pub use arrange::{

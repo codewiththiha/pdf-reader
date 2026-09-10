@@ -41,7 +41,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{Book, Fingerprint, Origin, add_book, apply_check};
+use library_core::book::{
+    Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut,
+};
+use library_core::conflict::Arrival;
 use library_core::folder::{FolderOpts, WatchedFolder, parent_key};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
@@ -50,7 +53,7 @@ use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
-use super::conflict::{self, Incoming, Placement};
+use super::conflict;
 use super::{file_name, folder_label};
 use crate::services::library as wire;
 use crate::state::library::ImportTask;
@@ -241,7 +244,7 @@ pub fn rescan_watched(state: AppState) {
     if state
         .library
         .books
-        .with_untracked(|books| books.iter().any(|b| b.fp_pending))
+        .with_untracked(|rows| book_rows(rows).any(|b| b.fp_pending))
     {
         return;
     }
@@ -278,13 +281,13 @@ pub fn verify_library(state: AppState) {
     if !tauri_bridge::has_tauri() {
         return;
     }
+    // The addresses to ask about: a link has none, and a pointer at a book is
+    // as alive or as dead as the book it points at, which the book's own row
+    // is already in this list to answer for.
     let paths: Vec<String> = state
         .library
         .books
-        .get_untracked()
-        .iter()
-        .map(|b| b.path().to_string())
-        .collect();
+        .with_untracked(|rows| book_rows(rows).map(|b| b.path().to_string()).collect());
     if paths.is_empty() {
         rescan_watched(state);
         return;
@@ -328,9 +331,9 @@ pub fn verify_one(state: AppState, path: String) {
 /// fewer place for the two to disagree.
 fn apply_checks(state: AppState, checks: &[PathCheck]) {
     let mut changed = false;
-    state.library.books.update(|books| {
+    state.library.books.update(|rows| {
         for check in checks {
-            if !apply_check(books, check).is_empty() {
+            if !apply_check(rows, check).is_empty() {
                 changed = true;
             }
         }
@@ -490,7 +493,7 @@ async fn run_folder(
     // twin. Healing the row is the honest answer, and the walk has just made the
     // measurement the startup pass could not.
     let mut healed = 0usize;
-    adds.retain(|file| match books.iter_mut().find(|b| b.path() == file.path) {
+    adds.retain(|file| match book_rows_mut(&mut books).find(|b| b.path() == file.path) {
         Some(book) => {
             book.fp = file.fp;
             book.fp_pending = false;
@@ -574,7 +577,7 @@ async fn run_folder(
             // book, so it is measured rather than added a second time beside its
             // twin. Membership is left alone — the ledger records the placement,
             // and where the reader filed it is the reader's business.
-            if let Some(existing) = books.iter_mut().find(|b| b.path() == file.path) {
+            if let Some(existing) = book_rows_mut(books).find(|b| b.path() == file.path) {
                 existing.fp = file.fp;
                 existing.fp_pending = false;
                 existing.missing = false;
@@ -885,33 +888,32 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // below, which dedupe against exactly those fingerprints.
     apply_checks(state, &checks);
 
-    // Every file whose content the LIBRARY already holds is a question rather
-    // than a placement — the old rule resolved the file to the row the library
-    // already had and skipped the placement, which to the reader was a book
-    // swallowed by the shelf it was dropped on. Onto a shelf the question is
-    // asked of EVERY shelf, so a twin filed on a parent, a child or a sibling
-    // asks too. At the root it is asked of the root's own list alone — the
-    // unfiled rows — so a file whose twin is only SHELVED lands as its own row
-    // there, and onto a shelf a file whose twin nobody has filed resolves to
-    // that row and files it: the clean half below goes through the conflict
-    // module's one landing rule, which is the only place either distinction is
-    // written down.
-    let placements: Vec<Placement> = found
+    // Every file whose NAME the target level already holds is a question
+    // rather than a placement — the old rule resolved the file to the row the
+    // library already had and skipped the placement, which to the reader was a
+    // book swallowed by the shelf it was dropped on. The question is the level's
+    // and is about a name, so a file whose twin sits on another shelf is not
+    // one: the row the library already has simply gains this level as well,
+    // which is a landing the reader can see and the one they asked for by
+    // dropping here.
+    let shelf_id = target
+        .clone()
+        .unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string());
+    let arrivals: Vec<Arrival> = found
         .iter()
-        .map(|file| Placement {
-            incoming: Incoming::Import { file: file.clone() },
-            shelf_id: target
-                .clone()
-                .unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string()),
-            from: None,
-            index: None,
-        })
+        .map(|file| Arrival::import(file.clone(), shelf_id.clone(), None))
         .collect();
-    let (clean, conflicts) = conflict::screen(state, placements);
+    let (clean, conflicts) = conflict::screen(state, arrivals);
     let placed = clean.len() as u32;
     let waiting = conflicts.len() as u32;
-    for placement in &clean {
-        conflict::land_clean(state, placement);
+    // One persist for the batch rather than one per file: a drop of four
+    // hundred files is one write, and a reader who closes the window halfway
+    // through an import should find all of it or none of it.
+    for arrival in &clean {
+        let Some(file) = arrival.file.as_ref() else {
+            continue;
+        };
+        land_file(state, file, None, &arrival.shelf_id, arrival.index);
     }
     // Raised after the clean half landed: the sheet counts the questions, and
     // a landing that shifted a member list is one the answers resolve against.
@@ -923,6 +925,78 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         t.waiting = waiting;
         t.finish();
     });
+}
+
+/// Land one measured file as a book row on one level.
+///
+/// The silent half of an import, and the half an answer to the collision sheet
+/// calls once it knows the name to use. `name` is the title the row is given:
+/// `None` leaves it without one, so the stem of its address is the name the
+/// shelf shows, which is the honest name for a file nobody has opened yet, and
+/// `Some` is the counter the sheet minted for a second book of one name.
+///
+/// A second row of an address the library already reads is a book of its own
+/// ([`Book::independent`]): its highlights live under a key carrying its id and
+/// its resume point is written by itself, which is what makes "add as new"
+/// mean something a reader can see rather than a second name for one book.
+///
+/// A NAMED landing always makes a row, and an unnamed one may not. The name is
+/// the sheet's *add as new*, which is an instruction to add a book: resolving it
+/// to the row the library already has — what [`add_book`] does for a fingerprint
+/// it recognises, and the right thing for a file dropped on a shelf the library
+/// already holds it from, where one book simply gains a second shelf — would
+/// answer "a second book of its own" with nothing happening at all, which is the
+/// vanishing the sheet exists to stop.
+///
+/// Writes no persist, because a caller that lands four hundred files owes one
+/// write and only the caller knows whether this is one file or four hundred.
+pub fn land_file(
+    state: AppState,
+    file: &FoundFile,
+    name: Option<String>,
+    shelf_id: &str,
+    index: Option<usize>,
+) -> String {
+    let now = now_ms();
+    let independent = state
+        .library
+        .books
+        .with_untracked(|rows| book_rows(rows).any(|b| b.path() == file.path));
+    let book = Book {
+        title: name,
+        independent,
+        ..Book::new(
+            id::next_id(now),
+            file.fp,
+            file.format().unwrap_or(Format::Pdf),
+            Origin::Linked {
+                src: file.path.clone(),
+            },
+            now,
+        )
+    };
+    let named = book.title.is_some();
+    let mut placed = String::new();
+    state.library.books.update(|rows| {
+        placed = if named {
+            let id = book.id.clone();
+            rows.push(Row::Book(book));
+            id
+        } else {
+            add_book(rows, book)
+        };
+    });
+    if shelf_id != shelves_ops::ALL_SHELF {
+        state.library.shelves.update(|shelves| {
+            if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+                shelves_ops::place(&mut shelf.books, &placed, index);
+            }
+        });
+    }
+    // The row may read from an address the cache has no art for, and the queue
+    // is the shelf's one answer to that.
+    super::covers::backfill_missing(state);
+    placed
 }
 
 /// A path check turned into a found file, so loose files and a folder walk feed

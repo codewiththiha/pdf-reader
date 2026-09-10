@@ -1,66 +1,42 @@
-//! The conflict sheet: the shelf already holds this book, and the question is
-//! which of the three file-manager answers the reader means.
+//! The "already imported?" sheet: the level already holds a book of this name,
+//! and the question is which of three things the reader meant.
 //!
-//! One sheet for every placement that collides — a drag, a bulk filing, a
-//! dropped folder of loose files — and one question at a time, with the queue
-//! behind it: a drop of ten files with three collisions files seven at once
-//! and asks three times, and the switch offers the same answer for the rest
-//! because three identical questions in a row are two too many. The service
-//! half (what a placement is, when it collides, what each answer does) is
-//! `crate::services::library::conflict`; this file is the ask.
+//! One sheet, one question, three rows, and no second ask anywhere in it —
+//! nothing on offer here is destructive, so there is nothing to warn twice
+//! about. *Already imported* places nothing and takes the reader to the row
+//! that is already there. *Add as new* keeps both, under the next free name.
+//! *Make link* puts a pointer on this level instead of a copy, which is the
+//! answer for a reader who wants the book reachable from here and does not
+//! want a second one.
 //!
-//! The rows say what they DO in one line each — the duplicate's new name is
-//! computed and promised on the row, because "keep both" without the name is
-//! an answer the reader has to take on faith, and the merge's line is computed
-//! and promised the same way: how many highlights the fold would keep and
-//! where the survivor would resume, from a dry run of the fold itself.
+//! The service half — what a collision is, what each answer writes — is
+//! `crate::services::library::conflict` and the rule itself is
+//! `library_core::conflict`; this file is the ask.
 //!
-//! One sheet asks a different question, and the service says which
-//! (`ConflictAsk::linked_flow`): an arrival reading from the very address the
-//! shelf's row reads is not a copy of a book but that book's own file arriving
-//! again, and the three file-manager answers are the wrong three for it. That
-//! sheet offers *already imported* (place nothing, reveal the book the reader
-//! has), *as new* (a second row that is a book of its own — its own
-//! highlights, its own place) and *link them* (the duplicate's two shared
-//! rows, named for what they go on sharing). Same queue, same switch, same
-//! Cancel: only the rows and their words differ.
-//! Replace is the one destructive row, and it asks twice only when the shelf's
-//! copy takes something with it — a resume point or highlights at an address
-//! the arrival does not read from; the second step itemises exactly that, in
-//! the remove sheet's own receipt idiom. Two copies of one file share their
-//! highlights and their position (both are keyed by the address, and every
-//! writer updates all the rows at it), so a replace between them loses a name
-//! and a row and nothing else — the first sheet said that much, and resolves
-//! on the spot.
-//!
-//! Cancel — the button, the backdrop and the Escape key — stops the remaining
-//! questions rather than skipping one: the placements already answered keep
-//! their answers and the rest simply do not land, which is what a file
-//! manager's copy dialog has always meant by Cancel.
+//! Cancel — the button, the backdrop and the Escape key — drops the question on
+//! screen and every one waiting behind it, which is what a file manager's copy
+//! dialog has always meant by Cancel: the placements already answered keep
+//! their answers and the ones not asked simply do not land.
 
 use leptos::prelude::*;
 
 use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
-use library_core::book::stem_of;
-use library_core::text::plural;
+use library_core::shelf::ALL_SHELF;
 
-use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
-use crate::components::primitives::controls::switch::Switch;
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
-use crate::services::library::conflict::{
-    self, Choice, ConflictAsk, ConflictItem, Incoming, LinkedFileChoice, Step,
-};
-use crate::services::library::memberships;
+use crate::services::library::conflict::{self, ConflictAsk};
+use library_core::conflict::Answer;
 use crate::state::AppState;
 
 /// The sheet, mounted once by the library page.
 ///
 /// The open flag lives on the library state rather than in a provided handle
 /// (the remove sheet's shape) because the raisers are services: an import asks
-/// from inside a spawned future no component owns, and a signal on the state
-/// is the one door every raiser and this view already share.
+/// from inside a spawned future no component owns, and a signal on the state is
+/// the one door every raiser and this view already share.
 #[component]
 pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     let open = state.library.conflict_open;
@@ -69,12 +45,13 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     // one layer at a time.
     use_modal_escape(open);
 
-    // A close that came from the lane registry or the Escape key wrote only
-    // the boolean; the queue goes with it, so the sheet can never reopen onto
-    // a question somebody already dismissed.
+    // A close that came from the lane registry or the Escape key wrote only the
+    // boolean; the question and the ones waiting behind it go with it, so the
+    // sheet can never reopen onto a question somebody already dismissed.
     Effect::new(move |_| {
-        if !open.get() && state.library.conflict.with_untracked(|ask| ask.is_some()) {
+        if !open.get() {
             state.library.conflict.set(None);
+            state.library.conflict_waiting.set(Vec::new());
         }
     });
 
@@ -82,23 +59,11 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
         <Show when=move || open.get()>
             <div
                 class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| {
-                    // The backdrop is Cancel, except on the second ask, where
-                    // a stray click defuses instead of throwing the queue away.
-                    let confirming = state.library.conflict.with_untracked(|ask| {
-                        ask.as_ref().is_some_and(|a| a.step == Step::ConfirmReplace)
-                    });
-                    if confirming {
-                        conflict::back_to_choices(state);
-                    } else {
-                        conflict::cancel(state);
-                    }
-                }
+                on:click=move |_| conflict::cancel(state)
             >
                 {move || {
                     let ask = state.library.conflict.get()?;
-                    let item = ask.current()?.clone();
-                    let info = Info::of(state, &ask, &item);
+                    let info = Info::of(state, &ask);
                     Some(view! { <Sheet state=state info=info /> })
                 }}
             </div>
@@ -107,130 +72,55 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
 }
 
 /// Everything the sheet prints, read once per answer — the remove receipt's
-/// rule: a `view!` body is a builder, not a place to compute, and a heading
-/// and a button that need the same string must not each derive their own.
+/// rule: a `view!` body is a builder, not a place to compute, and a heading and
+/// two buttons that need the same name must not each derive their own.
 struct Info {
-    step: Step,
-    /// The arrival's name — the heading.
-    incoming_name: String,
-    /// The shelf copy's name — what a replace warns about.
+    /// The name arriving — the heading.
+    incoming: String,
+    /// The name already on the level, which *already imported* goes to and
+    /// *make link* points at.
     existing_name: String,
-    /// The shelf the copy is FILED on, by name, or `None` when it is one of the
-    /// library's unfiled rows. The sheet's sentences name this and never the
-    /// drop's own target: the screen is the library's rather than the level's
-    /// (`crate::services::library::conflict`), so the copy the arrival collided
-    /// with can be filed somewhere else entirely, and "already on “Fiction”"
-    /// over a drop onto "Sci-Fi" would be a sentence about the wrong shelf.
-    /// `None` reads "in your library", which is where an unfiled row is.
-    home: Option<String>,
-    /// Whether the question on screen is the same-address one, which has its
-    /// own three answers and its own words for them.
-    linked_flow: bool,
-    /// Whether the whole queue asks that same question — the switch's
-    /// precondition, because "the same answer for the rest" means nothing
-    /// while the rest are being asked something else.
-    uniform: bool,
-    /// The name a Duplicate would mint, promised on its own row.
-    dup_name: String,
-    /// What a Merge would keep, promised on its own row — the dry run of the
-    /// fold, counted live (see `crate::services::library::conflict::merge_note`).
-    merge_note: String,
-    cover: Option<String>,
-    rest: usize,
-    apply_all: bool,
-    /// The replace step's receipt: what the shelf's copy loses, and whether
-    /// anything beyond the row itself is at stake (two copies of one address
-    /// share their position and their marks).
-    positions_differ: bool,
-    started: bool,
-    page_line: String,
-    marks: usize,
+    /// The name *add as new* would mint, promised on its own row: "keep both"
+    /// without the name is an answer the reader has to take on faith.
+    new_name: String,
+    /// Where the row that collided is: a shelf the sentence can name, or the
+    /// library's own unfiled list, which has no name but "your library".
+    where_line: String,
+    /// How many questions wait behind this one.
+    waiting: usize,
 }
 
 impl Info {
-    fn of(state: AppState, ask: &ConflictAsk, item: &ConflictItem) -> Self {
-        let books = state.library.books.get();
-        let existing = books.iter().find(|b| b.id == item.existing_id);
-        let incoming_name = match &item.placement.incoming {
-            Incoming::Move { book_id } => books
-                .iter()
-                .find(|b| &b.id == book_id)
-                .map(|b| b.title())
-                .unwrap_or_else(|| "This book".to_string()),
-            Incoming::Import { file } => stem_of(&file.path),
-        };
-        // The shelf copy is the same content, so when its row cannot be read
-        // (it went between the raise and the render) the arrival's own name is
-        // the honest fallback rather than a hole in the sentence.
-        let existing_name = existing
-            .map(|b| b.title())
-            .unwrap_or_else(|| incoming_name.clone());
-        // The first shelf the copy is filed on, in shelf order — the same
-        // answer a reveal gives when it takes the reader to a book.
-        let home = memberships(state, &item.existing_id)
-            .into_iter()
-            .next()
-            .map(|(_, name)| name);
-        let dup_name = conflict::duplicate_name(state, item);
-        let merge_note = conflict::merge_note(state, item);
-        let cover = existing.and_then(|b| {
-            state
-                .library
-                .covers
-                .with(|covers| covers.get(b.path()).map(|c| c.data_url.clone()))
-        });
-        let incoming_path = match &item.placement.incoming {
-            Incoming::Move { book_id } => books
-                .iter()
-                .find(|b| &b.id == book_id)
-                .map(|b| b.path().to_string()),
-            Incoming::Import { file } => Some(file.path.clone()),
-        };
-        // Two rows of one ADDRESS share their reading position and their
-        // highlights — every writer updates all the rows at a path, and the
-        // marks are keyed by it — so a replace between them loses the row and
-        // its name and nothing else. Two rows of one content at DIFFERENT
-        // addresses are the case the receipt exists for.
-        let positions_differ = match (&incoming_path, existing) {
-            (Some(incoming), Some(book)) => incoming != book.path(),
-            _ => false,
-        };
-        let started = existing.is_some_and(|b| b.page > 1 || b.fraction.is_some());
-        let page_line = match existing {
-            Some(book) if book.num_pages > 0 => {
-                format!("Page {} of {}", book.page, book.num_pages)
+    fn of(state: AppState, ask: &ConflictAsk) -> Self {
+        let where_line = if ask.arrival.shelf_id == ALL_SHELF {
+            "in your library".to_string()
+        } else {
+            let name = state.library.shelves.with_untracked(|shelves| {
+                shelves
+                    .iter()
+                    .find(|s| s.id == ask.arrival.shelf_id)
+                    .map(|s| s.name.clone())
+            });
+            match name {
+                Some(name) => format!("on “{name}”"),
+                None => "on this shelf".to_string(),
             }
-            Some(book) => format!("Page {}", book.page),
-            None => String::new(),
         };
-        // The copy's OWN key, not its address: a book of its own keeps its
-        // marks under a key of its id, and a receipt that counted the address
-        // would promise a loss the removal cannot make
-        // (`library_core::book::Book::gloss_key`).
-        let marks = existing
-            .map(|b| {
-                crate::storage::load_gloss()
-                    .get(&b.gloss_key())
-                    .map(Vec::len)
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0);
+        // One read of both lists, so the promise on the row and the answer the
+        // click gives are counted against the same library.
+        let (rows, shelves) = state.library.snapshot_rows();
+        let new_name = library_core::conflict::next_name(
+            &rows,
+            &shelves,
+            &ask.arrival.shelf_id,
+            &ask.arrival.name,
+        );
         Self {
-            step: ask.step,
-            incoming_name,
-            existing_name,
-            home,
-            linked_flow: ask.linked_flow(),
-            uniform: ask.uniform(),
-            dup_name,
-            merge_note,
-            cover,
-            rest: ask.rest(),
-            apply_all: ask.apply_all,
-            positions_differ,
-            started,
-            page_line,
-            marks,
+            incoming: ask.arrival.name.clone(),
+            existing_name: ask.existing_name.clone(),
+            new_name,
+            where_line,
+            waiting: state.library.conflict_waiting.with_untracked(|w| w.len()),
         }
     }
 }
@@ -240,86 +130,27 @@ impl Info {
 /// once per answer with an answer it can keep.
 #[component]
 fn Sheet(state: AppState, info: Info) -> impl IntoView {
-    let confirm = info.step == Step::ConfirmReplace;
-    let linked_flow = info.linked_flow;
-    // The second ask names what is about to GO — the first sheet named what
-    // is arriving, and the warning is about the copy, not the arrival.
-    let heading = if confirm {
-        format!("Replace “{}”?", info.existing_name)
+    let subtitle = if info.waiting > 0 {
+        format!("Already {} · {} more waiting", info.where_line, info.waiting)
     } else {
-        info.incoming_name.clone()
+        format!("Already {}", info.where_line)
     };
+    let question = format!(
+        "“{}” is already {}. Add a second book of its own, put a link here \
+         instead, or go to the one you have.",
+        info.incoming, info.where_line
+    );
+    let heading = info.incoming.clone();
     let tooltip = heading.clone();
-    let cover_alt = heading.clone();
-    // Where the copy already is: a shelf the sentence can name, or the
-    // library's own unfiled list, which has no name but "your library".
-    let where_line = match &info.home {
-        Some(name) => format!("on “{name}”"),
-        None => "in your library".to_string(),
-    };
-    let subtitle = if info.rest > 0 {
-        format!("Already {where_line} · {} more waiting", info.rest)
-    } else {
-        format!("Already {where_line}")
-    };
-    let question = format!("“{}” {where_line} is the same book.", info.existing_name);
-    let dup_note = format!("Keep both — this one becomes “{}”", info.dup_name);
-    // The same-address question's own words. Nothing about the file is in
-    // doubt here — the shelf's row reads the very address this arrival reads —
-    // so the sentence says THAT, and the three rows are the three things a
-    // reader can mean by importing a file they already have.
-    let linked_question = format!("“{}” {where_line} is this file.", info.existing_name);
-    let go_to_note = format!("Add nothing — go to “{}” where it already is", info.existing_name);
-    let as_new_note = format!(
-        "A book of its own — “{}”, with its own highlights and its own place in it",
-        info.dup_name
+    let go_to_note = format!(
+        "Add nothing — go to “{}” where it already is",
+        info.existing_name
     );
-    let link_note = format!(
-        "One book in two rows — “{}” shares these highlights, this place, and one removal",
-        info.dup_name
+    let new_note = format!(
+        "Keeps both, under the next free name — “{}”",
+        info.new_name
     );
-    let replace_note = match &info.home {
-        Some(name) => format!("The one on “{name}” gives its place to this one"),
-        None => "The one in your library gives its place to this one".to_string(),
-    };
-    let merge_note = info.merge_note.clone();
-    let offers_all = info.rest > 0 && !confirm && info.uniform;
-    let switch_label = match info.rest {
-        1 => "Do this for the other book too".to_string(),
-        n => format!("Do this for the other {n} books too"),
-    };
-    let apply_all = info.apply_all;
-
-    // The second ask's own words: what the shelf's copy loses, and — under
-    // the switch — that the rest of the queue loses it the same way.
-    let replace_line = match &info.home {
-        None => format!(
-            "“{}” will be replaced by the book arriving. Its place in your \
-             library goes to the arrival.",
-            info.existing_name
-        ),
-        Some(name) => format!(
-            "“{}” will be replaced by the book arriving. Its place on “{}”, \
-             and on the others it is filed on, goes to the arrival.",
-            info.existing_name, name
-        ),
-    };
-    let replace_losses = info.positions_differ && (info.started || info.marks > 0);
-    let losses_line = "Only the shelf's copy held these; the arrival's own take their place:"
-        .to_string();
-    let marks_line = plural(info.marks, "mark", "marks");
-    let page_line = info.page_line.clone();
-    let started = info.started && info.positions_differ;
-    let marks = if info.positions_differ { info.marks } else { 0 };
-    let all_line = match (apply_all, info.rest) {
-        (true, 1) => "The other waiting book is replaced the same way.".to_string(),
-        (true, n) if n > 1 => format!("The other {n} waiting books are replaced the same way."),
-        _ => String::new(),
-    };
-    let has_all_line = !all_line.is_empty();
-
-    let cover = info.cover.clone();
-    let has_cover = cover.is_some();
+    const LINK_NOTE: &str = "A pointer row, not a copy: tapping it goes to the book where it lives";
 
     view! {
         <div
@@ -327,17 +158,9 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
             style="width:min(92vw, 420px)"
             on:click=move |ev| ev.stop_propagation()
             role="dialog"
-            aria-label="The library already holds that book"
+            aria-label="The library already holds a book of that name"
         >
             <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
-                {has_cover.then(|| {
-                    let src = cover.clone().unwrap_or_default();
-                    view! {
-                        <span class="remove-cover">
-                            <img class="remove-cover-img" src=src alt=cover_alt.clone() />
-                        </span>
-                    }
-                })}
                 <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
                         {heading}
@@ -353,178 +176,42 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
             </header>
 
             <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-                {if confirm {
-                    view! {
-                        <>
-                            <p class="text-xs text-muted">{replace_line}</p>
-                            {replace_losses.then(|| {
-                                view! {
-                                    <>
-                                        <div class="mt-3 divide-y divide-line rounded-xl border border-line">
-                                            {started.then(|| {
-                                                view! {
-                                                    <LossRow
-                                                        label="Reading position"
-                                                        value=page_line.clone()
-                                                    />
-                                                }
-                                            })}
-                                            {(marks > 0).then(|| {
-                                                view! {
-                                                    <LossRow label="Highlights" value=marks_line.clone() />
-                                                }
-                                            })}
-                                        </div>
-                                        <p class="mt-2 text-xs text-muted">{losses_line}</p>
-                                    </>
-                                }
-                            })}
-                            {has_all_line.then(|| {
-                                view! { <p class="mt-3 text-xs text-muted">{all_line.clone()}</p> }
-                            })}
-                        </>
-                    }
-                        .into_any()
-                } else if linked_flow {
-                    // The same-address question: three rows, and none of them
-                    // is a warning, because two rows of ONE address share their
-                    // highlights and their position — there is nothing here
-                    // that can take something the reader was not told about.
-                    view! {
-                        <>
-                            <p class="text-xs text-muted">{linked_question}</p>
-                            <div class="mt-3 divide-y divide-line rounded-xl border border-line">
-                                <ChoiceRow
-                                    label="Already imported"
-                                    note=go_to_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::choose_linked(state, LinkedFileChoice::GoToExisting)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Add as new"
-                                    note=as_new_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::choose_linked(state, LinkedFileChoice::AsNew)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Link them"
-                                    note=link_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::choose_linked(state, LinkedFileChoice::LinkShared)
-                                    })
-                                />
-                            </div>
-                            {offers_all.then(|| {
-                                view! { <ApplyAllRow state=state label=switch_label.clone() /> }
-                            })}
-                        </>
-                    }
-                        .into_any()
-                } else {
-                    view! {
-                        <>
-                            <p class="text-xs text-muted">{question}</p>
-                            <div class="mt-3 divide-y divide-line rounded-xl border border-line">
-                                <ChoiceRow
-                                    label="Duplicate"
-                                    note=dup_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::choose(state, Choice::Duplicate)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Replace"
-                                    note=replace_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::choose(state, Choice::Replace)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Merge"
-                                    note=merge_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::choose(state, Choice::Merge)
-                                    })
-                                />
-                            </div>
-                            {offers_all.then(|| {
-                                view! { <ApplyAllRow state=state label=switch_label.clone() /> }
-                            })}
-                        </>
-                    }
-                        .into_any()
-                }}
+                <p class="text-xs text-muted">{question}</p>
+                <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+                    <ChoiceRow
+                        label="Already imported"
+                        note=go_to_note
+                        on_click=Callback::new(move |_| conflict::answer(state, Answer::GoToExisting))
+                    />
+                    <ChoiceRow
+                        label="Add as new"
+                        note=new_note
+                        on_click=Callback::new(move |_| conflict::answer(state, Answer::AsNew))
+                    />
+                    <ChoiceRow
+                        label="Make link"
+                        note=LINK_NOTE.to_string()
+                        on_click=Callback::new(move |_| conflict::answer(state, Answer::AsLink))
+                    />
+                </div>
             </div>
 
             <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
-                {if confirm {
-                    view! {
-                        <>
-                            <Button
-                                on_click=move |_| conflict::back_to_choices(state)
-                                variant=ButtonVariant::Ghost
-                                title="Back to the three answers"
-                            >
-                                <span>"Back"</span>
-                            </Button>
-                            <Button
-                                on_click=move |_| conflict::confirm_replace(state)
-                                variant=ButtonVariant::Toolbar
-                                tone=ButtonTone::Danger
-                                title="Replace the copy on the shelf"
-                            >
-                                <span>"Replace anyway"</span>
-                            </Button>
-                        </>
-                    }
-                        .into_any()
-                } else {
-                    view! {
-                        <Button
-                            on_click=move |_| conflict::cancel(state)
-                            variant=ButtonVariant::Ghost
-                            title="Leave the shelf as it is"
-                        >
-                            <span>"Cancel"</span>
-                        </Button>
-                    }
-                        .into_any()
-                }}
+                <Button
+                    on_click=move |_| conflict::cancel(state)
+                    variant=ButtonVariant::Ghost
+                    title="Leave the shelf as it is"
+                >
+                    <span>"Cancel"</span>
+                </Button>
             </footer>
         </div>
     }
 }
 
-/// The queue's switch: the same answer for every question behind this one.
-///
-/// One component rather than a copy inside each of the two questions this
-/// sheet asks, because the switch is not part of either vocabulary — it is the
-/// queue's, and a second copy would be a second place for its words to drift.
-#[component]
-fn ApplyAllRow(state: AppState, label: String) -> impl IntoView {
-    view! {
-        <div class="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
-            <span class="text-sm text-ink">{label}</span>
-            <Switch
-                checked=Signal::derive(move || {
-                    state.library.conflict.with(|ask| {
-                        ask.as_ref().is_some_and(|a| a.apply_all)
-                    })
-                })
-                on_change=Callback::new(move |on| {
-                    conflict::set_apply_all(state, on)
-                })
-                title="Answer the rest of the queue the same way".to_string()
-            />
-        </div>
-    }
-}
-
-/// One of the three answers: the name of it, and the one line that says what
-/// it does. No icons — the rows are a sentence each, and a glyph beside a
-/// sentence is decoration the reader has to look past.
+/// One of the three answers: the name of it, and the one line that says what it
+/// does. No icons — the rows are a sentence each, and a glyph beside a sentence
+/// is decoration the reader has to look past.
 #[component]
 fn ChoiceRow(label: &'static str, note: String, on_click: Callback<()>) -> impl IntoView {
     view! {
@@ -537,20 +224,5 @@ fn ChoiceRow(label: &'static str, note: String, on_click: Callback<()>) -> impl 
             <span class="text-sm text-ink">{label}</span>
             <span class="text-xs text-muted">{note}</span>
         </button>
-    }
-}
-
-/// One line of the replace receipt: what the shelf's copy held, and is about
-/// to stop holding.
-#[component]
-fn LossRow(label: &'static str, value: String) -> impl IntoView {
-    let tooltip = value.clone();
-    view! {
-        <div class="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span class="shrink-0 text-xs text-ink">{label}</span>
-            <span class="ml-auto min-w-0 truncate text-xs tabular-nums text-muted" title=tooltip>
-                {value}
-            </span>
-        </div>
     }
 }

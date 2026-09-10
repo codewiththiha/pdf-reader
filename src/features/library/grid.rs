@@ -29,7 +29,10 @@ use leptos::prelude::*;
 use library_core::view::{COLUMNS_MAX, COLUMNS_MIN, CoverFit};
 
 use crate::features::library::add_card::AddCard;
+use library_core::book::Row;
+
 use crate::features::library::book_card::BookCard;
+use crate::features::library::link_card::LinkCard;
 use crate::features::library::content::{FolderOrder, ShelfOrder};
 use crate::features::library::folder_card::FolderCard;
 use crate::state::AppState;
@@ -103,8 +106,17 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
             <For each=move || folders.0.get() key=|s| s.id.clone() let:shelf>
                 <FolderCard state=state shelf=shelf />
             </For>
-            <For each=move || order.0.get() key=|b| b.id.clone() let:book>
-                <BookCard state=state book=book crop=crop />
+            <For each=move || order.0.get() key=|r| r.id().to_string() let:row>
+                // Erased through `AnyView`: the two kinds of row are two
+                // components with two return types, and a `For` needs one.
+                {match row {
+                    Row::Book(book) => {
+                        view! { <BookCard state=state book=book crop=crop /> }.into_any()
+                    }
+                    Row::Link { id, name, .. } => {
+                        view! { <LinkCard state=state id=id name=name /> }.into_any()
+                    }
+                }}
             </For>
             <AddCard state=state />
         </div>

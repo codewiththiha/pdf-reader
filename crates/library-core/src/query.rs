@@ -31,7 +31,7 @@
 //! outweighs address, because a reader naming a book means its name first —
 //! and hand back the matched character spans so the bar can light them up.
 
-use crate::book::Book;
+use crate::book::{Book, Row, book_rows};
 
 /// How many suggestions the bar offers at once. Seven rows fill the panel
 /// without scrolling; an eighth would be a row the reader has to move the
@@ -263,11 +263,15 @@ fn sort_merge(spans: &mut Vec<(usize, usize)>) {
 /// The books the bar suggests for a query, best first: score, then recency,
 /// then title, so a tie between two editions lands on the one the reader
 /// opened last. Capped at [`SUGGEST_LIMIT`].
-pub fn suggest(books: &[Book], query: &str, limit: usize) -> Vec<Suggestion> {
+///
+/// Links are not suggested: the book a link points at is, and offering a
+/// pointer beside its own target is one result twice — with the worse name on
+/// the row that opens nothing.
+pub fn suggest(rows: &[Row], query: &str, limit: usize) -> Vec<Suggestion> {
     if !is_active(query) {
         return Vec::new();
     }
-    let mut ranked: Vec<Suggestion> = books.iter().filter_map(|b| rank(b, query)).collect();
+    let mut ranked: Vec<Suggestion> = book_rows(rows).filter_map(|b| rank(b, query)).collect();
     ranked.sort_by(|a, b| {
         b.score
             .cmp(&a.score)
@@ -278,15 +282,22 @@ pub fn suggest(books: &[Book], query: &str, limit: usize) -> Vec<Suggestion> {
     ranked
 }
 
-/// The books a query keeps, in the order they were given. The shelf's own sort
+/// The rows a query keeps, in the order they were given. The shelf's own sort
 /// runs before this, so filtering never re-orders anything.
-pub fn filter(books: &[Book], query: &str) -> Vec<Book> {
+///
+/// A book is kept by [`matches`]; a link is kept by its NAME, through the same
+/// rule a shelf's name is filtered by ([`matches_terms`]). A link is a row the
+/// reader can see on the shelf, and a search that hid a row whose name it
+/// matched would be a search that quietly drops results.
+pub fn filter(rows: &[Row], query: &str) -> Vec<Row> {
     if !is_active(query) {
-        return books.to_vec();
+        return rows.to_vec();
     }
-    books
-        .iter()
-        .filter(|b| matches(b, query))
+    rows.iter()
+        .filter(|row| match row {
+            Row::Book(b) => matches(b, query),
+            Row::Link { name, .. } => matches_terms(name, query),
+        })
         .cloned()
         .collect()
 }
@@ -296,6 +307,19 @@ mod tests {
     use super::*;
     use crate::book::{Fingerprint, Origin};
     use reader_core::format::Format;
+
+    /// A book row — the list a search reads is a list of rows.
+    fn row(title: &str, author: Option<&str>, path: &str) -> Row {
+        Row::Book(book(title, author, path))
+    }
+
+    fn at(rows: &[Row], i: usize) -> &Book {
+        rows[i].book().expect("a book row")
+    }
+
+    fn at_mut(rows: &mut [Row], i: usize) -> &mut Book {
+        rows[i].as_book_mut().expect("a book row")
+    }
 
     fn book(title: &str, author: Option<&str>, path: &str) -> Book {
         Book {
@@ -327,7 +351,7 @@ mod tests {
         assert!(!is_active(""));
         assert!(!is_active("   "));
         assert!(is_active("d"));
-        let books = vec![book("Dune", None, "/books/dune.pdf")];
+        let books = vec![row("Dune", None, "/books/dune.pdf")];
         assert_eq!(filter(&books, "").len(), 1);
         assert_eq!(filter(&books, "  ").len(), 1);
     }
@@ -380,16 +404,36 @@ mod tests {
     #[test]
     fn filtering_keeps_the_order_it_was_given() {
         let books = vec![
-            book("Zebra", None, "/books/z.pdf"),
-            book("Apple", None, "/books/ap.pdf"),
-            book("Apricot", None, "/books/apc.pdf"),
+            row("Zebra", None, "/books/z.pdf"),
+            row("Apple", None, "/books/ap.pdf"),
+            row("Apricot", None, "/books/apc.pdf"),
         ];
-        let kept: Vec<String> = filter(&books, "ap").iter().map(|b| b.title()).collect();
+        let kept: Vec<String> = filter(&books, "ap").iter().map(Row::display_name).collect();
         assert_eq!(kept, vec!["Apple", "Apricot"], "the shelf's own sort ran first");
         assert!(filter(&books, "q").is_empty());
     }
 
     // -- the fuzzy half ---------------------------------------------------
+
+    #[test]
+    fn a_link_is_found_by_its_name_and_never_suggested() {
+        // A link is a row the reader can see on the shelf, so a search that
+        // hid it would be a search that quietly drops results — and it is not
+        // a book, so the bar does not offer it beside the book it points at.
+        let rows = vec![
+            row("Dune", Some("Frank Herbert"), "/books/dune.pdf"),
+            Row::link("l1".into(), "Dune".into(), "b1".into(), 5),
+            Row::link("l2".into(), "Recipes".into(), "b2".into(), 5),
+        ];
+        let kept = filter(&rows, "dune");
+        assert_eq!(kept.len(), 2, "the book and the pointer that wears its name");
+        assert!(kept.iter().any(Row::is_link));
+        assert_eq!(filter(&rows, "recipes").len(), 1);
+        assert_eq!(suggest(&rows, "dune", SUGGEST_LIMIT).len(), 1);
+        // An idle bar keeps every row, links among them.
+        assert_eq!(filter(&rows, "").len(), 3);
+        assert_eq!(at(&rows, 0).title(), "Dune");
+    }
 
     #[test]
     fn a_subsequence_that_holds_its_shape_is_a_match() {
@@ -429,9 +473,9 @@ mod tests {
     #[test]
     fn suggestions_rank_the_name_over_the_author_over_the_address() {
         let books = vec![
-            book("Notes on Dune", None, "/x/a.pdf"),
-            book("Collected Papers", Some("Dune White"), "/x/b.pdf"),
-            book("Collected Papers", None, "/dune/raw.pdf"),
+            row("Notes on Dune", None, "/x/a.pdf"),
+            row("Collected Papers", Some("Dune White"), "/x/b.pdf"),
+            row("Collected Papers", None, "/dune/raw.pdf"),
         ];
         let ranked = suggest(&books, "dune", 3);
         let titles: Vec<String> = ranked.iter().map(|s| s.book.title()).collect();
@@ -453,10 +497,10 @@ mod tests {
 
     #[test]
     fn suggestions_stop_at_the_limit_and_keep_the_reader_s_last() {
-        let mut books: Vec<Book> = (0..12)
-            .map(|i| book(&format!("Dune {i}"), None, &format!("/x/{i}.pdf")))
+        let mut books: Vec<Row> = (0..12)
+            .map(|i| row(&format!("Dune {i}"), None, &format!("/x/{i}.pdf")))
             .collect();
-        books[7].last_read_ms = 99;
+        at_mut(&mut books, 7).last_read_ms = 99;
         let ranked = suggest(&books, "dune", SUGGEST_LIMIT);
         assert_eq!(ranked.len(), SUGGEST_LIMIT);
         assert_eq!(ranked[0].book.title(), "Dune 7", "recency breaks a score tie");
@@ -464,7 +508,7 @@ mod tests {
 
     #[test]
     fn a_fuzzy_query_suggests_and_the_spans_light_the_hits() {
-        let books = vec![book("Mathematical Proofs", None, "/x/mp.pdf")];
+        let books = vec![row("Mathematical Proofs", None, "/x/mp.pdf")];
         let ranked = suggest(&books, "mthprf", SUGGEST_LIMIT);
         assert_eq!(ranked.len(), 1);
         assert!(!ranked[0].title_spans.is_empty());

@@ -15,28 +15,66 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::book::{Book, Fingerprint, Origin};
+use crate::book::{Book, Fingerprint, Origin, Row, book_rows};
 use crate::folder::WatchedFolder;
 use crate::shelf::{Shelf, ShelfKind};
 use crate::view::LibraryView;
 
-/// The library's localStorage key. `v2` rather than a schema edit under `v1`:
-/// the row shape changed (a path became an id, an origin and a fingerprint),
-/// and a blob this build cannot parse must not be overwritten by the default
-/// before [`migrate_v1`] has had a look at it.
-pub const LIBRARY_KEY: &str = "pdfreader.library.v2";
+/// The library's localStorage key. `v3` rather than a schema edit under `v2`:
+/// the list changed from books to [`Row`]s, and a row written as a bare book
+/// has no `kind` for a tagged enum to read, so a `v2` blob this build cannot
+/// parse must not be overwritten by the default before [`migrate_v2`] has had
+/// a look at it.
+pub const LIBRARY_KEY: &str = "pdfreader.library.v3";
 
-/// The key the previous schema lived under. Read once, on a load that finds no
-/// `v2`, and left in place afterwards — a downgrade should still see the
-/// library it wrote.
+/// The key the previous schema lived under — one book per row and no links.
+/// Read once, on a load that finds no `v3`, and left in place afterwards: a
+/// downgrade should still see the library it wrote.
+pub const V2_KEY: &str = "pdfreader.library.v2";
+
+/// The key the schema before that one lived under. Read once, on a load that
+/// finds neither `v3` nor `v2`.
 pub const LEGACY_KEY: &str = "pdfreader.library.v1";
 
 /// The whole library, as persisted.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryBlob {
-    /// Every book, in the order the "All" shelf shows them. This list IS the
-    /// All order — there is no separate shelf for it (see [`crate::shelf`]).
+    /// Every row, in the order the "All" shelf shows them: the books, and the
+    /// links that point at them. This list IS the All order — there is no
+    /// separate shelf for it (see [`crate::shelf`]).
+    #[serde(default)]
+    pub books: Vec<Row>,
+    #[serde(default)]
+    pub shelves: Vec<Shelf>,
+    #[serde(default)]
+    pub folders: Vec<WatchedFolder>,
+    #[serde(default)]
+    pub view: LibraryView,
+}
+
+impl LibraryBlob {
+    /// Whether the blob holds any rows at all.
+    pub fn is_empty(&self) -> bool {
+        self.books.is_empty()
+    }
+
+    /// True when some book still carries a placeholder fingerprint, i.e. the
+    /// library has not been checked against the filesystem since it loaded.
+    /// The frontend holds a folder rescan until this clears: scanning against
+    /// unmeasured fingerprints would add a second copy of every migrated book.
+    pub fn awaiting_check(&self) -> bool {
+        book_rows(&self.books).any(|b| b.fp_pending)
+    }
+}
+
+/// The `v2` library: the same shelves and folders, and one BOOK per row. Kept
+/// beside [`LibraryBlob`] for the reason [`RecentBook`] is — a load that finds
+/// no `v3` has to be able to read what the previous build wrote, and the shape
+/// it wrote is a rule a test can hold.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlobV2 {
     #[serde(default)]
     pub books: Vec<Book>,
     #[serde(default)]
@@ -47,18 +85,17 @@ pub struct LibraryBlob {
     pub view: LibraryView,
 }
 
-impl LibraryBlob {
-    /// Whether the blob holds any books at all.
-    pub fn is_empty(&self) -> bool {
-        self.books.is_empty()
-    }
-
-    /// True when some book still carries a placeholder fingerprint, i.e. the
-    /// library has not been checked against the filesystem since it loaded.
-    /// The frontend holds a folder rescan until this clears: scanning against
-    /// unmeasured fingerprints would add a second copy of every migrated book.
-    pub fn awaiting_check(&self) -> bool {
-        self.books.iter().any(|b| b.fp_pending)
+/// Turn a `v2` library into this one: every book becomes a book ROW, and
+/// nothing else moves. The order survives, the shelves keep their members —
+/// the ids they name are the ids the rows carry — and a library that had no
+/// links gains none, because a link is a thing a reader makes and no earlier
+/// build could have made one.
+pub fn migrate_v2(legacy: BlobV2) -> LibraryBlob {
+    LibraryBlob {
+        books: legacy.books.into_iter().map(Row::Book).collect(),
+        shelves: legacy.shelves,
+        folders: legacy.folders,
+        view: legacy.view,
     }
 }
 
@@ -97,7 +134,7 @@ fn default_page() -> u32 {
 /// a scan comparing real fingerprints against placeholders would add a second
 /// copy of every book already on the shelf.
 pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
-    let books = legacy
+    let books: Vec<Row> = legacy
         .into_iter()
         .filter(|b| !b.path.trim().is_empty())
         .enumerate()
@@ -124,6 +161,7 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
                 independent: false,
             }
         })
+        .map(Row::Book)
         .collect();
     LibraryBlob {
         books,
@@ -153,9 +191,10 @@ pub fn sanitize(blob: &mut LibraryBlob) {
     // A blob could carry two rows with one id however valid its books look;
     // `book::sanitize` dedupes by id, so by here the shelves below resolve
     // against a list whose ids are unique — and whose fingerprints are NOT,
-    // because a duplicate the reader kept is two honest rows of one file.
-    let known: std::collections::HashSet<&str> =
-        blob.books.iter().map(|b| b.id.as_str()).collect();
+    // because a duplicate the reader kept is two honest rows of one file. The
+    // same pass has already dropped every link whose book is not in the list,
+    // so a member naming a link names a link that points somewhere.
+    let known: std::collections::HashSet<&str> = blob.books.iter().map(|r| r.id()).collect();
     for shelf in blob.shelves.iter_mut() {
         shelf.books.retain(|m| known.contains(m.as_str()));
     }
@@ -178,6 +217,16 @@ mod tests {
     use super::*;
     use crate::folder::FolderOpts;
     use std::collections::{BTreeMap, HashSet};
+
+    /// The book a row holds. Every row a migration makes is a book — no
+    /// earlier build could mint a link.
+    fn at(blob: &LibraryBlob, i: usize) -> &Book {
+        blob.books[i].book().expect("a migrated row is a book")
+    }
+
+    fn at_mut(blob: &mut LibraryBlob, i: usize) -> &mut Book {
+        blob.books[i].as_book_mut().expect("a migrated row is a book")
+    }
 
     fn legacy(path: &str, page: u32, num: u32) -> RecentBook {
         RecentBook {
@@ -217,14 +266,14 @@ mod tests {
         ];
         let blob = migrate_v1(v1, 1_000);
         assert_eq!(blob.books.len(), 2);
-        assert_eq!(blob.books[0].path(), "/books/dune.pdf");
-        assert_eq!(blob.books[0].page, 42);
-        assert_eq!(blob.books[0].num_pages, 400);
-        assert_eq!(blob.books[1].format, reader_core::format::Format::Markdown);
+        assert_eq!(at(&blob, 0).path(), "/books/dune.pdf");
+        assert_eq!(at(&blob, 0).page, 42);
+        assert_eq!(at(&blob, 0).num_pages, 400);
+        assert_eq!(at(&blob, 1).format, reader_core::format::Format::Markdown);
         // Read in place: nothing was copied anywhere.
-        assert!(blob.books.iter().all(|b| !b.origin.is_stored()));
-        assert!(blob.shelves.is_empty(), "All is the book list, not a shelf");
-        assert_ne!(blob.books[0].id, blob.books[1].id);
+        assert!(book_rows(&blob.books).all(|b| !b.origin.is_stored()));
+        assert!(blob.shelves.is_empty(), "All is the row list, not a shelf");
+        assert_ne!(blob.books[0].id(), blob.books[1].id());
     }
 
     #[test]
@@ -234,7 +283,7 @@ mod tests {
             5,
         );
         assert!(blob.awaiting_check());
-        assert!(blob.books.iter().all(|b| b.fp_pending));
+        assert!(book_rows(&blob.books).all(|b| b.fp_pending));
         // The placeholder is derived from the address, so two migrated books
         // never collide on it — the ledger's fingerprint index is first-wins,
         // and a migration that collapsed every row onto one stamp would hide
@@ -246,10 +295,10 @@ mod tests {
         crate::book::sanitize(&mut blob.books);
         assert_eq!(blob.books.len(), 2, "both rows survive the dedupe");
         // A measured fingerprint clears the mark, one book at a time.
-        blob.books[0].fp = Fingerprint::of(1024, 99, b"%PDF-1.7");
-        blob.books[0].fp_pending = false;
+        at_mut(&mut blob, 0).fp = Fingerprint::of(1024, 99, b"%PDF-1.7");
+        at_mut(&mut blob, 0).fp_pending = false;
         assert!(blob.awaiting_check(), "the second book is still a placeholder");
-        blob.books[1].fp_pending = false;
+        at_mut(&mut blob, 1).fp_pending = false;
         assert!(!blob.awaiting_check());
     }
 
@@ -260,14 +309,15 @@ mod tests {
             1,
         );
         assert_eq!(blob.books.len(), 1);
-        assert_eq!(blob.books[0].page, 1);
+        assert_eq!(at(&blob, 0).page, 1);
     }
 
     #[test]
     fn an_impossible_fraction_does_not_survive_the_migration() {
         let mut row = legacy("/notes.md", 1, 0);
         row.fraction = Some(1.4);
-        assert_eq!(migrate_v1(vec![row], 1).books[0].fraction, None);
+        let blob = migrate_v1(vec![row], 1);
+        assert_eq!(at(&blob, 0).fraction, None);
     }
 
     #[test]
@@ -308,6 +358,53 @@ mod tests {
     }
 
     #[test]
+    fn a_v2_library_becomes_a_library_of_rows() {
+        // The step every reader who upgrades takes: one book per row becomes
+        // one ROW per book, and nothing else about the library moves.
+        let v1 = migrate_v1(vec![legacy("/books/dune.pdf", 42, 400)], 1_000);
+        let legacy_blob = BlobV2 {
+            books: v1.books.iter().filter_map(|r| r.clone().into_book()).collect(),
+            shelves: vec![shelf("s1", "Sci-fi", ShelfKind::Virtual, &[])],
+            folders: Vec::new(),
+            view: LibraryView::default(),
+        };
+        let blob = migrate_v2(legacy_blob.clone());
+        assert_eq!(blob.books.len(), 1);
+        assert!(blob.books[0].is_book());
+        assert_eq!(at(&blob, 0).page, 42);
+        assert_eq!(blob.shelves, legacy_blob.shelves);
+        // And it round-trips under the new key's own names: a row carries the
+        // tag that says which kind it is.
+        let json = serde_json::to_string(&blob).unwrap();
+        assert!(json.contains("\"kind\":\"book\""), "{json}");
+        let back: LibraryBlob = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, blob);
+    }
+
+    #[test]
+    fn a_link_travels_in_the_blob_and_goes_with_its_book() {
+        let mut blob = migrate_v1(vec![legacy("/books/dune.pdf", 1, 1)], 1);
+        let target = blob.books[0].id().to_string();
+        blob.books.push(Row::link("l1".into(), "Dune".into(), target.clone(), 9));
+        blob.shelves = vec![shelf("s1", "One", ShelfKind::Virtual, &["l1"])];
+        let json = serde_json::to_string(&blob).unwrap();
+        assert!(json.contains("\"kind\":\"link\""), "{json}");
+        assert!(json.contains("\"target\":\""), "{json}");
+        let mut back: LibraryBlob = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.books.len(), 2, "a link is a row the blob carries");
+        assert_eq!(back.books[1].target(), Some(target.as_str()));
+
+        // The book goes: the link is a pointer at nothing, which is the one
+        // failure mode a link has, so the load that finds it drops the row and
+        // the shelf member that named it.
+        back.books.remove(0);
+        let mut orphan = back;
+        sanitize(&mut orphan);
+        assert!(orphan.books.is_empty());
+        assert!(orphan.shelves[0].books.is_empty());
+    }
+
+    #[test]
     fn a_blob_without_the_newer_halves_still_loads() {
         let blob: LibraryBlob = serde_json::from_str(r#"{"books":[]}"#).unwrap();
         assert_eq!(blob, LibraryBlob::default());
@@ -324,7 +421,7 @@ mod tests {
         };
         // The member list has to name the ids the migration actually minted: a
         // hand-written "b0" is exactly the stale member this is testing for.
-        let kept = blob.books[0].id.clone();
+        let kept = blob.books[0].id().to_string();
         blob.shelves = vec![shelf(
             "s1",
             "Sci-fi",
@@ -389,8 +486,8 @@ mod tests {
     #[test]
     fn two_rows_sharing_an_id_leave_one_book_and_one_member() {
         let mut blob = migrate_v1(vec![legacy("/a.pdf", 1, 1), legacy("/b.pdf", 1, 1)], 1);
-        let shared = blob.books[0].id.clone();
-        blob.books[1].id = shared.clone();
+        let shared = blob.books[0].id().to_string();
+        at_mut(&mut blob, 1).id = shared.clone();
         blob.shelves = vec![shelf(
             "s1",
             "One",

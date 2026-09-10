@@ -405,36 +405,30 @@ the filesystem.
   because the run outlives the page that started it.
 - **Dropping files on the library files them**; dropping them anywhere else still opens one. Both go
   through the same admission, which is the format registry.
-- **A library that already holds the book asks.** Importing a file, dragging a book or filing one
-  when the library already holds that same content — the same bytes by fingerprint, not the same
-  name; a second format of one title is a second book and is simply placed — used to do nothing at
-  all, which read as the book vanishing into the shelf. The question was asked of one shelf's own
-  list, so a copy filed on a parent, a child or a sibling shelf stayed invisible to it and the drop
-  landed silently: the import filed the row the library already had onto a shelf it was never seen
-  to leave for, and a drag set a second row beside a first one nobody had been asked about. It is
-  asked of every shelf now, and the sheet names the shelf the copy it found is actually on. The
-  three answers are the ones a file manager teaches: **Duplicate** keeps both and names the arrival
-  `dune_1`, `dune_2` and so on;
-  **Replace** seats the arrival in the shelf copy's place — on every shelf it was filed on — and
-  asks a second time first, itemising what the copy loses; **Merge** folds the two rows into one
-  book by a written-down policy (`library_core::merge`): the resume point of whichever copy got
-  further, both sides' highlights, names that fill gaps rather than overwrite. A drop of ten files
-  with two collisions files eight and asks twice — one question at a time, with a switch that gives
-  the rest of the queue the same answer, and a Cancel that stops the remaining questions. Two rows
-  of one file share the file's own truth (read one to page 90 and both resume there), and removing
-  one keeps the highlights, the cover and the copied bytes while the other still reads them.
-- **Importing the same file twice asks a different question.** Drop `dune.pdf` on a shelf that
-  already reads it and the sheet does not offer Duplicate, Replace and Merge: nothing about the
-  content is in doubt, because the arrival *is* the file the shelf's book reads, so the question is
-  whether you want one book or two. **Already imported** adds nothing and takes you to the book you
-  have — its shelf, then its card, lit up. **Add as new** keeps both and makes the arrival a book of
-  its own: it takes the `dune_1` name, and then its highlights, its reading position and its removal
-  are its own, so reading one to page 90 leaves the other where it was and removing either takes
-  nothing from the other. **Link them** keeps both as one book — the two rows share the file's
-  highlights, its position and one removal, which is what the sheet above has always meant by
-  keeping both. Which question a collision asks is the address: the same file arriving where the
-  library already reads it from asks this one, and one content at two different addresses asks the
-  three answers above.
+- **A shelf that already holds the name asks.** Importing a file, dragging a book or filing one onto
+  a level that already holds a book OF THAT NAME — the same name, not the same bytes; a second
+  format of one title is a second book and is simply placed — used to do nothing at all, which read
+  as the book vanishing into the shelf. Now it asks, with the three answers a reader can mean:
+  **Already imported** adds nothing and takes you to the book you have, on the shelf it is filed on,
+  with its card lit up; **Add as new** keeps both and names the arrival `1_1`, `1_2` and so on, the
+  counter a file manager appends, counted against that shelf's own names and promised on the row
+  before you click; **Make link** puts a pointer on the shelf instead of a copy. Home is a level
+  like any other and asks the same question of the books nobody has filed.
+- **A link is a row, not a book.** It carries the name of the book it points at and nothing else —
+  no file, no cover of its own, no page, no highlights, no second copy of a two-gigabyte PDF — and
+  tapping it goes to that book wherever in the library it is filed and lights its card up. Because
+  it is not a book it is invisible to everything a book is checked by: it never collides, never
+  blocks a collision, is never offered back by a watched folder and never queues a cover render. It
+  can be dragged, selected, right-clicked and removed like any other row, and removing it takes
+  nothing but itself; removing the book it points at takes the link with it, because a pointer at
+  nothing is the one thing a link must never be.
+- **Two books of one file are two books.** Answering *add as new* to a second copy of the same file
+  gives the second one its own name, its own highlights and its own place in it: read one to page
+  90 and the other stays where it was, highlight a word in one and the other does not light up, and
+  removing either takes nothing from the other. A book nobody asked to separate still shares the
+  file's own truth with its twin — one resume point, one highlight list, one removal — because two
+  rows of one address are two names for one book until a reader says otherwise.
+
 
 ### Interface
 

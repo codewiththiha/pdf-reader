@@ -29,7 +29,7 @@ use pdf_engine::types::DocStatus;
 use library_core::query;
 use library_core::shelf::{ALL_SHELF, Shelf, children_of};
 use library_core::sort::{self, SortKey};
-use library_core::book::Book;
+use library_core::book::Row;
 
 use crate::components::primitives::feedback::CenteredLoader;
 use crate::features::library::context_menu::{LibraryContextMenu, LibraryMenuHost, MenuTarget};
@@ -54,7 +54,7 @@ const LEVEL_DOM_ID: &str = "library-level";
 /// its own DOM without counting siblings, which is a second definition of the
 /// order.
 #[derive(Clone, Copy)]
-pub struct ShelfOrder(pub Signal<Vec<Book>>);
+pub struct ShelfOrder(pub Signal<Vec<Row>>);
 
 /// The shelves the page is showing at this level, in the order it shows them.
 ///
@@ -137,7 +137,8 @@ fn scroll_may_animate(state: AppState) -> bool {
         .is_some_and(|query| !query.matches())
 }
 
-/// The books the page shows, in the order it shows them.
+/// The rows the page shows, in the order it shows them — the books and the
+/// links that point at them.
 ///
 /// This is the order a drop counts, as well as the one both layouts render: a
 /// card lands "here" at an index in what the reader is looking at, and an index
@@ -157,14 +158,14 @@ fn scroll_may_animate(state: AppState) -> bool {
 /// nested one wearing one page. A query is the one exception: searching from the
 /// root searches the LIBRARY, because a search that could not see inside folders
 /// would miss silently, and the matches it shows are the ones asked for.
-pub(crate) fn visible(state: AppState) -> Vec<Book> {
+pub(crate) fn visible(state: AppState) -> Vec<Row> {
     let view = state.library.view.get();
     let shelf_id = state.library.shelf.get();
-    let books = state.library.books.get();
+    let rows = state.library.books.get();
     let mut list = if shelf_id == ALL_SHELF {
         let terms = state.library.query.get();
         if query::is_active(&terms) {
-            books
+            rows
         } else {
             let filed: HashSet<String> = state.library.shelves.with(|shelves| {
                 shelves
@@ -172,9 +173,8 @@ pub(crate) fn visible(state: AppState) -> Vec<Book> {
                     .flat_map(|s| s.books.iter().cloned())
                     .collect()
             });
-            books
-                .into_iter()
-                .filter(|b| !filed.contains(&b.id))
+            rows.into_iter()
+                .filter(|r| !filed.contains(r.id()))
                 .collect()
         }
     } else {
@@ -185,9 +185,9 @@ pub(crate) fn visible(state: AppState) -> Vec<Book> {
                 .map(|s| s.books.clone())
                 .unwrap_or_default()
         });
-        sort::ordered(&books, &members, SortKey::Manual, true)
+        sort::ordered(&rows, &members, SortKey::Manual, true)
     };
-    sort::sort_books(&mut list, view.sort, view.sort_asc);
+    sort::sort_rows(&mut list, view.sort, view.sort_asc);
     query::filter(&list, &state.library.query.get())
 }
 

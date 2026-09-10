@@ -16,7 +16,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
-use library_core::book::{Book, Fingerprint, Origin, ReadPoint, stem_of};
+use library_core::book::{Book, Fingerprint, Origin, ReadPoint, Row, stem_of};
 use library_core::folder::WatchedFolder;
 use library_core::shelf::{Shelf, ShelfKind};
 use library_core::wire::{Cover, GlossRow, LibrarySnapshot, SearchHit};
@@ -33,8 +33,16 @@ use library_core::Format;
 /// shelf member that names no book is a hole in the grid — and a frontend that
 /// fetched them separately would have a window in which that was true.
 pub fn bootstrap(conn: &Connection) -> Result<LibrarySnapshot, String> {
+    // Every row the catalog answers with is a BOOK row. A link — the pointer
+    // row the frontend's shelf can hold beside a book — has no table here yet,
+    // and adding one is not the small change it looks like: `shelf_books`
+    // references `books (id)` with a cascade, so a membership that can name a
+    // link needs either a second membership table or one table for both kinds,
+    // and both are a schema the catalog should get when it is wired to the app
+    // rather than guessed at from inside it. The blob is the live store, so
+    // nothing is lost today by the gap.
     Ok(LibrarySnapshot {
-        books: books(conn)?,
+        books: books(conn)?.into_iter().map(Row::Book).collect(),
         shelves: shelves(conn)?,
         folders: folders(conn)?,
     })

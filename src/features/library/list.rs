@@ -64,7 +64,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use library_core::book::Book;
+use library_core::book::{Book, Row};
 use library_core::query;
 use library_core::shelf::{ALL_SHELF, Shelf, children_of};
 use library_core::sort;
@@ -78,6 +78,7 @@ use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::folder_card::summary;
 use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
+use crate::features::library::link_card::LinkRow;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::document;
 use crate::state::AppState;
@@ -111,7 +112,7 @@ struct TreeCtx {
 /// The tree's indent scale: the row's own padding at the level, plus one step per
 /// depth — enough to read the shape of the forest at a glance, not enough to run
 /// a deep row's title out of room.
-fn row_indent(depth: usize) -> String {
+pub(crate) fn row_indent(depth: usize) -> String {
     format!("padding-left:{}rem", 0.75 + depth as f32 * 0.9)
 }
 
@@ -162,8 +163,8 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
             <For each=move || roots.get() key=|s| s.id.clone() let:shelf>
                 <TreeRow state=state shelf=shelf depth=0 crop=crop />
             </For>
-            <For each=move || order.0.get() key=|b| b.id.clone() let:book>
-                <ListRow state=state book=book crop=crop depth=0 parent=None />
+            <For each=move || order.0.get() key=|r| r.id().to_string() let:row>
+                {row_view(state, row, crop, 0, None)}
             </For>
             // The grid ends in an add card, so the list ends in an add row: the two
             // layouts are the same library, and a reader who switched to the denser
@@ -455,14 +456,8 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                     {view! { <TreeRow state=state shelf=child depth=depth + 1 crop=crop /> }
                         .into_any()}
                 </For>
-                <For each=move || shown_books.get() key=|b| b.id.clone() let:book>
-                    <ListRow
-                        state=state
-                        book=book
-                        crop=crop
-                        depth=depth + 1
-                        parent=members_parent.get_value()
-                    />
+                <For each=move || shown_books.get() key=|r| r.id().to_string() let:row>
+                    {row_view(state, row, crop, depth + 1, members_parent.get_value())}
                 </For>
             </Show>
         </>
@@ -474,7 +469,28 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
 /// `library_core::sort::ordered` the page's own level runs in
 /// `crate::features::library::content::visible`, so an unfolded row and the
 /// page it mirrors cannot disagree about what comes first.
-fn member_books(state: AppState, members: Signal<Vec<String>>) -> Signal<Vec<Book>> {
+/// The two kinds of row, as one erased view: a `For` needs one type and a link
+/// is not a book, so it cannot borrow a book's row.
+fn row_view(
+    state: AppState,
+    row: Row,
+    crop: Signal<bool>,
+    depth: usize,
+    parent: Option<String>,
+) -> AnyView {
+    match row {
+        Row::Book(book) => view! {
+            <ListRow state=state book=book crop=crop depth=depth parent=parent />
+        }
+            .into_any(),
+        Row::Link { id, name, .. } => {
+            view! { <LinkRow state=state id=id name=name depth=depth parent=parent /> }
+                .into_any()
+        }
+    }
+}
+
+fn member_books(state: AppState, members: Signal<Vec<String>>) -> Signal<Vec<Row>> {
     Signal::derive(move || {
         let ids = members.get();
         let view = state.library.view.get();
@@ -581,7 +597,7 @@ fn ListRow(
             id: id.clone(),
             label: Signal::stored(title.clone()),
             draggable: Signal::derive(|| true),
-            open: Callback::new(move |_| document::open_book(state, open_id.clone())),
+            open: Callback::new(move |_| document::open_row(state, open_id.clone())),
             menu_target: Callback::new(move |_| MenuTarget::Book {
                 id: context_id.clone(),
                 missing,

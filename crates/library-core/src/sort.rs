@@ -1,6 +1,6 @@
 //! How a shelf is ordered.
 //!
-//! One comparator over [`Book`], driven by a key and a direction — no
+//! One comparator over [`Row`], driven by a key and a direction — no
 //! secondary key, deliberately. "Then by…" is a second control that doubles
 //! the menu and answers a question readers do not ask: within a title, the
 //! address breaks the tie, which is stable, deterministic and free.
@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
 
-use crate::book::Book;
+use crate::book::{Book, Row};
 
 /// What a shelf is sorted by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -47,12 +47,19 @@ impl SortKey {
 
 /// The comparison one key makes, ascending. Ties break on the address, so the
 /// order is total and stable whatever the list started as.
-fn ascending(a: &Book, b: &Book, key: SortKey) -> Ordering {
+///
+/// A link is a row like any other here and has an answer for every key: its
+/// name sorts as a title, it has no author so it sorts after every author, it
+/// was added when it was made, it has never been read, and its tie-break is
+/// its own id because it has no address of its own. A shelf sorted by title
+/// with a pointer in it reads as one shelf rather than as a shelf with a row
+/// that jumped to an end.
+fn ascending(a: &Row, b: &Row, key: SortKey) -> Ordering {
     let primary = match key {
         // Manual never reaches here: the caller leaves the list alone.
         SortKey::Manual => Ordering::Equal,
-        SortKey::Title => natural(&a.title(), &b.title()),
-        SortKey::Author => match (a.author(), b.author()) {
+        SortKey::Title => natural(&a.display_name(), &b.display_name()),
+        SortKey::Author => match (author_of(a), author_of(b)) {
             // No author sorts after every author, so a shelf of named books
             // reads as a shelf rather than as a list with blanks in it.
             (None, None) => Ordering::Equal,
@@ -60,10 +67,30 @@ fn ascending(a: &Book, b: &Book, key: SortKey) -> Ordering {
             (Some(_), None) => Ordering::Less,
             (Some(x), Some(y)) => natural(&x, &y),
         },
-        SortKey::Added => a.added_ms.cmp(&b.added_ms),
-        SortKey::LastRead => a.last_read_ms.cmp(&b.last_read_ms),
+        SortKey::Added => a.added_ms().cmp(&b.added_ms()),
+        SortKey::LastRead => last_read_of(a).cmp(&last_read_of(b)),
     };
-    primary.then_with(|| a.path().cmp(b.path()))
+    primary.then_with(|| tiebreak(a).cmp(tiebreak(b)))
+}
+
+/// The author a row can name: a book's own, and nothing for a link.
+fn author_of(row: &Row) -> Option<String> {
+    row.book().and_then(Book::author)
+}
+
+/// When a row was last read. A link has never been read, which sorts it with
+/// the books nobody has opened — the honest end of a "Last read" shelf.
+fn last_read_of(row: &Row) -> u64 {
+    row.book().map_or(0, |b| b.last_read_ms)
+}
+
+/// The tie-break that makes the order total: a book's address, and a link's own
+/// id, which is the only thing about it that is stable and unique.
+fn tiebreak(row: &Row) -> &str {
+    match row {
+        Row::Book(b) => b.path(),
+        Row::Link { id, .. } => id,
+    }
 }
 
 /// Case-insensitive compare that also puts "chapter 2" before "chapter 10".
@@ -114,17 +141,17 @@ fn strip_zeros(digits: &[u8]) -> &[u8] {
     &digits[first.min(digits.len().saturating_sub(1))..]
 }
 
-/// Sort a shelf's books in place. [`SortKey::Manual`] leaves the reader's
+/// Sort a level's rows in place. [`SortKey::Manual`] leaves the reader's
 /// arrangement exactly as it is — which is the point of calling this with
 /// whatever the view says rather than branching at every call site.
 ///
 /// `asc` inverts the key's order but never the tie-break, so a descending
 /// title sort is still deterministic.
-pub fn sort_books(books: &mut [Book], key: SortKey, asc: bool) {
+pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
     if key.is_manual() {
         return;
     }
-    books.sort_by(|a, b| {
+    rows.sort_by(|a, b| {
         let ord = ascending(a, b, key);
         if asc {
             ord
@@ -134,22 +161,23 @@ pub fn sort_books(books: &mut [Book], key: SortKey, asc: bool) {
     });
 }
 
-/// The order a shelf renders in: the member ids, resolved to books, sorted.
-/// Members naming a book the library no longer has are dropped — a stale
-/// membership must not become a hole in the grid.
-pub fn ordered(books: &[Book], members: &[String], key: SortKey, asc: bool) -> Vec<Book> {
-    let mut out: Vec<Book> = members
+/// The order a shelf renders in: the member ids, resolved to rows, sorted.
+/// Members naming a row the library no longer has are dropped — a stale
+/// membership must not become a hole in the grid — and a member naming a LINK
+/// resolves to the link, which is a row the shelf renders like any other.
+pub fn ordered(rows: &[Row], members: &[String], key: SortKey, asc: bool) -> Vec<Row> {
+    let mut out: Vec<Row> = members
         .iter()
-        .filter_map(|id| books.iter().find(|b| &b.id == id).cloned())
+        .filter_map(|id| rows.iter().find(|r| r.id() == id).cloned())
         .collect();
-    sort_books(&mut out, key, asc);
+    sort_rows(&mut out, key, asc);
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::book::{Fingerprint, Origin};
+    use crate::book::{Fingerprint, Origin, book_rows};
     use reader_core::format::Format;
 
     fn book(title: &str, author: Option<&str>) -> Book {
@@ -177,14 +205,24 @@ mod tests {
         }
     }
 
-    fn titles(books: &[Book]) -> Vec<String> {
-        books.iter().map(|b| b.title()).collect()
+    /// The rows a list of books makes: a shelf of books and no links, which is
+    /// what every ordering rule here is about.
+    fn rows(books: impl IntoIterator<Item = Book>) -> Vec<Row> {
+        books.into_iter().map(Row::Book).collect()
+    }
+
+    fn at_mut(rows: &mut [Row], i: usize) -> &mut Book {
+        rows[i].as_book_mut().expect("a book row")
+    }
+
+    fn titles(rows: &[Row]) -> Vec<String> {
+        rows.iter().map(Row::display_name).collect()
     }
 
     #[test]
     fn manual_is_the_reader_s_own_order() {
-        let mut books = vec![book("Zebra", None), book("Apple", None)];
-        sort_books(&mut books, SortKey::Manual, true);
+        let mut books = rows([book("Zebra", None), book("Apple", None)]);
+        sort_rows(&mut books, SortKey::Manual, true);
         assert_eq!(titles(&books), vec!["Zebra", "Apple"]);
         assert!(SortKey::Manual.is_manual());
         assert!(!SortKey::Title.is_manual());
@@ -192,21 +230,21 @@ mod tests {
 
     #[test]
     fn titles_sort_ignoring_case_and_both_ways() {
-        let mut books = vec![book("dune", None), book("Apple", None), book("child", None)];
-        sort_books(&mut books, SortKey::Title, true);
+        let mut books = rows([book("dune", None), book("Apple", None), book("child", None)]);
+        sort_rows(&mut books, SortKey::Title, true);
         assert_eq!(titles(&books), vec!["Apple", "child", "dune"]);
-        sort_books(&mut books, SortKey::Title, false);
+        sort_rows(&mut books, SortKey::Title, false);
         assert_eq!(titles(&books), vec!["dune", "child", "Apple"]);
     }
 
     #[test]
     fn volume_numbers_sort_as_numbers() {
-        let mut books = vec![
+        let mut books = rows([
             book("Volume 10", None),
             book("Volume 2", None),
             book("Volume 1", None),
-        ];
-        sort_books(&mut books, SortKey::Title, true);
+        ]);
+        sort_rows(&mut books, SortKey::Title, true);
         assert_eq!(titles(&books), vec!["Volume 1", "Volume 2", "Volume 10"]);
     }
 
@@ -219,35 +257,35 @@ mod tests {
 
     #[test]
     fn a_prefix_comes_before_the_longer_name() {
-        let mut books = vec![book("Dune Messiah", None), book("Dune", None)];
-        sort_books(&mut books, SortKey::Title, true);
+        let mut books = rows([book("Dune Messiah", None), book("Dune", None)]);
+        sort_rows(&mut books, SortKey::Title, true);
         assert_eq!(titles(&books), vec!["Dune", "Dune Messiah"]);
     }
 
     #[test]
     fn books_with_no_author_sort_last() {
-        let mut books = vec![
+        let mut books = rows([
             book("b", None),
             book("a", Some("Zebra")),
             book("c", Some("Apple")),
-        ];
-        sort_books(&mut books, SortKey::Author, true);
+        ]);
+        sort_rows(&mut books, SortKey::Author, true);
         assert_eq!(titles(&books), vec!["c", "a", "b"]);
-        sort_books(&mut books, SortKey::Author, false);
+        sort_rows(&mut books, SortKey::Author, false);
         assert_eq!(titles(&books), vec!["b", "a", "c"]);
     }
 
     #[test]
     fn the_dates_sort_by_their_own_stamp() {
-        let mut books = vec![book("b", None), book("a", None), book("c", None)];
-        books[0].added_ms = 20;
-        books[1].added_ms = 30;
-        books[2].added_ms = 10;
-        sort_books(&mut books, SortKey::Added, true);
+        let mut books = rows([book("b", None), book("a", None), book("c", None)]);
+        at_mut(&mut books, 0).added_ms = 20;
+        at_mut(&mut books, 1).added_ms = 30;
+        at_mut(&mut books, 2).added_ms = 10;
+        sort_rows(&mut books, SortKey::Added, true);
         assert_eq!(titles(&books), vec!["c", "b", "a"]);
-        books[0].last_read_ms = 5;
-        books[2].last_read_ms = 9;
-        sort_books(&mut books, SortKey::LastRead, false);
+        at_mut(&mut books, 0).last_read_ms = 5;
+        at_mut(&mut books, 2).last_read_ms = 9;
+        sort_rows(&mut books, SortKey::LastRead, false);
         assert_eq!(titles(&books), vec!["a", "c", "b"]);
     }
 
@@ -259,20 +297,39 @@ mod tests {
         b.origin = Origin::Linked { src: "/books/aaa.pdf".into() };
         a.id = "one".into();
         b.id = "two".into();
-        let mut books = vec![a, b];
-        sort_books(&mut books, SortKey::Title, true);
+        let mut books = rows([a, b]);
+        sort_rows(&mut books, SortKey::Title, true);
         assert_eq!(
-            books.iter().map(|b| b.path()).collect::<Vec<_>>(),
+            book_rows(&books).map(|b| b.path()).collect::<Vec<_>>(),
             vec!["/books/aaa.pdf", "/books/zzz.pdf"]
         );
     }
 
     #[test]
     fn a_stale_membership_is_dropped_rather_than_rendered_as_a_hole() {
-        let books = vec![book("a", None), book("b", None)];
+        let books = rows([book("a", None), book("b", None)]);
         let members = vec!["b".to_string(), "gone".to_string(), "a".to_string()];
         assert_eq!(titles(&ordered(&books, &members, SortKey::Manual, true)), vec!["b", "a"]);
         assert_eq!(titles(&ordered(&books, &members, SortKey::Title, true)), vec!["a", "b"]);
+    }
+
+    #[test]
+    fn a_link_sorts_as_the_row_it_shows() {
+        // A pointer has a name, no author, a stamp of its own and no reading
+        // at all — which is an answer for every key rather than a row the sort
+        // has to skip.
+        let mut list = rows([book("Dune", Some("Frank Herbert")), book("Apple", None)]);
+        list.push(Row::link("l1".into(), "Child".into(), "b1".into(), 5));
+        sort_rows(&mut list, SortKey::Title, true);
+        assert_eq!(titles(&list), vec!["Apple", "Child", "Dune"]);
+        sort_rows(&mut list, SortKey::Author, true);
+        assert_eq!(
+            titles(&list),
+            vec!["Dune", "Apple", "Child"],
+            "no author sorts after every author, and a link has none"
+        );
+        sort_rows(&mut list, SortKey::LastRead, true);
+        assert_eq!(titles(&list).last().map(String::as_str), Some("Child"));
     }
 
     #[test]

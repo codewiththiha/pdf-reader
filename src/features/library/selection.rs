@@ -96,9 +96,10 @@ pub(crate) fn selected_ids(state: AppState) -> Vec<String> {
         .with_untracked(|selected| selected.iter().cloned().collect())
 }
 
-/// The selected ids that are books. What the receipt sheet is handed: it itemises
-/// what a removal costs, and only a book has a resume point, placements,
-/// highlights and maybe a store copy to itemise.
+/// The selected ids that are ROWS rather than shelves — the books and the links
+/// that point at them. What the receipt sheet is handed: it itemises what a
+/// removal costs, and a link costs nothing but itself, which is a line the
+/// receipt says rather than a reason to leave the row out of the set.
 fn selected_books(state: AppState) -> Vec<String> {
     let folders = selected_folders(state);
     selected_ids(state)
@@ -180,13 +181,13 @@ pub(crate) fn payload_for(
 /// sorted into the level's own order on the way out, which is the same order the
 /// drop counts its index in.
 ///
-/// A book the page is NOT showing keeps its place at the end rather than being
+/// A row the page is NOT showing keeps its place at the end rather than being
 /// dropped: a search can narrow the level under a set that was picked before it,
-/// and a drag that silently lost a book would be a drag that removed one.
+/// and a drag that silently lost a row would be a drag that removed one.
 fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
     let mut ordered: Vec<String> = visible(state)
         .into_iter()
-        .map(|book| book.id)
+        .map(|row| row.id().to_string())
         .filter(|id| ids.contains(id))
         .collect();
     // Collected before it is appended: a filter that read `ordered` while
@@ -254,7 +255,7 @@ pub(crate) fn select_on_screen(state: AppState, order: ShelfOrder, folders: Fold
         .0
         .get_untracked()
         .into_iter()
-        .map(|book| book.id)
+        .map(|row| row.id().to_string())
         .chain(folders.0.get_untracked().into_iter().map(|each| each.id))
         .collect();
     state.library.selecting.set(true);

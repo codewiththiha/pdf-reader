@@ -52,6 +52,7 @@ pub mod folder_card;
 pub mod gestures;
 pub mod grid;
 pub mod import_modal;
+pub mod link_card;
 pub mod list;
 pub mod page;
 pub mod progress_dock;

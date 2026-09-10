@@ -39,9 +39,9 @@ pub fn close_document(state: AppState) {
         let book_id = state.reader.document.book_id.get_untracked();
         let mut changed = false;
         state.library.books.update(|books| {
-            let rows = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
-            for i in rows {
-                if let Some(b) = books.get_mut(i)
+            let at = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
+            for i in at {
+                if let Some(b) = books.get_mut(i).and_then(library_core::book::Row::as_book_mut)
                     && b.page != page
                 {
                     b.page = page;

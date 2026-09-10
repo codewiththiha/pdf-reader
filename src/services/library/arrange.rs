@@ -16,13 +16,14 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{Book, Origin};
+use library_core::book::{Book, Origin, Row, book_rows, drop_dangling_links, find_row, remove_row};
+use library_core::conflict::Arrival;
 use library_core::folder::Tombstone;
 use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
 use library_core::wire::StoreRequest;
 
-use super::conflict::{self, Incoming, Placement};
+use super::conflict;
 use super::covers::prune_now;
 use crate::services::library as wire;
 use crate::state::{AppState, Toast};
@@ -77,46 +78,21 @@ pub fn move_many_to_shelf(
         // The common case — rows already unfiled, reordering among themselves
         // — screens clean by the rule's own reorder arm and reorders exactly
         // as before.
-        let (clean, conflicts) = conflict::screen(
-            state,
-            book_ids
-                .iter()
-                .map(|book_id| Placement {
-                    incoming: Incoming::Move {
-                        book_id: book_id.clone(),
-                    },
-                    shelf_id: ALL_SHELF.to_string(),
-                    from: from.clone(),
-                    index,
-                })
-                .collect(),
-        );
+        let (clean, conflicts) = conflict::screen(state, moved_arrivals(state, book_ids, &to, index));
         let clean_ids = clean_move_ids(clean);
         if !clean_ids.is_empty() {
             state
                 .library
                 .books
-                .update(|books| reorder_root(books, &clean_ids, index));
+                .update(|rows| reorder_root(rows, &clean_ids, index));
             crate::storage::persist_library(state.library);
         }
         conflict::raise(state, conflicts);
         return;
     }
 
-    let (clean, conflicts) = conflict::screen(
-        state,
-        book_ids
-            .iter()
-            .map(|book_id| Placement {
-                incoming: Incoming::Move {
-                    book_id: book_id.clone(),
-                },
-                shelf_id: to.clone(),
-                from: from.clone(),
-                index,
-            })
-            .collect(),
-    );
+    let (clean, conflicts) =
+        conflict::screen(state, moved_arrivals(state, book_ids, &to, index));
     let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
@@ -138,17 +114,71 @@ pub fn move_many_to_shelf(
     conflict::raise(state, conflicts);
 }
 
-/// The book ids of a screened clean half — the moves that may land now. The
-/// import half of a screen is [`conflict::land_clean`]'s business instead;
+/// One arrival per row a hand is moving, each carrying the name the collision
+/// is asked about.
+///
+/// The name is read here rather than by the rule, because the rule is pure and
+/// holds no rows: a drag of four books is four arrivals, and a row that went
+/// between the lift and the drop is not one of them — an arrival with no row
+/// behind it is an arrival with nothing to place.
+fn moved_arrivals(
+    state: AppState,
+    row_ids: &[String],
+    to: &str,
+    index: Option<usize>,
+) -> Vec<Arrival> {
+    state.library.books.with_untracked(|rows| {
+        row_ids
+            .iter()
+            .filter_map(|row_id| {
+                let row = find_row(rows, row_id)?;
+                Some(Arrival::moved(
+                    row_id.clone(),
+                    row.display_name(),
+                    to.to_string(),
+                    index,
+                ))
+            })
+            .collect()
+    })
+}
+
+/// The row ids of a screened clean half — the moves that may land now. The
+/// import half of a screen is [`super::import::land_file`]'s business instead;
 /// nothing in this module raises one.
-fn clean_move_ids(clean: Vec<Placement>) -> Vec<String> {
-    clean
-        .into_iter()
-        .filter_map(|placement| match placement.incoming {
-            Incoming::Move { book_id } => Some(book_id),
-            Incoming::Import { .. } => None,
-        })
-        .collect()
+fn clean_move_ids(clean: Vec<Arrival>) -> Vec<String> {
+    clean.into_iter().filter_map(|a| a.moving).collect()
+}
+
+/// Move ONE row onto one level, with no question asked: the silent half of a
+/// placement, and what the conflict sheet calls once an answer has been given.
+///
+/// Off every shelf it was on and onto the one named, at the slot the drop
+/// pointed at. The root is the exception the root always was: it has no member
+/// list, so a move there is a lift out of every shelf and — when the drop named
+/// a slot — a move inside the library's own order, which IS that level's list.
+pub fn move_row(state: AppState, row_id: &str, shelf_id: &str, index: Option<usize>) {
+    if shelf_id == ALL_SHELF {
+        state
+            .library
+            .shelves
+            .update(|shelves| shelf::forget_everywhere(shelves, row_id));
+        if index.is_some() {
+            state
+                .library
+                .books
+                .update(|rows| reorder_root(rows, &[row_id.to_string()], index));
+        }
+        crate::storage::persist_library(state.library);
+        return;
+    }
+    state.library.shelves.update(|shelves| {
+        shelf::forget_everywhere(shelves, row_id);
+        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+            shelf::place(&mut shelf.books, row_id, index);
+        }
+    });
+    crate::storage::persist_library(state.library);
 }
 
 /// Take books off a shelf without filing them anywhere else.
@@ -170,20 +200,8 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
     }
-    let (clean, conflicts) = conflict::screen(
-        state,
-        book_ids
-            .iter()
-            .map(|book_id| Placement {
-                incoming: Incoming::Move {
-                    book_id: book_id.clone(),
-                },
-                shelf_id: ALL_SHELF.to_string(),
-                from: Some(shelf_id.to_string()),
-                index: None,
-            })
-            .collect(),
-    );
+    let (clean, conflicts) =
+        conflict::screen(state, moved_arrivals(state, book_ids, ALL_SHELF, None));
     let book_ids = clean_move_ids(clean);
     let mut moved = false;
     state.library.shelves.update(|shelves| {
@@ -208,14 +226,12 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
 /// Lifted out and put back in together rather than one at a time: each book's
 /// removal shifts the tail left, so moving four in sequence would have the second
 /// one's index mean something the first one's already changed.
-fn reorder_root(books: &mut Vec<Book>, book_ids: &[String], index: Option<usize>) {
-    let mut lifted: Vec<(usize, Book)> = book_ids
+fn reorder_root(rows: &mut Vec<Row>, row_ids: &[String], index: Option<usize>) {
+    let mut lifted: Vec<(usize, Row)> = row_ids
         .iter()
-        .filter_map(|book_id| {
-            let was = books
-                .iter()
-                .position(|book| book.id.as_str() == book_id.as_str())?;
-            Some((was, books[was].clone()))
+        .filter_map(|row_id| {
+            let was = rows.iter().position(|row| row.id() == row_id.as_str())?;
+            Some((was, rows[was].clone()))
         })
         .collect();
     if lifted.is_empty() {
@@ -226,19 +242,19 @@ fn reorder_root(books: &mut Vec<Book>, book_ids: &[String], index: Option<usize>
     let mut positions: Vec<usize> = lifted.iter().map(|(was, _)| *was).collect();
     positions.sort_unstable_by_key(|was| std::cmp::Reverse(*was));
     for was in positions {
-        books.remove(was);
+        rows.remove(was);
     }
     let shift = index.map_or(0, |at| {
         lifted.iter().filter(|(was, _)| *was < at).count()
     });
     // Put back in the order the reader held them, not the order the list did.
-    lifted.sort_by_key(|(_, book)| {
-        book_ids
+    lifted.sort_by_key(|(_, row)| {
+        row_ids
             .iter()
-            .position(|book_id| book_id.as_str() == book.id.as_str())
+            .position(|row_id| row_id.as_str() == row.id())
             .unwrap_or(usize::MAX)
     });
-    insert_many(books, lifted.into_iter().map(|(_, book)| book), index, shift);
+    insert_many(rows, lifted.into_iter().map(|(_, row)| row), index, shift);
 }
 
 /// Put `book_ids` on a member list at `index`, taking them off it first.
@@ -324,19 +340,18 @@ impl Default for PurgeOpts {
 /// reading-progress debounce both *update* an entry they find and do nothing when
 /// they do not, and `shelf::record` only runs on an open — so a purge never
 /// resurrects itself from the document it was purged under.
-pub fn purge_books(state: AppState, book_ids: &[String], opts: PurgeOpts) {
-    let doomed: Vec<Book> = state.library.books.with_untracked(|books| {
-        books
-            .iter()
-            .filter(|b| book_ids.contains(&b.id))
+pub fn purge_books(state: AppState, row_ids: &[String], opts: PurgeOpts) {
+    let doomed: Vec<Row> = state.library.books.with_untracked(|rows| {
+        rows.iter()
+            .filter(|r| row_ids.iter().any(|id| id == r.id()))
             .cloned()
             .collect()
     });
     if doomed.is_empty() {
         return;
     }
-    for book in &doomed {
-        purge_one(state, book, opts);
+    for row in &doomed {
+        purge_one(state, row, opts);
     }
 
     // The cover cap only holds if an eviction takes its art with it, and the blob
@@ -349,8 +364,23 @@ pub fn purge_books(state: AppState, book_ids: &[String], opts: PurgeOpts) {
 /// One book's half of a removal. Reads the world before writing any of it, because
 /// the tombstone needs the folder that placed this book and the shelf it was filed
 /// on, and both are about to change.
-fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
-    let book_id = book.id.as_str();
+fn purge_one(state: AppState, row: &Row, opts: PurgeOpts) {
+    let row_id = row.id();
+    // A link is a pointer and nothing else: no address to sweep, no
+    // fingerprint to tombstone, no store copy to delete and no highlights to
+    // take. Off the list and off every shelf is the whole of its removal — and
+    // writing a tombstone for a fingerprint it does not have would keep a file
+    // out of a watched folder that never placed it.
+    let Some(book) = row.book() else {
+        state.library.books.update(|rows| {
+            remove_row(rows, row_id);
+        });
+        state
+            .library
+            .shelves
+            .update(|shelves| shelf::forget_everywhere(shelves, row_id));
+        return;
+    };
     let shelves = state.library.shelves.get_untracked();
     let folders = state.library.folders.get_untracked();
     let placed_by = folders
@@ -363,13 +393,18 @@ fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
     let entry = Tombstone::of(book, home, js_sys::Date::now() as u64);
     let was_stored = book.origin.is_stored();
 
-    state.library.books.update(|books| {
-        library_core::book::remove_book(books, book_id);
+    state.library.books.update(|rows| {
+        remove_row(rows, row_id);
+        // A link at a book that is gone is a row that renders, is clicked and
+        // does nothing, so the pointers at this book go with it. The sweep a
+        // load runs would catch them anyway; a removal that left them until
+        // then would leave them on screen for the rest of the session.
+        drop_dangling_links(rows);
     });
     state
         .library
         .shelves
-        .update(|shelves| shelf::forget_everywhere(shelves, book_id));
+        .update(|shelves| shelf::forget_everywhere(shelves, row_id));
     // Only the folders that placed it: removing a book the reader added by hand
     // must not poison a watched folder that happens to hold the same file, and
     // removing a book one folder placed must not stop a second folder from ever
@@ -402,11 +437,16 @@ fn purge_one(state: AppState, book: &Book, opts: PurgeOpts) {
 /// is the leak [`crate::storage::remove_gloss`] exists to prevent. The cover
 /// is the FILE's art, so any row at the address still earns it.
 pub(crate) fn sweep_path(state: AppState, path: &str, delete_store: bool) {
-    let (gloss_in_use, path_in_use) = state.library.books.with_untracked(|books| {
-        (
-            books.iter().any(|b| b.path() == path && !b.independent),
-            books.iter().any(|b| b.path() == path),
-        )
+    let (gloss_in_use, path_in_use) = state.library.books.with_untracked(|rows| {
+        let mut gloss = false;
+        let mut any = false;
+        for book in book_rows(rows) {
+            if book.path() == path {
+                any = true;
+                gloss |= !book.independent;
+            }
+        }
+        (gloss, any)
     });
     // The highlights are the largest thing the library holds about a book
     // besides its cover, and they are keyed by an address nothing points at
@@ -438,32 +478,6 @@ fn sweep_book(state: AppState, book: &Book, delete_store: bool) {
         crate::storage::remove_gloss(&book.gloss_key());
     }
     sweep_path(state, book.path(), delete_store);
-}
-
-/// Remove one row, everywhere it is filed, and sweep the side data only it
-/// used. Returns the row that went.
-///
-/// The conflict sheet's removal — a Replace's displaced copy and a Merge's
-/// dissolving row both go through here — and lighter than [`purge_one`] in
-/// exactly one way: no tombstone. The content stays in the library through
-/// the row on the other side of the question, and a folder rescan that
-/// re-found it would resolve to that row; a tombstone for a fingerprint the
-/// library still holds would be pruned on the very next scan, and until then
-/// it is noise in the folder's restore menu.
-pub(crate) fn drop_row(state: AppState, book_id: &str) -> Option<Book> {
-    let book = state
-        .library
-        .books
-        .with_untracked(|books| books.iter().find(|b| b.id == book_id).cloned())?;
-    state.library.books.update(|books| {
-        library_core::book::remove_book(books, book_id);
-    });
-    state
-        .library
-        .shelves
-        .update(|shelves| shelf::forget_everywhere(shelves, book_id));
-    sweep_book(state, &book, book.origin.is_stored());
-    Some(book)
 }
 
 /// The first of one folder's shelves a book is filed on, in shelf order.
@@ -575,10 +589,12 @@ fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
 /// that remembered. A refusal writes nothing and persists nothing, which is what
 /// lets a drop answer "no" by doing nothing.
 ///
-/// A move that lands the shelf while the library already holds the content one
-/// of its books carries asks about the pair — [`conflict::screen_nest`]'s rule —
-/// because the nesting itself writes no membership and would otherwise park the
-/// duplicate where the parent's own level cannot see it.
+/// Nesting asks nothing, and that is the rule rather than an oversight: the
+/// question a collision asks is about a NAME on a LEVEL, and a nesting writes
+/// no membership — the folder keeps its own member list and hangs inside the
+/// parent. Nothing arrives on the parent's level, so nothing collides with
+/// what is on it, and a book inside a folder is a row the folder's own level
+/// asks about when the reader next moves it.
 pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> bool {
     let mut moved = false;
     state.library.shelves.update(|shelves| {
@@ -586,9 +602,6 @@ pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> boo
     });
     if moved {
         crate::storage::persist_library(state.library);
-        if let Some(parent) = parent.filter(|p| *p != ALL_SHELF) {
-            conflict::screen_nest(state, &[folder_id.to_string()], parent);
-        }
     }
     moved
 }
@@ -597,10 +610,10 @@ pub fn nest_shelf(state: AppState, folder_id: &str, parent: Option<&str>) -> boo
 /// the folders in the set: the books are memberships and the folders are nestings,
 /// and one persist covers the batch.
 ///
-/// The folders that actually moved are screened against the new parent, one
-/// question per duplicate pair rather than one per folder — a batch nesting two
-/// folders that hold the same content twice asks about the content, not about
-/// the folders.
+/// The folders that actually moved are the ones the persist covers, and no
+/// question is asked about any of them: a nesting writes no membership, so
+/// nothing arrives on the parent's level for a name to collide with (see
+/// [`nest_shelf`]).
 pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     if folder_ids.is_empty() {
         return;
@@ -618,7 +631,6 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
     });
     if !moved_ids.is_empty() {
         crate::storage::persist_library(state.library);
-        conflict::screen_nest(state, &moved_ids, parent);
     }
 }
 
@@ -682,20 +694,8 @@ pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
     }
-    let (clean, conflicts) = conflict::screen(
-        state,
-        book_ids
-            .iter()
-            .map(|book_id| Placement {
-                incoming: Incoming::Move {
-                    book_id: book_id.clone(),
-                },
-                shelf_id: shelf_id.to_string(),
-                from: None,
-                index: None,
-            })
-            .collect(),
-    );
+    let (clean, conflicts) =
+        conflict::screen(state, moved_arrivals(state, book_ids, shelf_id, None));
     let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
@@ -818,11 +818,8 @@ pub fn relink_book(state: AppState, book_id: String, path: String) {
                 "That file is not there any more. Pick the book's current location.".to_string(),
             );
         };
-        let origin = state.library.books.with_untracked(|books| {
-            books
-                .iter()
-                .find(|b| b.id == book_id)
-                .map(|b| b.origin.clone())
+        let origin = state.library.books.with_untracked(|rows| {
+            library_core::book::find_by_id(rows, &book_id).map(|b| b.origin.clone())
         });
         let Some(origin) = origin else {
             return;
@@ -852,8 +849,9 @@ pub fn relink_book(state: AppState, book_id: String, path: String) {
             }
         };
 
-        state.library.books.update(|books| {
-            let Some(book) = books.iter_mut().find(|b| b.id == book_id) else {
+        state.library.books.update(|rows| {
+            let Some(book) = library_core::book::book_rows_mut(rows).find(|b| b.id == book_id)
+            else {
                 return;
             };
             match &mut book.origin {

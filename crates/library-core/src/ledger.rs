@@ -50,7 +50,7 @@
 
 use std::collections::HashMap;
 
-use crate::book::{Book, Fingerprint};
+use crate::book::{Book, Fingerprint, Row, book_rows, book_rows_mut};
 use crate::folder::{Tombstone, WatchedFolder};
 use crate::scan::FoundFile;
 
@@ -70,7 +70,10 @@ pub struct KnownBook {
 /// cannot go stale.
 pub type Registry = HashMap<Fingerprint, KnownBook>;
 
-/// Build the [`Registry`] for a book list. Two rows CAN share a fingerprint —
+/// Build the [`Registry`] for a row list, which is a walk of its BOOK rows: a
+/// link has no fingerprint, so a scan cannot see one and never places one —
+/// a pointer is not a copy of a file and a folder walk has nothing to say
+/// about it. Two rows CAN share a fingerprint —
 /// the duplicates a reader asked to keep (see [`crate::book::duplicate_title`])
 /// — and the first row wins, which is [`crate::book::add_book`]'s own
 /// resolution, so the index and an import agree about what "the book for this
@@ -87,8 +90,9 @@ pub type Registry = HashMap<Fingerprint, KnownBook>;
 /// holds, which keeps the alternative honest too: a file the library holds
 /// ONLY as a private book is still held, and a scan that could not see it
 /// would add a second row for a file already on the shelf.
-pub fn registry_of(books: &[crate::book::Book]) -> Registry {
-    let mut out = Registry::with_capacity(books.len());
+pub fn registry_of(rows: &[Row]) -> Registry {
+    let mut out = Registry::with_capacity(rows.len());
+    let books: Vec<&Book> = book_rows(rows).collect();
     for book in books.iter().filter(|b| !b.independent) {
         out.entry(book.fp).or_insert_with(|| known_of(book));
     }
@@ -263,9 +267,9 @@ pub fn restore_deleted(folder: &mut WatchedFolder, fp: &Fingerprint) -> Option<T
 /// click, and copying a whole library to answer one question about it is the kind
 /// of cost that turns a click into a frame drop. Duplicates — the two rows a
 /// reader asked to keep — resolve to the first, the rule [`registry_of`] gives.
-pub fn index_by_fp(books: &[Book]) -> HashMap<Fingerprint, &Book> {
-    let mut out = HashMap::with_capacity(books.len());
-    for book in books {
+pub fn index_by_fp(rows: &[Row]) -> HashMap<Fingerprint, &Book> {
+    let mut out = HashMap::with_capacity(rows.len());
+    for book in book_rows(rows) {
         out.entry(book.fp).or_insert(book);
     }
     out
@@ -359,8 +363,11 @@ pub fn recoverables(
 /// bytes are the app's own copy, and a source file moving is provenance, not a
 /// new address — so only its recorded source moves, and `missing` clears only
 /// if the store copy is the thing that was checked.
-pub fn relink(books: &mut [crate::book::Book], book_id: &str, to: &str) -> bool {
-    let Some(book) = books.iter_mut().find(|b| b.id == book_id) else {
+pub fn relink(rows: &mut [Row], book_id: &str, to: &str) -> bool {
+    // A link is never relinked and never the row a relink names: it has no
+    // address to move, and the scan that asked for this walk could not have
+    // seen it.
+    let Some(book) = book_rows_mut(rows).find(|b| b.id == book_id) else {
         return false;
     };
     match &mut book.origin {
@@ -606,7 +613,13 @@ mod tests {
         assert_eq!(decide(&f, &registry(&[]), &file(1, "/books/a.pdf")), ScanAction::Skip);
     }
 
-    fn book(id: &str, origin: Origin, missing: bool) -> Book {
+    /// A book row — the library's list holds rows, and every rule here reads
+    /// the books among them.
+    fn book(id: &str, origin: Origin, missing: bool) -> Row {
+        Row::Book(book_value(id, origin, missing))
+    }
+
+    fn book_value(id: &str, origin: Origin, missing: bool) -> Book {
         Book {
             id: id.to_string(),
             fp: fp(1),
@@ -625,15 +638,20 @@ mod tests {
         }
     }
 
+    /// The book a row holds. Every row these tests build is a book.
+    fn at(rows: &[Row], i: usize) -> &Book {
+        rows[i].book().expect("a book row")
+    }
+
     #[test]
     fn a_relink_moves_the_address_and_keeps_everything_else() {
         let mut books = vec![book("b1", Origin::Linked { src: "/gone/a.pdf".into() }, true)];
         assert!(relink(&mut books, "b1", "/books/a.pdf"));
-        assert_eq!(books[0].path(), "/books/a.pdf");
-        assert!(!books[0].missing);
-        assert_eq!(books[0].page, 42, "the resume point is the reader's, not the scan's");
-        assert_eq!(books[0].title.as_deref(), Some("Dune"));
-        assert_eq!(books[0].id, "b1");
+        assert_eq!(at(&books, 0).path(), "/books/a.pdf");
+        assert!(!at(&books, 0).missing);
+        assert_eq!(at(&books, 0).page, 42, "the resume point is the reader's, not the scan's");
+        assert_eq!(at(&books, 0).title.as_deref(), Some("Dune"));
+        assert_eq!(books[0].id(), "b1");
         assert!(!relink(&mut books, "zzz", "/x"));
     }
 
@@ -651,21 +669,21 @@ mod tests {
             false,
         )];
         assert!(relink(&mut books, "b1", "/downloads/a.pdf"));
-        assert_eq!(books[0].path(), "/app/store/pdf/a_b1.pdf");
-        assert_eq!(books[0].origin.source(), Some("/downloads/a.pdf"));
+        assert_eq!(at(&books, 0).path(), "/app/store/pdf/a_b1.pdf");
+        assert_eq!(at(&books, 0).origin.source(), Some("/downloads/a.pdf"));
     }
 
 
     /// A book with its own fingerprint, so a test can hold two of them.
-    fn sized_book(id: &str, n: u32, path: &str, missing: bool) -> Book {
-        Book {
+    fn sized_book(id: &str, n: u32, path: &str, missing: bool) -> Row {
+        Row::Book(Book {
             fp: fp(n),
             origin: Origin::Linked {
                 src: path.to_string(),
             },
             missing,
-            ..book(id, Origin::Linked { src: path.to_string() }, false)
-        }
+            ..book_value(id, Origin::Linked { src: path.to_string() }, false)
+        })
     }
 
     const NO_SHELVES: fn(&str) -> Vec<(String, String)> = |_| Vec::new();
@@ -840,7 +858,7 @@ mod tests {
 
     #[test]
     fn a_tombstone_is_the_record_a_restore_row_needs() {
-        let b = book(
+        let b = book_value(
             "b1",
             Origin::Linked {
                 src: "/books/dune.pdf".into(),
@@ -859,7 +877,7 @@ mod tests {
 
     #[test]
     fn a_tombstone_of_a_book_never_opened_labels_itself_from_the_file() {
-        let mut b = book(
+        let mut b = book_value(
             "b1",
             Origin::Linked {
                 src: "/books/rust-book.pdf".into(),
@@ -914,13 +932,34 @@ mod tests {
     }
 
     #[test]
+    fn a_link_is_invisible_to_a_scan() {
+        // A pointer at a book is not a copy of a file: it has no fingerprint
+        // for a walk to match, no address to relink and nothing a folder could
+        // place. A registry that could see one would answer Relink for a row
+        // that has no address to move.
+        let rows = vec![
+            Row::link("l1".into(), "Dune".into(), "b1".into(), 5),
+            book("b1", Origin::Linked { src: "/books/a.pdf".into() }, false),
+        ];
+        let r = registry_of(&rows);
+        assert_eq!(r.len(), 1, "the link is not in it");
+        assert_eq!(r[&fp(1)].id, "b1");
+        assert_eq!(index_by_fp(&rows).len(), 1);
+        // And a relink asked for a link's id is a relink that finds no book.
+        let mut rows = rows;
+        assert!(!relink(&mut rows, "l1", "/somewhere/a.pdf"));
+        assert!(relink(&mut rows, "b1", "/moved/a.pdf"));
+        assert_eq!(at(&rows, 1).path(), "/moved/a.pdf");
+    }
+
+    #[test]
     fn the_registry_is_built_from_the_books_and_first_row_wins() {
         let books = vec![
             book("b1", Origin::Linked { src: "/books/a.pdf".into() }, false),
-            Book {
+            Row::Book(Book {
                 id: "dup".into(),
-                ..book("b1", Origin::Linked { src: "/books/a.pdf".into() }, false)
-            },
+                ..book_value("b1", Origin::Linked { src: "/books/a.pdf".into() }, false)
+            }),
         ];
         let r = registry_of(&books);
         assert_eq!(r.len(), 1);

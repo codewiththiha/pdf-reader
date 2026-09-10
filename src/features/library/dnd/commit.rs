@@ -166,10 +166,9 @@ fn insert_anchor(
         }
         None => {
             let index = reorder.then(|| {
-                state.library.books.with_untracked(|books| {
-                    books
-                        .iter()
-                        .position(|book| book.id == book_id)
+                state.library.books.with_untracked(|rows| {
+                    rows.iter()
+                        .position(|row| row.id() == book_id)
                         .map_or(0, |at| at + step)
                 })
             });

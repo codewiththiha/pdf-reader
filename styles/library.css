@@ -1444,3 +1444,32 @@
   font-size: 0.6875rem;
   color: var(--color-muted);
 }
+
+/* A link row: the shelf's own card and row shape, worn by a pointer rather
+   than by a book. It is not a copy and must not read as one — no page-1 art
+   exists for it, so the plate keeps the fallback's letters and gains a dashed
+   frame, and the row steps back a little behind the books beside it. */
+.book-link .book-cover-wrap {
+  opacity: 0.82;
+}
+
+.book-link .book-cover-fallback {
+  outline: 1px dashed currentColor;
+  outline-offset: -7px;
+}
+
+.book-link-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  color: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

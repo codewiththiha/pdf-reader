@@ -49,12 +49,15 @@ use crate::state::AppState;
 /// died, a shelf the disk places — are ones the card already knew.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuTarget {
-    /// A book: a card in the grid or a row in the list. The id is all an open
-    /// needs — it is what says WHICH book the reader meant when the library
-    /// holds two rows of one file (see
-    /// `crate::services::document::open::open_book`) — and carrying the address
+    /// A row: a card in the grid or a line in the list, a book or a link. The
+    /// id is all an open needs — it is what says WHICH row the reader meant
+    /// when the library holds two of one name, and what says whether the thing
+    /// clicked is a book to open or a pointer to go to (see
+    /// `crate::services::document::open::open_row`) — so carrying the address
     /// beside it would be a second answer to a question the row already
-    /// answered.
+    /// answered. `missing` is a book's fact and a link is never missing: a
+    /// pointer at a book that went is a pointer at a book the shelf still
+    /// shows, and the book's own row is the one that says so.
     Book { id: String, missing: bool },
     /// A shelf drawn as a folder.
     Folder { id: String },
@@ -180,7 +183,7 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
                 disabled=missing
                 on_click=move || {
                     close.run(());
-                    document::open_book(state, open_id.clone());
+                    document::open_row(state, open_id.clone());
                 }
             />
             <MenuItem

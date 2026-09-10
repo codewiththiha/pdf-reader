@@ -257,6 +257,55 @@ pub fn place(members: &mut Vec<String>, id: &str, index: Option<usize>) {
     members.insert(at, id.to_string());
 }
 
+/// The ids of the rows one level holds, in the order it holds them.
+///
+/// The one answer to "what is on this level", which every rule that used to
+/// spell it out twice — a collision check and a count, a render and a purge —
+/// reads instead. A shelf answers with its member list; the root answers with
+/// the rows no shelf holds, because the root IS a level and this is its list.
+/// A shelf id that names no shelf and is not the root answers with nothing.
+pub fn members_of<'a>(
+    rows: &'a [crate::book::Row],
+    shelves: &'a [Shelf],
+    shelf_id: &str,
+) -> Vec<&'a str> {
+    if let Some(shelf) = shelves.iter().find(|s| s.id == shelf_id) {
+        return shelf.books.iter().map(String::as_str).collect();
+    }
+    if shelf_id != ALL_SHELF {
+        return Vec::new();
+    }
+    // One pass over the memberships rather than one per row: a library at its
+    // cap holds two thousand rows, and this is asked per arrival and per
+    // render.
+    let filed: std::collections::HashSet<&str> = shelves
+        .iter()
+        .flat_map(|s| s.books.iter().map(String::as_str))
+        .collect();
+    rows.iter()
+        .map(crate::book::Row::id)
+        .filter(|id| !filed.contains(id))
+        .collect()
+}
+
+/// The BOOK rows of one level, resolved: what a count, a content check and the
+/// cover queue all want, and never the links — a link has no fingerprint to
+/// check, no address to render art from and no page to count.
+///
+/// A member naming no row is skipped rather than rendered as a hole, which is
+/// [`crate::sort::ordered`]'s rule too.
+pub fn books_of<'a>(
+    rows: &'a [crate::book::Row],
+    shelves: &[Shelf],
+    shelf_id: &str,
+) -> Vec<&'a crate::book::Book> {
+    members_of(rows, shelves, shelf_id)
+        .into_iter()
+        .filter_map(|id| crate::book::find_row(rows, id))
+        .filter_map(crate::book::Row::book)
+        .collect()
+}
+
 /// Put `id` on a shelf, unless it is already on it.
 ///
 /// Not [`place`]: a restore and a "show it here as well" both add a book that may
@@ -363,6 +412,54 @@ pub fn sanitize(shelves: &mut Vec<Shelf>) {
 
 #[cfg(test)]
 mod tests {
+    use crate::book::{Book, Fingerprint, Origin, Row};
+    use reader_core::format::Format;
+
+    fn book(id: &str, title: &str) -> Row {
+        let mut book = Book::new(
+            id.to_string(),
+            Fingerprint { size: 1, mtime_ms: 1, head_hash: 1 },
+            Format::Pdf,
+            Origin::Linked { src: format!("/books/{id}.pdf") },
+            1,
+        );
+        book.title = Some(title.to_string());
+        Row::Book(book)
+    }
+
+    fn plain(id: &str, members: &[&str]) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: id.to_string(),
+            kind: ShelfKind::Virtual,
+            books: members.iter().map(|m| m.to_string()).collect(),
+            parent: None,
+            manual_parent: false,
+        }
+    }
+
+    #[test]
+    fn a_level_s_members_are_its_shelf_s_or_the_unfiled_rows() {
+        let rows = vec![
+            book("b1", "Dune"),
+            book("b2", "Apple"),
+            Row::link("l1".into(), "Dune".into(), "b1".into(), 5),
+        ];
+        let shelves = vec![plain("s", &["b1", "l1"]), plain("t", &["b2"])];
+        assert_eq!(members_of(&rows, &shelves, "s"), vec!["b1", "l1"]);
+        assert_eq!(members_of(&rows, &shelves, "gone"), Vec::<&str>::new());
+        // The root is a level with no shelf row, and its list is what is left.
+        assert_eq!(members_of(&rows, &shelves, ALL_SHELF), Vec::<&str>::new());
+        let one_filed = vec![plain("s", &["b1"])];
+        assert_eq!(members_of(&rows, &one_filed, ALL_SHELF), vec!["b2", "l1"]);
+        // Its BOOKS are those members that are books: the link is on the shelf
+        // and is not one of its books.
+        assert_eq!(books_of(&rows, &shelves, "s").len(), 1);
+        assert_eq!(books_of(&rows, &shelves, "s")[0].title(), "Dune");
+        assert_eq!(books_of(&rows, &one_filed, ALL_SHELF).len(), 1);
+        assert!(books_of(&rows, &shelves, "gone").is_empty());
+    }
+
     use super::*;
 
     fn shelf(id: &str, name: &str, books: &[&str]) -> Shelf {

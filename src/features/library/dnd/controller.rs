@@ -25,7 +25,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use library_core::book::Book;
+use library_core::book::{Row, find_row};
 use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
 
 use super::effect::{
@@ -425,18 +425,28 @@ impl DragController {
                 return Vec::new();
             };
             let state = this.state;
-            let books: Vec<Book> = state.library.books.get();
+            let rows: Vec<Row> = state.library.books.get();
             let shelves: Vec<Shelf> = state.library.shelves.get();
             let covers = state.library.covers.get();
             let mut tiles = Vec::with_capacity(held.len());
             for id in &held.books {
-                let Some(book) = books.iter().find(|each| &each.id == id) else {
+                let Some(row) = find_row(&rows, id) else {
                     continue;
                 };
-                tiles.push(GhostTile {
-                    cover: covers.get(book.path()).map(|cover| cover.data_url.clone()),
-                    label: book.title(),
-                    folder: false,
+                // A link drags as the row it is: no cover, because it has no
+                // page 1 and the art of the book it points at belongs to that
+                // book's own tile, and its own name as the label.
+                tiles.push(match row.book() {
+                    Some(book) => GhostTile {
+                        cover: covers.get(book.path()).map(|cover| cover.data_url.clone()),
+                        label: book.title(),
+                        folder: false,
+                    },
+                    None => GhostTile {
+                        cover: None,
+                        label: row.display_name(),
+                        folder: false,
+                    },
                 });
             }
             for id in &held.folders {

@@ -13,13 +13,16 @@ use std::sync::Arc;
 
 use ai_core::gloss::GlossMark;
 use leptos::prelude::*;
+#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 
 use crate::state::library::{CoverImage, CoverMap, LibraryState};
 // The library's key names, its persisted shape and the migration from the shape
 // it replaced all live in `library_core::blob`, so the schema and the rules that
 // keep it valid are one crate's business rather than two.
-use library_core::blob::{LEGACY_KEY, LIBRARY_KEY, LibraryBlob, RecentBook, migrate_v1};
+use library_core::blob::{
+    BlobV2, LEGACY_KEY, LIBRARY_KEY, LibraryBlob, RecentBook, V2_KEY, migrate_v1, migrate_v2,
+};
 use library_core::blob::sanitize as sanitize_library;
 use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
 
@@ -53,7 +56,14 @@ pub struct StorageError {
 
 impl StorageError {
     /// Surface the failure on the console without interrupting the UI.
+    ///
+    /// Off wasm — the host test this crate gets from `cargo test --workspace`
+    /// — there is no console to warn on and the wasm-bindgen stubs abort when
+    /// called, so a failure is dropped rather than printed. That is what makes
+    /// the library's services testable on the host at all: a placement writes
+    /// the blob, and a write that aborted would take the test runner with it.
     pub fn report(&self) {
+        #[cfg(target_arch = "wasm32")]
         web_sys::console::warn_1(&JsValue::from_str(&format!("[storage] {self}")));
     }
 }
@@ -65,11 +75,34 @@ impl fmt::Display for StorageError {
 }
 
 fn warn(op: &'static str, detail: &str) {
+    #[cfg(target_arch = "wasm32")]
     web_sys::console::warn_1(&JsValue::from_str(&format!("[storage] {op}: {detail}")));
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = (op, detail);
 }
 
+/// One console line about a load, guarded for the reason
+/// [`StorageError::report`] is: a migration is worth saying out loud once, and
+/// a host test that ran one must not abort on the saying.
+fn log_info(message: &str) {
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::info_1(&JsValue::from_str(message));
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = message;
+}
+
+/// The browser's own key-value store, and `None` wherever there is not one —
+/// which is every host test this crate runs, and the reason a save off wasm is
+/// a reported no-op rather than a panic.
 fn local() -> Option<web_sys::Storage> {
-    web_sys::window()?.local_storage().ok()?
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()?.local_storage().ok()?
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        None
+    }
 }
 
 /// Read a raw JSON blob, if present and readable.
@@ -119,17 +152,30 @@ pub fn save_settings(settings: &Settings) -> Result<(), StorageError> {
 }
 
 /// Load the library: the current blob when there is one, else the previous
-/// schema's recent-books list migrated on the spot. Invalid values fall back to
-/// empty rather than bricking the page, and every load is sanitised — a blob can
-/// arrive with a shelf member naming no book, and the grid would render a hole.
+/// schema's — one book per row, then a recent-books list — migrated on the spot.
+/// Invalid values fall back to empty rather than bricking the page, and every
+/// load is sanitised — a blob can arrive with a shelf member naming no row, and
+/// the grid would render a hole.
 ///
-/// The migration is one-way in effect but leaves the old key alone: a reader who
-/// downgrades should still find the library that build wrote, and the first save
-/// after this load is what puts the new blob under its own key.
+/// Two migrations rather than one, and each is one-way in effect but leaves the
+/// key it read alone: a reader who downgrades should still find the library the
+/// build they downgraded to wrote, and the first save after this load is what
+/// puts the new blob under its own key. The step from `v2` is the row list
+/// gaining a kind — every book becomes a book row and nothing else moves — so
+/// a library written before links existed loads as a library with no links,
+/// which is exactly what it was.
 pub fn load_library() -> LibraryBlob {
     if let Some(raw) = get(LIBRARY_KEY) {
         let mut blob: LibraryBlob = parse("library", &raw);
         sanitize_library(&mut blob);
+        return blob;
+    }
+    if let Some(raw) = get(V2_KEY) {
+        let legacy: BlobV2 = parse("library v2", &raw);
+        let count = legacy.books.len();
+        let mut blob = migrate_v2(legacy);
+        sanitize_library(&mut blob);
+        log_info(&format!("[storage] migrated {count} books from {V2_KEY}"));
         return blob;
     }
     let legacy: Vec<RecentBook> = get(LEGACY_KEY)
@@ -141,9 +187,7 @@ pub fn load_library() -> LibraryBlob {
     let count = legacy.len();
     let mut blob = migrate_v1(legacy, js_sys::Date::now() as u64);
     sanitize_library(&mut blob);
-    web_sys::console::info_1(&JsValue::from_str(&format!(
-        "[storage] migrated {count} books from {LEGACY_KEY}"
-    )));
+    log_info(&format!("[storage] migrated {count} books from {LEGACY_KEY}"));
     blob
 }
 

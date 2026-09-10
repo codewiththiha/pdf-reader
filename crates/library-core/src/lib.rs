@@ -30,14 +30,27 @@
 //! * A rule the library needs and no format owns.
 //! * No engine, no IPC, no signals: a function that takes values and returns
 //!   values, so a test can call it.
+//!
+//! ## The list is of rows, not of books
+//!
+//! A shelf holds [`book::Row`]s: a [`book::Book`], or a [`book::Row::Link`]
+//! that points at one. Everything that asks a question of a row's CONTENT —
+//! a fingerprint, an address, a resume point — asks it of the book rows and
+//! steps over the links, because a link has none of the three
+//! ([`book::book_rows`]). Everything that asks a question of a row's PLACE —
+//! a shelf membership, a drag, a removal, the order a level renders in — asks
+//! it of the row, whichever kind it is. [`conflict`] is the one rule that is
+//! about neither: it asks whether a NAME is already on a level, which is a
+//! question a book answers with its title and a link with the name it was
+//! made with.
 
 pub mod blob;
 pub mod book;
+pub mod conflict;
 pub mod folder;
 pub mod hash;
 pub mod id;
 pub mod ledger;
-pub mod merge;
 pub mod query;
 pub mod scan;
 pub mod shelf;
@@ -52,20 +65,20 @@ pub mod wire;
 // shell's own copy of the extension list honest. One re-export is cheaper than a
 // second dependency edge and cannot drift.
 pub use reader_core::format::Format;
-pub use blob::{LibraryBlob, RecentBook, migrate_v1};
+pub use blob::{LibraryBlob, RecentBook, migrate_v1, migrate_v2};
 pub use book::{
-    BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, apply_check, duplicate_title, record_read,
-    record_read_row,
+    BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, Row, apply_check, book_rows, duplicate_title,
+    find_row, record_read, record_read_row, remove_row,
 };
+pub use conflict::{Answer, Arrival, collide, next_name, same_name};
 pub use folder::{FolderOpts, Tombstone, WatchedFolder};
 pub use ledger::{
     KnownBook, Recovered, ScanAction, diff_folder, find_tombstone, index_by_fp, prune_tombstones,
     recoverables, restore_deleted, tombstone,
 };
-pub use merge::{MergeNotes, POLICIES, Policy, further_point, merge_books};
 pub use scan::{FoundFile, admits};
 pub use shelf::{ALL_SHELF, Shelf, ShelfKind, ancestors, can_nest, children_of, shelf_add};
-pub use sort::{SortKey, sort_books};
+pub use sort::{SortKey, sort_rows};
 pub use text::{human_age, human_size, plural};
 pub use view::{CoverFit, LibraryLayout, LibraryView};
 pub use wire::{

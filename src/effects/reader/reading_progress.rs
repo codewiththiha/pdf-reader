@@ -88,9 +88,10 @@ pub fn reading_progress(state: AppState) {
         let book_id = state.reader.document.book_id.get_untracked();
         let mut changed = false;
         state.library.books.update(|books| {
-            let rows = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
-            for i in rows {
-                let Some(b) = books.get_mut(i) else {
+            let at = library_core::book::rows_for_read(books, book_id.as_deref(), &path);
+            for i in at {
+                let Some(b) = books.get_mut(i).and_then(library_core::book::Row::as_book_mut)
+                else {
                     continue;
                 };
                 let page_moved = b.page != page;

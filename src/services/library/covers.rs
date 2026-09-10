@@ -39,7 +39,7 @@ use reader_core::format::Format;
 
 use crate::state::library::{CoverImage, CoverMap, prune_covers};
 use crate::state::AppState;
-use library_core::book::Book;
+use library_core::book::{Row, book_rows};
 
 /// Width the shelf renders a cover at. One number for both renders of the same
 /// art — the import queue's and the open pipeline's
@@ -72,10 +72,11 @@ thread_local! {
 ///
 /// Split out because it is the whole of the policy — which books deserve a
 /// render, and which are wasting one — and a policy this short is a policy a
-/// test can hold in its hands.
-fn wanted(books: &[Book], covers: &CoverMap) -> Vec<String> {
-    books
-        .iter()
+/// test can hold in its hands. A link is not in the answer and cannot be: it
+/// has no address to render from and no page 1, and the art of the book it
+/// points at is already queued by that book's own row.
+fn wanted(rows: &[Row], covers: &CoverMap) -> Vec<String> {
+    book_rows(rows)
         .filter(|b| b.format == Format::Pdf)
         .map(|b| b.path().to_string())
         .filter(|path| !covers.contains_key(path))
@@ -93,8 +94,8 @@ pub fn backfill_missing(state: AppState) {
     // A new ask is a new retry budget: whatever failed last time is worth one
     // more attempt now, because the most likely reason it failed was timing.
     RETRIES.with(|retries| retries.borrow_mut().clear());
-    let wanted = state.library.books.with_untracked(|books| {
-        state.library.covers.with_untracked(|covers| wanted(books, covers))
+    let wanted = state.library.books.with_untracked(|rows| {
+        state.library.covers.with_untracked(|covers| wanted(rows, covers))
     });
     if wanted.is_empty() {
         return;
@@ -134,11 +135,11 @@ pub fn backfill_missing(state: AppState) {
 /// fits. Does NOT persist — the caller decides when the store is written, and
 /// the queue below batches that to once per drain.
 pub(crate) fn prune_now(state: AppState) {
-    state.library.books.with_untracked(|books| {
+    state.library.books.with_untracked(|rows| {
         state
             .library
             .covers
-            .update(|covers| prune_covers(books, covers));
+            .update(|covers| prune_covers(rows, covers));
     });
 }
 
@@ -210,9 +211,14 @@ fn drain(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use library_core::book::{Fingerprint, Origin};
+    use library_core::book::{Book, Fingerprint, Origin};
 
-    fn book(path: &str, format: Format) -> Book {
+    /// A book row: the cover queue reads a shelf's rows and skips the links.
+    fn book(path: &str, format: Format) -> Row {
+        Row::Book(book_value(path, format))
+    }
+
+    fn book_value(path: &str, format: Format) -> Book {
         let len = path.len() as u64;
         Book {
             id: path.to_string(),
@@ -258,6 +264,14 @@ mod tests {
         // failure files nothing, so queueing one would re-attempt it forever.
         let asked = wanted(&books, &CoverMap::default());
         assert_eq!(asked, vec!["/a/dune.pdf".to_string(), "/d/second.pdf".to_string()]);
+        // A link has no page 1 of its own to render, and the art of the book it
+        // points at is that book's row's business.
+        let mut with_link = books;
+        with_link.push(Row::link("l1".into(), "Dune".into(), "/a/dune.pdf".into(), 5));
+        assert_eq!(
+            wanted(&with_link, &CoverMap::default()),
+            vec!["/a/dune.pdf".to_string(), "/d/second.pdf".to_string()]
+        );
     }
 
     #[test]

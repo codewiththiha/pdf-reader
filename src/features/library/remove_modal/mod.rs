@@ -141,11 +141,13 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
         }
         let ids = sheet.books.get();
         let shelf_ids = sheet.shelves.get();
+        // A link is a row the sheet can be about, so "still there" is a
+        // question about rows and not about books.
         let books_alive = !ids.is_empty()
             && state
                 .library
                 .books
-                .with(|books| books.iter().any(|b| ids.contains(&b.id)));
+                .with(|rows| rows.iter().any(|r| ids.iter().any(|id| id == r.id())));
         let shelves_alive = !shelf_ids.is_empty()
             && state
                 .library

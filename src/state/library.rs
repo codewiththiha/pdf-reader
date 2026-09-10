@@ -26,9 +26,10 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use library_core::blob::LibraryBlob;
-use library_core::book::Book;
+use library_core::book::{Book, Row, book_rows};
 use library_core::folder::WatchedFolder;
-use library_core::shelf::{ALL_SHELF, Shelf};
+use library_core::id;
+use library_core::shelf::{self, ALL_SHELF, Shelf};
 use library_core::text::plural;
 use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
@@ -64,7 +65,10 @@ pub type CoverMap = std::collections::HashMap<String, Arc<CoverImage>>;
 /// still wanted?" — and the cap is only a real budget if an evicted book takes
 /// its art with it. The survivors are the most recently read, so a shelf the
 /// reader is scrolling through keeps the covers they are looking at.
-pub fn prune_covers(books: &[Book], covers: &mut CoverMap) {
+pub fn prune_covers(rows: &[Row], covers: &mut CoverMap) {
+    // The books, and only the books: a link has no address and no page 1, so
+    // it holds no art and keeps none alive.
+    let books: Vec<&Book> = book_rows(rows).collect();
     let live: HashSet<&str> = books.iter().map(|b| b.path()).collect();
     covers.retain(|path, _| live.contains(path.as_str()));
     if covers.len() <= COVER_CAP {
@@ -223,9 +227,10 @@ impl ImportTask {
 /// survived would be a set of books the reader cannot see selected.
 #[derive(Clone, Copy)]
 pub struct LibraryState {
-    /// Every book, in the order the "All" shelf shows them. This list IS the
-    /// All order; there is no shelf row for it.
-    pub books: RwSignal<Vec<Book>>,
+    /// Every ROW, in the order the "All" shelf shows them: the books, and the
+    /// links that point at them. This list IS the All order; there is no shelf
+    /// row for it.
+    pub books: RwSignal<Vec<Row>>,
     pub shelves: RwSignal<Vec<Shelf>>,
     pub folders: RwSignal<Vec<WatchedFolder>>,
     /// The view knobs, persisted with the books.
@@ -250,13 +255,22 @@ pub struct LibraryState {
     /// high-frequency operation and "is this one selected" is asked by every card
     /// on every repaint.
     pub selected: RwSignal<HashSet<String>>,
-    /// The placement that found its own content already on the shelf, waiting
-    /// for the reader's duplicate/replace/merge answer. Raised by the services
-    /// — a drop, a filing, an import — rather than by a component, which is why
-    /// it lives here and not in a sheet's own handle: an import asks from
-    /// inside a spawned future that outlived every component. See
-    /// `crate::services::library::conflict`.
+    /// The name collision the sheet is asking about, waiting for the reader's
+    /// answer. Raised by the services — a drop, a filing, an import — rather
+    /// than by a component, which is why it lives here and not in a sheet's own
+    /// handle: an import asks from inside a spawned future that outlived every
+    /// component. See `crate::services::library::conflict`.
     pub conflict: RwSignal<Option<ConflictAsk>>,
+    /// The collisions behind the one on screen.
+    ///
+    /// One question at a time is the sheet's whole shape, and a batch — a drag
+    /// of four books, an import of ten files — can raise several. Without
+    /// somewhere to put the rest, the second raise would overwrite the first
+    /// and a placement would vanish, which is the one thing the sheet exists
+    /// to stop. Answering pops the next one onto the screen; Cancel drops them,
+    /// which is what Cancel has always meant — the placements already answered
+    /// keep their answers and the ones not asked simply do not land.
+    pub conflict_waiting: RwSignal<Vec<ConflictAsk>>,
     /// The pair of [`Self::conflict`] that the overlay lane and the Escape rule
     /// can hold: the lane registry speaks in booleans. Every writer of the two
     /// goes through the conflict service's `raise` and `cancel`, so while the
@@ -285,8 +299,28 @@ impl Default for LibraryState {
             selecting: RwSignal::new(false),
             selected: RwSignal::new(HashSet::new()),
             conflict: RwSignal::new(None),
+            conflict_waiting: RwSignal::new(Vec::new()),
             conflict_open: RwSignal::new(false),
         }
+    }
+}
+
+/// Milliseconds since the epoch — the library's only clock here.
+///
+/// Off wasm the clock is inert rather than a panic: the wasm-bindgen stubs
+/// abort when called natively, and a stamp nobody persists is fine at zero.
+/// The ids minted from it stay unique regardless, on [`id`]'s own counter —
+/// which is what lets a host test make a link at all.
+///
+/// [`id`]: library_core::id
+fn now_ms() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() as u64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0
     }
 }
 
@@ -302,6 +336,67 @@ impl LibraryState {
             view: self.view.get_untracked(),
         }
     }
+
+    /// The two lists a collision is asked of, read once and untracked: the
+    /// rows and the shelves. One read of each rather than three nested reads
+    /// is one chance to see a library, and a rule asked of a shelf list and a
+    /// row list that were read at different moments can be asked of two.
+    pub fn snapshot_rows(&self) -> (Vec<Row>, Vec<Shelf>) {
+        (self.books.get_untracked(), self.shelves.get_untracked())
+    }
+
+    /// The row an id names, whichever kind it is — what an open, a drag and a
+    /// removal all start from.
+    pub fn row(&self, row_id: &str) -> Option<Row> {
+        self.books
+            .with_untracked(|rows| library_core::book::find_row(rows, row_id).cloned())
+    }
+
+    /// The name a row shows, and the name a collision compares. Empty for a
+    /// row that is not there, which is what makes a drag of a row another
+    /// surface just removed a no-op rather than a placement of nothing.
+    pub fn row_name(&self, row_id: &str) -> String {
+        self.row(row_id).map_or_else(String::new, |r| r.display_name())
+    }
+
+    /// Give a row a new name: a book's title, a link's own. What the sheet's
+    /// *add as new* answer does to a row it is moving, and the only rename the
+    /// library performs on a reader's behalf.
+    pub fn rename_row(&self, row_id: &str, name: &str) {
+        self.books.update(|rows| {
+            let Some(row) = library_core::book::find_row_mut(rows, row_id) else {
+                return;
+            };
+            match row {
+                Row::Book(b) => b.title = Some(name.to_string()),
+                Row::Link { name: own, .. } => *own = name.to_string(),
+            }
+        });
+    }
+
+    /// Put a link to `target` on `shelf_id`, and return its id.
+    ///
+    /// The name is the target's own at this moment, which is what makes the
+    /// row recognisable on the shelf beside the book it points at; a rename of
+    /// the book later does not rewrite it, because a link is a row the reader
+    /// placed and not a view of another row.
+    pub fn add_link(&self, name: &str, target: &str, shelf_id: &str) -> String {
+        let now = now_ms();
+        let link_id = id::next_id(now);
+        let made = link_id.clone();
+        self.books.update(|rows| {
+            rows.push(Row::link(link_id, name.to_string(), target.to_string(), now));
+        });
+        if shelf_id != ALL_SHELF {
+            self.shelves.update(|shelves| {
+                if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+                    shelf::shelf_add(shelf, &made);
+                }
+            });
+        }
+        crate::storage::persist_library(*self);
+        made
+    }
 }
 
 #[cfg(test)]
@@ -310,7 +405,12 @@ mod tests {
     use library_core::book::{Fingerprint, Origin};
     use reader_core::format::Format;
 
-    fn book(path: &str, last_read: u64) -> Book {
+    /// A book row: the cover cache is keyed by address, and a link has none.
+    fn book(path: &str, last_read: u64) -> Row {
+        Row::Book(book_value(path, last_read))
+    }
+
+    fn book_value(path: &str, last_read: u64) -> Book {
         let len = path.len() as u64;
         Book {
             id: path.to_string(),
@@ -346,7 +446,12 @@ mod tests {
 
     #[test]
     fn a_cover_outlives_nothing_it_does_not_belong_to() {
-        let books = vec![book("/a.pdf", 1), book("/b.pdf", 2)];
+        let books = vec![book("/a.pdf", 1), book("/b.pdf", 2), Row::link(
+            "l1".into(),
+            "A".into(),
+            "/a.pdf".into(),
+            3,
+        )];
         let mut covers: CoverMap = [
             ("/a.pdf".to_string(), cover()),
             ("/b.pdf".to_string(), cover()),
@@ -355,17 +460,18 @@ mod tests {
         .into_iter()
         .collect();
         prune_covers(&books, &mut covers);
-        assert_eq!(covers.len(), 2);
+        assert_eq!(covers.len(), 2, "a link keeps no art alive and holds none");
         assert!(!covers.contains_key("/gone.pdf"));
     }
 
     #[test]
     fn the_cap_keeps_the_most_recently_read() {
-        let books: Vec<Book> = (0..(COVER_CAP + 5))
+        let books: Vec<Row> = (0..(COVER_CAP + 5))
             .map(|i| book(&format!("/books/{i}.pdf"), i as u64))
             .collect();
         let mut covers: CoverMap = books
             .iter()
+            .filter_map(Row::book)
             .map(|b| (b.path().to_string(), cover()))
             .collect();
         prune_covers(&books, &mut covers);
