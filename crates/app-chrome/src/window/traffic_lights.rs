@@ -42,7 +42,6 @@ use std::time::Duration;
 
 use leptos::prelude::*;
 
-use crate::hooks::dom::{TOOLBAR_ROW_ID, by_id};
 use crate::hooks::verified_switch::use_verified_switch;
 use crate::hooks::use_resize_observer::observe_elements;
 use crate::titlebar::root::TitleBarCtx;
@@ -64,19 +63,26 @@ pub fn TrafficLights(
     let ctx = use_context::<TitleBarCtx>();
     let hide_grace = StoredValue::new_local(None::<TimeoutHandle>);
     // Live header height for Tahoe-proof centering. Observed on
-    // `#toolbar-row`; `on_cleanup` in `observe_content_size` disconnects it.
+    // `#toolbar-row`; `on_cleanup` in `observe_elements` disconnects it.
     let header_height: RwSignal<f64> = RwSignal::new(TITLE_BAR_H);
 
     // Keep `header_height` in sync with the real bar height. This is what
     // replaces the static `tauri.conf.json {y:25}` with a live value. The
     // observer fires once on `observe()` with the current size, so the
     // first `visible=true` invoke already carries the centered `y`.
+    //
+    // The row arrives through the shell's ref rather than its id: a route
+    // swap runs this body a whole tick before the router exchanges the DOM,
+    // and in that window the id still names the outgoing page's row, which
+    // one install would then latch onto for good. The ref is set when the
+    // shell's own row builds, and that wakes this effect for the real
+    // install (the same window `use_center_slot` waits out).
     Effect::new(move |_| {
-        let Some(el) = by_id(TOOLBAR_ROW_ID) else {
+        let Some(row) = ctx.and_then(|c| c.row_ref.get()) else {
             return;
         };
         let hh = header_height;
-        observe_elements(vec![el], move |entries| {
+        observe_elements(vec![row.into()], move |entries| {
             if let Some(entry) = entries.first() {
                 let h = entry.content_rect().height();
                 if h > 0.0 {

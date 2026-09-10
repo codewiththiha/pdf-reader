@@ -101,18 +101,39 @@ fn schedule_slot_measure(center_slot: RwSignal<Option<(f64, f64)>>) {
 /// the row, both clusters and the title (any size change re-measures), a
 /// window-resize re-measure, and an immediate first pass. See
 /// [`resolve_center_slot`] for the box itself.
-fn use_center_slot(center_title_ref: NodeRef<html::Span>) -> RwSignal<Option<(f64, f64)>> {
+///
+/// The shell's own two anchors are read through NodeRefs rather than looked
+/// up by id, and the effect WAITS for the row's ref before installing: a
+/// route swap runs the incoming page's component bodies a whole executor
+/// tick before it exchanges the DOM (the router resolves the new view, waits
+/// a tick, then builds/inserts it and unmounts the old page), so this
+/// effect's first pass after a remount runs while the document still shows
+/// the OUTGOING page. Ids would resolve to that page's row and clusters, and
+/// the observer — a one-install affair — would latch onto nodes one tick
+/// from death, leaving the new page's slot never re-measured again. The refs
+/// are set when this shell's own elements build, which wakes the effect for
+/// the real install against the mounted document. The page-owned leading
+/// cluster is looked up by id on that re-run: by then the swap has completed
+/// and the id names the new page's cluster.
+fn use_center_slot(
+    row_ref: NodeRef<html::Div>,
+    trailing_ref: NodeRef<html::Div>,
+    center_title_ref: NodeRef<html::Span>,
+) -> RwSignal<Option<(f64, f64)>> {
     let center_slot = RwSignal::new(None::<(f64, f64)>);
     Effect::new(move |_| {
-        let mut els: Vec<_> = [
-            TOOLBAR_ROW_ID,
-            TOOLBAR_LEADING_ID,
-            TOOLBAR_TRAILING_ID,
-        ]
-        .iter()
-        .copied()
-        .filter_map(by_id)
-        .collect();
+        // No row yet, nothing to measure against: the build that sets this
+        // ref re-runs the effect for the install.
+        let Some(row) = row_ref.get() else {
+            return;
+        };
+        let mut els: Vec<web_sys::Element> = vec![row.into()];
+        if let Some(trailing) = trailing_ref.get() {
+            els.push(trailing.into());
+        }
+        if let Some(leading) = by_id(TOOLBAR_LEADING_ID) {
+            els.push(leading);
+        }
         if let Some(title) = center_title_ref.get() {
             els.push(title.into());
         }
@@ -133,6 +154,13 @@ pub struct TitleBarCtx {
     pub held_count: RwSignal<usize>,
     /// The resolved center-title node, reactive across conditional remounts.
     pub center_title_ref: NodeRef<html::Span>,
+    /// The row's node, reactive across page remounts. Descendants that
+    /// measure against the row (the native traffic lights' live header
+    /// height) read it instead of the row's id: on the tick a route swap
+    /// runs page bodies the id still names the OUTGOING page's row, while
+    /// this ref is only ever set to the shell's own (see `use_center_slot`,
+    /// which waits out the same window).
+    pub row_ref: NodeRef<html::Div>,
 }
 
 #[component]
@@ -174,6 +202,12 @@ pub fn TitleBar(
     let held_count = RwSignal::new(0usize);
     let is_held = Signal::derive(move || held_count.get() > 0);
     let center_title_ref = NodeRef::<html::Span>::new();
+    // The shell's own measurement anchors as refs rather than ids: a route
+    // swap runs this body a tick before the DOM it belongs to exists, and
+    // the observers armed here must latch onto THIS bar's nodes, not the
+    // outgoing page's (see `use_center_slot`).
+    let row_ref = NodeRef::<html::Div>::new();
+    let trailing_ref = NodeRef::<html::Div>::new();
     // Show on enter, hide after a grace period unless something holds the bar
     // open (an open popover, the floating search) or the pin is on. The shared
     // reveal owns the timer, the `hovered` truth and the hold-release recheck;
@@ -185,7 +219,7 @@ pub fn TitleBar(
         pin: Some(pinned.into()),
     });
     let visible = hover.visible;
-    provide_context(TitleBarCtx { visible, held_count, center_title_ref });
+    provide_context(TitleBarCtx { visible, held_count, center_title_ref, row_ref });
 
     let (enter_band, leave_band) = hover.bind();
     let (enter_bar, leave_bar) = hover.bind();
@@ -195,7 +229,7 @@ pub fn TitleBar(
     // stretch once it does not — resolved off live rects, so the caption
     // cluster, the pin and the traffic-light gutter are reserved on every
     // platform without any OS-specific branch.
-    let center_slot = use_center_slot(center_title_ref);
+    let center_slot = use_center_slot(row_ref, trailing_ref, center_title_ref);
 
     view! {
         <>
@@ -216,7 +250,10 @@ pub fn TitleBar(
                     // (see `measure_center_slot`), shared with the library's
                     // left title; the page's #toolbar-leading and this
                     // shell's #toolbar-trailing complete the measurement.
+                    // The ref carries the same node to the observers, which
+                    // must not resolve it by id on a remount's first tick.
                     id=TOOLBAR_ROW_ID
+                    node_ref=row_ref
                     data-tauri-drag-region="true"
                     prop:inert=move || !visible.get()
                     on:mouseenter=move |_| enter_bar()
@@ -265,6 +302,7 @@ pub fn TitleBar(
                         // Everything right of this edge — the caption cluster
                         // in `end` included — is outside the slot.
                         id=TOOLBAR_TRAILING_ID
+                        node_ref=trailing_ref
                         class="ml-auto flex shrink-0 items-center gap-1"
                     >
                         {right.run()}
