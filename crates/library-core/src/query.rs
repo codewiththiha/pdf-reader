@@ -1,16 +1,185 @@
-//! The titlebar search: which books a query keeps, and which shelves.
+//! The titlebar search: which books a query keeps, which shelves, and which
+//! books the bar suggests while the reader is still typing.
 //!
 //! Client-side and over three fields, because that is all a library is: the
 //! name the document gave (or the file stem, when it gave none), the author,
 //! and the address. Nothing here is indexed — a few thousand string comparisons
 //! per keystroke is well inside a frame, and an index would be a second thing
-//! to keep in step with the list it describes.
+//! to keep in step with the list it describes. The fuzzy pass is likewise a
+//! single walk per field per term: no backtracking, one score, and the only
+//! allocation is the folded text the walk reads.
 //!
 //! Shelves are searched by name through the same rule ([`matches_terms`]),
 //! because a page showing books a query kept and shelves it did not is two
 //! searches wearing one text box.
+//!
+//! ## Two ways a term matches
+//!
+//! A term matches a field either as a SUBSTRING — case-folded, anywhere, the
+//! way search has always worked here — or, when it is not a substring, as an
+//! in-order SUBSEQUENCE that scores well enough: the fuzzy half, so `mthmtcl`
+//! still finds *Mathematical Proofs* and a half-remembered title survives a
+//! missing vowel. A subsequence that is too scattered for its length is not a
+//! match: fuzzy that matches everything is a shuffle, not a search.
+//!
+//! Scoring rewards the shapes a reader actually types: runs of consecutive
+//! characters, starts of words (`-`, `_`, `.`, `/`, `:`, space), and the very
+//! start of the field; it charges for the gaps between matched characters. A
+//! substring always matches, whatever its position.
+//!
+//! Suggestions rank books by the best field per term — title outweighs author
+//! outweighs address, because a reader naming a book means its name first —
+//! and hand back the matched character spans so the bar can light them up.
 
 use crate::book::Book;
+
+/// How many suggestions the bar offers at once. Seven rows fill the panel
+/// without scrolling; an eighth would be a row the reader has to move the
+/// hand to reach, which is what the keyboard is for.
+pub const SUGGEST_LIMIT: usize = 7;
+
+/// Characters that start a word, for scoring: a match on one is a match on a
+/// boundary the reader can see, not one inside a run of letters.
+fn is_boundary(hay: &[char], at: usize) -> bool {
+    at == 0 || matches!(hay[at - 1], ' ' | '-' | '_' | '.' | '/' | ':' | '(' | ')')
+}
+
+/// Fold one character for comparison. One fold per char, no allocation: the
+/// hot path walks fields a keystroke at a time.
+fn fold(c: char) -> char {
+    c.to_lowercase().next().unwrap_or(c)
+}
+
+/// One match: its score, and the character spans it lit up, merged so a
+/// consecutive run is one span rather than one span per character.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Match {
+    pub score: i32,
+    /// Char-index ranges, half-open, sorted and disjoint.
+    pub spans: Vec<(usize, usize)>,
+}
+
+fn merge_spans(indices: &[usize]) -> Vec<(usize, usize)> {
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for &at in indices {
+        match spans.last_mut() {
+            Some(last) if last.1 == at => last.1 = at + 1,
+            _ => spans.push((at, at + 1)),
+        }
+    }
+    spans
+}
+
+/// Match `term` against `field`, as a substring first and a scored
+/// subsequence when it is not one. `None` when the term is not in the field
+/// at all, or only in a subsequence too scattered to be a match.
+///
+/// The scattered floor is two points per term character: a dropped-vowel
+/// shape (`mthmtcl`, `dne`) scores one to five a character and clears it,
+/// while a term sprinkled across a long field — gap charges eating the two
+/// points a lone character earns — does not. Fuzzy that matched everything
+/// would be a shuffle, not a search.
+pub fn term_match(field: &str, term: &str) -> Option<Match> {
+    let term: Vec<char> = term.chars().map(fold).collect();
+    let q = term.len();
+    if q == 0 {
+        return None;
+    }
+    let hay: Vec<char> = field.chars().map(fold).collect();
+    if q > hay.len() {
+        return None;
+    }
+    // Substring first: the first occurrence, case-folded, walking the field
+    // once. A substring is always a match, wherever it sits.
+    let mut at = 0;
+    while at + q <= hay.len() {
+        if hay[at..at + q] == term[..] {
+            let mut score = 5 * q as i32 - 3;
+            if is_boundary(&hay, at) {
+                score += 4;
+            }
+            return Some(Match {
+                score,
+                spans: vec![(at, at + q)],
+            });
+        }
+        at += 1;
+    }
+    // The fuzzy pass: one walk, in order, scoring runs and boundaries and
+    // charging the gaps between matches.
+    let mut score = 0i32;
+    let mut hits: Vec<usize> = Vec::with_capacity(q);
+    let mut prev: Option<usize> = None;
+    let mut ti = 0usize;
+    for (at, c) in hay.iter().copied().enumerate() {
+        if c != term[ti] {
+            continue;
+        }
+        let mut add = 2;
+        match prev {
+            Some(p) if p + 1 == at => add += 3,
+            Some(p) => add -= (at - p - 1).min(8) as i32,
+            None => {}
+        }
+        if is_boundary(&hay, at) {
+            add += 4;
+        }
+        score += add;
+        hits.push(at);
+        prev = Some(at);
+        ti += 1;
+        if ti == q {
+            break;
+        }
+    }
+    if ti < q {
+        return None;
+    }
+    if score < 2 * q as i32 {
+        return None;
+    }
+    Some(Match {
+        score,
+        spans: merge_spans(&hits),
+    })
+}
+
+/// Whether a book survives `query`.
+///
+/// Every whitespace-separated term has to match SOME field of the book — its
+/// title, its author, its address — as a substring or as a fuzzy match, in any
+/// order across terms — so "herbert dune" and "dune herbert" answer the same,
+/// and a title with a subtitle is reachable by either half.
+pub fn matches(book: &Book, query: &str) -> bool {
+    if !is_active(query) {
+        return true;
+    }
+    let title = book.title();
+    let author = book.author();
+    let path = book.path();
+    query.split_whitespace().all(|term| {
+        term_match(&title, term).is_some()
+            || author.as_deref().is_some_and(|a| term_match(a, term).is_some())
+            || term_match(path, term).is_some()
+    })
+}
+
+/// Whether one already-lower-cased-or-not string survives `query` — the rule
+/// [`matches`] applies, without the book.
+///
+/// Split out because a shelf on the page is searched by the same bar as the
+/// books on it, and the two have to agree: a query that hid a shelf whose name
+/// it matched would be a search that quietly drops results, and one that kept
+/// a shelf whose name it did not match would be a shelf the reader cannot
+/// explain being there. One rule, spelled once.
+pub fn matches_terms(text: &str, query: &str) -> bool {
+    if !is_active(query) {
+        return true;
+    }
+    query
+        .split_whitespace()
+        .all(|term| term_match(text, term).is_some())
+}
 
 /// True when the query is worth filtering on. A blank bar means "show
 /// everything", and a bar of spaces means the same thing — the distinction
@@ -19,49 +188,94 @@ pub fn is_active(query: &str) -> bool {
     !query.trim().is_empty()
 }
 
-/// Whether a book survives `query`.
-///
-/// Every whitespace-separated term has to be found somewhere in the book, in
-/// any of the three fields and in any order — so "herbert dune" and "dune
-/// herbert" answer the same, and a title with a subtitle is reachable by
-/// either half. Comparison is case-insensitive; a library search that cared
-/// about case would be a grep, not a search.
-pub fn matches(book: &Book, query: &str) -> bool {
-    matches_terms(&haystack(book), query)
+/// One suggestion: the book, and the spans each of its three fields lit up,
+/// so the bar can light the characters the query actually hit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Suggestion {
+    pub book: Book,
+    pub title_spans: Vec<(usize, usize)>,
+    pub author_spans: Vec<(usize, usize)>,
+    pub path_spans: Vec<(usize, usize)>,
+    pub score: i32,
 }
 
-/// Whether one already-lower-cased-or-not string survives `query` — the rule
-/// [`matches`] applies, without the book.
-///
-/// Split out because a shelf on the page is searched by the same bar as the
-/// books on it, and the two have to agree: a query that hid a shelf whose name
-/// it matched would be a search that quietly drops results, and one that kept a
-/// shelf whose name it did not match would be a shelf the reader cannot explain
-/// being there. One rule, spelled once.
-pub fn matches_terms(text: &str, query: &str) -> bool {
+/// Score one book against every term, keeping the best field per term and
+/// weighting the fields the way a reader means them: a name first, an author
+/// second, an address last. `None` when any term misses every field. The
+/// winning field keeps the term's spans, sorted and merged, so the bar can
+/// light exactly the characters the query hit.
+fn rank(book: &Book, query: &str) -> Option<Suggestion> {
+    let title = book.title();
+    let author = book.author();
+    let path = book.path();
+    let mut score = 0i32;
+    let mut spans: [Vec<(usize, usize)>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for term in query.split_whitespace() {
+        let candidates = [
+            term_match(&title, term),
+            author.as_deref().and_then(|a| term_match(a, term)),
+            term_match(path, term),
+        ];
+        let weights = [3i32, 2, 1];
+        let mut best: Option<(i32, usize, Vec<(usize, usize)>)> = None;
+        for (field, candidate) in candidates.into_iter().enumerate() {
+            let Some(m) = candidate else { continue };
+            let weighted = weights[field] * m.score;
+            let beats = match &best {
+                Some((b, _, _)) => weighted > *b,
+                None => true,
+            };
+            if beats {
+                best = Some((weighted, field, m.spans));
+            }
+        }
+        // A term no field matched is a book the query does not suggest.
+        let (weighted, field, hit) = best?;
+        score += weighted;
+        spans[field].extend(hit);
+    }
+    for list in &mut spans {
+        sort_merge(list);
+    }
+    Some(Suggestion {
+        book: book.clone(),
+        title_spans: std::mem::take(&mut spans[0]),
+        author_spans: std::mem::take(&mut spans[1]),
+        path_spans: std::mem::take(&mut spans[2]),
+        score,
+    })
+}
+
+/// Sort a span list and fold overlaps and neighbours together, so painting a
+/// field's hits is one walk with no double-lit characters.
+fn sort_merge(spans: &mut Vec<(usize, usize)>) {
+    spans.sort_unstable_by_key(|s| s.0);
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
+    for span in spans.drain(..) {
+        match merged.last_mut() {
+            Some(last) if span.0 <= last.1 => last.1 = last.1.max(span.1),
+            _ => merged.push(span),
+        }
+    }
+    *spans = merged;
+}
+
+/// The books the bar suggests for a query, best first: score, then recency,
+/// then title, so a tie between two editions lands on the one the reader
+/// opened last. Capped at [`SUGGEST_LIMIT`].
+pub fn suggest(books: &[Book], query: &str, limit: usize) -> Vec<Suggestion> {
     if !is_active(query) {
-        return true;
+        return Vec::new();
     }
-    let hay = text.to_lowercase();
-    query
-        .split_whitespace()
-        .map(|term| term.to_lowercase())
-        .all(|term| hay.contains(&term))
-}
-
-/// The three searchable fields, lower-cased and space-joined. Built per call
-/// rather than cached: the alternative is a second copy of every title in the
-/// library that has to be invalidated on every rename, and the join is three
-/// short allocations on a keystroke.
-fn haystack(book: &Book) -> String {
-    let mut out = book.title().to_lowercase();
-    if let Some(author) = book.author() {
-        out.push(' ');
-        out.push_str(&author.to_lowercase());
-    }
-    out.push(' ');
-    out.push_str(&book.path().to_lowercase());
-    out
+    let mut ranked: Vec<Suggestion> = books.iter().filter_map(|b| rank(b, query)).collect();
+    ranked.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| b.book.last_read_ms.cmp(&a.book.last_read_ms))
+            .then_with(|| a.book.title().cmp(&b.book.title()))
+    });
+    ranked.truncate(limit);
+    ranked
 }
 
 /// The books a query keeps, in the order they were given. The shelf's own sort
@@ -172,5 +386,86 @@ mod tests {
         let kept: Vec<String> = filter(&books, "ap").iter().map(|b| b.title()).collect();
         assert_eq!(kept, vec!["Apple", "Apricot"], "the shelf's own sort ran first");
         assert!(filter(&books, "q").is_empty());
+    }
+
+    // -- the fuzzy half ---------------------------------------------------
+
+    #[test]
+    fn a_subsequence_that_holds_its_shape_is_a_match() {
+        // The shapes a reader half-remembers: missing vowels, initials, a run
+        // broken once. All clear the scattered floor with room to spare.
+        let m = term_match("Mathematical Proofs", "mthmtcl").expect("fuzzy match");
+        assert!(m.score >= 2 * 7);
+        assert!(m.spans.len() >= 2, "runs merge, gaps split: {:?}", m.spans);
+        assert!(term_match("Dune", "dne").is_some());
+        assert!(term_match("The Left Hand of Darkness", "tlhod").is_some());
+        // A word boundary is worth four: the same term scores higher where
+        // it starts a word than where it sits inside one.
+        let boundary = term_match("mathematical proofs", "math").unwrap();
+        let midword = term_match("xxmathxx", "math").unwrap();
+        assert!(boundary.score > midword.score);
+    }
+
+    #[test]
+    fn a_subsequence_too_scattered_is_not_a_match() {
+        // The floor is two points a character, and a sprinkle across a long
+        // field earns two a character minus its gaps — when it is a
+        // subsequence at all. Not a match, or fuzzy would match everything
+        // and be a shuffle.
+        assert!(term_match("A Brief Collection of Zebra Essays", "xyz").is_none());
+        assert!(term_match("Dune", "nud").is_none(), "order still matters");
+        assert!(term_match("Dune", "dunee").is_none(), "so does count");
+    }
+
+    #[test]
+    fn a_substring_always_matches_wherever_it_sits() {
+        let mid = term_match("xxdunexx", "dune").expect("substring");
+        assert_eq!(mid.spans, vec![(2, 6)]);
+        let start = term_match("dunexx", "dune").expect("substring at start");
+        assert!(start.score > mid.score, "a start is worth more than a middle");
+    }
+
+    #[test]
+    fn suggestions_rank_the_name_over_the_author_over_the_address() {
+        let books = vec![
+            book("Notes on Dune", None, "/x/a.pdf"),
+            book("Collected Papers", Some("Dune White"), "/x/b.pdf"),
+            book("Collected Papers", None, "/dune/raw.pdf"),
+        ];
+        let ranked = suggest(&books, "dune", 3);
+        let titles: Vec<String> = ranked.iter().map(|s| s.book.title()).collect();
+        assert_eq!(
+            titles,
+            vec![
+                "Notes on Dune".to_string(),
+                "Collected Papers".to_string(),
+                "Collected Papers".to_string()
+            ],
+            "title beats author beats address"
+        );
+        // The author-matched row lights the author, not the title.
+        assert!(ranked[1].title_spans.is_empty());
+        assert!(!ranked[1].author_spans.is_empty());
+        // And the address-matched row lights the address.
+        assert!(!ranked[2].path_spans.is_empty());
+    }
+
+    #[test]
+    fn suggestions_stop_at_the_limit_and_keep_the_reader_s_last() {
+        let mut books: Vec<Book> = (0..12)
+            .map(|i| book(&format!("Dune {i}"), None, &format!("/x/{i}.pdf")))
+            .collect();
+        books[7].last_read_ms = 99;
+        let ranked = suggest(&books, "dune", SUGGEST_LIMIT);
+        assert_eq!(ranked.len(), SUGGEST_LIMIT);
+        assert_eq!(ranked[0].book.title(), "Dune 7", "recency breaks a score tie");
+    }
+
+    #[test]
+    fn a_fuzzy_query_suggests_and_the_spans_light_the_hits() {
+        let books = vec![book("Mathematical Proofs", None, "/x/mp.pdf")];
+        let ranked = suggest(&books, "mthprf", SUGGEST_LIMIT);
+        assert_eq!(ranked.len(), 1);
+        assert!(!ranked[0].title_spans.is_empty());
     }
 }
