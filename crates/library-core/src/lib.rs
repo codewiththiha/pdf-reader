@@ -55,6 +55,7 @@ pub use reader_core::format::Format;
 pub use blob::{LibraryBlob, RecentBook, migrate_v1};
 pub use book::{
     BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, apply_check, duplicate_title, record_read,
+    record_read_row,
 };
 pub use folder::{FolderOpts, Tombstone, WatchedFolder};
 pub use ledger::{

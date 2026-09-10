@@ -332,6 +332,7 @@ mod tests {
             fraction: None,
             missing: false,
             fp_pending: false,
+            independent: false,
         }
     }
 

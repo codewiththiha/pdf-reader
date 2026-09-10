@@ -46,7 +46,7 @@ pub fn books(conn: &Connection) -> Result<Vec<Book>, String> {
         .prepare(
             "SELECT id, fp_size, fp_mtime_ms, fp_head_hash, fp_pending, title, author, format, \
                     origin, path, src_path, added_ms, last_read_ms, last_page, num_pages, \
-                    fraction, missing \
+                    fraction, missing, independent \
              FROM books ORDER BY position, id",
         )
         .map_err(|e| format!("could not prepare the book query: {e}"))?;
@@ -82,6 +82,7 @@ fn book_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
         num_pages: unsigned(row.get::<_, i64>(14)?) as u32,
         fraction: row.get(15)?,
         missing: row.get::<_, i64>(16)? != 0,
+        independent: row.get::<_, i64>(17)? != 0,
     })
 }
 
@@ -208,8 +209,9 @@ pub fn insert_book(conn: &Connection, book: &Book, position: i64) -> Result<(), 
     conn.execute(
         "INSERT INTO books (id, fp_size, fp_mtime_ms, fp_head_hash, fp_pending, title, author, \
                             stem, format, origin, path, src_path, position, added_ms, \
-                            last_read_ms, last_page, num_pages, fraction, missing) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                            last_read_ms, last_page, num_pages, fraction, missing, independent) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, \
+                 ?19, ?20)",
         params![
             book.id,
             book.fp.size as i64,
@@ -230,6 +232,7 @@ pub fn insert_book(conn: &Connection, book: &Book, position: i64) -> Result<(), 
             book.num_pages,
             book.fraction,
             book.missing as i64,
+            book.independent as i64,
         ],
     )
     .map_err(|e| format!("could not insert book {}: {e}", book.id))?;
@@ -242,7 +245,7 @@ pub fn find_by_fp(conn: &Connection, fp: &Fingerprint) -> Result<Option<Book>, S
     conn.query_row(
         "SELECT id, fp_size, fp_mtime_ms, fp_head_hash, fp_pending, title, author, format, \
                 origin, path, src_path, added_ms, last_read_ms, last_page, num_pages, fraction, \
-                missing \
+                missing, independent \
          FROM books WHERE fp_size = ?1 AND fp_mtime_ms = ?2 AND fp_head_hash = ?3",
         params![fp.size as i64, fp.mtime_ms as i64, i64::from(fp.head_hash)],
         |row| book_from_row(row),
@@ -256,7 +259,7 @@ pub fn find_by_path(conn: &Connection, path: &str) -> Result<Option<Book>, Strin
     conn.query_row(
         "SELECT id, fp_size, fp_mtime_ms, fp_head_hash, fp_pending, title, author, format, \
                 origin, path, src_path, added_ms, last_read_ms, last_page, num_pages, fraction, \
-                missing \
+                missing, independent \
          FROM books WHERE path = ?1",
         params![path],
         |row| book_from_row(row),
@@ -932,6 +935,7 @@ mod tests {
             fraction: None,
             missing: false,
             fp_pending: false,
+            independent: false,
         }
     }
 
@@ -991,6 +995,37 @@ mod tests {
         // came from survives beside it as provenance.
         assert_eq!(back[0].path(), "/app/LibraryStore/b2.pdf");
         assert_eq!(back[0].origin.source(), Some("/downloads/dune.pdf"));
+    }
+
+    #[test]
+    fn a_book_of_its_own_survives_its_column() {
+        // The mark is what the frontend keys a private book's highlights by, so
+        // a catalog that lost it would not lose a flag — it would move a
+        // reader's marks to a key the book no longer reads.
+        let conn = db();
+        let private = Book {
+            independent: true,
+            ..book("b1", "/books/dune.pdf", fp(1024, 7, 99))
+        };
+        insert_book(&conn, &private, 0).expect("inserted");
+        let back = books(&conn).expect("read back");
+        assert_eq!(back, vec![private], "the column is part of the book");
+        assert!(back[0].independent);
+        // And the row a migration wrote before the column existed reads as what
+        // it was: a shared row, whose marks live at its address.
+        conn.execute_batch(
+            "INSERT INTO books (id, fp_size, fp_mtime_ms, fp_head_hash, stem, format, origin, \
+                                path, position, added_ms) \
+             VALUES ('b0', 9, 9, 9, 'migrated', 'pdf', 'linked', '/books/migrated.pdf', 1, 0);",
+        )
+        .expect("a row of the old shape");
+        let migrated = find_by_path(&conn, "/books/migrated.pdf")
+            .unwrap()
+            .expect("present");
+        assert!(
+            !migrated.independent,
+            "the default is the shape every earlier row had"
+        );
     }
 
     #[test]

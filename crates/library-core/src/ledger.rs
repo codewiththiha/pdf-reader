@@ -77,16 +77,34 @@ pub type Registry = HashMap<Fingerprint, KnownBook>;
 /// content" names. For a scan the answer is the same whichever twin is named:
 /// content the library holds is a Skip at its address and a Relink away from
 /// it.
+///
+/// With one exception, and it is why this walks the list twice: a book of its
+/// own ([`crate::book::Book::independent`]) is not the library's row for a
+/// content, and a scan that named one would move the reader's private book
+/// when the file moved on disk and leave the shared row — the one every other
+/// layer answers with — pointing at a dead address. So the shared rows are
+/// indexed first and a private row only answers for a content no shared row
+/// holds, which keeps the alternative honest too: a file the library holds
+/// ONLY as a private book is still held, and a scan that could not see it
+/// would add a second row for a file already on the shelf.
 pub fn registry_of(books: &[crate::book::Book]) -> Registry {
     let mut out = Registry::with_capacity(books.len());
-    for book in books {
-        out.entry(book.fp).or_insert_with(|| KnownBook {
-            id: book.id.clone(),
-            path: book.path().to_string(),
-            missing: book.missing,
-        });
+    for book in books.iter().filter(|b| !b.independent) {
+        out.entry(book.fp).or_insert_with(|| known_of(book));
+    }
+    for book in books.iter().filter(|b| b.independent) {
+        out.entry(book.fp).or_insert_with(|| known_of(book));
     }
     out
+}
+
+/// What the ledger needs to know about one row.
+fn known_of(book: &crate::book::Book) -> KnownBook {
+    KnownBook {
+        id: book.id.clone(),
+        path: book.path().to_string(),
+        missing: book.missing,
+    }
 }
 
 /// One thing a scan decided to do about one file.
@@ -603,6 +621,7 @@ mod tests {
             fraction: None,
             missing,
             fp_pending: false,
+            independent: false,
         }
     }
 

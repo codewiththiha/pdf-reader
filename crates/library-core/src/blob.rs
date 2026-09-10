@@ -121,6 +121,7 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
                 fraction: b.fraction.filter(|f| (0.0..=1.0).contains(f)),
                 missing: false,
                 fp_pending: true,
+                independent: false,
             }
         })
         .collect();

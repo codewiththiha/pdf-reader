@@ -26,7 +26,9 @@
 //! row. Everything else follows one of two instincts: facts about the FILE
 //! (page count, fingerprint, format) take the best measurement either row
 //! has, and facts about the READER (name, author, stamps) keep whichever side
-//! knows more or, when both know, the survivor.
+//! knows more or, when both know, the survivor. One field takes neither:
+//! independence is ended by the fold itself ([`Policy::Folded`]), because
+//! "these two are one book" is the answer a private row exists to contradict.
 //!
 //! The marks a reader made inside the book — the gloss highlights and the AI
 //! answers hanging off them — are NOT fields of a `Book`: they live in the
@@ -85,6 +87,13 @@ pub enum Policy {
     /// policy — applied in the app layer, which owns that storage (see the
     /// module docs).
     Union,
+    /// Neither row's value: the fold's own answer, which is the same whatever
+    /// the two sides held. Independence takes it — a reader who answers
+    /// *merge* is saying these two are one book, which is the opposite of what
+    /// [`crate::book::Book::independent`] says, so the merged row is shared and
+    /// the survivor's own marks come back to the address every other writer
+    /// keys on.
+    Folded,
 }
 
 /// The field-by-field table [`merge_books`] implements, as data: what a merge
@@ -108,6 +117,7 @@ pub const POLICIES: &[(&str, Policy)] = &[
     ("fraction", Policy::Furthest),
     ("missing", Policy::Existing),   // only missing when BOTH addresses are dead
     ("fp_pending", Policy::Existing), // only pending when NEITHER was measured
+    ("independent", Policy::Folded),  // a fold ends it: one book is one book
     ("gloss marks", Policy::Union),
     ("gloss answers", Policy::Union), // ride the marks' ids, so unioning marks unions them
 ];
@@ -188,6 +198,11 @@ pub fn merge_books(existing: &Book, incoming: &Book) -> (Book, MergeNotes) {
         fraction: point.fraction,
         missing: existing.missing && incoming.missing,
         fp_pending: existing.fp_pending && incoming.fp_pending,
+        // `Policy::Folded`: not the survivor's value and not the arrival's.
+        // Two rows becoming one is the end of the reason a row was a book of
+        // its own, and the app layer moves the survivor's marks out of its
+        // id-keyed store and onto the address to match.
+        independent: false,
     };
     (book, notes)
 }
@@ -424,6 +439,26 @@ mod tests {
     }
 
     #[test]
+    fn a_fold_ends_independence() {
+        // A book of its own is a reader's answer to "these two are not the same
+        // book", and a merge is the opposite answer — so the fold wins, on
+        // either side, and the survivor reads the address's marks like every
+        // other book again.
+        let mut private = book("a", "/books/dune.pdf");
+        private.independent = true;
+        let shared = book("b", "/books/dune.pdf");
+        assert!(!merge_books(&private, &shared).0.independent);
+        assert!(!merge_books(&shared, &private).0.independent);
+        assert!(!merge_books(&private, &private).0.independent);
+        // And the key the survivor's marks live under goes back to being the
+        // address, which is what the app layer's fold of the id-keyed store
+        // into it relies on.
+        let (merged, _) = merge_books(&private, &shared);
+        assert_eq!(merged.gloss_key(), "/books/dune.pdf");
+        assert_eq!(private.gloss_key(), "a::/books/dune.pdf");
+    }
+
+    #[test]
     fn the_policy_table_is_the_merge_in_data() {
         // The rows a reviewer (or a future UI) reads instead of the function.
         // A Book field added without a table row and without a merge_books
@@ -436,6 +471,7 @@ mod tests {
             ("added_ms", Policy::Earliest),
             ("last_read_ms", Policy::Latest),
             ("page", Policy::Furthest),
+            ("independent", Policy::Folded),
             ("gloss marks", Policy::Union),
         ] {
             assert!(
@@ -444,6 +480,6 @@ mod tests {
             );
         }
         // Every Book field, plus the two rows of app-side gloss storage.
-        assert_eq!(POLICIES.len(), 15, "a new field means a new row");
+        assert_eq!(POLICIES.len(), 16, "a new field means a new row");
     }
 }
