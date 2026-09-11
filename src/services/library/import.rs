@@ -927,18 +927,14 @@ async fn run_folder(
                 if let Some(existing_id) =
                     library_core::conflict::collide(&books, &shelves_now, &arrival)
                 {
-                    let existing_name = find_row(&books, &existing_id)
-                        .map(|row| row.display_name())
-                        .unwrap_or_else(|| arrival.name.clone());
-                    asks.push(ConflictAsk {
+                    let existing_name = conflict::existing_name_of(&books, &existing_id, &arrival);
+                    asks.push(ConflictAsk::folder_merge(
                         arrival,
                         existing_id,
                         existing_name,
-                        folder_merge: true,
-                        in_place: folder.opts.in_place,
-                        folder_id: Some(folder.id.clone()),
-                        covered: false,
-                    });
+                        folder.opts.in_place,
+                        folder.id.clone(),
+                    ));
                     continue;
                 }
             }
@@ -991,18 +987,15 @@ async fn run_folder(
             let arrival = Arrival::import(file.clone(), target, None);
             match library_core::conflict::collide(&books, &shelves_now, &arrival) {
                 Some(existing_id) => {
-                    let existing_name = find_row(&books, &existing_id)
-                        .map(|row| row.display_name())
-                        .unwrap_or_else(|| arrival.name.clone());
-                    asks.push(ConflictAsk {
+                    let existing_name =
+                        conflict::existing_name_of(&books, &existing_id, &arrival);
+                    asks.push(ConflictAsk::folder_merge(
                         arrival,
                         existing_id,
                         existing_name,
-                        folder_merge: true,
-                        in_place: folder.opts.in_place,
-                        folder_id: Some(folder.id.clone()),
-                        covered: false,
-                    });
+                        folder.opts.in_place,
+                        folder.id.clone(),
+                    ));
                     false
                 }
                 None => true,
@@ -1733,15 +1726,16 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
             false
         }
         CoveredFate::Ask { folder_id, row_id } => {
-            covered_asks.push(ConflictAsk {
-                arrival: Arrival::import(file.clone(), shelf_id.clone(), None),
-                existing_name: state.library.row_name(&row_id),
-                existing_id: row_id,
-                folder_merge: false,
-                in_place: true,
-                folder_id: Some(folder_id),
-                covered: true,
-            });
+            // Named before the id is moved: the row's own name is what the
+            // sheet prints, and reading it after the constructor took the id
+            // would be reading a value that is no longer here.
+            let existing_name = state.library.row_name(&row_id);
+            covered_asks.push(ConflictAsk::covered(
+                Arrival::import(file.clone(), shelf_id.clone(), None),
+                row_id,
+                existing_name,
+                folder_id,
+            ));
             false
         }
     });

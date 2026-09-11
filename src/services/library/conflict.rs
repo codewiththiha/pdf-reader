@@ -83,7 +83,9 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use ai_core::gloss::GlossMark;
-use library_core::book::{Book, Fingerprint, find_book_mut, find_by_id, find_row, fold_books};
+use library_core::book::{
+    Book, Fingerprint, Row, find_book_mut, find_by_id, find_row, fold_books,
+};
 use library_core::conflict::{
     Answer, Arrival, MoveAnswer, collide, next_name, next_shelf_name,
 };
@@ -99,6 +101,89 @@ use super::arrange::{
 use crate::state::library::{AlreadyNote, NoteKind};
 use crate::state::{AppState, Toast};
 
+/// Which question an ask is, and the facts only that question has.
+///
+/// Three sheets share one queue and one signal, and which of them an ask wears
+/// used to be three booleans on it — plus an `in_place` that meant nothing unless
+/// the first was true and a `folder_id` that meant two different things depending
+/// on the second. Two of the four answer functions then opened with a runtime
+/// guard, and a caller that set the wrong combination got a sheet that silently
+/// did nothing: the flags could disagree with each other and nothing in the type
+/// said so. One variant per question makes the illegal combinations
+/// unrepresentable, the guards unnecessary, and each question's facts visible
+/// only where they mean something.
+#[derive(Clone, PartialEq)]
+pub enum AskKind {
+    /// The level's own name question: an arrival whose name a row on that level
+    /// already carries. WHICH three answers the sheet offers is the arrival's
+    /// fact rather than this one's — a file gets the import's, a row being moved
+    /// gets the move's — so this variant carries nothing.
+    NameCollision,
+    /// A per-file question out of a folder import merging into a shelf the level
+    /// already held. The shelf's question is answered; what is left is a run of
+    /// files with the same three doors each, and a switch that gives every
+    /// waiting question the same answer in one click.
+    FolderMerge {
+        /// Whether the merging folder reads in place or copies: a linked answer
+        /// lands now, a stored one lands after its copy — and a copy that fails
+        /// leaves the shelf untouched.
+        in_place: bool,
+        /// The watched folder whose ledger records the placement when the answer
+        /// lands, so a later rescan stays quiet about the file and a removal that
+        /// was holding it out is spent.
+        folder_id: Option<String>,
+    },
+    /// A loose import of a file that sits inside a folder the library READS IN
+    /// PLACE, where the book that folder holds for it is alive and standing. Two
+    /// answers rather than three — the library's own stored copy on this level,
+    /// or the folder's book lit where it stands — because the third answer a name
+    /// collision offers, a second row of one linked file, is the one thing a
+    /// read-at-place folder can never make. It is a question about the FILE's
+    /// ground rather than the level's name, so it is asked even on a level that
+    /// holds nothing of that name, and asked BEFORE the name question: a copy the
+    /// reader chose still meets the level's own names on the way in.
+    Covered {
+        /// The folder whose tree holds the file, which is the folder its sheet
+        /// names. Always one: a covered ask exists because a specific tree
+        /// covers the ground the file stands on.
+        folder_id: String,
+    },
+}
+
+impl AskKind {
+    /// The watched folder whose ledger a landed answer settles, when this ask
+    /// has one. Both folder kinds do, for the same reason: a placement the ledger
+    /// does not know about is a book the next rescan adds again.
+    pub fn folder_id(&self) -> Option<&str> {
+        match self {
+            AskKind::NameCollision => None,
+            AskKind::FolderMerge { folder_id, .. } => folder_id.as_deref(),
+            AskKind::Covered { folder_id } => Some(folder_id),
+        }
+    }
+
+    /// Whether this ask's folder reads in place, so an answer lands now rather
+    /// than after a copy.
+    ///
+    /// `false` for the two kinds that have no folder of their own: a name
+    /// collision's copy is the library's own whatever the level is, and a covered
+    /// ask's *import here* is always a stored copy — the file's own tree already
+    /// has the linked book, which is the whole reason the question was asked.
+    pub fn in_place(&self) -> bool {
+        matches!(self, AskKind::FolderMerge { in_place: true, .. })
+    }
+
+    /// Whether this ask wears the compact per-file sheet.
+    pub fn is_folder_merge(&self) -> bool {
+        matches!(self, AskKind::FolderMerge { .. })
+    }
+
+    /// Whether this ask wears the covered file's two answers.
+    pub fn is_covered(&self) -> bool {
+        matches!(self, AskKind::Covered { .. })
+    }
+}
+
 /// The question on screen.
 #[derive(Clone, PartialEq)]
 pub struct ConflictAsk {
@@ -113,33 +198,72 @@ pub struct ConflictAsk {
     /// heading and two buttons that need one string must not each derive their
     /// own.
     pub existing_name: String,
-    /// Whether this ask came out of a folder import merging into a shelf the
-    /// level already held. Its sheet is the compact per-file one — one book,
-    /// replace, as new, with an apply-to-all switch — rather than the import's
-    /// own: the reader has already answered the shelf's question, and what is
-    /// left is a row of files each with the same three doors.
-    pub folder_merge: bool,
-    /// Whether the merging folder reads in place or copies: a linked answer
-    /// lands now, a stored one lands after its copy — and a copy that fails
-    /// leaves the shelf untouched.
-    pub in_place: bool,
-    /// The watched folder whose ledger records the placement when the answer
-    /// lands, so a later rescan stays quiet about the file and a removal that
-    /// was holding it out is spent. A covered-file ask carries the folder
-    /// whose tree holds the file instead, which is the folder its sheet names.
-    pub folder_id: Option<String>,
-    /// Whether this ask is the covered-file question: a loose import of a file
-    /// that sits inside a folder the library READS IN PLACE, where the book
-    /// the folder holds for it is alive and standing. Its sheet is two answers
-    /// rather than three — the library's own stored copy on this level, or the
-    /// book the folder already holds, lit — because the third answer a name
-    /// collision offers, a second row of one linked file, is the one thing a
-    /// read-at-place folder can never have. It is a question about the FILE's
-    /// ground rather than about the level's name, so it is asked even on a
-    /// level that holds nothing of that name, and it is asked before the name
-    /// question: a copy the reader chose still meets the level's own names on
-    /// the way in.
-    pub covered: bool,
+    /// Which question this is, and the facts only that question has.
+    pub kind: AskKind,
+}
+
+impl ConflictAsk {
+    /// The level's own name question, about an arrival that collided with a row
+    /// already there.
+    pub fn name_collision(arrival: Arrival, existing_id: String, existing_name: String) -> Self {
+        Self {
+            arrival,
+            existing_id,
+            existing_name,
+            kind: AskKind::NameCollision,
+        }
+    }
+
+    /// One file of a folder import merging into a standing shelf, whose name a
+    /// rung of that shelf already holds.
+    pub fn folder_merge(
+        arrival: Arrival,
+        existing_id: String,
+        existing_name: String,
+        in_place: bool,
+        folder_id: String,
+    ) -> Self {
+        Self {
+            arrival,
+            existing_id,
+            existing_name,
+            kind: AskKind::FolderMerge {
+                in_place,
+                folder_id: Some(folder_id),
+            },
+        }
+    }
+
+    /// A loose import of a file an in-place tree already holds a living book for.
+    pub fn covered(
+        arrival: Arrival,
+        existing_id: String,
+        existing_name: String,
+        folder_id: String,
+    ) -> Self {
+        Self {
+            arrival,
+            existing_id,
+            existing_name,
+            kind: AskKind::Covered { folder_id },
+        }
+    }
+}
+
+/// The name a colliding row shows, or the arrival's own when the row went
+/// between the collision and the read.
+///
+/// One spelling because four call sites ask it, and because the sheet prints the
+/// answer in three places: a heading and two buttons that each derived their own
+/// would eventually disagree about which book the question is about.
+///
+/// Crate-visible for the same reason the constructors are: a folder import builds
+/// its own asks off its own snapshot of the rows, and reading the colliding row's
+/// name is part of building one.
+pub(crate) fn existing_name_of(rows: &[Row], existing_id: &str, arrival: &Arrival) -> String {
+    find_row(rows, existing_id)
+        .map(|row| row.display_name())
+        .unwrap_or_else(|| arrival.name.clone())
 }
 
 /// Split a batch into the arrivals that may land now and the questions the
@@ -154,18 +278,12 @@ pub fn screen(state: AppState, arrivals: Vec<Arrival>) -> (Vec<Arrival>, Vec<Con
     for arrival in arrivals {
         match collide(&rows, &shelves, &arrival) {
             Some(existing_id) => {
-                let existing_name = find_row(&rows, &existing_id)
-                    .map(|row| row.display_name())
-                    .unwrap_or_else(|| arrival.name.clone());
-                asks.push(ConflictAsk {
+                let existing_name = existing_name_of(&rows, &existing_id, &arrival);
+                asks.push(ConflictAsk::name_collision(
                     arrival,
                     existing_id,
                     existing_name,
-                    folder_merge: false,
-                    in_place: true,
-                    folder_id: None,
-                    covered: false,
-                });
+                ));
             }
             None => clean.push(arrival),
         }
@@ -800,7 +918,7 @@ pub fn answer_folder_merge(state: AppState, answer: FolderMergeAnswer, apply_all
         state,
         answer,
         apply_all,
-        |ask| ask.folder_merge,
+        AskKind::is_folder_merge,
         apply_folder_merge,
     );
 }
@@ -819,13 +937,13 @@ fn answer_batch<A: Copy + 'static>(
     state: AppState,
     answer: A,
     apply_all: bool,
-    is_mine: fn(&ConflictAsk) -> bool,
+    is_mine: fn(&AskKind) -> bool,
     apply: fn(AppState, &ConflictAsk, A),
 ) {
     let Some(ask) = state.library.conflict.get_untracked() else {
         return;
     };
-    if !is_mine(&ask) {
+    if !is_mine(&ask.kind) {
         return;
     }
     apply(state, &ask, answer);
@@ -834,7 +952,7 @@ fn answer_batch<A: Copy + 'static>(
         return;
     }
     while let Some(next) = state.library.conflict.get_untracked() {
-        if !is_mine(&next) {
+        if !is_mine(&next.kind) {
             break;
         }
         apply(state, &next, answer);
@@ -848,6 +966,16 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
     let Some(file) = ask.arrival.file.clone() else {
         return;
     };
+    // The two facts a folder merge's landing needs, off the kind that is the
+    // only one carrying them: whether the folder reads in place (so the answer
+    // lands now) or copies (so it lands after a copy that can fail), and which
+    // ledger records the placement. `answer_batch` routes only a folder merge
+    // here, so any other kind is a caller bug and there is nothing honest to
+    // place — answering it with a default would be a guess about a folder.
+    let (in_place, folder_id) = match &ask.kind {
+        AskKind::FolderMerge { in_place, folder_id } => (*in_place, folder_id.clone()),
+        _ => return,
+    };
     // The sheet withholds *as new* from a file whose very address a
     // read-at-place row already reads — a second row of one linked file is a
     // duplicate, and the library does not make those — but apply-to-all can
@@ -856,7 +984,7 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
     // "keep the one", which is the merge.
     let answer = match answer {
         FolderMergeAnswer::AsNew
-            if ask.in_place
+            if in_place
                 && state.library.books.with_untracked(|rows| {
                     find_by_id(rows, &ask.existing_id)
                         .is_some_and(|b| b.path() == file.path)
@@ -886,7 +1014,7 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
                     }
                 });
             }
-            settle_folder_ledger(state, ask, file.fp);
+            settle_folder_ledger(state, folder_id.as_deref(), file.fp);
             crate::storage::persist_library(state.library);
         }
         FolderMergeAnswer::AsNew => {
@@ -894,7 +1022,15 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
                 let (rows, shelves) = state.library.snapshot_rows();
                 next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name)
             };
-            land_answer_file(state, ask, file, Some(name), None);
+            land_answer_file(
+                state,
+                ask.arrival.shelf_id.clone(),
+                file,
+                Some(name),
+                None,
+                in_place,
+                folder_id.as_deref(),
+            );
         }
         FolderMergeAnswer::Replace => {
             // Read the slot before the purge takes the row that holds it: an
@@ -905,7 +1041,15 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
                 std::slice::from_ref(&ask.existing_id),
                 PurgeOpts::default(),
             );
-            land_answer_file(state, ask, file, None, slot);
+            land_answer_file(
+                state,
+                ask.arrival.shelf_id.clone(),
+                file,
+                None,
+                slot,
+                in_place,
+                folder_id.as_deref(),
+            );
         }
     }
 }
@@ -914,15 +1058,16 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
 /// reads in place, or after the store copy the folder's options owe.
 fn land_answer_file(
     state: AppState,
-    ask: &ConflictAsk,
+    shelf_id: String,
     file: FoundFile,
     name: Option<String>,
     index: Option<usize>,
+    in_place: bool,
+    folder_id: Option<&str>,
 ) {
-    let shelf_id = ask.arrival.shelf_id.clone();
-    if ask.in_place {
+    if in_place {
         super::import::land_file(state, &file, name, &shelf_id, index);
-        settle_folder_ledger(state, ask, file.fp);
+        settle_folder_ledger(state, folder_id, file.fp);
         super::covers::backfill_missing(state);
         crate::storage::persist_library(state.library);
         return;
@@ -933,7 +1078,10 @@ fn land_answer_file(
     // minted now because the stored file is named after it.
     let book_id = library_core::id::next_id(crate::time::now_ms());
     let task = format!("merge-{book_id}");
-    let folder_id = ask.folder_id.clone();
+    // Owned for the future: the ledger write is the same two writes the
+    // in-place branch makes, and spelling them a second time here was a second
+    // place a placement could be recorded without the removal being spent.
+    let ledger = folder_id.map(str::to_string);
     let fp = file.fp;
     spawn_local(async move {
         match super::copy_one_to_store(&task, &file.path, &book_id).await {
@@ -941,14 +1089,7 @@ fn land_answer_file(
                 super::import::mint_stored_row(
                     state, book_id, &file, store, name, &shelf_id, index,
                 );
-                if let Some(folder_id) = folder_id {
-                    state.library.folders.update(|folders| {
-                        if let Some(folder) = folder_ops::find_mut(folders, &folder_id) {
-                            ledger::restore_deleted(folder, &fp);
-                            folder.mark_placed(fp);
-                        }
-                    });
-                }
+                settle_folder_ledger(state, ledger.as_deref(), fp);
                 super::covers::backfill_missing(state);
                 crate::storage::persist_library(state.library);
             }
@@ -961,12 +1102,12 @@ fn land_answer_file(
 /// and a removal that was holding the file out is spent — the two writes
 /// `run_folder` makes when a file lands, made here because this file landed
 /// after an answer rather than after a walk.
-fn settle_folder_ledger(state: AppState, ask: &ConflictAsk, fp: Fingerprint) {
-    let Some(folder_id) = ask.folder_id.clone() else {
+fn settle_folder_ledger(state: AppState, folder_id: Option<&str>, fp: Fingerprint) {
+    let Some(folder_id) = folder_id else {
         return;
     };
     state.library.folders.update(|folders| {
-        if let Some(folder) = folder_ops::find_mut(folders, &folder_id) {
+        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
             ledger::restore_deleted(folder, &fp);
             folder.mark_placed(fp);
         }
@@ -1009,7 +1150,7 @@ pub enum CoveredAnswer {
 /// NOT a covered one stops the drain: it belongs to another gesture and gets
 /// its own sheet.
 pub fn answer_covered(state: AppState, answer: CoveredAnswer, apply_all: bool) {
-    answer_batch(state, answer, apply_all, |ask| ask.covered, apply_covered);
+    answer_batch(state, answer, apply_all, AskKind::is_covered, apply_covered);
 }
 
 /// One answer, applied: the folder's book lit, or the library's own copy on
@@ -1420,15 +1561,12 @@ mod tests {
             vec![row("b1", "Dune", "/books/dune.md", 1)],
             vec![shelf("fs", &["b1"]), shelf("s", &[])],
         );
-        let ask = ConflictAsk {
-            arrival: Arrival::import(file("dune", 1), "s", None),
-            existing_id: "b1".to_string(),
-            existing_name: "Dune".to_string(),
-            folder_merge: false,
-            in_place: true,
-            folder_id: Some("f1".to_string()),
-            covered: true,
-        };
+        let ask = ConflictAsk::covered(
+            Arrival::import(file("dune", 1), "s", None),
+            "b1".to_string(),
+            "Dune".to_string(),
+            "f1".to_string(),
+        );
         raise(state, vec![ask]);
 
         answer_covered(state, CoveredAnswer::GoToExisting, false);

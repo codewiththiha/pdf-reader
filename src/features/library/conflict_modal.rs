@@ -81,7 +81,7 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
                 // A folder merge's file asks wear the compact sheet: the
                 // shelf's question is already answered, and what is left is a
                 // run of files with the same three doors each.
-                if ask.folder_merge {
+                if ask.kind.is_folder_merge() {
                     return Some(
                         view! { <FolderMergeSheet state=state ask=ask /> }.into_any(),
                     );
@@ -89,7 +89,7 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
                 // A covered file's ask is about the file's own ground rather
                 // than the level's name, and its sheet is the two answers the
                 // read-at-place rule leaves.
-                if ask.covered {
+                if ask.kind.is_covered() {
                     return Some(
                         view! { <CoveredSheet state=state ask=ask /> }.into_any(),
                     );
@@ -388,7 +388,7 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
     let waiting = state
         .library
         .conflict_waiting
-        .with_untracked(|w| w.iter().filter(|each| each.folder_merge).count());
+        .with_untracked(|w| w.iter().filter(|each| each.kind.is_folder_merge()).count());
     let incoming = ask.arrival.name.clone();
     let existing = ask.existing_name.clone();
     let heading = incoming.clone();
@@ -404,7 +404,7 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
     // wearing the same name keeps all three, and a STORED folder keeps all
     // three too: its *as new* is a second copy in the store, a book of its
     // own bytes rather than a second door on one file.
-    let twin = ask.in_place
+    let twin = ask.kind.in_place()
         && state.library.books.with_untracked(|rows| {
             ask.arrival.file.as_ref().is_some_and(|file| {
                 find_row(rows, &ask.existing_id)
@@ -530,12 +530,12 @@ fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
     let waiting = state
         .library
         .conflict_waiting
-        .with_untracked(|w| w.iter().filter(|each| each.covered).count());
+        .with_untracked(|w| w.iter().filter(|each| each.kind.is_covered()).count());
     let incoming = ask.arrival.name.clone();
     let heading = incoming.clone();
     let folder_name = ask
-        .folder_id
-        .as_deref()
+        .kind
+        .folder_id()
         .and_then(|folder_id| state.library.folder(folder_id).map(|f| folder_label(&f.root)))
         .unwrap_or_else(|| "a folder read in place".to_string());
     let book_name = ask.existing_name.clone();
