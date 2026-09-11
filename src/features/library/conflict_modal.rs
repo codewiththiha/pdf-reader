@@ -95,7 +95,7 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
                     );
                 }
                 let info = Info::of(state, &ask);
-                Some(view! { <Sheet state=state info=info /> }.into_any())
+                Some(view! { <NameSheet state=state info=info /> }.into_any())
             }}
         </ModalShell>
     }
@@ -197,7 +197,7 @@ impl Info {
 /// answers "is there still a question?" on every run, and this one is built
 /// once per answer with an answer it can keep.
 #[component]
-fn Sheet(state: AppState, info: Info) -> impl IntoView {
+fn NameSheet(state: AppState, info: Info) -> impl IntoView {
     let subtitle = if info.waiting > 0 {
         format!("Already {} · {} more waiting", info.where_line, info.waiting)
     } else {

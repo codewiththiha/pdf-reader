@@ -178,7 +178,7 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                         .unwrap_or_default();
                     let alt = info.heading();
                     Some(view! {
-                        <Sheet
+                        <ReceiptSheet
                             state=state
                             sheet=sheet
                             delete_copy=delete_copy
@@ -202,7 +202,7 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
 /// ids it was asked about while the rows described the ids plus a shelf's contents
 /// would confirm one removal and perform another.
 #[component]
-fn Sheet(
+fn ReceiptSheet(
     state: AppState,
     sheet: RemoveSheet,
     delete_copy: RwSignal<bool>,
