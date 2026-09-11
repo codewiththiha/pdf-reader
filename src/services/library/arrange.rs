@@ -802,6 +802,14 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
             }
         });
     }
+    // A link may point AT a shelf — the pointer a merged import leaves behind —
+    // and a pointer at nothing is a row that renders, is clicked and does
+    // nothing: the shelf links go with the shelf, the way the book links go
+    // with a book.
+    let shelves_now = state.library.shelves.get_untracked();
+    state.library.books.update(|rows| {
+        library_core::book::drop_dead_shelf_links(rows, &shelves_now);
+    });
     if was_inside {
         state.library.shelf.set(stepped_out);
     }

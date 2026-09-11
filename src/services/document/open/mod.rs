@@ -99,16 +99,23 @@ pub fn open_dialog(state: AppState) {
 }
 
 /// Open a library ROW, which is what every surface on the shelf calls: a book
-/// opens, and a link takes the reader to the book it points at instead
-/// ([`crate::services::library::reveal_book`] — its shelf, then its card, lit),
-/// because a pointer is not a file and there is nothing to open. A row that
-/// went between the click and the open opens nothing at all.
+/// opens, and a link takes the reader to what it points at instead — a book's
+/// link reveals the book ([`crate::services::library::reveal_book`]: its
+/// shelf, then its card, lit), and a folder's link reveals the shelf
+/// ([`crate::services::library::reveal_shelf`]: its level, then its card,
+/// lit) — because a pointer is not a file and there is nothing to open. Which
+/// kind it points at is the target's own first letter, which the id mint
+/// guarantees is an answer (`library_core::id::is_shelf`). A row that went
+/// between the click and the open opens nothing at all.
 pub fn open_row(state: AppState, row_id: String) {
     let target = state
         .library
         .row(&row_id)
         .and_then(|row| row.target().map(str::to_string));
     match target {
+        Some(target) if library_core::id::is_shelf(&target) => {
+            crate::services::library::reveal_shelf(state, &target)
+        }
         Some(target) => crate::services::library::reveal_book(state, &target),
         None => open_book(state, row_id),
     }

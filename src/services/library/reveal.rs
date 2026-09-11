@@ -30,6 +30,33 @@ pub fn reveal_book(state: AppState, book_id: &str) {
     )));
 }
 
+/// Go to a shelf: the level it hangs on, then the folder itself, lit.
+///
+/// The shelf half of [`reveal_book`] and where a folder link's tap goes: the
+/// pointer promises "opens the folder where it is", and where it is may be a
+/// level the reader is not on. The light is the same signal and the same
+/// nonce — a shelf id is a letter apart from a book id, so the surfaces can
+/// tell whose reveal is whose.
+pub fn reveal_shelf(state: AppState, shelf_id: &str) {
+    let level = state
+        .library
+        .shelves
+        .with_untracked(|shelves| {
+            shelves
+                .iter()
+                .find(|s| s.id == shelf_id)
+                .and_then(|s| s.parent.clone())
+        })
+        .unwrap_or_else(|| ALL_SHELF.to_string());
+    if state.library.shelf.get_untracked() != level {
+        state.library.shelf.set(level);
+    }
+    state.library.reveal.set(Some((
+        shelf_id.to_string(),
+        NONCE.fetch_add(1, Ordering::Relaxed),
+    )));
+}
+
 /// Put the breadcrumb under the shelf a book is filed on — the FIRST one, in
 /// shelf order, so the answer is the same every time — or at the root when it is
 /// on no shelf. A book in the library and on nothing is in "All", and "All" is

@@ -42,7 +42,7 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{
-    Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut,
+    Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut, find_row,
 };
 use library_core::conflict::Arrival;
 use library_core::folder::{FolderOpts, WatchedFolder};
@@ -53,7 +53,7 @@ use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
-use super::conflict;
+use super::conflict::{self, ConflictAsk};
 use super::{file_name, folder_label};
 use crate::services::library as wire;
 use crate::time::now_ms;
@@ -63,9 +63,8 @@ use crate::state::{AppState, Toast};
 /// Who asked for a folder run, which is what the tombstones mean.
 ///
 /// One type rather than a boolean at the call site because the two runs are not
-/// two settings of one thing: they answer different questions, and a reader of
-/// `run_folder(state, task, root, opts, true)` cannot tell which question `true`
-/// was answering.
+/// two settings of one thing: they answer different questions, and a boolean at
+/// `run_folder`'s signature cannot say which one it was answering.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Asked {
     /// The reader picked the folder, or dropped it on the window. An explicit
@@ -74,6 +73,23 @@ enum Asked {
     /// The window regaining focus asked. This is exactly the case a tombstone
     /// exists for — a removed book must stay removed on its own — so they hold.
     OnFocus,
+}
+
+/// What the folder sheet's answer decided about the run's root, before the run.
+///
+/// The default is the run nobody asked about: mint the folder's root shelf
+/// under the folder's own name. A collision at the level changes that, and
+/// the change is a value rather than a branch at six call sites:
+///
+///   * `rename` — the *as new* answer's name: the root rung is minted under
+///     the counter the sheet promised rather than under the folder's own;
+///   * `into` — the *merge* answer's shelf: the folder's root rung IS the
+///     shelf the level already held, and every file the walk finds at the
+///     root files into it.
+#[derive(Clone, Default)]
+pub(crate) struct RootPlan {
+    pub rename: Option<String>,
+    pub into: Option<String>,
 }
 
 /// A run's id. The shell echoes it on every progress beat, so two imports in
@@ -185,7 +201,56 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
 
 /// Import a folder, with the options the sheet was filled in with. Returns
 /// immediately: the dock owns the feedback from here on.
+/// A folder whose NAME the root level already holds is a question before it
+/// is an import — two shelves of one name on one level are two doors a reader
+/// cannot tell apart, which is the shelf's own spelling of the collision the
+/// book sheet asks about. The question goes to the folder sheet
+/// (`crate::services::library::conflict`), and the run starts with the answer
+/// it gave as its [`RootPlan`]. A folder whose own previous run minted the
+/// colliding shelf does NOT ask: re-importing one folder continues it rather
+/// than arriving beside it, which is the whole of what its `shelf_map` is.
 pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
+    let incoming = folder_label(&root);
+    let shelves = state.library.shelves.get_untracked();
+    if let Some(existing_id) = library_core::conflict::collide_shelf(&shelves, None, &incoming) {
+        let already_mine = state.library.folders.with_untracked(|folders| {
+            folders
+                .iter()
+                .find(|f| f.root == root)
+                .and_then(|f| f.shelf_map.get("").cloned())
+                == Some(existing_id.clone())
+        });
+        if !already_mine {
+            let existing_name = shelves
+                .iter()
+                .find(|s| s.id == existing_id)
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| incoming.clone());
+            conflict::raise_shelf(
+                state,
+                conflict::ShelfConflictAsk {
+                    incoming_name: incoming,
+                    existing_id,
+                    existing_name,
+                    root,
+                    opts,
+                },
+            );
+            return;
+        }
+    }
+    proceed_folder(state, root, opts, RootPlan::default());
+}
+
+/// Claim the root and start the run — the half of [`import_folder`] that is
+/// the same whatever the folder sheet decided, and the half its answers call
+/// directly.
+pub(crate) fn proceed_folder(
+    state: AppState,
+    root: String,
+    opts: FolderOpts,
+    plan: RootPlan,
+) {
     // A folder already being imported is an import already answering this ask:
     // its card is on the dock and its walk is the same tree. Racing it would
     // clobber its ledger write, so the second ask says so instead.
@@ -201,7 +266,7 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     spawn_local(async move {
         // Held for the whole run: the drop is the release, on every exit path.
         let _claim = claim;
-        run_folder(state, task, root, opts, Asked::Explicitly).await;
+        run_folder(state, task, root, opts, Asked::Explicitly, plan).await;
     });
 }
 
@@ -260,7 +325,7 @@ pub fn rescan_watched(state: AppState) {
         let task = task_id();
         spawn_local(async move {
             let _claim = claim;
-            run_folder(state, task, root, opts, Asked::OnFocus).await;
+            run_folder(state, task, root, opts, Asked::OnFocus, RootPlan::default()).await;
         });
     }
 }
@@ -376,6 +441,7 @@ async fn run_folder(
     root: String,
     opts: FolderOpts,
     asked: Asked,
+    plan: RootPlan,
 ) {
     // A rescan is the quiet half of this function: it owes the reader no card
     // and no write for a folder nothing changed in. An import owes an answer
@@ -413,6 +479,13 @@ async fn run_folder(
         });
     // The sheet's answers are this import's truth, and the next scan's.
     folder.opts = opts;
+    // A merge files into the shelf the level already held: the folder's root
+    // rung is that shelf, and the map is the one place the walk, the chain
+    // minting and every later rescan read the answer from — which is what
+    // makes the merge a promise the next scan keeps.
+    if let Some(into) = &plan.into {
+        folder.shelf_map.insert(String::new(), into.clone());
+    }
 
     // The tree on disk is the tree on the shelf, for the shelves this folder
     // owns — the rule and its edge cases (a hand-moved shelf keeps its place,
@@ -496,7 +569,44 @@ async fn run_folder(
     };
     adds.retain(|f| seen.insert(f.fp));
 
-    if adds.is_empty() && relinked == 0 && healed == 0 {
+    // A run merged into a shelf the level already held — the folder sheet's
+    // MERGE answer — asks the level's own question about every root-level file
+    // it brings: a file whose NAME the shelf already holds is a question
+    // rather than a placement, and the compact sheet asks it (one book /
+    // replace / as new, one at a time or one answer for all). Everything else
+    // the folder brings is what the reader asked for by choosing merge, and
+    // goes in without being asked — new books are the default, not a case.
+    // Subfolder files are never asked: their rungs are minted fresh under the
+    // merged root, where nothing is standing to collide.
+    let mut asks: Vec<ConflictAsk> = Vec::new();
+    if let Some(target) = plan.into.as_deref() {
+        let shelves_now = state.library.shelves.get_untracked();
+        adds.retain(|file| {
+            if !folder.shelf_key(file).is_empty() {
+                return true;
+            }
+            let arrival = Arrival::import(file.clone(), target.to_string(), None);
+            match library_core::conflict::collide(&books, &shelves_now, &arrival) {
+                Some(existing_id) => {
+                    let existing_name = find_row(&books, &existing_id)
+                        .map(|row| row.display_name())
+                        .unwrap_or_else(|| arrival.name.clone());
+                    asks.push(ConflictAsk {
+                        arrival,
+                        existing_id,
+                        existing_name,
+                        folder_merge: true,
+                        in_place: folder.opts.in_place,
+                        folder_id: Some(folder.id.clone()),
+                    });
+                    false
+                }
+                None => true,
+            }
+        });
+    }
+
+    if adds.is_empty() && relinked == 0 && healed == 0 && asks.is_empty() {
         // Nothing to do. A quiet run leaves no trace beyond the folder's own
         // "last scanned" stamp; an explicit import still owes the reader an
         // answer, which is a card saying nothing was new.
@@ -550,6 +660,8 @@ async fn run_folder(
     let mut placements: Vec<(String, String)> = Vec::new();
     let in_place = folder.opts.in_place;
     let folder_id = folder.id.clone();
+    let planned_name = plan.rename.clone();
+    let merged = plan.into.is_some();
 
     state.library.books.update(|books| {
         for (book_id, to) in relinks {
@@ -607,7 +719,13 @@ async fn run_folder(
             let shelf_id = folder.shelf_chain_for(
                 &key,
                 |_| id::next_shelf_id(now),
-                |rung| shelf_name(rung, &root),
+                |rung| match (rung.is_empty(), &planned_name) {
+                    // The folder sheet's *as new* answer: the root rung wears
+                    // the counter name it promised, and every rung below it
+                    // keeps the disk's own.
+                    (true, Some(name)) => name.clone(),
+                    _ => shelf_name(rung, &root),
+                },
                 |rung, id, name, parent| {
                     new_shelves.push(Shelf {
                         id: id.to_string(),
@@ -620,7 +738,10 @@ async fn run_folder(
                         parent,
                         // Minted by the scan, so the scan owns its rung —
                         // until a hand moves it, which is `reparent`'s mark.
-                        manual_parent: false,
+                        // A merged run marks every rung it mints: their tree
+                        // hangs off a shelf the disk does not own, so there is
+                        // no disk shape for a re-hang to put them back on.
+                        manual_parent: merged,
                     });
                 },
             );
@@ -662,10 +783,20 @@ async fn run_folder(
     // shelf the reader can scan.
     super::covers::backfill_missing(state);
 
+    // The asks are raised after the clean half landed and the blob was
+    // written: the sheet counts against the level as the landing left it, and
+    // a card that finishes with questions outstanding says so rather than
+    // claiming an import nobody has answered yet.
+    let waiting = asks.len() as u32;
+    if !asks.is_empty() {
+        conflict::raise(state, asks);
+    }
+
     let total = placed + (relink_count + healed) as u32;
     update_task(state, &task, move |t| {
         t.total = total;
         t.done = total;
+        t.waiting = waiting;
         t.finish();
     });
 }
@@ -933,6 +1064,56 @@ pub fn land_file(
     shelf_id: &str,
     index: Option<usize>,
 ) -> String {
+    mint_row(
+        state,
+        file,
+        Origin::Linked {
+            src: file.path.clone(),
+        },
+        None,
+        name,
+        shelf_id,
+        index,
+    )
+}
+
+/// Land a file whose bytes the app copied into its store: the row
+/// [`land_file`] lands, at a stored address, under an id minted BEFORE the
+/// copy — the stored file is named after it, and a mint afterwards would
+/// leave two copies of one name fighting over one slot in the store.
+pub(crate) fn mint_stored_row(
+    state: AppState,
+    book_id: String,
+    file: &FoundFile,
+    store: String,
+    name: Option<String>,
+    shelf_id: &str,
+    index: Option<usize>,
+) -> String {
+    mint_row(
+        state,
+        file,
+        Origin::Stored {
+            src: Some(file.path.clone()),
+            store,
+        },
+        Some(book_id),
+        name,
+        shelf_id,
+        index,
+    )
+}
+
+/// The row both landings mint.
+fn mint_row(
+    state: AppState,
+    file: &FoundFile,
+    origin: Origin,
+    book_id: Option<String>,
+    name: Option<String>,
+    shelf_id: &str,
+    index: Option<usize>,
+) -> String {
     let now = now_ms();
     let independent = state
         .library
@@ -942,12 +1123,10 @@ pub fn land_file(
         title: name,
         independent,
         ..Book::new(
-            id::next_id(now),
+            book_id.unwrap_or_else(|| id::next_id(now)),
             file.fp,
             file.format().unwrap_or(Format::Pdf),
-            Origin::Linked {
-                src: file.path.clone(),
-            },
+            origin,
             now,
         )
     };

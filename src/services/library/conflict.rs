@@ -60,14 +60,20 @@
 //! is add a row, and a row is removed by the sheet that says what it takes.
 
 use leptos::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 
 use ai_core::gloss::GlossMark;
-use library_core::book::{Book, book_rows_mut, find_by_id, find_row, fold_books};
-use library_core::conflict::{Answer, Arrival, MoveAnswer, collide, next_name};
+use library_core::book::{Book, Fingerprint, book_rows_mut, find_by_id, find_row, fold_books};
+use library_core::conflict::{
+    Answer, Arrival, MoveAnswer, collide, next_name, next_shelf_name,
+};
+use library_core::folder::FolderOpts;
+use library_core::ledger;
+use library_core::scan::FoundFile;
 use library_core::shelf;
 
 use super::arrange::{PurgeOpts, memberships, purge_books};
-use crate::state::AppState;
+use crate::state::{AppState, Toast};
 
 /// The question on screen.
 #[derive(Clone, PartialEq)]
@@ -83,6 +89,20 @@ pub struct ConflictAsk {
     /// heading and two buttons that need one string must not each derive their
     /// own.
     pub existing_name: String,
+    /// Whether this ask came out of a folder import merging into a shelf the
+    /// level already held. Its sheet is the compact per-file one — one book,
+    /// replace, as new, with an apply-to-all switch — rather than the import's
+    /// own: the reader has already answered the shelf's question, and what is
+    /// left is a row of files each with the same three doors.
+    pub folder_merge: bool,
+    /// Whether the merging folder reads in place or copies: a linked answer
+    /// lands now, a stored one lands after its copy — and a copy that fails
+    /// leaves the shelf untouched.
+    pub in_place: bool,
+    /// The watched folder whose ledger records the placement when the answer
+    /// lands, so a later rescan stays quiet about the file and a removal that
+    /// was holding it out is spent.
+    pub folder_id: Option<String>,
 }
 
 /// Split a batch into the arrivals that may land now and the questions the
@@ -104,6 +124,9 @@ pub fn screen(state: AppState, arrivals: Vec<Arrival>) -> (Vec<Arrival>, Vec<Con
                     arrival,
                     existing_id,
                     existing_name,
+                    folder_merge: false,
+                    in_place: true,
+                    folder_id: None,
                 });
             }
             None => clean.push(arrival),
@@ -362,8 +385,9 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
             );
             // The row may read from an address the cover cache has no art
             // for; `land_file` leaves the queue to its caller, and this is a
-            // landing of one.
+            // landing of one. The persist is the caller's for the same reason.
             super::covers::backfill_missing(state);
+            crate::storage::persist_library(state.library);
         }
     }
 }
@@ -392,6 +416,267 @@ pub fn cancel(state: AppState) {
     state.library.conflict.set(None);
     state.library.conflict_waiting.set(Vec::new());
     state.library.conflict_open.set(false);
+}
+
+// ---------------------------------------------------------------------------
+// The shelf's own question: a folder arriving under a name the level holds.
+// ---------------------------------------------------------------------------
+
+/// The folder question on screen: the name arriving, and the shelf already
+/// here wearing it.
+///
+/// A separate ask rather than a variant of [`ConflictAsk`] because a folder
+/// has no [`Arrival`] — nothing has been measured when its NAME is the
+/// question — and because its answers are about a whole import run rather
+/// than about one placement: two of the three start the run again with a
+/// plan, and the third walks away with a pointer.
+#[derive(Clone, PartialEq)]
+pub struct ShelfConflictAsk {
+    /// What the arriving folder would be called: the last segment of its
+    /// path, the name the reader picked it by.
+    pub incoming_name: String,
+    /// The shelf already at the level, which *make link* points at and
+    /// *merge* files into.
+    pub existing_id: String,
+    pub existing_name: String,
+    /// The import the question interrupted, kept whole: an answer runs it.
+    pub root: String,
+    pub opts: FolderOpts,
+}
+
+/// The reader's answer to a folder's name collision.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ShelfAnswer {
+    /// Mint the arriving folder's shelf under the next free name
+    /// ([`next_shelf_name`]) and import into its own tree.
+    AsNew,
+    /// Place nothing and import nothing: leave a pointer row at the level —
+    /// the folder's own `library_core::book::Row::Link`, whose target is the
+    /// shelf's id — and a tap on it reveals the shelf it names, lit, wherever
+    /// it hangs.
+    Link,
+    /// The arriving folder IS the shelf that is here: its books join it, and
+    /// the files whose names it already holds ask, one by one, on the compact
+    /// sheet ([`answer_folder_merge`]).
+    Merge,
+}
+
+/// Put the folder question on screen. One question, no queue: a folder import
+/// is one run, and the run does not start until it is answered.
+pub fn raise_shelf(state: AppState, ask: ShelfConflictAsk) {
+    state.library.shelf_conflict.set(Some(ask));
+    state.library.shelf_conflict_open.set(true);
+}
+
+/// One of the folder sheet's three buttons.
+pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
+    let Some(ask) = state.library.shelf_conflict.get_untracked() else {
+        return;
+    };
+    cancel_shelf(state);
+    match answer {
+        ShelfAnswer::AsNew => {
+            // Counted at the click rather than at the raise: a shelf that
+            // landed between the two is a name the promise has to skip.
+            let name = state.library.shelves.with_untracked(|shelves| {
+                next_shelf_name(shelves, None, &ask.incoming_name)
+            });
+            super::import::proceed_folder(
+                state,
+                ask.root,
+                ask.opts,
+                super::import::RootPlan {
+                    rename: Some(name),
+                    into: None,
+                },
+            );
+        }
+        ShelfAnswer::Link => {
+            // A pointer at the shelf, on the level the import would have
+            // minted one: the row the reader can recognise, and no second
+            // door with the same name on it.
+            state
+                .library
+                .add_link(&ask.existing_name, &ask.existing_id, shelf::ALL_SHELF);
+            state.ui.toast.set(Some(Toast::new(format!(
+                "Linked to {}.",
+                ask.existing_name
+            ))));
+        }
+        ShelfAnswer::Merge => {
+            super::import::proceed_folder(
+                state,
+                ask.root,
+                ask.opts,
+                super::import::RootPlan {
+                    rename: None,
+                    into: Some(ask.existing_id),
+                },
+            );
+        }
+    }
+}
+
+/// Cancel the folder question: the import simply does not run, which is what
+/// Cancel has always meant.
+pub fn cancel_shelf(state: AppState) {
+    state.library.shelf_conflict.set(None);
+    state.library.shelf_conflict_open.set(false);
+}
+
+// ---------------------------------------------------------------------------
+// The compact sheet's answers: one file of a merging folder, at a time.
+// ---------------------------------------------------------------------------
+
+/// The three answers the compact sheet offers for one arriving file whose
+/// name a merged-into shelf already holds. The move sheet's three, re-spelled
+/// for an arrival that has no row of its own yet.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FolderMergeAnswer {
+    /// One book: the row on the shelf stays and takes the arriving file's
+    /// measurement — the heal a rescan would give a file it found, from a
+    /// reader who just said the two are the same book.
+    Merge,
+    /// The row on the shelf goes — through the removal's own sweep, receipt
+    /// and all — and the arriving file takes its slot.
+    Replace,
+    /// Two books: the file lands under the next free name, as a book of its
+    /// own when the address is one the library already reads.
+    AsNew,
+}
+
+/// One of the compact sheet's three buttons.
+///
+/// `apply_all` is the switch beside them: checked, the answer is given to
+/// every folder-merge question in the queue as well — a reader who has seen
+/// one file of a forty-file folder and knows what the whole folder is does
+/// not owe the sheet thirty-nine more clicks. A book question that is NOT a
+/// folder-merge one stops the drain: it belongs to another gesture and gets
+/// its own sheet.
+pub fn answer_folder_merge(state: AppState, answer: FolderMergeAnswer, apply_all: bool) {
+    let Some(ask) = state.library.conflict.get_untracked() else {
+        return;
+    };
+    if !ask.folder_merge {
+        return;
+    }
+    apply_folder_merge(state, &ask, answer);
+    advance(state);
+    if !apply_all {
+        return;
+    }
+    while let Some(next) = state.library.conflict.get_untracked() {
+        if !next.folder_merge {
+            break;
+        }
+        apply_folder_merge(state, &next, answer);
+        advance(state);
+    }
+}
+
+/// One answer, applied: the row heals, the file replaces it, or the file
+/// lands beside it under a name of its own.
+fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAnswer) {
+    let Some(file) = ask.arrival.file.clone() else {
+        return;
+    };
+    match answer {
+        FolderMergeAnswer::Merge => {
+            let existing = ask.existing_id.clone();
+            state.library.books.update(|rows| {
+                if let Some(book) =
+                    book_rows_mut(rows).find(|b| b.id == existing)
+                {
+                    book.fp = file.fp;
+                    book.fp_pending = false;
+                    book.missing = false;
+                }
+            });
+            settle_folder_ledger(state, ask, file.fp);
+            crate::storage::persist_library(state.library);
+        }
+        FolderMergeAnswer::AsNew => {
+            let name = {
+                let (rows, shelves) = state.library.snapshot_rows();
+                next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name)
+            };
+            land_answer_file(state, ask, file, Some(name), None);
+        }
+        FolderMergeAnswer::Replace => {
+            // Read the slot before the purge takes the row that holds it: an
+            // overwrite stays where the thing it replaced was.
+            let slot = member_slot(state, &ask.arrival.shelf_id, &ask.existing_id);
+            purge_books(
+                state,
+                std::slice::from_ref(&ask.existing_id),
+                PurgeOpts::default(),
+            );
+            land_answer_file(state, ask, file, None, slot);
+        }
+    }
+}
+
+/// Land one answered file on the merged-into shelf: now, when the folder
+/// reads in place, or after the store copy the folder's options owe.
+fn land_answer_file(
+    state: AppState,
+    ask: &ConflictAsk,
+    file: FoundFile,
+    name: Option<String>,
+    index: Option<usize>,
+) {
+    let shelf_id = ask.arrival.shelf_id.clone();
+    if ask.in_place {
+        super::import::land_file(state, &file, name, &shelf_id, index);
+        settle_folder_ledger(state, ask, file.fp);
+        super::covers::backfill_missing(state);
+        crate::storage::persist_library(state.library);
+        return;
+    }
+    // A folder that copies: the copy is made BEFORE the row is promised, and
+    // a copy that fails leaves the shelf untouched and the ledger unmarked —
+    // the one honest outcome for a file that could not be filed. The id is
+    // minted now because the stored file is named after it.
+    let book_id = library_core::id::next_id(crate::time::now_ms());
+    let task = format!("merge-{book_id}");
+    let folder_id = ask.folder_id.clone();
+    let fp = file.fp;
+    spawn_local(async move {
+        match super::copy_one_to_store(&task, &file.path, &book_id).await {
+            Ok(store) => {
+                super::import::mint_stored_row(
+                    state, book_id, &file, store, name, &shelf_id, index,
+                );
+                if let Some(folder_id) = folder_id {
+                    state.library.folders.update(|folders| {
+                        if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+                            ledger::restore_deleted(folder, &fp);
+                            folder.mark_placed(fp);
+                        }
+                    });
+                }
+                super::covers::backfill_missing(state);
+                crate::storage::persist_library(state.library);
+            }
+            Err(message) => state.ui.toast.set(Some(Toast::new(message))),
+        }
+    });
+}
+
+/// The folder's ledger half of a landed answer: the placement is recorded,
+/// and a removal that was holding the file out is spent — the two writes
+/// `run_folder` makes when a file lands, made here because this file landed
+/// after an answer rather than after a walk.
+fn settle_folder_ledger(state: AppState, ask: &ConflictAsk, fp: Fingerprint) {
+    let Some(folder_id) = ask.folder_id.clone() else {
+        return;
+    };
+    state.library.folders.update(|folders| {
+        if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+            ledger::restore_deleted(folder, &fp);
+            folder.mark_placed(fp);
+        }
+    });
 }
 
 #[cfg(test)]

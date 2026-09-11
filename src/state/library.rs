@@ -34,7 +34,7 @@ use library_core::text::plural;
 use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
 
-use crate::services::library::conflict::ConflictAsk;
+use crate::services::library::conflict::{ConflictAsk, ShelfConflictAsk};
 use crate::time::now_ms;
 
 /// How many covers the cache holds. A cover is a base64 JPEG of a few tens of
@@ -279,6 +279,16 @@ pub struct LibraryState {
     /// behind its back leaves a payload nobody reads, and the next raise
     /// replaces it.
     pub conflict_open: RwSignal<bool>,
+    /// The folder question a name collision at import raises: the shelf the
+    /// level already holds, and the folder arriving under the same name. Its
+    /// own signal rather than a variant of [`Self::conflict`] because the two
+    /// sheets answer different arrivals — a book sheet's payload is an
+    /// [`Arrival`](library_core::conflict::Arrival), and a folder has none
+    /// yet: nothing has been measured when its name is the question.
+    pub shelf_conflict: RwSignal<Option<ShelfConflictAsk>>,
+    /// The pair of [`Self::shelf_conflict`] the lane and the Escape rule hold,
+    /// for the reason [`Self::conflict_open`] exists.
+    pub shelf_conflict_open: RwSignal<bool>,
 }
 
 impl Default for LibraryState {
@@ -302,6 +312,8 @@ impl Default for LibraryState {
             conflict: RwSignal::new(None),
             conflict_waiting: RwSignal::new(Vec::new()),
             conflict_open: RwSignal::new(false),
+            shelf_conflict: RwSignal::new(None),
+            shelf_conflict_open: RwSignal::new(false),
         }
     }
 }

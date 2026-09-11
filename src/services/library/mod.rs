@@ -40,7 +40,7 @@ pub use arrange::{
     rename_shelf, reorder_shelves_to_anchor, unfile_books,
 };
 pub use covers::backfill_missing;
-pub use reveal::reveal_book;
+pub use reveal::{reveal_book, reveal_shelf};
 pub use import::{
     dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book, verify_library,
     verify_one,
