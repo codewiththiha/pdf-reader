@@ -22,7 +22,8 @@
 //!     a folder merge's per-file asks wear its compact sheet, and a loose
 //!     file of a read-at-place folder wears the covered sheet's two answers
 //!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
-//!     folder question an import asks before its walk
+//!     folder question an import asks before its walk, and the mode switch a
+//!     read-at-place folder asks when it is re-picked as copies
 //!   * [`already_imported_modal`] — no question at all: a folder the library
 //!     already reads in place, named and lit up
 //!   * [`selection`] — the hold that starts a multi-select, and the bar that acts

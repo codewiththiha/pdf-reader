@@ -289,11 +289,13 @@ pub struct LibraryState {
     /// The pair of [`Self::shelf_conflict`] the lane and the Escape rule hold,
     /// for the reason [`Self::conflict_open`] exists.
     pub shelf_conflict_open: RwSignal<bool>,
-    /// The "that folder is already a shelf here" answer: the shelf's id and
-    /// the name the modal speaks. Not a question — an import of a folder the
-    /// library already reads in place has nothing to decide, and the modal's
-    /// one job is to say so and then light the shelf up.
-    pub already_imported: RwSignal<Option<(String, String)>>,
+    /// The "that folder is already a shelf here" answer: the shelf's id, the
+    /// name the modal speaks, and whether the sentence is the gate's — a rung
+    /// inside a tree the library reads in place, told before any walk — or
+    /// the report of a re-import walk that found nothing new. Not a question
+    /// either way — the modal's one job is to say the sentence and then light
+    /// the shelf up.
+    pub already_imported: RwSignal<Option<(String, String, bool)>>,
     /// The pair of [`Self::already_imported`] the lane and the Escape rule
     /// hold, for the reason [`Self::conflict_open`] exists.
     pub already_imported_open: RwSignal<bool>,

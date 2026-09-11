@@ -50,9 +50,11 @@ use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
+use library_core::text::display_or_stem;
 use library_core::wire::{PathCheck, StoreRequest};
 use reader_core::format::{Format, is_supported_path};
 
+use super::arrange::{PurgeOpts, migrate_gloss};
 use super::conflict::{self, ConflictAsk};
 use super::{file_name, folder_label};
 use crate::services::library as wire;
@@ -85,11 +87,18 @@ enum Asked {
 ///     the counter the sheet promised rather than under the folder's own;
 ///   * `into` — the *merge* answer's shelf: the folder's root rung IS the
 ///     shelf the level already held, and every file the walk finds at the
-///     root files into it.
+///     root files into it;
+///   * `continuation` — the root shelf an already-imported read-at-place
+///     re-pick names, and the note a walk that found NOTHING new owes the
+///     reader after the fact: the reconciliation ran, every book was already
+///     here, and the shelf lights up when the note closes. A run that found
+///     something answers with the landing and the card instead, and a rescan
+///     never carries one.
 #[derive(Clone, Default)]
 pub(crate) struct RootPlan {
     pub rename: Option<String>,
     pub into: Option<String>,
+    pub continuation: Option<(String, String)>,
 }
 
 /// A run's id. The shell echoes it on every progress beat, so two imports in
@@ -118,6 +127,13 @@ impl Drop for RootClaim {
     fn drop(&mut self) {
         RUNNING.with(|running| running.borrow_mut().remove(&self.0));
     }
+}
+
+/// Whether a walk of `root` is already in flight — the question the replace
+/// answer has to ask BEFORE its purge, because a removal behind a refused
+/// claim would be a sweep with no import to answer it.
+fn root_is_claimed(root: &str) -> bool {
+    RUNNING.with(|running| running.borrow().contains(root))
 }
 
 /// Claim `root` for one run, or answer `None` when one is already in flight.
@@ -212,20 +228,66 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
 /// answer, and a run that ends on "Imported 0 books" with no sheet in between
 /// is the silent nothing the book collision used to be. A folder colliding
 /// with its OWN previous shelf asks too — the continuation is a choice rather
-/// than a surprise — UNLESS the library already reads that very folder in
-/// place: a linked folder cannot mint a second instance of itself, or of a
-/// subfolder inside its own tree, so re-picking one is answered before any
-/// sheet with "already imported" and a highlight of the shelf the reader
-/// meant (`covered_shelf`). The sheet then withholds the *as new* answer from
-/// a read-at-place arrival, because as new of a linked folder is exactly the
+/// than a surprise.
+///
+/// The read-at-place gate in front of all of it is three answers rather than
+/// one (`covered_shelf`). A RUNG inside a tree the library reads in place —
+/// the folder itself or a subfolder of it — cannot mint a second instance,
+/// so it is answered before any sheet with "already imported" and a
+/// highlight of the shelf the reader meant. The tree's OWN root, re-picked
+/// read at its place, is a reconciliation instead: the walk runs, new files
+/// join the tree as linked books, the logs a removal or a departure wrote
+/// are spent by their books coming back, and only a walk that found NOTHING
+/// raises the note — the sentence the gate used to say up front, earned by
+/// the walk instead. The same root re-picked as COPIES is the mode switch's
+/// question, and the sheet it raises asks how the folder is held from here
+/// on: a second shelf of copies, the shelf that is here switched over to
+/// copies, or copies in place of the books that are here. The ordinary name
+/// sheet, meanwhile, withholds *as new* from a read-at-place arrival of a
+/// DIFFERENT folder's name, because as new of a linked folder is exactly the
 /// second instance the gate exists to prevent; a stored arrival keeps all
 /// three answers, its copies being the library's own.
 pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
-    // The read-at-place gate: this folder — or a rung inside a tree the
-    // library reads in place — is already a shelf here, and the honest
-    // answer is a sentence and a highlight, never a second instance.
-    if let Some((shelf_id, name)) = covered_shelf(state, &root) {
-        conflict::raise_already_imported(state, shelf_id, name);
+    // The read-at-place gate, which is three answers rather than one. A RUNG
+    // inside a tree the library reads in place is ground that tree already
+    // holds: a sentence and a highlight, whichever mode arrives, because a
+    // second instance of it is a second door on one folder. The tree's OWN
+    // root re-picked is a continuation instead: read at its place, the run
+    // reconciles — new files join the tree, the logs a removal or a
+    // departure wrote are spent by their books coming back, and only a walk
+    // that found nothing raises the note. Re-picked as COPIES, the folder is
+    // asking to be held the other way, and that is the mode switch's
+    // question: a second shelf of copies, the shelf that is here switched
+    // over to copies, or copies in place of the books that are here.
+    if let Some((rel, shelf_id, shelf_name)) = covered_shelf(state, &root) {
+        if !rel.is_empty() {
+            conflict::raise_already_imported(state, shelf_id, shelf_name);
+            return;
+        }
+        if opts.in_place {
+            proceed_folder(
+                state,
+                root,
+                opts,
+                RootPlan {
+                    continuation: Some((shelf_id, shelf_name)),
+                    ..Default::default()
+                },
+            );
+            return;
+        }
+        conflict::raise_shelf(
+            state,
+            conflict::ShelfConflictAsk {
+                incoming_name: folder_label(&root),
+                existing_id: shelf_id,
+                existing_name: shelf_name,
+                root,
+                opts,
+                own: true,
+                mode_switch: true,
+            },
+        );
         return;
     }
     let incoming = folder_label(&root);
@@ -254,6 +316,7 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
                 root,
                 opts,
                 own,
+                mode_switch: false,
             },
         );
         return;
@@ -261,19 +324,22 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     proceed_folder(state, root, opts, RootPlan::default());
 }
 
-/// The standing shelf an in-place tree already holds for `root`, if any: the
-/// folder's own root shelf when `root` is a folder the library reads in
-/// place, or the rung shelf when `root` is a subfolder inside one.
+/// The standing shelf an in-place tree already holds for `root`, if any, as
+/// `(rel, shelf id, shelf name)`: `rel` empty when `root` IS a folder the
+/// library reads in place, the rung's key when `root` is a subfolder inside
+/// one — and the empty key wins when two in-place trees nest, because a
+/// folder's own tree answers for it before a tree it stands inside.
 ///
-/// The "already imported" gate answers only for READ-AT-PLACE trees: their
-/// shelves are the OS folders themselves, so a second import of the same
-/// ground is at best a no-op and at worst a duplicate of every book on it.
-/// Stored trees are never covered — a stored import is the library's own
-/// copy, and whether to make another is the reader's call, asked through the
-/// ordinary name question.
-fn covered_shelf(state: AppState, root: &str) -> Option<(String, String)> {
+/// The gate answers only for READ-AT-PLACE trees: their shelves are the OS
+/// folders themselves, so a second import of the same ground is at best a
+/// no-op and at worst a duplicate of every book on it. Stored trees are
+/// never covered — a stored import is the library's own copy, and whether to
+/// make another is the reader's call, asked through the ordinary name
+/// question.
+fn covered_shelf(state: AppState, root: &str) -> Option<(String, String, String)> {
     let folders = state.library.folders.get_untracked();
     let shelves = state.library.shelves.get_untracked();
+    let mut rung: Option<(String, String, String)> = None;
     for folder in folders.iter().filter(|f| f.opts.in_place) {
         let Some(rel) = rel_under(root, &folder.root) else {
             continue;
@@ -282,10 +348,15 @@ fn covered_shelf(state: AppState, root: &str) -> Option<(String, String)> {
             continue;
         };
         if let Some(shelf) = shelves.iter().find(|s| &s.id == shelf_id) {
-            return Some((shelf.id.clone(), shelf.name.clone()));
+            if rel.is_empty() {
+                return Some((rel, shelf.id.clone(), shelf.name.clone()));
+            }
+            if rung.is_none() {
+                rung = Some((rel, shelf.id.clone(), shelf.name.clone()));
+            }
         }
     }
-    None
+    rung
 }
 
 /// `root` as a rung key inside `base`'s tree: the empty key when the two are
@@ -486,17 +557,29 @@ fn apply_checks(state: AppState, checks: &[PathCheck]) {
 /// rule: a file at an address the library reads IS that book, whatever the two
 /// fingerprints say, and the walk has just made the measurement the startup
 /// pass could not. Answers how many rows it healed.
-fn heal_by_address(books: &mut [Row], adds: &mut Vec<FoundFile>) -> usize {
+fn heal_by_address(
+    books: &mut [Row],
+    adds: &mut Vec<FoundFile>,
+    skip: &HashSet<String>,
+) -> usize {
     let mut healed = 0usize;
-    adds.retain(|file| match book_rows_mut(books).find(|b| b.path() == file.path) {
-        Some(book) => {
-            book.fp = file.fp;
-            book.fp_pending = false;
-            book.missing = false;
-            healed += 1;
-            false
+    adds.retain(|file| {
+        // A mode switch's copy is an add BECAUSE the library holds the
+        // address: healing it into the row that is there would answer the
+        // second instance the reader asked for with the first one.
+        if skip.contains(&file.path) {
+            return true;
         }
-        None => true,
+        match book_rows_mut(books).find(|b| b.path() == file.path) {
+            Some(book) => {
+                book.fp = file.fp;
+                book.fp_pending = false;
+                book.missing = false;
+                healed += 1;
+                false
+            }
+            None => true,
+        }
     });
     healed
 }
@@ -545,6 +628,16 @@ async fn run_folder(
             last_seen: Vec::new(),
             scanned_ms: 0,
         });
+    // The mode switch: a folder the library read in place, re-imported as
+    // copies. The plan tells the two shapes apart, because an *as new* run
+    // owes its tree copies of its OWN — independent books beside the linked
+    // ones the old tree keeps reading — while a merge continues the standing
+    // tree and flips those books into the library's copies afterwards. A
+    // replace has put them through the removal's sweep before the run even
+    // started, so the flip simply finds nothing to do.
+    let switching = folder.opts.in_place && !opts.in_place;
+    let switch_copies_known = switching && plan.rename.is_some();
+    let switch_converts = switching && plan.rename.is_none();
     // The sheet's answers are this import's truth, and the next scan's.
     folder.opts = opts;
     // A merge files into the shelf the level already held: the folder's root
@@ -587,6 +680,37 @@ async fn run_folder(
     }
 
     let registry = ledger::registry_of(&books);
+
+    // The switch's two lists, read off the same snapshot the diff reads and
+    // before the run writes anything. The CONVERT list is the merge's: every
+    // living linked book the folder's ledger answers for, which the run flips
+    // into a copy of the library's own at the end. The COPY list is the *as
+    // new* run's: the addresses whose linked book the old tree keeps, and
+    // where the new tree lands a copy of its own beside it.
+    let convert_ids: Vec<String> = if switch_converts {
+        linked_rows_of_placed(&books, &folder.placed)
+    } else {
+        Vec::new()
+    };
+    let switch_copy_paths: HashSet<String> = if switch_copies_known {
+        found
+            .iter()
+            .filter(|file| {
+                registry.get(&file.fp).is_some_and(|known| {
+                    book_rows(&books)
+                        .find(|b| b.id == known.id)
+                        .is_some_and(|b| {
+                            matches!(b.origin, Origin::Linked { .. })
+                                && b.path() == file.path
+                                && folder.placed.contains(&file.fp)
+                        })
+                })
+            })
+            .map(|file| file.path.clone())
+            .collect()
+    } else {
+        HashSet::new()
+    };
 
     // A fingerprint can rejoin the library by any route — a hand-open, a second
     // folder's import, a restore — and a tombstone left behind for a book that
@@ -652,6 +776,21 @@ async fn run_folder(
     relinks.retain(|(_, to)| !book_rows(&books).any(|b| b.path() == to.as_str()));
     let relinked = relinks.len();
 
+    // The ledger answered Skip for the switch's own files — their content is
+    // known — but an *as new* copy run owes each of them a book of its own:
+    // back onto the add list they go, and the planned-tree pass below keeps
+    // them out of the memberships it owes the OTHER known files.
+    if switch_copies_known && !switch_copy_paths.is_empty() {
+        for file in found
+            .iter()
+            .filter(|f| switch_copy_paths.contains(&f.path))
+        {
+            if !adds.iter().any(|a| a.path == file.path) {
+                adds.push(file.clone());
+            }
+        }
+    }
+
     // A planned tree — the folder sheet's *as new* or *merge* answer — owes a
     // placement for EVERY file the walk found that the library already holds:
     // a membership of the row it holds it in, never a second row, because one
@@ -675,8 +814,12 @@ async fn run_folder(
         // Known content never reaches a planned run's add list: its placement
         // is the membership below, and an add would either resolve to the
         // same row twice or — in a copying folder — make a store copy nothing
-        // reads.
-        adds.retain(|f| !registry.contains_key(&f.fp));
+        // reads. The mode switch's own copies are the exception the rule
+        // exists for: a second instance the reader just asked for, of a file
+        // the old tree keeps reading in place.
+        adds.retain(|f| {
+            !registry.contains_key(&f.fp) || switch_copy_paths.contains(&f.path)
+        });
         let shelves_now = state.library.shelves.get_untracked();
         for file in &found {
             // The row the library holds this file in: by content identity
@@ -693,6 +836,11 @@ async fn run_folder(
             let Some(row_id) = known else {
                 continue;
             };
+            // A file the switch copies lands as a book of its own below, not
+            // as a membership of the row it duplicates.
+            if switch_copy_paths.contains(&file.path) {
+                continue;
+            }
             let key = folder.shelf_key(file);
             let target = plan.into.as_deref().and_then(|into| {
                 if key.is_empty() {
@@ -732,7 +880,7 @@ async fn run_folder(
     // would put a second copy of the same file on the shelf next to its own
     // twin. Healing the row is the honest answer, and the walk has just made the
     // measurement the startup pass could not.
-    let mut healed = heal_by_address(&mut books, &mut adds);
+    let mut healed = heal_by_address(&mut books, &mut adds, &switch_copy_paths);
 
     // One book per fingerprint INSIDE a single scan, always: a tree holding two
     // byte-identical files is one book, and copying both would leave an orphan
@@ -795,13 +943,20 @@ async fn run_folder(
         && asks.is_empty()
         && replacements.is_empty()
         && represented.is_empty()
+        && convert_ids.is_empty()
     {
         // Nothing to do. A quiet run leaves no trace beyond the folder's own
         // "last scanned" stamp; an explicit import still owes the reader an
-        // answer, which is a card saying nothing was new.
+        // answer, which is a card saying nothing was new — and a re-pick of a
+        // tree the library already reads in place owes the note as well, the
+        // gate's old sentence earned now by a walk that found every book
+        // already standing.
         folder.scanned_ms = now_ms();
         write_folder(state, folder);
         if !quiet {
+            if let Some((shelf_id, name)) = plan.continuation.clone() {
+                conflict::raise_nothing_new(state, shelf_id, name);
+            }
             update_task(state, &task, |t| t.finish());
         }
         return;
@@ -818,7 +973,7 @@ async fn run_folder(
         .map(|file| (id::next_id(now), file))
         .collect();
     let replaced = replacements.len();
-    let expected = (pending.len() + relinked + healed + replaced) as u32;
+    let expected = (pending.len() + relinked + healed + replaced + convert_ids.len()) as u32;
     if quiet {
         // The first card appears only now, so a focus rescan that found nothing
         // never raises one at all.
@@ -829,13 +984,28 @@ async fn run_folder(
         update_task(state, &task, move |t| t.total = expected);
     }
 
-    let copies = if folder.opts.in_place {
+    let copies = if folder.opts.in_place || pending.is_empty() {
         HashMap::new()
     } else {
         match copy_batch(state, &task, &pending).await {
             Ok(copies) => copies,
             Err(message) => return fail(state, &task, message, quiet),
         }
+    };
+    // The switch's copies are measured in one pass before a row is promised:
+    // an independent copy of a file the old tree still reads must not wear
+    // the ORIGINAL's fingerprint — that identity stays the linked book's, and
+    // the copy is known by its own bytes, the way every instance the library
+    // owns is.
+    let switch_measured: HashMap<String, Fingerprint> = if switch_copies_known {
+        let stores: Vec<String> = pending
+            .iter()
+            .filter(|(_, file)| switch_copy_paths.contains(&file.path))
+            .filter_map(|(book_id, _)| copies.get(book_id).cloned())
+            .collect();
+        measure_stores(stores).await
+    } else {
+        HashMap::new()
     };
 
     // Applied to the LIVE lists rather than to the copies taken before the scan.
@@ -868,8 +1038,13 @@ async fn run_folder(
             // while the walk was running: an address the library now holds is that
             // book, so it is measured rather than added a second time beside its
             // twin. Membership is left alone — the ledger records the placement,
-            // and where the reader filed it is the reader's business.
-            if let Some(existing) = book_rows_mut(books).find(|b| b.path() == file.path) {
+            // and where the reader filed it is the reader's business. The mode
+            // switch's copies are exempt by name: their twin IS the point of
+            // them, and the run below mints them past the one-row rule.
+            let switch_copy = switch_copy_paths.contains(&file.path);
+            if !switch_copy
+                && let Some(existing) = book_rows_mut(books).find(|b| b.path() == file.path)
+            {
                 existing.fp = file.fp;
                 existing.fp_pending = false;
                 existing.missing = false;
@@ -902,6 +1077,10 @@ async fn run_folder(
             // placement below lifts the removal, and the run reveals the
             // book at the end.
             let stone = ledger::find_tombstone(&folder, &file.fp).cloned();
+            let store_at = match &origin {
+                Origin::Stored { store, .. } => Some(store.clone()),
+                Origin::Linked { .. } => None,
+            };
             let mut book = Book::new(
                 book_id,
                 file.fp,
@@ -912,7 +1091,32 @@ async fn run_folder(
             if let Some(title) = stone.as_ref().and_then(|s| s.title.clone()) {
                 book.title = Some(title);
             }
-            let placed_id = add_book(books, book);
+            // A switch's copy is a book of its own beside the linked book the
+            // old tree keeps: independent, so its marks and its place in it
+            // are its own, and known by its copy's measurement — or by the
+            // pending flag the startup sweep finishes, when the copy could
+            // not be weighed. `add_book`'s one-row-per-fingerprint rule is
+            // the right rule for a walk and the wrong one for a second
+            // instance the reader just asked for by name, so the copy is
+            // pushed past it.
+            let placed_id = if switch_copy {
+                book.independent = true;
+                match store_at
+                    .as_ref()
+                    .and_then(|store| switch_measured.get(store))
+                {
+                    Some(fp) => {
+                        book.fp = *fp;
+                        book.fp_pending = false;
+                    }
+                    None => book.fp_pending = true,
+                }
+                let id = book.id.clone();
+                books.push(Row::Book(book));
+                id
+            } else {
+                add_book(books, book)
+            };
             if stone.is_some() {
                 restored.push(placed_id.clone());
             }
@@ -1021,6 +1225,14 @@ async fn run_folder(
     // shelf the reader can scan.
     super::covers::backfill_missing(state);
 
+    // The switch's own work, after the walk's: every book the tree read in
+    // place becomes the library's copy on the shelf it already stands on.
+    let converted = if switch_converts {
+        convert_folder_books_to_stored(state, &task, &convert_ids).await
+    } else {
+        0
+    };
+
     // A book that was removed and has just come back is revealed: the
     // import succeeded by making it reappear where the folder holds it, and
     // the highlight is how the reader is told so without a sentence. A
@@ -1042,7 +1254,8 @@ async fn run_folder(
         conflict::raise(state, asks);
     }
 
-    let total = placed + (relink_count + healed + replaced) as u32 + represented_count;
+    let total =
+        placed + (relink_count + healed + replaced) as u32 + represented_count + converted as u32;
     update_task(state, &task, move |t| {
         t.total = total;
         t.done = total;
@@ -1218,6 +1431,213 @@ async fn copy_batch(
     Ok(copies)
 }
 
+/// The living linked rows whose fingerprint a folder's `placed` set holds —
+/// the books its tree reads in place. The predicate both halves of the mode
+/// switch run on: what a merge converts into copies, and what a replace puts
+/// through the removal's sweep first.
+fn linked_rows_of_placed(rows: &[Row], placed: &HashSet<Fingerprint>) -> Vec<String> {
+    book_rows(rows)
+        .filter(|b| matches!(b.origin, Origin::Linked { .. }) && placed.contains(&b.fp))
+        .map(|b| b.id.clone())
+        .collect()
+}
+
+/// The rows a mode switch's *replace* would take out: the read-at-place
+/// folder's own linked books. A stored book on one of its shelves — a copy
+/// that came home — is NOT among them: the replace is about the instances
+/// that read the OS folder, and a copy the library already owns is exactly
+/// what the shelf ends up holding.
+pub fn mode_switch_replace_rows(state: AppState, root: &str) -> Vec<String> {
+    let placed: HashSet<Fingerprint> = state.library.folders.with_untracked(|folders| {
+        folders
+            .iter()
+            .find(|f| f.root == root && f.opts.in_place)
+            .map(|f| f.placed.clone())
+            .unwrap_or_default()
+    });
+    if placed.is_empty() {
+        return Vec::new();
+    }
+    state
+        .library
+        .books
+        .with_untracked(|rows| linked_rows_of_placed(rows, &placed))
+}
+
+/// The replace answer's first half: the folder's linked books leave the
+/// library through the removal's own sweep — row, memberships, cover,
+/// highlights, and a tombstone per book in the folder's ledger. The copy
+/// import that follows spends those logs as it lands, so the shelf comes
+/// back holding only the library's copies, in the names the shelves showed.
+pub(crate) fn purge_folder_linked_books(state: AppState, root: &str) {
+    let doomed = mode_switch_replace_rows(state, root);
+    if !doomed.is_empty() {
+        super::arrange::purge_books(state, &doomed, PurgeOpts::default());
+    }
+}
+
+/// The mode switch's *replace*, whole: the linked books go through the
+/// sweep, and the folder walks again as the copies the reader asked for.
+///
+/// The claim is asked FIRST, and the check and the claim run in one
+/// synchronous step (the webview is single-threaded, and nothing awaits
+/// between them): a walk already in flight — a focus rescan of this very
+/// folder is the realistic one — refuses the run with the sentence the
+/// double-import always gets, and the purge simply does not happen. A
+/// removal no import re-lands is the one outcome this ordering exists to
+/// prevent.
+pub(crate) fn replace_folder_with_copies(state: AppState, root: String, opts: FolderOpts) {
+    if root_is_claimed(&root) {
+        state.ui.toast.set(Some(Toast::new(format!(
+            "{} is already being imported.",
+            folder_label(&root)
+        ))));
+        return;
+    }
+    purge_folder_linked_books(state, &root);
+    proceed_folder(state, root, opts, RootPlan::default());
+}
+
+/// Measure a batch of store copies in one pass: stored address to its
+/// fingerprint. A copy that cannot be measured is simply absent, and the row
+/// it belongs to keeps a pending flag the startup sweep finishes.
+async fn measure_stores(stores: Vec<String>) -> HashMap<String, Fingerprint> {
+    if stores.is_empty() {
+        return HashMap::new();
+    }
+    wire::verify_paths(stores)
+        .await
+        .ok()
+        .map(|checks| {
+            checks
+                .into_iter()
+                .filter_map(|check| Some((check.path.clone(), check.fingerprint()?)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The mode switch's merge, second half: every book the tree read in place
+/// becomes the library's own copy WHERE IT STANDS — the same row, so its id,
+/// its name, its shelves, its resume point and its highlights all survive the
+/// flip, and only the bytes' home and the row's identity change.
+///
+/// The copy takes its own measurement as the row's fingerprint, and the
+/// ORIGINAL stays in the folder's `placed` set with no row wearing it — the
+/// departure rule's arithmetic once more, and what keeps a later rescan
+/// quiet about a file whose book now lives in the store: the registry
+/// answers nothing for the original and the ledger answers "this folder
+/// placed it", which is a skip rather than a second book.
+///
+/// A per-file failure is collected rather than fatal: a book that could not
+/// be copied keeps reading in place, the folder is stable with copies for
+/// some of its books and links for the rest, and a re-import offers the
+/// switch again for the ones that remain.
+async fn convert_folder_books_to_stored(state: AppState, task: &str, ids: &[String]) -> usize {
+    // Live facts per row — the address and the highlight key BEFORE the flip
+    // — because the walk this runs behind may have relinked or healed a row
+    // the switch started from, and a row that is no longer linked (a
+    // departure beat the switch to it) is none of this run's business.
+    let candidates: Vec<(String, String, String)> = state.library.books.with_untracked(|rows| {
+        ids.iter()
+            .filter_map(|id| {
+                let book = find_row(rows, id)?.book()?;
+                matches!(book.origin, Origin::Linked { .. })
+                    .then(|| (id.clone(), book.path().to_string(), book.gloss_key()))
+            })
+            .collect()
+    });
+    if candidates.is_empty() {
+        return 0;
+    }
+    let requests: Vec<StoreRequest> = candidates
+        .iter()
+        .map(|(id, path, _)| StoreRequest {
+            path: path.clone(),
+            id: id.clone(),
+        })
+        .collect();
+    let results = match wire::store_books(task, &requests).await {
+        Ok(results) => results,
+        Err(message) => {
+            state.ui.toast.set(Some(Toast::new(message)));
+            return 0;
+        }
+    };
+    let mut stores: HashMap<String, String> = HashMap::new();
+    let mut failures: Vec<String> = Vec::new();
+    for result in results {
+        if result.is_ok() {
+            stores.insert(result.id, result.store);
+        } else {
+            failures.push(file_name(&result.src));
+        }
+    }
+    if !failures.is_empty() {
+        let message = match failures.len() {
+            1 => format!("Could not copy {}", failures[0]),
+            n => format!("Could not copy {n} books, starting with {}", failures[0]),
+        };
+        state.ui.toast.set(Some(Toast::new(message)));
+    }
+    let measured = measure_stores(stores.values().cloned().collect()).await;
+    let mut converted = 0usize;
+    for (id, path, from_key) in candidates {
+        let Some(store) = stores.get(&id) else {
+            continue;
+        };
+        let fp = measured.get(store).copied();
+        state.library.books.update(|rows| {
+            let Some(book) = book_rows_mut(rows).find(|b| b.id == id) else {
+                return;
+            };
+            // A row without a title showed its address's stem; the store file
+            // is named after the row's id, so the old stem becomes the title
+            // before the address changes — a switch must not rename a book
+            // on the shelf.
+            if book.title.is_none() {
+                book.title = Some(display_or_stem(None, &path));
+            }
+            book.origin = Origin::Stored {
+                src: Some(path.clone()),
+                store: store.clone(),
+            };
+            match fp {
+                Some(fp) => {
+                    book.fp = fp;
+                    book.fp_pending = false;
+                }
+                None => book.fp_pending = true,
+            }
+            book.missing = false;
+        });
+        // The highlights follow the address, by the departure's own rule:
+        // moved outright when no remaining row reads the old one, copied
+        // when a twin still does. The marks keep their ids, so the AI
+        // answers ride along with them.
+        let to_key = state.library.books.with_untracked(|rows| {
+            find_row(rows, &id)
+                .and_then(|row| row.book())
+                .map(Book::gloss_key)
+        });
+        if let Some(to) = to_key
+            && to != from_key
+        {
+            migrate_gloss(state, &from_key, &to, &path);
+        }
+        converted += 1;
+    }
+    if converted > 0 {
+        // The old addresses' covers belong to files no row reads any more,
+        // and the copies have never been rendered: prune one side, queue the
+        // other, and write the blob once for the whole shelf.
+        super::covers::prune_now(state);
+        super::covers::backfill_missing(state);
+        crate::storage::persist_library(state.library);
+    }
+    converted
+}
+
 /// Import loose files: measure them, then answer each one by the ground it
 /// stands on — a file of a read-at-place folder is that folder's business
 /// first, and the rest land as the library's own stored copies, except the
@@ -1379,20 +1799,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         .iter()
         .filter_map(|(book_id, _, _, _)| copies.get(book_id).cloned())
         .collect();
-    let measured: HashMap<String, Fingerprint> = if stores.is_empty() {
-        HashMap::new()
-    } else {
-        wire::verify_paths(stores)
-            .await
-            .ok()
-            .map(|checks| {
-                checks
-                    .into_iter()
-                    .filter_map(|check| Some((check.path.clone(), check.fingerprint()?)))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
+    let measured = measure_stores(stores).await;
     let mut landed = 0u32;
     for (book_id, file, title, index) in pending {
         // A per-file failure was the batch's own toast; a copy that did not
@@ -1482,14 +1889,23 @@ enum CoveredFate {
 
 /// Ask the in-place folders what they hold for one loose file.
 ///
-/// A living row at the file's very address answers first: it IS the folder's
-/// book — a linked row stays in its folder's tree, because every departure
-/// converts it — and an import of the file is the question, never a second
-/// linked instance beside it. The log answers second, and only a log no
-/// living row represents: a moved-out log BOUND to a living copy was spent
-/// by the `represented` check before this runs. The order is the rule rather
-/// than a preference — a restore that minted a linked row over a living one
-/// would be the duplicate the question exists to prevent.
+/// A living row at the file's very address answers FIRST, and the order is
+/// the walk's own rather than a preference: an explicit folder run reads the
+/// registry before it reads the logs (`decide_import`), and a log standing
+/// beside a living row of its fingerprint is a stale state the next walk's
+/// `prune_tombstones` drops — a hand-open between the removal and the import
+/// is how it happens. Answering the row writes nothing, so it cannot
+/// duplicate the book that is there; answering the log would mint a second
+/// linked row over it, which is the one thing the covered question exists to
+/// prevent. The row IS the folder's book — a linked row stays in its
+/// folder's tree, because every departure converts it — and an import of the
+/// file is the question, never a second linked instance beside it.
+///
+/// The LOG answers second: a removal, or a moved-out log whose copy has
+/// since died, is spent by the explicit import, and the book comes back in
+/// its folder's place, exactly as a walk re-importing the folder brings it.
+/// (A moved-out log BOUND to a living copy was spent by the `represented`
+/// check before this runs, so it never reaches here.)
 fn covered_fate(state: AppState, file: &FoundFile) -> CoveredFate {
     // The in-place folders whose tree holds the file's address.
     let covering: Vec<String> = state.library.folders.with_untracked(|folders| {
@@ -1847,11 +2263,13 @@ fn write_folder(state: AppState, folder: WatchedFolder) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CoveredFate, claim_root, covered_fate, land_file, rel_of, restore_covered_file, shelf_name,
+        CoveredFate, claim_root, covered_fate, covered_shelf, land_file,
+        mode_switch_replace_rows, purge_folder_linked_books, rel_of, restore_covered_file,
+        shelf_name,
     };
     use crate::state::AppState;
     use leptos::prelude::*;
-    use library_core::book::{Fingerprint, Origin};
+    use library_core::book::{Book, Fingerprint, Origin, Row};
     use library_core::folder::{FolderOpts, Tombstone, WatchedFolder};
     use library_core::scan::FoundFile;
     use library_core::shelf::Shelf;
@@ -2110,6 +2528,29 @@ mod tests {
     }
 
     #[test]
+    fn a_living_row_outvotes_a_stale_log_beside_it() {
+        // The state the next walk prunes — a log standing while a row reads
+        // the address, which a hand-open between the removal and the import
+        // is how happens — gets the walk's own answer: the registry speaks
+        // before the logs, so the import asks about the book that IS there
+        // rather than minting a second linked row over it.
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let file = found("/books/dune.md", 7);
+        state.library.shelves.set(vec![plain("fs")]);
+        state.library.books.set(vec![linked("b1", "/books/dune.md", 7)]);
+        let mut one = folder("f1", "/books", &[7], vec![stone(7, "/books/dune.md", false, Some("fs"))]);
+        one.shelf_map.insert(String::new(), "fs".to_string());
+        state.library.folders.set(vec![one]);
+
+        assert!(
+            matches!(covered_fate(state, &file), CoveredFate::Ask { row_id, .. } if row_id == "b1"),
+            "the row that is there is the book the import asks about"
+        );
+    }
+
+    #[test]
     fn a_file_no_in_place_tree_answers_for_is_an_ordinary_import() {
         let owner = Owner::new();
         owner.set();
@@ -2132,5 +2573,153 @@ mod tests {
         // "/books", however much the prefix looks like it.
         let neighbour = found("/books2/dune.md", 7);
         assert!(matches!(covered_fate(state, &neighbour), CoveredFate::Ordinary));
+    }
+
+    // -------------------------------------------------------------------
+    // The read-at-place gate, and the mode switch's sharp edge.
+    // -------------------------------------------------------------------
+
+    fn linked(id: &str, path: &str, n: u32) -> Row {
+        Row::Book(Book::new(
+            id.to_string(),
+            fp(n),
+            Format::Markdown,
+            Origin::Linked {
+                src: path.to_string(),
+            },
+            0,
+        ))
+    }
+
+    fn stored(id: &str, src: &str, store: &str, n: u32) -> Row {
+        Row::Book(Book::new(
+            id.to_string(),
+            fp(n),
+            Format::Markdown,
+            Origin::Stored {
+                src: Some(src.to_string()),
+                store: store.to_string(),
+            },
+            0,
+        ))
+    }
+
+    #[test]
+    fn the_gate_answers_by_the_rung_the_pick_names() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let mut one = folder("f1", "/books", &[7], Vec::new());
+        one.shelf_map.insert(String::new(), "fs".to_string());
+        one.shelf_map.insert("scifi".to_string(), "sub".to_string());
+        state.library.folders.set(vec![one]);
+        state.library.shelves.set(vec![plain("fs"), plain("sub")]);
+
+        // The tree's own root: the empty rung, which is the continuation's
+        // shape — a walk, and the note only if the walk finds nothing.
+        let (rel, id, name) = covered_shelf(state, "/books").expect("covered");
+        assert_eq!(rel, "");
+        assert_eq!(id, "fs");
+        assert_eq!(name, "fs");
+
+        // A rung inside the tree: the note's shape, lit on the rung itself.
+        let (rel, id, _) = covered_shelf(state, "/books/scifi").expect("covered");
+        assert_eq!(rel, "scifi");
+        assert_eq!(id, "sub");
+
+        // Ground no in-place tree holds is no gate at all.
+        assert!(covered_shelf(state, "/other").is_none());
+        // A copying folder's tree is not the gate's business: its copies are
+        // the library's to make another of.
+        let mut copying = folder("f2", "/comics", &[], Vec::new());
+        copying.opts.in_place = false;
+        copying.shelf_map.insert(String::new(), "cs".to_string());
+        state.library.folders.update(|folders| folders.push(copying));
+        state.library.shelves.update(|shelves| shelves.push(plain("cs")));
+        assert!(covered_shelf(state, "/comics").is_none());
+        // A rung whose shelf has died is no standing shelf: the walk may
+        // mint it again, so the gate stands aside.
+        state
+            .library
+            .shelves
+            .update(|shelves| shelves.retain(|each| each.id != "sub"));
+        assert!(covered_shelf(state, "/books/scifi").is_none());
+    }
+
+    #[test]
+    fn a_folder_own_tree_answers_for_it_before_a_tree_it_stands_inside() {
+        // Two in-place trees, one inside the other: the inner folder's own
+        // root shelf is the gate's answer for its root, not the outer tree's
+        // rung for it — whichever order the folders are stored in.
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let mut inner = folder("f1", "/books/scifi", &[7], Vec::new());
+        inner.shelf_map.insert(String::new(), "sub".to_string());
+        let mut outer = folder("f2", "/books", &[8], Vec::new());
+        outer.shelf_map.insert(String::new(), "fs".to_string());
+        outer.shelf_map.insert("scifi".to_string(), "outersub".to_string());
+        state.library.folders.set(vec![outer, inner]);
+        state
+            .library
+            .shelves
+            .set(vec![plain("fs"), plain("outersub"), plain("sub")]);
+
+        let (rel, id, _) = covered_shelf(state, "/books/scifi").expect("covered");
+        assert_eq!(rel, "", "the folder's own tree is the empty rung");
+        assert_eq!(id, "sub", "and its own root shelf is the light");
+    }
+
+    #[test]
+    fn a_replace_takes_the_linked_books_and_leaves_the_copies() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        // The folder's two linked books, and a stored copy that came home
+        // onto one of its shelves: the replace is about the instances that
+        // read the OS folder, and the copy is exactly what the shelf ends up
+        // holding, so it stands.
+        state.library.books.set(vec![
+            linked("b1", "/books/a.md", 1),
+            linked("b2", "/books/b.md", 2),
+            stored("b3", "/books/c.md", "/store/b3.md", 3),
+        ]);
+        let mut shelf = plain("fs");
+        shelf.books = vec!["b1".to_string(), "b2".to_string(), "b3".to_string()];
+        state.library.shelves.set(vec![shelf]);
+        let mut one = folder("f1", "/books", &[1, 2], Vec::new());
+        one.shelf_map.insert(String::new(), "fs".to_string());
+        state.library.folders.set(vec![one]);
+
+        let mut doomed = mode_switch_replace_rows(state, "/books");
+        doomed.sort();
+        assert_eq!(
+            doomed,
+            vec!["b1".to_string(), "b2".to_string()],
+            "the linked books the folder's ledger answers for, and nothing else"
+        );
+
+        purge_folder_linked_books(state, "/books");
+
+        let rows = state.library.books.get_untracked();
+        assert_eq!(rows.len(), 1, "the copy that came home is what stands");
+        assert_eq!(rows[0].id(), "b3");
+        let shelves = state.library.shelves.get_untracked();
+        assert_eq!(
+            shelves[0].books,
+            vec!["b3".to_string()],
+            "the linked books came off the shelf they were filed on"
+        );
+        let folders = state.library.folders.get_untracked();
+        assert_eq!(
+            folders[0].ignored.len(),
+            2,
+            "and the folder's ledger remembers them — the logs the copy import spends as it lands"
+        );
+        assert!(folders[0].ignored.iter().all(|entry| !entry.moved));
+        assert!(
+            folders[0].placed.contains(&fp(1)) && folders[0].placed.contains(&fp(2)),
+            "the placements stay: they are what keeps a rescan quiet until the copies land"
+        );
     }
 }

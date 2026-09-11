@@ -602,7 +602,10 @@ pub(crate) fn write_moved_stones(state: AppState, book: &Book, returned_row: Opt
 /// outright when no remaining row reads the old address, copied when a shared
 /// twin still does — a twin's key IS the address, and the address is still
 /// its. A private row's key carries its id, so its list is always a move.
-fn migrate_gloss(state: AppState, from_key: &str, to_key: &str, address: &str) {
+///
+/// Crate-visible because the import's mode switch converts a whole shelf of
+/// books at once and every flipped row owes its marks the same move.
+pub(crate) fn migrate_gloss(state: AppState, from_key: &str, to_key: &str, address: &str) {
     let shared = from_key == address
         && state
             .library

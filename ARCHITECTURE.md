@@ -655,16 +655,43 @@ next onto the screen, and Cancel drops them, which is what Cancel has always mea
 questions are forty files of one folder rather than forty gestures.
 
 A FOLDER has its own spelling of the question, asked before the walk rather than after it, and
-before the question a GATE that has no answers at all. The gate is about read-at-place: a shelf
-cut from a linked folder IS the OS folder, so one folder is one shelf and a second instance of it
-is a second door onto the same ground — every book on it duplicated. An import that picks a folder
-the library already reads in place, itself or any subfolder inside one of its trees
-(`import::covered_shelf`, which walks the in-place folders' `shelf_map` and nothing else),
-therefore never reaches a sheet: the "already imported" note
-(`features::library::already_imported_modal`) says what the pick already is, and closing it
-navigates to the shelf the reader meant and lights it, wherever in the tree it hangs. Stored trees
-never hit the gate — the library's own copies are the library's to make another of, and that is
-the question below.
+before the question a GATE about read-at-place: a shelf cut from a linked folder IS the OS folder,
+so one folder is one shelf and a second instance of it is a second door onto the same ground —
+every book on it duplicated. The gate (`import::covered_shelf`, which walks the in-place folders'
+`shelf_map` and nothing else) is three answers rather than one, and which answer a pick gets is a
+fact about the pick rather than a setting:
+
+- A RUNG inside a tree the library reads in place — a subfolder of an imported folder — never
+  reaches a sheet in either mode: the "already imported" note
+  (`features::library::already_imported_modal`) says what the pick already is, and closing it
+  navigates to the shelf the reader meant and lights it, wherever in the tree it hangs.
+- The tree's OWN root, re-picked read at its place, is not a note and not a sheet but a
+  RECONCILIATION: the walk runs as the explicit import it is, new files join the tree as linked
+  books, the logs a removal or a departure wrote are spent by their books coming back — and only
+  a walk that found nothing new raises the note, saying the sentence the gate used to say up
+  front and lighting the shelf. A read-at-place tree has no *as new* and needs no *replace*: its
+  re-import is a merge by nature, because its books are the files themselves.
+- The same root re-picked AS COPIES is the MODE SWITCH, and it is a question — the folder sheet's
+  chrome with the switch's own three answers, because "hold this folder as copies" is a decision
+  about every book already on it. *Add as new* mints the counter-named second shelf and lands
+  copies of its OWN there — independent books beside the linked ones the old tree keeps reading,
+  each identified by its copy's own measurement, which is what leaves the originals' fingerprints
+  with the tree that reads them. *Merge into it* continues the standing tree with no per-file ask
+  — the reader just answered for the whole folder — and the run then flips every linked book the
+  folder's ledger answers for into the library's own copy WHERE IT STANDS
+  (`import::convert_folder_books_to_stored`): the same row, so the id, the name, the shelves, the
+  resume point and the highlights all survive the flip, the marks migrate their key by the
+  departure's own rule, a row without a title takes the stem it was showing before the address
+  changes, and the copy's measurement becomes the row's identity while the ORIGINAL fingerprint
+  stays in `placed` with no row wearing it — which is what keeps a later rescan quiet. *Replace*
+  puts the folder's linked books through the removal's own sweep first — logs and all, so the
+  copies that land spend them and come back in the names the shelves showed — and then imports
+  the folder as copies onto the shelf they left; its row promises the count before the click. A
+  per-file copy failure, in either answer, leaves that one book reading in place: a folder with
+  copies for some of its books is stable, and a re-import offers the switch again for the rest.
+
+Stored trees never hit the gate — the library's own copies are the library's to make another of,
+and that is the question below.
 
 Past the gate, an import whose name the root level already holds
 (`library_core::conflict::collide_shelf`, which counts the level's SHELF names and nothing else)

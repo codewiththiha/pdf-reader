@@ -13,15 +13,27 @@
 //! A folder colliding with its OWN previous shelf asks too — a re-import that
 //! ended on "Imported 0 books" with no sheet in between was the silent
 //! nothing this exists to stop — and gets the same answers, worded as the
-//! continuation it is. With ONE gate in front of all of it: a folder the
-//! library already READS AT ITS PLACE — itself, or a subfolder inside its own
-//! tree — never reaches this sheet at all. A linked shelf is the OS folder,
-//! and one folder is one shelf; the import answers with the "already in the
-//! library" modal (`already_imported_modal`) and a highlight instead. A
-//! read-at-place arrival keeps this sheet only when a DIFFERENT folder holds
-//! the name, and then it offers two answers, not three — *as new* of a linked
-//! folder is the second instance the gate exists to prevent. A stored arrival
-//! keeps all three: its copies are the library's own.
+//! continuation it is. The gate in front of all of it is about read-at-place,
+//! and it turns one shape away while sending another to this sheet: a pick of
+//! a RUNG inside a tree the library reads in place never reaches here at all
+//! — a linked shelf is the OS folder, and one folder is one shelf, so the
+//! import answers with the "already in the library" modal
+//! (`already_imported_modal`) and a highlight instead. The tree's own root
+//! re-picked AS COPIES is an arrival, and it wears this sheet's chrome with a
+//! question of its own — the MODE SWITCH, whose three answers are about how
+//! the folder is held from here on: *as new* mints a second shelf whose books
+//! are copies of their own and leaves the old tree reading the folder; *merge
+//! into it* keeps the shelf that is here and turns every book on it into the
+//! library's copy where it stands, name, highlights and place in it all
+//! surviving the flip; *replace* sends the read-at-place books out of the
+//! library, highlights and all — promised on the row, counted at the render —
+//! and seats the copies on the shelf they left. No *make link*: a pointer at
+//! the folder's own shelf, from an import of that very folder, would point at
+//! the thing being imported. A read-at-place arrival keeps the ordinary sheet
+//! only when a DIFFERENT folder holds the name, and then it offers two
+//! answers, not three — *as new* of a linked folder is the second instance
+//! the gate exists to prevent. A stored arrival keeps all three: its copies
+//! are the library's own.
 //!
 //! A drag never asks this: nesting a shelf writes a parent rather than a
 //! membership, so nothing arrives on a level for a name to collide with — the
@@ -67,9 +79,18 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                 // the rows the library already holds, which is a second
                 // arrangement and never a second copy.
                 let own = ask.own;
+                // The mode switch is the continuation's louder cousin: the
+                // library reads this folder where it stands, and the import
+                // asks for copies of its own — so the answers are about how
+                // the folder is HELD from here on, and the sheet says what
+                // each holding does to the books that are here.
+                let mode_switch = ask.mode_switch;
                 // A read-at-place import never offers *as new*: the folder's
                 // shelf is the OS folder, and a counter-named twin of it would
-                // be a second door onto the same ground.
+                // be a second door onto the same ground. The mode switch
+                // needs no such rule — its *as new* twin holds copies, books
+                // of their own bytes, and the switch's branch renders it
+                // whatever the toggle below says.
                 let in_place = ask.opts.in_place;
                 // The name *as new* would mint, counted against the level's own
                 // shelves at the click — the row promises the counter rather
@@ -80,12 +101,33 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                 });
                 let heading = ask.incoming_name.clone();
                 let tooltip = heading.clone();
-                let subtitle = if own {
+                let subtitle = if mode_switch {
+                    format!("Read in place as “{}”", ask.existing_name)
+                } else if own {
                     format!("Already in the library as “{}”", ask.existing_name)
                 } else {
                     format!("A shelf called “{}” is already here", ask.existing_name)
                 };
-                let question = if own {
+                // The replace row's promise, counted at the render rather
+                // than taken on faith: how many read-at-place books the
+                // answer sends out of the library.
+                let replace_rows = if mode_switch {
+                    crate::services::library::import::mode_switch_replace_rows(state, &ask.root)
+                        .len()
+                } else {
+                    0
+                };
+                let question = if mode_switch {
+                    format!(
+                        "The library already reads “{}” where it stands, and this import asks \
+                         for copies the library stores itself. Give the copies a shelf of the \
+                         next free name and leave the tree that is here reading the folder, \
+                         switch the shelf that is here over to copies — every book keeping its \
+                         name, its highlights and its place in it — or replace its books with \
+                         copies.",
+                        ask.existing_name
+                    )
+                } else if own {
                     format!(
                         "This folder is already in the library — “{}” is the shelf its last \
                          import made. Continue the import into it, give it a shelf of the next \
@@ -108,15 +150,46 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                         ask.incoming_name
                     )
                 };
-                let new_note =
-                    format!("Import as “{new_name}” — its own shelf, its own tree");
+                let new_note = if mode_switch {
+                    format!(
+                        "Import as “{new_name}” — its own shelf of the library's copies; the \
+                         tree that is here keeps reading the folder"
+                    )
+                } else {
+                    format!("Import as “{new_name}” — its own shelf, its own tree")
+                };
                 const LINK_NOTE: &str = "A pointer row, not a second shelf: nothing is \
                                          imported, and tapping it lights the folder where it is";
-                let merge_note = format!(
-                    "The folder's books join “{}”; a book whose name it already holds is \
-                     asked one by one",
-                    ask.existing_name
-                );
+                let merge_note = if mode_switch {
+                    format!(
+                        "“{}” keeps standing — every book on it becomes the library's copy, \
+                         keeping its name, its highlights and its place in it; files the \
+                         folder gained join as copies",
+                        ask.existing_name
+                    )
+                } else {
+                    format!(
+                        "The folder's books join “{}”; a book whose name it already holds is \
+                         asked one by one",
+                        ask.existing_name
+                    )
+                };
+                let replace_note = match replace_rows {
+                    0 => format!(
+                        "Nothing is left to remove — the library's copies simply take “{}”",
+                        ask.existing_name
+                    ),
+                    1 => format!(
+                        "One read-at-place book leaves the library, with its highlights — a \
+                         copy takes its place on “{}”",
+                        ask.existing_name
+                    ),
+                    n => format!(
+                        "{n} read-at-place books leave the library, with their highlights — \
+                         copies take “{}”",
+                        ask.existing_name
+                    ),
+                };
                 Some(view! {
                     <>
                         <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
@@ -137,31 +210,72 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                         <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
                             <p class="text-xs text-muted">{question}</p>
                             <div class="mt-3 divide-y divide-line rounded-xl border border-line">
-                                {(!in_place).then(move || {
+                                {if mode_switch {
+                                    // The switch's three: a second shelf of
+                                    // copies, the shelf that is here switched
+                                    // over, or copies in place of the books
+                                    // that are here. No link — a pointer at
+                                    // the folder's own shelf, from an import
+                                    // of that very folder, points at the thing
+                                    // being imported.
                                     view! {
-                                        <ChoiceRow
-                                            label="Add as new"
-                                            note=new_note.clone()
-                                            on_click=Callback::new(move |_| {
-                                                conflict::answer_shelf(state, ShelfAnswer::AsNew)
-                                            })
-                                        />
+                                        <>
+                                            <ChoiceRow
+                                                label="Add as new"
+                                                note=new_note
+                                                on_click=Callback::new(move |_| {
+                                                    conflict::answer_shelf(state, ShelfAnswer::AsNew)
+                                                })
+                                            />
+                                            <ChoiceRow
+                                                label="Merge into it"
+                                                note=merge_note
+                                                on_click=Callback::new(move |_| {
+                                                    conflict::answer_shelf(state, ShelfAnswer::Merge)
+                                                })
+                                            />
+                                            <ChoiceRow
+                                                label="Replace"
+                                                note=replace_note
+                                                on_click=Callback::new(move |_| {
+                                                    conflict::answer_shelf(state, ShelfAnswer::Replace)
+                                                })
+                                            />
+                                        </>
                                     }
-                                })}
-                                <ChoiceRow
-                                    label="Make link"
-                                    note=LINK_NOTE.to_string()
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Link)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Merge into it"
-                                    note=merge_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Merge)
-                                    })
-                                />
+                                        .into_any()
+                                } else {
+                                    view! {
+                                        <>
+                                            {(!in_place).then(move || {
+                                                view! {
+                                                    <ChoiceRow
+                                                        label="Add as new"
+                                                        note=new_note.clone()
+                                                        on_click=Callback::new(move |_| {
+                                                            conflict::answer_shelf(state, ShelfAnswer::AsNew)
+                                                        })
+                                                    />
+                                                }
+                                            })}
+                                            <ChoiceRow
+                                                label="Make link"
+                                                note=LINK_NOTE.to_string()
+                                                on_click=Callback::new(move |_| {
+                                                    conflict::answer_shelf(state, ShelfAnswer::Link)
+                                                })
+                                            />
+                                            <ChoiceRow
+                                                label="Merge into it"
+                                                note=merge_note
+                                                on_click=Callback::new(move |_| {
+                                                    conflict::answer_shelf(state, ShelfAnswer::Merge)
+                                                })
+                                            />
+                                        </>
+                                    }
+                                        .into_any()
+                                }}
                             </div>
                         </div>
 

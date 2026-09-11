@@ -9,6 +9,11 @@
 //! library, and closing it navigates to the shelf the reader meant and lights
 //! it up, wherever in the tree it hangs.
 //!
+//! The note has a second sentence, and it is earned rather than gated: a
+//! re-import of the tree's OWN root runs the reconciliation walk first — new
+//! files join the tree, logged books come back — and only a walk that found
+//! nothing new raises this modal, to say so and light the shelf.
+//!
 //! The highlight rides the CLOSE rather than the open, and every way out —
 //! the button, the backdrop, Escape, the lane — ends on it: a light that
 //! burns its seconds behind a modal nobody has dismissed is a light nobody
@@ -39,7 +44,7 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
         if open.get() {
             return;
         }
-        let Some((shelf_id, _)) = state.library.already_imported.get_untracked() else {
+        let Some((shelf_id, _, _)) = state.library.already_imported.get_untracked() else {
             return;
         };
         state.library.already_imported.set(None);
@@ -53,8 +58,30 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
             width="min(92vw, 400px)"
         >
             {move || {
-                let (_, name) = state.library.already_imported.get()?;
+                let (_, name, nothing_new) = state.library.already_imported.get()?;
                 let tooltip = name.clone();
+                let sublabel = if nothing_new {
+                    "Nothing new to import"
+                } else {
+                    "Already in the library"
+                };
+                // Two sentences, one shelf light. The gate's is for a pick
+                // that never walked — a rung inside a tree the library reads
+                // in place; the report's is for a re-import that DID walk and
+                // found every book already standing.
+                let sentence = if nothing_new {
+                    "This folder is already in the library, and the library reads it where it \
+                     stands. The import walked it again and found nothing new: every book it \
+                     holds is on the shelf already, no removed or moved-away book came back, \
+                     and nothing was copied, moved, or asked. Close this and the shelf lights \
+                     up for you."
+                } else {
+                    "This folder is already imported — the library reads it where it stands, \
+                     and a folder it reads in place cannot be imported twice. Nothing was \
+                     copied, moved, or asked. Close this and the shelf it is on lights up for \
+                     you; if the folder you picked is a subfolder of that shelf, the light \
+                     is on the shelf inside the tree."
+                };
                 Some(view! {
                     <>
                         <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
@@ -63,7 +90,7 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
                                     {name}
                                 </span>
                                 <span class="mt-0.5 block text-xs text-muted">
-                                    "Already in the library"
+                                    {sublabel}
                                 </span>
                             </span>
                             <IconButton
@@ -75,13 +102,7 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
                         </header>
 
                         <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-                            <p class="text-xs text-muted">
-                                "This folder is already imported — the library reads it where it stands, \
-                                 and a folder it reads in place cannot be imported twice. Nothing was \
-                                 copied, moved, or asked. Close this and the shelf it is on lights up for \
-                                 you; if the folder you picked is a subfolder of that shelf, the light \
-                                 is on the shelf inside the tree."
-                            </p>
+                            <p class="text-xs text-muted">{sentence}</p>
                         </div>
 
                         <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">

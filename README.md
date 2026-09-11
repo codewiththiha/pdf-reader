@@ -450,11 +450,24 @@ touches a file you own.
   book on the level is the library's own stored copy, **Make link** takes Replace's slot, because
   neither side is yours to destroy. The dragged book becomes a pointer, the file stays on disk and
   the copy stays in the store.
-- **Importing a folder the library already reads in place does not ask — it tells.** The folder
-  itself, or any subfolder inside a tree the library reads where it stands, is one shelf already:
-  the import answers with an *already imported* note, and closing it goes to the shelf you meant
-  and lights it up. A linked folder cannot mint a second instance of itself, and a shelf of the
-  library's own copies can, so a stored folder still asks.
+- **Re-importing a folder the library reads in place continues it.** The walk runs, as the
+  explicit import it is: files the folder gained join the shelf as linked books, books you had
+  removed or moved away — whose logs have been keeping rescans quiet — come back and light up in
+  the folder's own place, and the books that were already there keep every bit of their data,
+  because nothing about them is a question. Only a walk that found nothing new says so: the
+  *already imported* note, which lights the shelf when you close it. Picking a SUBFOLDER of a
+  tree the library reads in place still gets that note without a walk — a linked folder cannot
+  mint a second instance of itself, or of a rung inside its own tree — and a shelf of the
+  library's own copies can, so a stored folder still asks the name question.
+- **Re-picking that same folder as copies asks how you want to hold it.** Turning read-at-place
+  off on a re-import means *the library should own these books*, which is a decision about every
+  book already on the shelf, so the sheet asks: **Add as new** mints a second shelf under the
+  next free name whose books are the library's own copies — books of their own bytes, beside the
+  linked ones the old shelf keeps reading; **Merge into it** keeps the shelf that is here
+  standing and turns every book on it into a copy where it stands — same name, same highlights,
+  same place in the book, nothing lost in the flip, and new files join as copies; **Replace**
+  sends the read-at-place books out of the library, their highlights with them — the row says
+  how many before you click — and seats copies on the shelf they left.
 - **Importing a FOLDER whose name the level already holds asks its own question**, before the walk
   rather than after it: **Add as new** imports it under the next free name (`Books_1`, promised on
   the row) — offered to a stored import only, since as new of a read-at-place folder is the second
