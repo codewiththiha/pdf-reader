@@ -210,6 +210,36 @@ pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) ->
     duplicate_title(name, &in_use)
 }
 
+/// The shelf already at one level whose name an arriving folder carries, when
+/// there is one.
+///
+/// The shelf half of [`collide`], and the question a folder import asks before
+/// it mints its root shelf: two shelves of one name on one level are two doors
+/// a reader cannot tell apart, exactly as two books of one name are. Both kinds
+/// count — a virtual shelf the reader made defends its name against an arriving
+/// folder exactly as a folder shelf does — and the level is
+/// [`crate::shelf::children_of`]'s answer, the root being the shelves with no
+/// parent.
+pub fn collide_shelf(shelves: &[Shelf], parent: Option<&str>, name: &str) -> Option<String> {
+    crate::shelf::children_of(shelves, parent)
+        .into_iter()
+        .find(|shelf| same_name(&shelf.name, name))
+        .map(|shelf| shelf.id.clone())
+}
+
+/// The next free shelf name on one level: `Books` → `Books_1` → `Books_2`, the
+/// counter [`duplicate_title`] mints, counted against the SHELF names that
+/// level holds rather than against its rows — a shelf and a book of one name
+/// are two different doors, and only a second door of the same kind is a
+/// second door too many.
+pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> String {
+    let in_use: HashSet<String> = crate::shelf::children_of(shelves, parent)
+        .into_iter()
+        .map(|shelf| shelf.name.clone())
+        .collect();
+    duplicate_title(name, &in_use)
+}
+
 /// The ids of the rows one level holds — [`crate::shelf::members_of`], which
 /// is the one answer to that question rather than this module's own: a shelf's
 /// member list, and at the root the rows no shelf holds. A shelf id that names
@@ -267,6 +297,15 @@ mod tests {
             books: members.iter().map(|m| m.to_string()).collect(),
             parent: None,
             manual_parent: false,
+        }
+    }
+
+    /// A shelf with a name of its own: the shelf collision asks about NAMES,
+    /// and the row builder above names every shelf by its id.
+    fn plain_shelf(id: &str, name: &str) -> Shelf {
+        Shelf {
+            name: name.to_string(),
+            ..shelf(id, &[])
         }
     }
 
@@ -438,6 +477,42 @@ mod tests {
         assert!(!moved.is_import());
         assert_eq!(moved.moving.as_deref(), Some("b1"));
         assert_eq!(moved.name, "Dune");
+    }
+
+    #[test]
+    fn a_shelf_name_the_level_already_holds_asks() {
+        let shelves = vec![plain_shelf("s1", "Books")];
+        assert_eq!(collide_shelf(&shelves, None, "Books").as_deref(), Some("s1"));
+        assert_eq!(collide_shelf(&shelves, None, "books").as_deref(), Some("s1"));
+        assert_eq!(collide_shelf(&shelves, None, "Comics"), None);
+        // A counter a previous answer minted is a different name, as with rows.
+        assert_eq!(collide_shelf(&shelves, None, "Books_1"), None);
+    }
+
+    #[test]
+    fn a_shelf_collision_is_the_level_it_lands_on() {
+        // "Fiction" inside s1 does not defend the root's name, and the root's
+        // "Fiction" does not defend the level inside s1.
+        let shelves = vec![
+            plain_shelf("s1", "Fiction"),
+            Shelf { parent: Some("s1".to_string()), ..plain_shelf("s2", "Deep") },
+        ];
+        assert_eq!(collide_shelf(&shelves, None, "Fiction").as_deref(), Some("s1"));
+        assert_eq!(collide_shelf(&shelves, Some("s1"), "Fiction"), None);
+        assert_eq!(collide_shelf(&shelves, Some("s1"), "Deep").as_deref(), Some("s2"));
+    }
+
+    #[test]
+    fn the_shelf_counter_counts_the_level_it_lands_on() {
+        let shelves = vec![
+            plain_shelf("s1", "Books"),
+            plain_shelf("s2", "Books_1"),
+            Shelf { parent: Some("s1".to_string()), ..plain_shelf("s3", "Books") },
+        ];
+        // The root's own names are the pool: the nested "Books" is another
+        // level's business.
+        assert_eq!(next_shelf_name(&shelves, None, "Books"), "Books_2");
+        assert_eq!(next_shelf_name(&shelves, Some("s1"), "Books"), "Books_1");
     }
 
     #[test]

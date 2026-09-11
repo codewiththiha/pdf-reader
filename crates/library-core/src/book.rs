@@ -918,12 +918,35 @@ pub fn remove_row(rows: &mut Vec<Row>, id: &str) -> Option<Row> {
 /// [`sanitize`] on every load, which is what makes a hand-edited blob or a
 /// library written by a build that removed rows differently still open on a
 /// shelf with no dead rows in it.
+///
+/// A link may also point at a SHELF — the folder link a merged import leaves
+/// behind — and a shelf id is never a book id (the letter prefixes are
+/// disjoint, [`crate::id::is_shelf`]), so this sweep keeps every shelf pointer:
+/// which shelves are gone is a question about the shelf list, and
+/// [`drop_dead_shelf_links`] is the sweep that can answer it.
 pub fn drop_dangling_links(rows: &mut Vec<Row>) {
     // Owned ids, so the set does not hold a borrow of the list the retain below
     // is about to walk mutably.
     let books: std::collections::HashSet<String> =
         book_rows(rows).map(|b| b.id.clone()).collect();
-    rows.retain(|r| !matches!(r, Row::Link { target, .. } if !books.contains(target)));
+    rows.retain(|r| {
+        !matches!(r, Row::Link { target, .. }
+            if !books.contains(target) && !crate::id::is_shelf(target))
+    });
+}
+
+/// Drop every link that points at a shelf the list no longer holds — the
+/// shelf half of [`drop_dangling_links`], which needs the shelf list to answer
+/// and so lives one call away from it: [`crate::blob::sanitize`] runs it with
+/// both lists in hand, and a shelf being taken apart runs it over the rows the
+/// moment its pointer would go dead.
+pub fn drop_dead_shelf_links(rows: &mut Vec<Row>, shelves: &[crate::shelf::Shelf]) {
+    rows.retain(|r| match r {
+        Row::Link { target, .. } if crate::id::is_shelf(target) => {
+            shelves.iter().any(|s| &s.id == target)
+        }
+        _ => true,
+    });
 }
 
 /// The book an address resolves to. A relink changes the address a book
@@ -1771,6 +1794,37 @@ mod tests {
         assert_eq!(at(&books, 0).page, 1, "page 0 clamps to 1");
         assert_eq!(at(&books, 1).title.as_deref(), Some("one_1"), "a duplicate keeps the name it was minted with");
         assert_eq!(at(&books, 2).fraction, None, "an impossible fraction is dropped");
+    }
+
+    #[test]
+    fn a_link_to_a_shelf_survives_the_row_sweep() {
+        // The row sweep can only ask the row list, and a shelf id is never a
+        // book id: a folder link is kept, and which shelves still exist is the
+        // shelf sweep's question, not this one's.
+        let mut books = rows([linked("a", "/books/one.pdf")]);
+        books.push(Row::link("l1".into(), "Books".into(), "s1".into(), 1));
+        books.push(Row::link("l2".into(), "Gone".into(), "zz".into(), 1));
+        sanitize(&mut books);
+        let ids: Vec<&str> = books.iter().map(Row::id).collect();
+        assert_eq!(ids, vec!["a", "l1"], "the book link at a gone book goes; the shelf link stays");
+    }
+
+    #[test]
+    fn a_link_to_a_shelf_goes_with_the_shelf() {
+        let mut books = rows([linked("a", "/books/one.pdf")]);
+        books.push(Row::link("l1".into(), "Books".into(), "s1".into(), 1));
+        books.push(Row::link("l2".into(), "Comics".into(), "s2".into(), 1));
+        let shelves = vec![crate::shelf::Shelf {
+            id: "s1".into(),
+            name: "Books".into(),
+            kind: Default::default(),
+            books: Vec::new(),
+            parent: None,
+            manual_parent: false,
+        }];
+        drop_dead_shelf_links(&mut books, &shelves);
+        let ids: Vec<&str> = books.iter().map(Row::id).collect();
+        assert_eq!(ids, vec!["a", "l1"], "only the pointer at a shelf that is gone goes");
     }
 
     #[test]

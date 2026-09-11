@@ -210,6 +210,11 @@ pub fn sanitize(blob: &mut LibraryBlob) {
     });
 
     crate::shelf::sanitize(&mut blob.shelves);
+
+    // A link may point at a shelf as well as at a book — the folder link a
+    // merged import leaves behind — and the sweep above could not ask which
+    // shelves survived: this one can, with both lists finally in hand.
+    crate::book::drop_dead_shelf_links(&mut blob.books, &blob.shelves);
 }
 
 #[cfg(test)]

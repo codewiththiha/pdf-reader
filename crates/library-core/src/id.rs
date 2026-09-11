@@ -43,6 +43,13 @@ pub fn next_folder_id(now_ms: u64) -> String {
     new_folder_id(now_ms, next_seq())
 }
 
+/// Whether a token is a SHELF's id rather than a book's — the letter prefix
+/// is what makes the two kinds disjoint, so a link row's target can name
+/// either kind and a reader of the row list alone can tell them apart.
+pub fn is_shelf(id: &str) -> bool {
+    id.starts_with('s')
+}
+
 /// A fresh id: the millisecond it was minted at, plus a per-millisecond
 /// counter so two books imported in the same tick differ.
 ///
@@ -89,6 +96,15 @@ mod tests {
         assert!(id.starts_with('b'));
         assert!(!id.contains(char::is_whitespace));
         assert_eq!(id.len(), 16);
+    }
+
+    #[test]
+    fn the_prefix_says_which_kind_a_token_is() {
+        let (now, seq) = (1_700_000_000_000, 3);
+        assert!(is_shelf(&new_shelf_id(now, seq)));
+        assert!(!is_shelf(&new_id(now, seq)));
+        assert!(!is_shelf(&new_folder_id(now, seq)));
+        assert!(!is_shelf(""));
     }
 
     #[test]
