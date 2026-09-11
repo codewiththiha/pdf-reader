@@ -257,16 +257,12 @@ impl WatchedFolder {
         self.placed.insert(fp);
     }
 
-    /// Whether this folder is holding a removal against `fp`.
+    /// Whether this folder is holding a removal against `fp` — the question a
+    /// rescan asks before any other. A tombstone wins over everything: the
+    /// reader said no, and the file being unchanged since is not a new
+    /// argument.
     pub fn is_ignored(&self, fp: &Fingerprint) -> bool {
         self.ignored.iter().any(|entry| &entry.fp == fp)
-    }
-
-    /// Whether a rescan may place this fingerprint. A tombstone wins over
-    /// everything: the reader said no, and the file being unchanged since is
-    /// not a new argument.
-    pub fn may_place(&self, fp: &Fingerprint) -> bool {
-        !self.is_ignored(fp)
     }
 
     /// Remember what this scan saw, for the fingerprints this folder placed.
@@ -469,16 +465,14 @@ mod tests {
     #[test]
     fn the_ledger_skips_what_it_placed_and_honours_a_tombstone() {
         let mut f = folder("/books");
-        assert!(f.may_place(&fp(1)));
+        assert!(!f.is_ignored(&fp(1)));
         f.mark_placed(fp(1));
         assert!(f.placed.contains(&fp(1)));
         // Placing is not a tombstone: the book is on a shelf, so a rescan
         // skips it through `placed`, and removing it later still has to stick.
-        assert!(f.may_place(&fp(1)));
         assert!(!f.is_ignored(&fp(1)));
         f.ignored.push(stone(1));
-        assert!(f.is_ignored(&fp(1)));
-        assert!(!f.may_place(&fp(1)), "a removal outranks everything");
+        assert!(f.is_ignored(&fp(1)), "a removal outranks everything");
     }
 
     #[test]

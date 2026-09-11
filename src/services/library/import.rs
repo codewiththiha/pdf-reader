@@ -6,7 +6,7 @@
 //! window regains focus. They differ in where the measurements come from and
 //! nothing else, so the deciding and the writing happen once, here.
 //!
-//! Two rules this module exists to keep:
+//! Four rules this module exists to keep:
 //!
 //!   * **nothing is written until the whole answer is known.** The scan, the
 //!     ledger and the copies all run against local copies of the three lists,
@@ -526,9 +526,6 @@ async fn run_folder(
         None => true,
     });
 
-    // One book per fingerprint, inside a single scan as well as across scans: a
-    // tree holding two byte-identical files is one book, and copying both would
-    // leave an orphan in the store that nothing can ever remove.
     // One book per fingerprint INSIDE a single scan, always: a tree holding two
     // byte-identical files is one book, and copying both would leave an orphan
     // in the store that nothing can ever remove. Across scans it is the
