@@ -43,6 +43,7 @@ use crate::features::library::selection::{enter_selection, payload_for, toggle_s
 use crate::state::AppState;
 
 /// The three answers only the surface knows.
+#[derive(Clone)]
 pub(crate) struct ShelfItemPolicy {
     /// The id of the book or shelf this item draws: the selection member, the
     /// drag payload and the menu's subject.

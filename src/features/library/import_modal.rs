@@ -12,7 +12,6 @@
 
 use leptos::prelude::*;
 
-use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::folder::{FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
@@ -23,7 +22,7 @@ use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::controls::option_button::OptionButton;
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::section_label::SectionLabel;
-use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::settings::common::Row;
 use crate::services::library::{import_folder, pick_folder};
 use crate::state::{AppState, Toast};
@@ -80,17 +79,11 @@ pub(crate) fn drain_sheet_toasts(state: AppState, sheet: ImportSheet) {
 
 #[component]
 pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView {
-    // One modal at a time, and a menu replaces it rather than stacking under it
-    // — the same arbitration the reader's settings modal joins.
-    use_overlay_lane(sheet.open, OverlayPolicy::MODAL);
-
     // The options outlive the sheet being open: a reader who imports a second
-    // folder usually wants it imported the same way as the first.
+    // folder usually wants it imported the same way as the first. The lane
+    // arbitration and the Escape rule are the modal shell's (see
+    // `crate::components::primitives::overlay::modal_shell`).
     let opts = RwSignal::new(FolderOpts::default());
-
-    // A popover opened inside the sheet owns the press; the shared rule peels
-    // one layer at a time.
-    use_modal_escape(sheet.open);
 
     let in_place = Signal::derive(move || opts.with(|o| o.in_place));
     let watching = Signal::derive(move || opts.with(|o| o.watch));
@@ -109,18 +102,11 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     let path_open = RwSignal::new(false);
 
     view! {
-        <Show when=move || sheet.open.get()>
-            <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| sheet.open.set(false)
-            >
-                <div
-                    class="flex max-h-[86vh] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
-                    style="width:min(92vw, 480px)"
-                    on:click=move |ev| ev.stop_propagation()
-                    role="dialog"
-                    aria-label="Import a folder"
-                >
+        <ModalShell
+            open=sheet.open
+            aria_label="Import a folder"
+            width="min(92vw, 480px)"
+        >
                     <header class="flex shrink-0 items-center gap-2 px-4 pb-2 pt-4">
                         <h2 class="text-sm font-semibold text-ink">"Import books"</h2>
                         <div class="ml-auto">
@@ -354,9 +340,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                             <span>"Import"</span>
                         </Button>
                     </footer>
-                </div>
-            </div>
-        </Show>
+        </ModalShell>
     }
 }
 

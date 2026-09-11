@@ -19,39 +19,21 @@
 //! state by id (the rule the folder card and the list's tree rows follow), and
 //! the prop supplies the identity: which book this card is.
 //!
-//! Three gestures share the card and the shelf's one wiring decides between
-//! them — `crate::features::library::gestures`, on the
-//! `crate::components::primitives::interactions::draggable_item` wrapper. A tap
-//! opens the book, or toggles it once the shelf is in multi-select. A hold starts that
-//! multi-select with this book already in it. A right-click asks
-//! `crate::features::library::context_menu`, which is where the removal receipt now
-//! lives beside the rest of what a book can be asked to do. The hold is the same gesture, at the same tuning, that a highlighted
-//! stroke on a page answers to, so holding a book and holding a highlight are one
-//! idea rather than two that happen to feel alike.
-//!
-//! The movement is the one the card does not own. It hands the press to
-//! `crate::features::library::dnd` and takes its two visible halves back from
-//! there: a fade while it is one of the items being held, and either an insertion
-//! line or a fold's ring while it is the thing under the pointer. Registering as a
-//! target is one call and leaving is the card's own unmount, so a shelf the reader
-//! scrolled or drilled through carries no targets that are not on screen.
-//!
-//! Feature-local on purpose: it understands [`Book`], cover persistence, the open
-//! flow and what a press on this card picks up, and none of those belong in a
-//! primitive.
-
-use std::rc::Rc;
+//! The card's outer element is the shelf's one item shell
+//! (`crate::features::library::shelf_item`): the press contract, the drop
+//! registration and the state classes are its, and what is left here is the
+//! card's own content and the two classes that are facts about the BOOK — the
+//! reveal's light and the missing grey.
 
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::{Book, find_by_id};
 
-use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
-use crate::features::library::dnd::controller::DragController;
-use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
-use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
+use crate::features::library::context_menu::MenuTarget;
+use crate::features::library::gestures::ShelfItemPolicy;
 use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 use crate::services::document;
 use crate::services::library::relink_dialog;
 use crate::state::AppState;
@@ -83,12 +65,10 @@ struct CardFacts {
 /// view separately.
 #[component]
 pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl IntoView {
-    // Both, because the card keeps its own ✕: the menu is what a right-click asks
-    // and the sheet is what a removal costs, and the second is reached from the
-    // first as well as from the button.
+    // The card keeps its own ✕: the menu is what a right-click asks and the
+    // sheet is what a removal costs, and the second is reached from the first
+    // as well as from the button.
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
-    let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
-    let drag = use_context::<DragController>().expect("the library page installs the drag session");
 
     // Selection is a page-wide mode, so every card asks the same signal rather
     // than being told about itself.
@@ -133,66 +113,49 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         })
     };
 
-    // The shelf's one press contract: a tap opens, a hold selects, a movement
-    // hands the press to the session, and the keyboard and the right-click are
-    // the same answers on their own inputs (see
-    // `crate::features::library::gestures`). A movement is always a drag here.
-    // It used to be off while a set was selected, on the reasoning that the
-    // pointer was choosing rather than filing — which is the reasoning that made
-    // a selection undraggable, and lifting one of three held books is the whole
-    // of a multi-drag.
-    // Opening names the ROW, not its address: the library can hold two rows of
-    // one file, and the address cannot say which of them the reader clicked.
+    // The card's two own classes: the reveal's light, and the grey a book
+    // wears whose address stopped resolving.
+    let reveal_id = id.clone();
+    let reveal_class = Signal::derive(move || {
+        state
+            .library
+            .reveal
+            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
+    });
+    let missing_class = Signal::derive(move || {
+        facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
+    });
+    // The membership the cover's check mark paints from — the same set the
+    // shell's own selected class reads.
+    let check_id = id.clone();
+    let is_selected = Signal::derive(move || {
+        state.library.selected.with(|s| s.contains(&check_id))
+    });
+
+    // The press contract's three surface answers (see
+    // `crate::features::library::gestures`). Opening names the ROW, not its
+    // address: the library can hold two rows of one file, and the address
+    // cannot say which of them the reader clicked. The menu's missing flag is
+    // read when the menu is ASKED rather than carried from the mount: the row
+    // it describes is exactly the one a background measurement can change
+    // between the two.
     let open_id = id.clone();
     let context_id = id.clone();
-    let gestures = use_shelf_item(
-        state,
-        Some(drag),
-        Some(menu),
-        ShelfItemPolicy {
-            id: id.clone(),
-            label: Signal::derive(move || {
-                facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-            }),
-            draggable: Signal::derive(|| true),
-            open: Callback::new(move |_| document::open_row(state, open_id.clone())),
-            // The missing flag is read when the menu is ASKED rather than
-            // carried from the mount: the row it describes is exactly the one
-            // a background measurement can change between the two.
-            menu_target: Callback::new(move |_| MenuTarget::Book {
-                id: context_id.clone(),
-                missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
-            }),
-            // No shelf of its own: a card is drawn by the open level, which is
-            // the container the session resolves a nameless lift to.
-            container: None,
-        },
-    );
-    let is_selected = gestures.is_selected;
-    let pressing = gestures.pressing;
-    let aria_label = gestures.aria_label;
-    let on_down = Rc::clone(&gestures.on_pointerdown);
-    let on_move = Rc::clone(&gestures.on_pointermove);
-    let on_up = Rc::clone(&gestures.on_pointerup);
-    let on_cancel = Rc::clone(&gestures.on_pointercancel);
-    let on_click = Rc::clone(&gestures.on_click);
-    let on_context = Rc::clone(&gestures.on_contextmenu);
-    let on_key = Rc::clone(&gestures.on_keydown);
-    let aria_pressed = gestures.aria_pressed;
-
-    // A target as well as a payload: a drop here lands the held items at this
-    // book's place in the level, and a rest here while holding two or more offers
-    // to fold them into a new shelf beside it. Registered for the life of the
-    // card, which is the life of its box on screen.
-    let dom_id = format!("book-{id}");
-    drag.registry.register(DropTargetEntry {
-        id: DropTargetId(DropTargetKind::Book, id.clone()),
-        dom_id: dom_id.clone(),
-        // No shelf of its own: a card is drawn by the open level and by
-        // nothing else, which is the container the session resolves a
-        // nameless entry to.
-        shelf: None,
-    });
+    let policy = ShelfItemPolicy {
+        id: id.clone(),
+        label: Signal::derive(move || {
+            facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+        }),
+        draggable: Signal::derive(|| true),
+        open: Callback::new(move |_| document::open_row(state, open_id.clone())),
+        menu_target: Callback::new(move |_| MenuTarget::Book {
+            id: context_id.clone(),
+            missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
+        }),
+        // No shelf of its own: a card is drawn by the open level, which is
+        // the container the session resolves a nameless lift to.
+        container: None,
+    };
 
     // A removal asks first. The card does not know what a removal costs — the
     // resume point, the placements, the highlights, the app's own copy — and
@@ -202,45 +165,18 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         ev.stop_propagation();
         remove_sheet.ask(&remove_id);
     };
-    let relink_id = id.clone();
-
-    let reveal_id = id.clone();
-    let held_id = id.clone();
-    let over_id = id.clone();
-    let fold_id = id;
+    let relink_id = id;
 
     view! {
-        <div
-            id=dom_id
-            class="book-card"
-            class=("book-reveal", move || {
-                state.library.reveal.with(|at| {
-                    at.as_ref()
-                        .is_some_and(|(id, _)| id == reveal_id.as_str())
-                })
-            })
-            class=("book-drop-before", move || drag.inserts_before(&over_id))
-            class=("book-fold-here", move || drag.folds_with(&fold_id))
-            class=("book-missing", move || {
-                facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
-            })
-            class=("book-selected", move || is_selected.get())
-            class=("book-pressing", move || pressing.get())
-            // Every held card fades, not only the one the press began on: the set
-            // the reader picked up has to stay readable as a set while the pointer
-            // carries it, and only the session knows which cards that is.
-            class=("book-dragging", move || drag.holds(&held_id))
-            role="button"
-            tabindex="0"
-            aria-label=move || aria_label.get()
-            aria-pressed=move || aria_pressed.get()
-            on:pointerdown=move |ev| (on_down)(&ev)
-            on:pointermove=move |ev| (on_move)(&ev)
-            on:pointerup=move |ev| (on_up)(&ev)
-            on:pointercancel=move |ev| (on_cancel)(&ev)
-            on:click=move |ev: leptos::ev::MouseEvent| (on_click)(&ev)
-            on:contextmenu=move |ev: leptos::ev::MouseEvent| (on_context)(&ev)
-            on:keydown=move |ev: leptos::ev::KeyboardEvent| (on_key)(&ev)
+        <ShelfItemShell
+            state=state
+            vocab=SeamVocab::GridCard
+            base_class="book-card"
+            policy=policy
+            extra_classes=vec![
+                ("book-reveal".to_string(), reveal_class),
+                ("book-missing".to_string(), missing_class),
+            ]
         >
             <div class="book-cover-wrap">
                 <div
@@ -403,6 +339,6 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             >
                 <Icon name=IconName::Close size=12 />
             </button>
-        </div>
+        </ShelfItemShell>
     }
 }

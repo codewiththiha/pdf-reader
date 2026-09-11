@@ -29,13 +29,12 @@
 
 use leptos::prelude::*;
 
-use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use library_core::shelf::ALL_SHELF;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::services::library::conflict::{self, ConflictAsk};
 use library_core::book::find_row;
 use library_core::conflict::{Answer, MoveAnswer};
@@ -50,14 +49,11 @@ use crate::state::AppState;
 #[component]
 pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     let open = state.library.conflict_open;
-    use_overlay_lane(open, OverlayPolicy::MODAL);
-    // A popover opened inside the sheet owns the press; the shared rule peels
-    // one layer at a time.
-    use_modal_escape(open);
 
-    // A close that came from the lane registry or the Escape key wrote only the
-    // boolean; the question and the ones waiting behind it go with it, so the
-    // sheet can never reopen onto a question somebody already dismissed.
+    // A close that came from the lane registry, the Escape key or the shell's
+    // backdrop wrote only the boolean; the question and the ones waiting
+    // behind it go with it, so the sheet can never reopen onto a question
+    // somebody already dismissed.
     Effect::new(move |_| {
         if !open.get() {
             state.library.conflict.set(None);
@@ -66,18 +62,17 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     });
 
     view! {
-        <Show when=move || open.get()>
-            <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| conflict::cancel(state)
-            >
-                {move || {
-                    let ask = state.library.conflict.get()?;
-                    let info = Info::of(state, &ask);
-                    Some(view! { <Sheet state=state info=info /> })
-                }}
-            </div>
-        </Show>
+        <ModalShell
+            open=open
+            aria_label="The library already holds a book of that name here"
+            width="min(92vw, 420px)"
+        >
+            {move || {
+                let ask = state.library.conflict.get()?;
+                let info = Info::of(state, &ask);
+                Some(view! { <Sheet state=state info=info /> })
+            }}
+        </ModalShell>
     }
 }
 
@@ -215,13 +210,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
     let move_new_note = format!("Keeps both — this one becomes “{}”", info.new_name);
 
     view! {
-        <div
-            class="flex max-h-[86vh] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
-            style="width:min(92vw, 420px)"
-            on:click=move |ev| ev.stop_propagation()
-            role="dialog"
-            aria-label="The library already holds a book of that name here"
-        >
+        <>
             <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
                 <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
@@ -310,7 +299,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                     <span>"Cancel"</span>
                 </Button>
             </footer>
-        </div>
+        </>
     }
 }
 

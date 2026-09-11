@@ -57,7 +57,6 @@
 //! `crate::features::library::gestures`).
 
 use std::collections::HashSet;
-use std::rc::Rc;
 use std::time::Duration;
 
 use leptos::html;
@@ -73,13 +72,13 @@ use reader_core::format::Format;
 
 use crate::features::library::add_menu::AddMenu;
 use crate::features::library::content::ShelfOrder;
-use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
+use crate::features::library::context_menu::MenuTarget;
 use crate::features::library::dnd::controller::DragController;
-use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::features::library::folder_card::summary;
-use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
+use crate::features::library::gestures::ShelfItemPolicy;
 use crate::features::library::link_card::LinkRow;
 use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 use crate::services::document;
 use crate::state::AppState;
 
@@ -181,10 +180,12 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
 fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> impl IntoView {
     let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
     // The sidebar will mount this tree with no library page under it, and the
-    // right-click and the drag are the two gestures that need the page's hosts
-    // — so both are asked for rather than expected, and a tree without them
-    // simply has no menu to offer, no seam to paint and nothing to lift into.
-    let menu = use_context::<LibraryMenuHost>();
+    // drag session is the one host the ROW itself still asks about — the
+    // tree's hover-to-open courtesy needs to know whether there is a session
+    // to serve. The shell asks for the hosts itself and stands the gestures
+    // down when they are absent (see `crate::features::library::shelf_item`),
+    // so a tree without them keeps the tap and the disclosure and nothing
+    // else.
     let drag = use_context::<DragController>();
 
     // The prop is the shelf the `For` keyed this row on, and a keyed row is not
@@ -231,20 +232,6 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     let open_id = id.clone();
     let open = Signal::derive(move || ctx.expanded.with(|set| set.contains(&open_id)));
 
-    // A target at last, and the row IS the shelf: its middle takes a hold
-    // inside, and its outer quarters reorder held folders beside it in the
-    // level that holds them. Unregistered, a drop here fell through to the
-    // level's own box and silently re-filed into the shelf the reader was
-    // already standing in — the list's whole drag mess in one sentence.
-    let row_dom = format!("shelf-row-{id}");
-    if let Some(drag) = drag {
-        drag.registry.register(DropTargetEntry {
-            id: DropTargetId(DropTargetKind::Folder, id.clone()),
-            dom_id: row_dom.clone(),
-            shelf: None,
-        });
-    }
-
     // The tree's courtesy to a drag: a hold resting on a COLLAPSED row opens
     // it, so the way deeper is the way in and the reader never has to put the
     // hold down to knock. The timer belongs to an effect on the hover, so
@@ -278,8 +265,8 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
 
     // A search lists its matches flat — the level's `order` is the whole
     // library's when a query is open — so an unfolded shelf withholds its
-    // members while the search is on: the doors stay, to show WHERE the matches
-    // live, and the matches themselves are the flat list's alone.
+    // members while the search is on: the doors stay, to show WHERE the
+    // matches live, and the matches themselves are the flat list's alone.
     let books = member_books(state, members);
     let searching = Signal::derive(move || state.library.query.with(|q| query::is_active(q)));
     let shown_books = Signal::derive(move || {
@@ -302,46 +289,27 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
 
     // The row wears the shelf's one press contract — the same wiring the grid's
     // folder card and the book rows wear (see
-    // `crate::features::library::gestures`) with the disclosure's own answer: a
+    // `crate::features::library::gestures`) with the disclosure's own answers: a
     // tap unfolds, a hold enters the selection with this shelf in it, and a
     // movement lifts it, watched or not — a hand-move is marked on the row and
-    // the next re-hang passes it by. The hosts arrive as the Options this row
-    // asked for: the sidebar's tree mounts it with neither, and a row with no
-    // session and no menu keeps its tap and nothing else.
+    // the next re-hang passes it by. What the shell gets besides the policy is
+    // the disclosure's two facts of its own: its expanded state for the aria,
+    // and the Space key it owns before the shared keyboard halves.
     let target_id = id.clone();
-    let gestures = use_shelf_item(
-        state,
-        drag,
-        menu,
-        ShelfItemPolicy {
-            id: id.clone(),
-            label: Signal::derive(move || format!("the {} shelf", name.get())),
-            draggable: Signal::derive(|| true),
-            open: toggle,
-            menu_target: Callback::new(move |_| MenuTarget::Folder {
-                id: target_id.clone(),
-            }),
-            // A folder's lift is a nesting, which writes a parent rather than
-            // a membership: there is no list to lift it off.
-            container: None,
-        },
-    );
-    let is_selected = gestures.is_selected;
-    let pressing = gestures.pressing;
-    let aria_pressed = gestures.aria_pressed;
-    let on_down = Rc::clone(&gestures.on_pointerdown);
-    let on_move = Rc::clone(&gestures.on_pointermove);
-    let on_up = Rc::clone(&gestures.on_pointerup);
-    let on_cancel = Rc::clone(&gestures.on_pointercancel);
-    let on_click = Rc::clone(&gestures.on_click);
-    let on_context = Rc::clone(&gestures.on_contextmenu);
-    let on_key = Rc::clone(&gestures.on_keydown);
+    let policy = ShelfItemPolicy {
+        id: id.clone(),
+        label: Signal::derive(move || format!("the {} shelf", name.get())),
+        draggable: Signal::derive(|| true),
+        open: toggle,
+        menu_target: Callback::new(move |_| MenuTarget::Folder {
+            id: target_id.clone(),
+        }),
+        // A folder's lift is a nesting, which writes a parent rather than a
+        // membership: there is no list to lift it off.
+        container: None,
+    };
 
     let nav_id = id.clone();
-    let nest_id = id.clone();
-    let before_id = id.clone();
-    let after_id = id.clone();
-    let held_id = id.clone();
     // Parked in a `StoredValue` rather than captured: the member rows are built
     // inside the unfold's `Show`, whose children closure has to stay an `Fn` —
     // a `String` owned by the rows' `move` closure would be moved out of it on
@@ -353,49 +321,14 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
 
     view! {
         <>
-            <div
-                id=row_dom
-                class="library-row library-row-shelf"
+            <ShelfItemShell
+                state=state
+                vocab=SeamVocab::FolderRow
+                base_class="library-row library-row-shelf"
+                policy=policy
                 style=indent
-                // The row's three drag faces: the accent wash and inset ring
-                // while the hold is going INSIDE it — the list's answer to the
-                // grid's folder-drag-over — and the two sibling seams while a
-                // folders-only hold is landing beside it.
-                class=("row-nest-here", move || {
-                    drag.is_some_and(|each| each.nests_into(&nest_id))
-                })
-                class=("row-drop-before", move || {
-                    drag.is_some_and(|each| each.sibling_at(&before_id) == Some(false))
-                })
-                class=("row-drop-after", move || {
-                    drag.is_some_and(|each| each.sibling_at(&after_id) == Some(true))
-                })
-                // The row's own three states while the reader holds or carries
-                // it: the tint of the set, the press counting, and the fade of
-                // everything the session is holding — the same three a book row
-                // wears, because a shelf row is a row of the same list.
-                class=("library-row-selected", move || is_selected.get())
-                class=("library-row-pressing", move || pressing.get())
-                class=("library-row-dragging", move || {
-                    drag.is_some_and(|each| each.holds(&held_id))
-                })
-                role="button"
-                tabindex="0"
-                aria-expanded=move || open.get().to_string()
-                aria-pressed=move || aria_pressed.get()
-                on:pointerdown=move |ev| (on_down)(&ev)
-                on:pointermove=move |ev| (on_move)(&ev)
-                on:pointerup=move |ev| (on_up)(&ev)
-                on:pointercancel=move |ev| (on_cancel)(&ev)
-                // The tap is the wrapper's answer now — it unfolds the way the
-                // click did — and what is left on the click is the completed
-                // hold's exhaust.
-                on:click=move |ev: leptos::ev::MouseEvent| (on_click)(&ev)
-                // The shelf's own menu — the same one the grid's folder card
-                // asks — so a shelf can be filed, nested and taken apart from
-                // either density.
-                on:contextmenu=move |ev: leptos::ev::MouseEvent| (on_context)(&ev)
-                on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                aria_expanded=open
+                on_keydown_first=Callback::new(move |ev: leptos::ev::KeyboardEvent| {
                     // Space is the key a disclosure owns — prevented, so the
                     // page does not scroll on the row that meant to open. Enter
                     // and Shift+Enter are the shared wiring's: open (unfold)
@@ -403,10 +336,10 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                     if ev.key() == " " {
                         ev.prevent_default();
                         toggle.run(());
-                        return;
+                        return true;
                     }
-                    (on_key)(&ev);
-                }
+                    false
+                })
             >
                 {move || {
                     // Closed points at what the row would open; open points down
@@ -446,7 +379,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 >
                     <Icon name=IconName::Open size=12 />
                 </button>
-            </div>
+            </ShelfItemShell>
             <Show when=move || open.get()>
                 <For each=move || kids.get() key=|s| s.id.clone() let:child>
                     // Erased through `AnyView`, the way the grid's recursive
@@ -568,15 +501,12 @@ fn ListRow(
     // line the sidebar does not have.
     let dense = ctx.dense;
 
-    // Both, because the row keeps its own ✕: the menu is what a right-click
-    // asks and the sheet is what a removal costs, and the second is reached
-    // from the first as well as from the button. Asked for rather than
-    // expected, for the reason the tree row gives: the sidebar mounts this
-    // same row with no page hosts under it, and a row with no sheet has no ✕
-    // to draw and no menu to ask.
+    // The row keeps its own ✕, and the sheet is ASKED for rather than
+    // expected: the sidebar mounts this same row with no page hosts under it,
+    // and a row with no sheet has no ✕ to draw. The drag session and the menu
+    // are the shell's question, not this row's (see
+    // `crate::features::library::shelf_item`).
     let remove_sheet = use_context::<RemoveSheet>();
-    let menu = use_context::<LibraryMenuHost>();
-    let drag = use_context::<DragController>();
 
     // Selection is a page-wide mode, so every row asks the same signal rather
     // than being told about itself.
@@ -608,6 +538,13 @@ fn ListRow(
     let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
     let ext = book.format.label();
 
+    // The membership the cover's check mark paints from — the same set the
+    // shell's own selected class reads.
+    let check_id = id.clone();
+    let is_selected = Signal::derive(move || {
+        state.library.selected.with(|s| s.contains(&check_id))
+    });
+
     // The shelf's one press contract, the same one the grid's cards wear — a
     // row and a card answer to a hold, a tap and a movement alike at two
     // densities because they are ONE wiring (see
@@ -618,104 +555,50 @@ fn ListRow(
     // one file, and the address cannot say which of them the reader clicked.
     let open_id = id.clone();
     let context_id = id.clone();
-    let gestures = use_shelf_item(
-        state,
-        drag,
-        menu,
-        ShelfItemPolicy {
-            id: id.clone(),
-            label: Signal::derive(move || {
-                facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-            }),
-            draggable: Signal::derive(|| true),
-            open: Callback::new(move |_| document::open_row(state, open_id.clone())),
-            // The missing flag is read when the menu is ASKED rather than
-            // carried from the mount: the row it describes is exactly the one
-            // a background measurement can change between the two.
-            menu_target: Callback::new(move |_| MenuTarget::Book {
-                id: context_id.clone(),
-                missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
-            }),
-            // The tree's own fact: a nested row answers to its branch, a flat
-            // row to the level the page is on.
-            container: parent.clone(),
-        },
-    );
-    let is_selected = gestures.is_selected;
-    let pressing = gestures.pressing;
-    let aria_label = gestures.aria_label;
-    let on_down = Rc::clone(&gestures.on_pointerdown);
-    let on_move = Rc::clone(&gestures.on_pointermove);
-    let on_up = Rc::clone(&gestures.on_pointerup);
-    let on_cancel = Rc::clone(&gestures.on_pointercancel);
-    let on_click = Rc::clone(&gestures.on_click);
-    let on_context = Rc::clone(&gestures.on_contextmenu);
-    let on_key = Rc::clone(&gestures.on_keydown);
-    let aria_pressed = gestures.aria_pressed;
+    let policy = ShelfItemPolicy {
+        id: id.clone(),
+        label: Signal::derive(move || {
+            facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+        }),
+        draggable: Signal::derive(|| true),
+        open: Callback::new(move |_| document::open_row(state, open_id.clone())),
+        // The missing flag is read when the menu is ASKED rather than carried
+        // from the mount: the row it describes is exactly the one a background
+        // measurement can change between the two.
+        menu_target: Callback::new(move |_| MenuTarget::Book {
+            id: context_id.clone(),
+            missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
+        }),
+        // The tree's own fact: a nested row answers to its branch, a flat
+        // row to the level the page is on.
+        container: parent.clone(),
+    };
 
-    // The same target a card registers, under the same id scheme: a book is one
-    // thing to a drag whatever density it is being shown at — plus the one fact
-    // the tree adds: the container that renders THIS row, so a drop inside an
-    // expanded branch indexes the branch's own member list and not the flat
-    // order the page is showing.
-    let dom_id = format!("book-{id}");
-    if let Some(drag) = drag {
-        drag.registry.register(DropTargetEntry {
-            id: DropTargetId(DropTargetKind::Book, id.clone()),
-            dom_id: dom_id.clone(),
-            shelf: parent,
-        });
-    }
-
+    // The row's two own classes: the reveal's light and the missing grey.
     let reveal_id = id.clone();
-    let remove_id = id.clone();
-    let over_id = id.clone();
-    let after_id = id.clone();
-    let fold_id = id.clone();
-    let held_id = id;
+    let reveal_class = Signal::derive(move || {
+        state
+            .library
+            .reveal
+            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
+    });
+    let missing_class = Signal::derive(move || {
+        facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
+    });
+    let remove_id = id;
     let indent = row_indent(depth);
 
     view! {
-        <div
-            id=dom_id
-            class="library-row"
+        <ShelfItemShell
+            state=state
+            vocab=SeamVocab::ListRow
+            base_class="library-row"
+            policy=policy
             style=indent
-            class=("row-reveal", move || {
-                state.library.reveal.with(|at| {
-                    at.as_ref()
-                        .is_some_and(|(id, _)| id == reveal_id.as_str())
-                })
-            })
-            class=("row-drop-before", move || {
-                drag.is_some_and(|each| each.inserts_before(&over_id))
-            })
-            class=("row-drop-after", move || {
-                drag.is_some_and(|each| each.inserts_after(&after_id))
-            })
-            class=("row-fold-here", move || {
-                drag.is_some_and(|each| each.folds_with(&fold_id))
-            })
-            class=("row-missing", move || {
-                facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
-            })
-            class=("library-row-selected", move || is_selected.get())
-            class=("library-row-pressing", move || pressing.get())
-            class=("library-row-dragging", move || {
-                drag.is_some_and(|each| each.holds(&held_id))
-            })
-            role="button"
-            tabindex="0"
-            aria-label=move || aria_label.get()
-            aria-pressed=move || aria_pressed.get()
-            on:pointerdown=move |ev| (on_down)(&ev)
-            on:pointermove=move |ev| (on_move)(&ev)
-            on:pointerup=move |ev| (on_up)(&ev)
-            on:pointercancel=move |ev| (on_cancel)(&ev)
-            // The same answers a card gives, at this density; the wiring is the
-            // same wiring — see `crate::features::library::gestures`.
-            on:click=move |ev: leptos::ev::MouseEvent| (on_click)(&ev)
-            on:contextmenu=move |ev: leptos::ev::MouseEvent| (on_context)(&ev)
-            on:keydown=move |ev: leptos::ev::KeyboardEvent| (on_key)(&ev)
+            extra_classes=vec![
+                ("row-reveal".to_string(), reveal_class),
+                ("row-missing".to_string(), missing_class),
+            ]
         >
             {if dense {
                 // The dense variant's cover: the extension chip, in the art's own
@@ -834,6 +717,6 @@ fn ListRow(
                     }
                 })
             }}
-        </div>
+        </ShelfItemShell>
     }
 }

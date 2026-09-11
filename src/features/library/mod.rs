@@ -11,6 +11,9 @@
 //!   * [`gestures`] — the press contract every one of those items shares: one
 //!     wrapper's decision, the drag session's endpoints, the keyboard's halves
 //!     and the right-click's ask, wired once
+//!   * [`shelf_item`] — the element that contract paints on: one outer div
+//!     wearing the handlers, the registration and the state classes, so the
+//!     six surfaces differ only in vocabulary and content
 //!   * [`add_card`] / [`add_menu`] / [`empty_state`] — the two ways in
 //!   * [`import_modal`] — what a folder import is allowed to be
 //!   * [`remove_modal`] — what a removal costs, itemised
@@ -59,6 +62,7 @@ pub mod progress_dock;
 pub mod remove_modal;
 pub mod search_suggest;
 pub mod selection;
+pub mod shelf_item;
 pub mod titlebar_search;
 pub mod view_menu;
 

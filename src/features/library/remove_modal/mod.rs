@@ -42,14 +42,13 @@ mod receipt;
 
 use leptos::prelude::*;
 
-use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::text::{human_size, plural};
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
 use crate::components::primitives::controls::switch::Switch;
-use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::settings::common::Row;
 use crate::services::library::{PurgeOpts, delete_shelf, purge_books};
 use crate::state::AppState;
@@ -121,15 +120,11 @@ impl RemoveSheet {
 
 #[component]
 pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoView {
-    use_overlay_lane(sheet.open, OverlayPolicy::MODAL);
-    // On by default: copies the app made for books that are leaving the library are
-    // files nothing will ever read again, and this switch is where a reader says
-    // otherwise.
+    // On by default: copies the app made for books that are leaving the library
+    // are files nothing will ever read again, and this switch is where a reader
+    // says otherwise. The lane arbitration and the Escape rule are the modal
+    // shell's (see `crate::components::primitives::overlay::modal_shell`).
     let delete_copy = RwSignal::new(true);
-
-    // A popover opened inside the sheet owns the press; the shared rule peels
-    // one layer at a time.
-    use_modal_escape(sheet.open);
 
     // Books and shelves removed by any other route while the sheet is open close
     // it, once neither half has anything left to talk about. Done in an effect
@@ -159,11 +154,11 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
     });
 
     view! {
-        <Show when=move || sheet.open.get()>
-            <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| sheet.open.set(false)
-            >
+        <ModalShell
+            open=sheet.open
+            aria_label="Remove from the library"
+            width="min(92vw, 420px)"
+        >
                 {move || {
                     let ids = sheet.books.get();
                     let shelf_ids = sheet.shelves.get();
@@ -192,8 +187,7 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
                         />
                     })
                 }}
-            </div>
-        </Show>
+        </ModalShell>
     }
 }
 
@@ -341,13 +335,7 @@ fn Sheet(
     };
 
     view! {
-        <div
-            class="flex max-h-[86vh] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
-            style="width:min(92vw, 420px)"
-            on:click=move |ev| ev.stop_propagation()
-            role="dialog"
-            aria-label="Remove from the library"
-        >
+        <>
             <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
                 {show_cover.then(|| {
                     view! {
@@ -558,7 +546,7 @@ fn Sheet(
                     <span>{remove_label}</span>
                 </Button>
             </footer>
-        </div>
+        </>
     }
 }
 
