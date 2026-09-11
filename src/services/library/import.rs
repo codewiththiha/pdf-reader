@@ -51,7 +51,6 @@ use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
-use library_core::text::display_or_stem;
 use library_core::wire::{PathCheck, StoreRequest, StoreResult};
 use reader_core::format::{Format, is_supported_path};
 
@@ -1604,23 +1603,9 @@ async fn convert_folder_books_to_stored(state: AppState, task: &str, ids: &[Stri
             let Some(book) = find_book_mut(rows, &id) else {
                 return;
             };
-            // A row without a title showed its address's stem; the store file
-            // is named after the row's id, so the old stem becomes the title
-            // before the address changes — a switch must not rename a book
-            // on the shelf.
-            if book.title.is_none() {
-                book.title = Some(display_or_stem(None, &path));
-            }
-            book.origin = Origin::Stored {
-                src: Some(path.clone()),
-                store: store.clone(),
-            };
-            book.adopt_measurement(fp);
-            // The bytes are the app's own copy now, so an address that stopped
-            // resolving is no longer this row's problem — and a row that stays
-            // `missing` after a conversion is a card offering a relink to a
-            // file the library already holds.
-            book.missing = false;
+            // The same write a single departure makes: a switch is a whole
+            // shelf of them, and the two have to agree about what travels.
+            book.become_stored(&path, store.clone(), fp);
         });
         // The highlights follow the address, by the departure's own rule:
         // moved outright when no remaining row reads the old one, copied

@@ -33,7 +33,6 @@ use library_core::conflict::{Arrival, same_name};
 use library_core::folder::{self as folder_ops, Tombstone};
 use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
-use library_core::text::display_or_stem;
 
 use super::conflict;
 use super::covers::prune_now;
@@ -533,19 +532,7 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
 
     state.library.books.update(|rows| {
         if let Some(book) = find_book_mut(rows, row_id) {
-            if book.title.is_none() {
-                book.title = Some(display_or_stem(None, &path));
-            }
-            book.origin = Origin::Stored {
-                src: Some(path.clone()),
-                store: store.clone(),
-            };
-            book.adopt_measurement(measured);
-            // The bytes are the app's own copy now, so the address the row used
-            // to read is provenance and nothing more: a row left `missing`
-            // through a conversion would be a card offering to find a file the
-            // library already holds.
-            book.missing = false;
+            book.become_stored(&path, store.clone(), measured);
         }
     });
     let to_key = state.library.books.with_untracked(|rows| {

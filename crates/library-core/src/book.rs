@@ -479,6 +479,41 @@ impl Book {
         }
     }
 
+    /// Make this row the library's own copy of the file it reads.
+    ///
+    /// The write half of a departure, and the one rule both conversions ride —
+    /// one book leaving the ground that made it, and a whole shelf of them
+    /// leaving when a folder is re-imported as copies. Everything the reader put
+    /// into the row travels with it:
+    ///
+    ///   * the visible name moves into [`Book::title`], because the store file is
+    ///     named after the row's id and a shelf reading "b1c2d3" is a shelf that
+    ///     renamed the book;
+    ///   * the COPY's measurement becomes the identity, so the original
+    ///     fingerprint is left free for whatever folder still reads the source
+    ///     file — which is the whole of what a departure is for;
+    ///   * [`Book::missing`] clears, because an address that stopped resolving is
+    ///     no longer this row's problem once the bytes are the app's own. A row
+    ///     left missing through a conversion would be a card offering to find a
+    ///     file the library already holds.
+    ///
+    /// The id, the format and the resume point ride the row untouched: a
+    /// conversion changes where the bytes live, not what the reader was reading.
+    /// A measurement that failed leaves [`Book::fp_pending`] set rather than
+    /// blocking the conversion — the startup sweep measures the store path and
+    /// finishes the job.
+    pub fn become_stored(&mut self, src: &str, store: String, measured: Option<Fingerprint>) {
+        if self.title.is_none() {
+            self.title = Some(crate::text::display_or_stem(None, src));
+        }
+        self.origin = Origin::Stored {
+            src: Some(src.to_string()),
+            store,
+        };
+        self.adopt_measurement(measured);
+        self.missing = false;
+    }
+
     /// The address resolved, and this is what was at it.
     ///
     /// The heal half, and the one every path check and every folder walk goes
@@ -2062,6 +2097,39 @@ mod tests {
         b.adopt_measurement(None);
         assert!(b.fp_pending);
         assert_eq!(b.fp, fp(10, 1, 7), "the identity it had is left alone");
+    }
+
+    #[test]
+    fn a_departure_keeps_the_name_the_shelf_showed() {
+        // The store file is named after the row's id, so a row with no title of
+        // its own would start reading as "b1c2d3" the moment it left.
+        let mut b = linked("b1", "/src/Dune.pdf");
+        b.become_stored("/src/Dune.pdf", "/store/b1.pdf".into(), Some(fp(9, 9, 9)));
+        assert_eq!(b.title.as_deref(), Some("Dune"));
+        assert_eq!(
+            b.origin,
+            Origin::Stored {
+                src: Some("/src/Dune.pdf".into()),
+                store: "/store/b1.pdf".into()
+            }
+        );
+        assert_eq!(b.fp, fp(9, 9, 9), "the copy's own measurement is the identity");
+        assert!(!b.fp_pending);
+        assert!(!b.missing);
+        // The address the reader opens is the copy's now, and the source is
+        // provenance — which is what leaves the original fingerprint free for
+        // the folder that still reads it.
+        assert_eq!(b.path(), "/store/b1.pdf");
+        assert_eq!(b.origin.source(), Some("/src/Dune.pdf"));
+    }
+
+    #[test]
+    fn a_title_the_document_gave_survives_a_departure() {
+        let mut b = linked("b1", "/src/a.pdf");
+        b.title = Some("Dune".to_string());
+        b.become_stored("/src/a.pdf", "/store/b1.pdf".into(), None);
+        assert_eq!(b.title.as_deref(), Some("Dune"), "a name is not a gap");
+        assert!(b.fp_pending, "a copy nobody weighed is still owed its first check");
     }
 
     #[test]
