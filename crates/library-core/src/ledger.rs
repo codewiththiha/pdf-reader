@@ -127,14 +127,6 @@ pub enum ScanAction {
     Skip,
 }
 
-impl ScanAction {
-    /// True when the scan changes something. What the frontend uses to decide
-    /// whether a rescan is worth a state write and a persist.
-    pub fn is_change(&self) -> bool {
-        !matches!(self, ScanAction::Skip)
-    }
-}
-
 /// Decide what a folder's scan does, file by file, in the order the walk
 /// produced it. Pure: it reads the folder's ledger and the global registry and
 /// answers with one [`ScanAction`] per found file — it mutates neither, so the
@@ -412,6 +404,15 @@ mod tests {
     use reader_core::format::Format;
     use std::collections::{BTreeMap, HashSet};
 
+    /// Whether one answer moves the library. A test's own reading of
+    /// [`ScanAction`] rather than a method on it: nothing in the app asks the
+    /// question — `run_folder` counts the adds, relinks and heals it collected
+    /// — and a published accessor only tests call is an API that says it is
+    /// load-bearing when it is not.
+    fn changes(action: &ScanAction) -> bool {
+        !matches!(action, ScanAction::Skip)
+    }
+
     fn fp(n: u32) -> Fingerprint {
         Fingerprint {
             size: u64::from(n),
@@ -619,11 +620,11 @@ mod tests {
         ];
         let actions = diff_folder(&f, &r, &walk);
         assert_eq!(actions.len(), walk.len());
-        assert!(actions[0].is_change());
-        assert!(!actions[1].is_change());
-        assert!(!actions[2].is_change());
-        assert!(actions[3].is_change());
-        assert_eq!(actions.iter().filter(|a| a.is_change()).count(), 2);
+        assert!(changes(&actions[0]));
+        assert!(!changes(&actions[1]));
+        assert!(!changes(&actions[2]));
+        assert!(changes(&actions[3]));
+        assert_eq!(actions.iter().filter(|a| changes(a)).count(), 2);
     }
 
     #[test]
@@ -633,7 +634,7 @@ mod tests {
         let f = folder(&[1, 2], &[]);
         let r = registry(&[(1, "b1", "/books/a.pdf", false), (2, "b2", "/books/b.pdf", false)]);
         let walk = vec![file(1, "/books/a.pdf"), file(2, "/books/b.pdf")];
-        assert!(diff_folder(&f, &r, &walk).iter().all(|a| !a.is_change()));
+        assert!(diff_folder(&f, &r, &walk).iter().all(|a| !changes(a)));
     }
 
     #[test]

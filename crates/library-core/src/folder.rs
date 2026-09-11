@@ -23,10 +23,17 @@ use crate::scan::{FoundFile, admits, selectable_formats};
 /// text file smaller than that is rarely a book — but the number is a default,
 /// not a rule, and the sheet shows it in KB because that is how a reader
 /// thinks about it.
-pub const DEFAULT_MIN_SIZE: u64 = 30 * 1024;
+const DEFAULT_MIN_SIZE: u64 = 30 * 1024;
 
-/// The step the sheet's −/+ buttons move the threshold by, and its bounds.
-pub const MIN_SIZE_STEP: u64 = 10 * 1024;
+/// The step the sheet's −/+ buttons move the threshold by. Crate-private, and
+/// not because it is a secret: [`FolderOpts::step_min_size`] takes a count of
+/// steps rather than a byte delta precisely so no caller can invent a value the
+/// control could not have produced, and publishing the step would invite one.
+const MIN_SIZE_STEP: u64 = 10 * 1024;
+
+/// The bounds the sheet's −/+ buttons move between. Public because they are the
+/// sheet's: the stepper disables itself at them, and [`sanitize`] brings a loaded
+/// blob back inside them, so the two have to be the same two numbers.
 pub const MIN_SIZE_FLOOR: u64 = 0;
 pub const MIN_SIZE_CEIL: u64 = 500 * 1024;
 

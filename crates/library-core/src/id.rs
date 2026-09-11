@@ -53,24 +53,26 @@ pub fn is_shelf(id: &str) -> bool {
 /// A fresh id: the millisecond it was minted at, plus a per-millisecond
 /// counter so two books imported in the same tick differ.
 ///
-/// The explicit-seq form, for the one mint that is deliberately deterministic:
-/// the `v1` migration ([`crate::blob::migrate_v1`]), which numbers a list it
-/// is handed in one pass and must produce the same ids if it ever runs twice
-/// over the same legacy blob. Everything else mints through [`next_id`].
-/// Rendered in lower-case hex, which is 11 + 4 characters and reads as an
-/// opaque token in a shelf member list.
+/// The explicit-seq form is public for the one mint that is deliberately
+/// deterministic: the `v1` migration ([`crate::blob::migrate_v1`]), which
+/// numbers a list it is handed in one pass and must produce the same ids if it
+/// ever runs twice over the same legacy blob. Everything else mints through
+/// [`next_id`]. Rendered in lower-case hex, which is 11 + 4 characters and reads
+/// as an opaque token in a shelf member list.
 pub fn new_id(now_ms: u64, seq: u32) -> String {
     format!("b{now_ms:011x}{seq:04x}")
 }
 
-/// The letter an id kind is prefixed with, so a shelf member can be told from
-/// a folder id at a glance in a persisted blob. Both are minted here.
-pub fn new_shelf_id(now_ms: u64, seq: u32) -> String {
+/// The shelf's explicit-seq form. Crate-private, and the reason is the rule the
+/// module doc gives: an id is minted off THIS counter or it is not an id the
+/// next concurrent mint can be sure differs from. The migration is the one
+/// caller that has a sequence of its own to hand over, and it mints books.
+fn new_shelf_id(now_ms: u64, seq: u32) -> String {
     format!("s{now_ms:011x}{seq:04x}")
 }
 
-/// A watched folder's id.
-pub fn new_folder_id(now_ms: u64, seq: u32) -> String {
+/// A watched folder's id, explicit-seq form. See [`new_shelf_id`].
+fn new_folder_id(now_ms: u64, seq: u32) -> String {
     format!("f{now_ms:011x}{seq:04x}")
 }
 

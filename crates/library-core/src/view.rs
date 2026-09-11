@@ -140,17 +140,29 @@ impl LibraryView {
         self.columns = Some(next as u8);
     }
 
-    /// Leave Auto: the columns become the count the window fits right now, so
-    /// the reader's first press of −/+ has something to step from. `fit` is the
-    /// caller's measurement, clamped here rather than trusted. A count the
-    /// reader has pinned already is not overridden by a report — it is only
-    /// clamped, so a stray call can move the range but never the choice.
-    pub fn pin_columns(&mut self, fit: u8) {
-        self.auto_fit = fit.clamp(COLUMNS_MIN, COLUMNS_MAX);
-        self.columns = Some(
-            self.columns
-                .map_or(self.auto_fit, |n| n.clamp(COLUMNS_MIN, COLUMNS_MAX)),
-        );
+    /// The count a measurement of the flow becomes: inside the range the menu
+    /// offers. One spelling, read by [`report_auto_fit`](Self::report_auto_fit)
+    /// and by the grid that decides whether a report is worth a write — a clamp
+    /// only the writer knew about is a clamp the "did it change?" test beside it
+    /// does not, and the two disagreeing is a signal written on every resize.
+    pub fn clamped_fit(fit: u8) -> u8 {
+        fit.clamp(COLUMNS_MIN, COLUMNS_MAX)
+    }
+
+    /// Record the column count the auto flow is producing right now, which is
+    /// what the grid measures on every resize. The report is the ONLY writer of
+    /// `auto_fit`, so the clamp lives beside the field rather than at each
+    /// measurement that feeds it.
+    ///
+    /// `columns` is deliberately untouched. It is the reader's pin, and a
+    /// measurement that moved it would be a window resize overriding a choice —
+    /// and, because the count the grid reports is derived from the layout
+    /// `columns_token` produces, a write there would be a measurement moving the
+    /// thing it measured. The stepper's first press is what turns Auto's live
+    /// count into a pin, and it reads `auto_fit` to do it
+    /// ([`step_columns`](Self::step_columns)).
+    pub fn report_auto_fit(&mut self, fit: u8) {
+        self.auto_fit = Self::clamped_fit(fit);
     }
 
     /// Back to Auto. The flow's count keeps being reported into `auto_fit`, so
@@ -235,10 +247,9 @@ mod tests {
     }
 
     #[test]
-    fn pinning_auto_gives_the_stepper_something_to_step_from() {
+    fn a_pinned_count_steps_inside_its_range() {
         let mut v = LibraryView::default();
-        v.pin_columns(6);
-        assert_eq!(v.columns, Some(6));
+        v.columns = Some(6);
         assert_eq!(v.columns_token(), "6");
         assert!(v.columns_enabled());
         v.step_columns(1);
@@ -250,6 +261,21 @@ mod tests {
         v.auto_columns();
         assert_eq!(v.columns, None);
         assert_eq!(v.columns_token(), "auto-fill");
+    }
+
+    #[test]
+    fn a_report_never_pins_the_count_it_reports() {
+        // The grid measures the flow while Auto owns the layout. A report that
+        // pinned would freeze the count on the first resize after a launch, and
+        // the reader's Auto would silently stop being auto.
+        let mut v = LibraryView::default();
+        v.report_auto_fit(6);
+        assert_eq!(v.auto_fit, 6);
+        assert_eq!(v.columns, None, "Auto still owns the layout");
+        assert_eq!(v.columns_token(), "auto-fill");
+        v.report_auto_fit(4);
+        assert_eq!(v.auto_fit, 4, "and it keeps following the window");
+        assert_eq!(v.columns, None);
     }
 
     #[test]
@@ -291,15 +317,17 @@ mod tests {
     }
 
     #[test]
-    fn a_pin_outside_the_range_is_clamped_not_trusted() {
+    fn a_report_outside_the_range_is_clamped_not_trusted() {
         let mut v = LibraryView::default();
-        v.pin_columns(0);
+        v.report_auto_fit(0);
         assert_eq!(v.auto_fit, COLUMNS_MIN);
-        assert_eq!(v.columns, Some(COLUMNS_MIN));
-        v.auto_columns();
-        v.pin_columns(200);
+        v.report_auto_fit(200);
         assert_eq!(v.auto_fit, COLUMNS_MAX);
-        assert_eq!(v.columns, Some(COLUMNS_MAX));
+        // The clamp is one spelling, and the grid reads the same one to decide
+        // whether a report is worth a write.
+        assert_eq!(LibraryView::clamped_fit(0), COLUMNS_MIN);
+        assert_eq!(LibraryView::clamped_fit(200), COLUMNS_MAX);
+        assert_eq!(LibraryView::clamped_fit(5), 5);
     }
 
     #[test]
@@ -308,7 +336,7 @@ mod tests {
             columns: Some(4),
             ..LibraryView::default()
         };
-        v.pin_columns(9);
+        v.report_auto_fit(9);
         assert_eq!(v.auto_fit, 9, "the flow's count is recorded…");
         assert_eq!(v.columns, Some(4), "…and the reader's pin is left alone");
     }

@@ -61,7 +61,7 @@ pub fn reveal_shelf(state: AppState, shelf_id: &str) {
 /// shelf order, so the answer is the same every time — or at the root when it is
 /// on no shelf. A book in the library and on nothing is in "All", and "All" is
 /// where the reader will find it.
-pub fn navigate_to_shelf_of(state: AppState, book_id: &str) {
+fn navigate_to_shelf_of(state: AppState, book_id: &str) {
     let target = state
         .library
         .shelves

@@ -1205,7 +1205,7 @@ pub fn memberships(state: AppState, book_id: &str) -> Vec<(String, String)> {
 /// your folder again" — so the pick is copied into the store once more, from
 /// wherever the file lives now, and the copy is made BEFORE anything is written:
 /// a failure to copy leaves the row exactly as it was.
-pub fn relink_book(state: AppState, book_id: String, path: String) {
+fn relink_book(state: AppState, book_id: String, path: String) {
     if !tauri_bridge::has_tauri() {
         return;
     }

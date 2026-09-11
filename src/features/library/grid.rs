@@ -26,7 +26,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use library_core::view::{COLUMNS_MAX, COLUMNS_MIN, CoverFit};
+use library_core::view::{COLUMNS_MAX, CoverFit, LibraryView};
 
 use crate::features::library::add_card::AddCard;
 use library_core::book::Row;
@@ -77,12 +77,18 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
             if count == 0 {
                 return;
             }
-            let fit = count.clamp(usize::from(COLUMNS_MIN), usize::from(COLUMNS_MAX)) as u8;
+            // The range is the view's and so is the clamp: this reads the same
+            // spelling [`LibraryView::report_auto_fit`] writes with, because a
+            // measurement that clamped one way and a report that clamped another
+            // would never compare equal and would write — and re-run this effect
+            // — on every resize. A track count no `u8` holds is absurd, and
+            // saturating to the top of the range keeps it from wrapping into it.
+            let fit = LibraryView::clamped_fit(u8::try_from(count).unwrap_or(COLUMNS_MAX));
             // Stale is harmless — a resize refreshes it before the next click —
             // but a write only on a real change keeps the signal quiet, and
             // with it this effect, which the write would otherwise re-run.
             if view.with_untracked(|v| v.auto_fit) != fit {
-                view.update(|v| v.auto_fit = fit);
+                view.update(|v| v.report_auto_fit(fit));
             }
         };
         report();

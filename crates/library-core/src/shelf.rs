@@ -350,24 +350,6 @@ pub fn members_of<'a>(
         .collect()
 }
 
-/// The BOOK rows of one level, resolved: what a count, a content check and the
-/// cover queue all want, and never the links — a link has no fingerprint to
-/// check, no address to render art from and no page to count.
-///
-/// A member naming no row is skipped rather than rendered as a hole, which is
-/// [`crate::sort::ordered`]'s rule too.
-pub fn books_of<'a>(
-    rows: &'a [crate::book::Row],
-    shelves: &[Shelf],
-    shelf_id: &str,
-) -> Vec<&'a crate::book::Book> {
-    members_of(rows, shelves, shelf_id)
-        .into_iter()
-        .filter_map(|id| crate::book::find_row(rows, id))
-        .filter_map(crate::book::Row::book)
-        .collect()
-}
-
 /// Put `id` on a shelf, unless it is already on it.
 ///
 /// Not [`place`]: a restore and a "show it here as well" both add a book that may
@@ -521,12 +503,6 @@ mod tests {
         assert_eq!(members_of(&rows, &shelves, ALL_SHELF), Vec::<&str>::new());
         let one_filed = vec![plain("s", &["b1"])];
         assert_eq!(members_of(&rows, &one_filed, ALL_SHELF), vec!["b2", "l1"]);
-        // Its BOOKS are those members that are books: the link is on the shelf
-        // and is not one of its books.
-        assert_eq!(books_of(&rows, &shelves, "s").len(), 1);
-        assert_eq!(books_of(&rows, &shelves, "s")[0].title(), "Dune");
-        assert_eq!(books_of(&rows, &one_filed, ALL_SHELF).len(), 1);
-        assert!(books_of(&rows, &shelves, "gone").is_empty());
     }
 
     use super::*;
