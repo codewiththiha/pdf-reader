@@ -129,6 +129,22 @@ pub fn find<'a>(shelves: &'a [Shelf], id: &str) -> Option<&'a Shelf> {
     shelves.iter().find(|s| s.id == id)
 }
 
+/// The same, for a write.
+///
+/// [`find`]'s answer about [`ALL_SHELF`] is the reason this exists rather than a
+/// `iter_mut().find(|s| s.id == id)` at every call site: the pseudo-shelf is the
+/// book list and has no member list, so a caller that hands a shelf id straight
+/// from the route — which is `"all"` at the root — gets `None` and takes its
+/// root-level branch instead of silently matching nothing and looking like a bug.
+/// A hand-rolled lookup gets that answer too, but by accident and only while
+/// [`sanitize`] keeps dropping a row that wears the id.
+pub fn find_mut<'a>(shelves: &'a mut [Shelf], id: &str) -> Option<&'a mut Shelf> {
+    if id == ALL_SHELF {
+        return None;
+    }
+    shelves.iter_mut().find(|s| s.id == id)
+}
+
 /// The shelves filed directly inside `parent_id`, in the order the library
 /// stores them. `None` asks for the root level, which is what the page shows
 /// while it is drilled out of every shelf.
@@ -487,6 +503,20 @@ mod tests {
             parent: None,
             manual_parent: false,
         }
+    }
+
+    #[test]
+    fn the_pseudo_shelf_is_not_a_shelf_to_either_lookup() {
+        // `sanitize` drops a row wearing the id, so a hand-rolled
+        // `iter().find(|s| s.id == id)` answers `None` too — but only while that
+        // stays true. The lookups answer it as a rule.
+        let mut shelves = vec![plain("s", &["b1"])];
+        assert!(find(&shelves, ALL_SHELF).is_none());
+        assert!(find_mut(&mut shelves, ALL_SHELF).is_none());
+        assert_eq!(find(&shelves, "s").map(|s| s.name.as_str()), Some("s"));
+        find_mut(&mut shelves, "s").unwrap().name = "renamed".into();
+        assert_eq!(find(&shelves, "s").map(|s| s.name.as_str()), Some("renamed"));
+        assert!(find_mut(&mut shelves, "gone").is_none());
     }
 
     #[test]

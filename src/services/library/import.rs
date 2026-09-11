@@ -42,10 +42,11 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{
-    Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut, find_row,
+    Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut, find_book_mut,
+    find_row,
 };
 use library_core::conflict::Arrival;
-use library_core::folder::{FolderOpts, Tombstone, WatchedFolder};
+use library_core::folder::{self as folder_ops, FolderOpts, Tombstone, WatchedFolder};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
@@ -315,9 +316,7 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
                 .and_then(|f| f.shelf_map.get("").cloned())
                 == Some(existing_id.clone())
         });
-        let existing_name = shelves
-            .iter()
-            .find(|s| s.id == existing_id)
+        let existing_name = shelves_ops::find(&shelves, &existing_id)
             .map(|s| s.name.clone())
             .unwrap_or_else(|| incoming.clone());
         conflict::raise_shelf(
@@ -360,7 +359,7 @@ fn covered_shelf(state: AppState, root: &str) -> Option<(String, String, String)
         let Some(shelf_id) = folder.shelf_map.get(&rel) else {
             continue;
         };
-        if let Some(shelf) = shelves.iter().find(|s| &s.id == shelf_id) {
+        if let Some(shelf) = shelves_ops::find(&shelves, shelf_id) {
             if rel.is_empty() {
                 return Some((rel, shelf.id.clone(), shelf.name.clone()));
             }
@@ -679,7 +678,7 @@ async fn run_folder(
     if !rehanged.is_empty() {
         state.library.shelves.update(|shelves| {
             for (id, want) in &rehanged {
-                if let Some(shelf) = shelves.iter_mut().find(|s| &s.id == id) {
+                if let Some(shelf) = shelves_ops::find_mut(shelves, id) {
                     shelf.parent = want.clone();
                 }
             }
@@ -1207,7 +1206,7 @@ async fn run_folder(
             }
         }
         for (book_id, shelf_id) in &placements {
-            let Some(shelf) = shelves.iter_mut().find(|s| &s.id == shelf_id) else {
+            let Some(shelf) = shelves_ops::find_mut(shelves, shelf_id) else {
                 continue;
             };
             // Two byte-identical files in one tree are one book, so the second
@@ -1282,7 +1281,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
     // because a restore measures the address the tombstone recorded rather than
     // assuming the file is still where the folder put it.
     let taken = state.library.folders.with_untracked(|folders| {
-        folders.iter().find(|f| f.id == folder_id).and_then(|f| {
+        folder_ops::find(folders, folder_id).and_then(|f| {
             ledger::find_tombstone(f, &fp)
                 .map(|entry| (f.opts.clone(), entry.clone()))
         })
@@ -1349,7 +1348,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
         // behind it is the one state a folder cannot recover from on its own.
         let stale = entry.fp;
         state.library.folders.update(|folders| {
-            let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) else {
+            let Some(folder) = folder_ops::find_mut(folders, &folder_id) else {
                 return;
             };
             ledger::restore_deleted(folder, &stale);
@@ -1375,7 +1374,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
             let Some(shelf_id) = target else {
                 return;
             };
-            if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+            if let Some(shelf) = shelves_ops::find_mut(shelves, &shelf_id) {
                 shelves_ops::shelf_add(shelf, &placed_id);
             }
         });
@@ -1589,7 +1588,7 @@ async fn convert_folder_books_to_stored(state: AppState, task: &str, ids: &[Stri
         };
         let fp = measured.get(store).copied();
         state.library.books.update(|rows| {
-            let Some(book) = book_rows_mut(rows).find(|b| b.id == id) else {
+            let Some(book) = find_book_mut(rows, &id) else {
                 return;
             };
             // A row without a title showed its address's stem; the store file
@@ -1944,9 +1943,7 @@ fn covered_fate(state: AppState, file: &FoundFile) -> CoveredFate {
     }
     let stoned = state.library.folders.with_untracked(|folders| {
         covering.iter().find_map(|id| {
-            folders
-                .iter()
-                .find(|f| &f.id == id)
+            folder_ops::find(folders, id)
                 .and_then(|f| ledger::find_tombstone(f, &file.fp).cloned())
                 .map(|stone| (id.clone(), stone))
         })
@@ -1979,9 +1976,7 @@ fn restore_covered_file(
     // The folder's two rungs for this file: the one its subfolder maps to,
     // and the one at its root.
     let (rung, root_rung) = state.library.folders.with_untracked(|folders| {
-        folders
-            .iter()
-            .find(|f| f.id == folder_id)
+        folder_ops::find(folders, folder_id)
             .map(|f| {
                 let rel = rel_under(&file.path, &f.root).unwrap_or_default();
                 let key = match rel.rsplit_once('/') {
@@ -2008,7 +2003,7 @@ fn restore_covered_file(
     // folder cannot recover from on its own. (`placed` kept the fingerprint
     // through the removal and the departure alike; the mark is the guarantee.)
     state.library.folders.update(|folders| {
-        if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
             ledger::restore_deleted(folder, &file.fp);
             folder.mark_placed(file.fp);
         }
@@ -2035,7 +2030,7 @@ fn lift_stone_for(state: AppState, file: &FoundFile) -> Option<Tombstone> {
     })?;
     let mut stone = None;
     state.library.folders.update(|folders| {
-        if let Some(folder) = folders.iter_mut().find(|f| f.id == owner) {
+        if let Some(folder) = folder_ops::find_mut(folders, &owner) {
             stone = ledger::restore_deleted(folder, &file.fp);
         }
     });
@@ -2165,7 +2160,7 @@ pub(crate) fn land_stored_copy(
 /// and finishes the job.
 fn adopt_copy_measurement(state: AppState, row_id: &str, measured: Option<Fingerprint>) {
     state.library.books.update(|rows| {
-        if let Some(book) = book_rows_mut(rows).find(|b| b.id == row_id) {
+        if let Some(book) = find_book_mut(rows, row_id) {
             book.adopt_measurement(measured);
         }
     });
@@ -2207,9 +2202,12 @@ fn mint_row(
     // one file honest is the mark above, not a dedupe here.
     let placed = book.id.clone();
     state.library.books.update(|rows| rows.push(Row::Book(book)));
+    // The root has no member list to place into, so the write is skipped rather
+    // than made and answered with nothing: a batch landing four hundred files
+    // "on All" would otherwise notify the shelf list four hundred times.
     if shelf_id != shelves_ops::ALL_SHELF {
         state.library.shelves.update(|shelves| {
-            if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+            if let Some(shelf) = shelves_ops::find_mut(shelves, shelf_id) {
                 shelves_ops::place(&mut shelf.books, &placed, index);
             }
         });

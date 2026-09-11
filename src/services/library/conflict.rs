@@ -84,13 +84,13 @@ use wasm_bindgen_futures::spawn_local;
 
 use ai_core::gloss::GlossMark;
 use library_core::book::{
-    Book, Fingerprint, Origin, book_rows_mut, drop_dangling_links, find_by_id, find_row,
-    fold_books, remove_row,
+    Book, Fingerprint, drop_dangling_links, find_book_mut, find_by_id, find_row, fold_books,
+    remove_row,
 };
 use library_core::conflict::{
     Answer, Arrival, MoveAnswer, collide, next_name, next_shelf_name,
 };
-use library_core::folder::FolderOpts;
+use library_core::folder::{self as folder_ops, FolderOpts};
 use library_core::ledger;
 use library_core::scan::FoundFile;
 use library_core::shelf;
@@ -252,6 +252,23 @@ pub fn answer_move(state: AppState, answer: MoveAnswer) {
     advance(state);
 }
 
+/// Whether the row that survives is the library's own copy OF the row that
+/// dissolves: a stored book whose recorded provenance is the other's address.
+///
+/// One question in one place, because the two answers that dissolve a row — a
+/// merge into the copy and a link at it — both write the folder's moved-out log
+/// on this condition and on nothing else. A log written for a same-name merge of
+/// two DIFFERENT books would keep a file out of every folder that placed it, and
+/// a folder that never held the file would have no restore row to offer back.
+fn survivor_is_the_copy_of(state: AppState, survivor: &str, gone: &Book) -> bool {
+    state
+        .library
+        .books
+        .with_untracked(|rows| find_by_id(rows, survivor).is_some_and(|keep| {
+            keep.origin.is_store_copy_of(gone.path())
+        }))
+}
+
 /// Merge: the row already on the level survives and the moved row dissolves
 /// into it.
 ///
@@ -285,7 +302,7 @@ fn merge(state: AppState, ask: &ConflictAsk) {
         .with_untracked(|rows| find_by_id(rows, &gone_id).cloned());
     if let Some(gone_book) = &gone_book {
         state.library.books.update(|rows| {
-            if let Some(keep) = book_rows_mut(rows).find(|b| b.id == survivor) {
+            if let Some(keep) = find_book_mut(rows, &survivor) {
                 fold_books(keep, gone_book);
             }
         });
@@ -298,16 +315,10 @@ fn merge(state: AppState, ask: &ConflictAsk) {
     // is the check that it IS that content — a same-name merge of two
     // different books writes no log, because there the file's own book is
     // exactly what an import should bring back.
-    if let Some(gone) = &gone_book {
-        let survivor_is_the_copy = state.library.books.with_untracked(|rows| {
-            find_by_id(rows, &survivor).is_some_and(|keep| match &keep.origin {
-                Origin::Stored { src, .. } => src.as_deref() == Some(gone.path()),
-                Origin::Linked { .. } => false,
-            })
-        });
-        if survivor_is_the_copy {
-            write_moved_stones(state, gone, Some(&survivor));
-        }
+    if let Some(gone) = &gone_book
+        && survivor_is_the_copy_of(state, &survivor, gone)
+    {
+        write_moved_stones(state, gone, Some(&survivor));
     }
     let inherited: Vec<String> = memberships(state, &gone_id)
         .into_iter()
@@ -398,10 +409,7 @@ fn seat_replace(
 /// The slot a row holds on one shelf, which is the slot its replacement takes.
 fn member_slot(state: AppState, shelf_id: &str, row_id: &str) -> Option<usize> {
     state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .find(|s| s.id == shelf_id)
-            .and_then(|s| s.books.iter().position(|m| m == row_id))
+        shelf::find(shelves, shelf_id).and_then(|s| s.books.iter().position(|m| m == row_id))
     })
 }
 
@@ -514,16 +522,10 @@ fn link_move(state: AppState, ask: &ConflictAsk) {
         .library
         .books
         .with_untracked(|rows| find_by_id(rows, &gone_id).cloned());
-    if let Some(book) = &gone_book {
-        let is_the_copy = state.library.books.with_untracked(|rows| {
-            find_by_id(rows, &survivor).is_some_and(|keep| match &keep.origin {
-                Origin::Stored { src, .. } => src.as_deref() == Some(book.path()),
-                Origin::Linked { .. } => false,
-            })
-        });
-        if is_the_copy {
-            write_moved_stones(state, book, Some(&survivor));
-        }
+    if let Some(book) = &gone_book
+        && survivor_is_the_copy_of(state, &survivor, book)
+    {
+        write_moved_stones(state, book, Some(&survivor));
     }
     state.library.books.update(|rows| {
         remove_row(rows, &gone_id);
@@ -866,7 +868,7 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
             });
             if same_file {
                 state.library.books.update(|rows| {
-                    if let Some(book) = book_rows_mut(rows).find(|b| b.id == existing) {
+                    if let Some(book) = find_book_mut(rows, &existing) {
                         book.heal(file.fp);
                     }
                 });
@@ -928,7 +930,7 @@ fn land_answer_file(
                 );
                 if let Some(folder_id) = folder_id {
                     state.library.folders.update(|folders| {
-                        if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+                        if let Some(folder) = folder_ops::find_mut(folders, &folder_id) {
                             ledger::restore_deleted(folder, &fp);
                             folder.mark_placed(fp);
                         }
@@ -951,7 +953,7 @@ fn settle_folder_ledger(state: AppState, ask: &ConflictAsk, fp: Fingerprint) {
         return;
     };
     state.library.folders.update(|folders| {
-        if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+        if let Some(folder) = folder_ops::find_mut(folders, &folder_id) {
             ledger::restore_deleted(folder, &fp);
             folder.mark_placed(fp);
         }

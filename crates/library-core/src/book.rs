@@ -122,6 +122,20 @@ impl Origin {
     pub fn is_stored(&self) -> bool {
         matches!(self, Origin::Stored { .. })
     }
+
+    /// Whether this is the library's own copy OF `path` — a stored book whose
+    /// recorded provenance is that address.
+    ///
+    /// The question the conflict sheet's two dissolving answers ask before they
+    /// write a folder's moved-out log, and the reason it is a method: the log is
+    /// only honest when the survivor really is a copy of the file the dissolving
+    /// row read. A merge of two books that merely rhyme by name writes no log,
+    /// because there the file's own book is exactly what a later import should
+    /// bring back — and a caller that spelled the match out would have to get
+    /// the linked arm right too, where the answer is always no.
+    pub fn is_store_copy_of(&self, path: &str) -> bool {
+        matches!(self, Origin::Stored { src: Some(src), .. } if src == path)
+    }
 }
 
 /// One book on a shelf.
@@ -999,6 +1013,18 @@ pub fn find_by_path<'a>(rows: &'a [Row], path: &str) -> Option<&'a Book> {
 /// only thing that tells two rows of one address apart.
 pub fn find_by_id<'a>(rows: &'a [Row], id: &str) -> Option<&'a Book> {
     book_rows(rows).find(|b| b.id == id)
+}
+
+/// The same, for a write.
+///
+/// [`find_row_mut`] is the row-addressed answer and this is the book-addressed
+/// one, which is what every writer of a resume point, an origin or a
+/// measurement wants: a link has none of the three, and a caller that took the
+/// row and then asked it for its book was spelling this out. Steps over links
+/// the way [`book_rows_mut`] does, so a link can never be written through as
+/// though it were a book.
+pub fn find_book_mut<'a>(rows: &'a mut [Row], id: &str) -> Option<&'a mut Book> {
+    book_rows_mut(rows).find(|b| b.id == id)
 }
 
 /// The key the highlights of the book being opened are stored under.
@@ -1966,6 +1992,52 @@ mod tests {
         assert!(!b.missing);
         assert_eq!(b.title, None);
         assert_eq!(b.path(), "/n.md");
+    }
+
+    #[test]
+    fn the_mutable_book_lookup_steps_over_a_link() {
+        let mut list = vec![
+            Row::link("l1".into(), "Dune".into(), "b1".into(), 1),
+            Row::Book(linked("b1", "/a.pdf")),
+        ];
+        // A link is a row and `find_row_mut` answers it; a writer of a book's
+        // facts must not be able to reach one this way.
+        assert!(find_row_mut(&mut list, "l1").is_some());
+        assert!(find_book_mut(&mut list, "l1").is_none());
+        find_book_mut(&mut list, "b1").unwrap().missing = true;
+        assert!(find_by_id(&list, "b1").is_some_and(|b| b.missing));
+        assert!(find_book_mut(&mut list, "gone").is_none());
+    }
+
+    #[test]
+    fn a_stored_book_knows_the_address_it_was_copied_from() {
+        let copy = Book::new(
+            "b1".into(),
+            fp(1, 1, 1),
+            Format::Pdf,
+            Origin::Stored {
+                src: Some("/src/a.pdf".into()),
+                store: "/store/b1.pdf".into(),
+            },
+            1,
+        );
+        assert!(copy.origin.is_store_copy_of("/src/a.pdf"));
+        assert!(!copy.origin.is_store_copy_of("/store/b1.pdf"), "the copy is not its own provenance");
+        assert!(!copy.origin.is_store_copy_of("/src/other.pdf"));
+        // A linked book IS the address rather than a copy of it, and a copy
+        // whose source is already gone has no provenance to match.
+        assert!(!linked("b2", "/src/a.pdf").origin.is_store_copy_of("/src/a.pdf"));
+        let orphan = Book::new(
+            "b3".into(),
+            fp(1, 1, 1),
+            Format::Pdf,
+            Origin::Stored {
+                src: None,
+                store: "/store/b3.pdf".into(),
+            },
+            1,
+        );
+        assert!(!orphan.origin.is_store_copy_of("/src/a.pdf"));
     }
 
     #[test]

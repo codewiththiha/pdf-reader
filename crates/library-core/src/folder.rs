@@ -358,6 +358,25 @@ impl Tombstone {
     }
 }
 
+/// The watched folder with this id.
+///
+/// Every question about a folder starts from an id the library already holds —
+/// a shelf's [`ShelfKind::Folder`], a tombstone's owner, a dock card's run — and
+/// every one of them was a walk of the list spelled at the call site. One walk
+/// here means a folder that is gone answers the same way everywhere: `None`,
+/// and the caller's "no such folder" branch rather than a silent no-op.
+///
+/// [`ShelfKind::Folder`]: crate::shelf::ShelfKind::Folder
+pub fn find<'a>(folders: &'a [WatchedFolder], id: &str) -> Option<&'a WatchedFolder> {
+    folders.iter().find(|f| f.id == id)
+}
+
+/// The same, for a write — the ledger's half, where a placement is recorded, a
+/// tombstone is lifted and a shelf map is cut.
+pub fn find_mut<'a>(folders: &'a mut [WatchedFolder], id: &str) -> Option<&'a mut WatchedFolder> {
+    folders.iter_mut().find(|f| f.id == id)
+}
+
 /// Make a persisted folder list internally valid: drop rows with no id or no
 /// root, dedupe by root (first wins), clamp the size threshold into the range
 /// the sheet can produce, and empty a format set that would admit nothing.
@@ -627,5 +646,15 @@ mod tests {
         sanitize(&mut folders);
         let keys: Vec<&String> = folders[0].shelf_map.keys().collect();
         assert_eq!(keys, vec!["scifi"]);
+    }
+
+    #[test]
+    fn a_folder_is_found_by_id_for_a_read_and_for_a_write() {
+        let mut folders = vec![folder("/one"), folder("/two")];
+        folders[1].id = "f2".into();
+        assert_eq!(find(&folders, "f2").map(|f| f.root.as_str()), Some("/two"));
+        assert!(find(&folders, "gone").is_none());
+        find_mut(&mut folders, "f2").unwrap().opts.watch = true;
+        assert!(find(&folders, "f2").is_some_and(|f| f.opts.watch));
     }
 }

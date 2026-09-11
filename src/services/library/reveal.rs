@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use leptos::prelude::*;
 
-use library_core::shelf::{ALL_SHELF, containing};
+use library_core::shelf::{ALL_SHELF, containing, find};
 
 use crate::state::AppState;
 
@@ -41,12 +41,7 @@ pub fn reveal_shelf(state: AppState, shelf_id: &str) {
     let level = state
         .library
         .shelves
-        .with_untracked(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == shelf_id)
-                .and_then(|s| s.parent.clone())
-        })
+        .with_untracked(|shelves| find(shelves, shelf_id).and_then(|s| s.parent.clone()))
         .unwrap_or_else(|| ALL_SHELF.to_string());
     if state.library.shelf.get_untracked() != level {
         state.library.shelf.set(level);

@@ -27,10 +27,10 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{
-    Book, Origin, Row, book_rows, book_rows_mut, drop_dangling_links, find_row, remove_row,
+    Book, Origin, Row, book_rows, drop_dangling_links, find_book_mut, find_row, remove_row,
 };
 use library_core::conflict::{Arrival, same_name};
-use library_core::folder::Tombstone;
+use library_core::folder::{self as folder_ops, Tombstone};
 use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
 use library_core::text::display_or_stem;
@@ -148,13 +148,13 @@ pub fn move_many_to_shelf(
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
             if let Some(from) = from.as_deref().filter(|id| *id != to)
-                && let Some(shelf) = shelves.iter_mut().find(|s| s.id == from)
+                && let Some(shelf) = shelf::find_mut(shelves, from)
             {
                 for book_id in &book_ids {
                     shelf::forget(&mut shelf.books, book_id);
                 }
             }
-            if let Some(shelf) = shelves.iter_mut().find(|s| s.id == to) {
+            if let Some(shelf) = shelf::find_mut(shelves, to) {
                 place_many(&mut shelf.books, &book_ids, index);
             }
         });
@@ -257,7 +257,7 @@ pub fn move_row(state: AppState, row_id: &str, shelf_id: &str, index: Option<usi
     }
     state.library.shelves.update(|shelves| {
         shelf::forget_everywhere(shelves, row_id);
-        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+        if let Some(shelf) = shelf::find_mut(shelves, shelf_id) {
             shelf::place(&mut shelf.books, row_id, index);
         }
     });
@@ -320,7 +320,7 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     let book_ids = clean_move_ids(clean);
     let mut moved = false;
     state.library.shelves.update(|shelves| {
-        let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {
+        let Some(shelf) = shelf::find_mut(shelves, shelf_id) else {
             return;
         };
         for book_id in &book_ids {
@@ -465,10 +465,7 @@ pub(crate) fn converts_on_move_to(state: AppState, row_id: &str, to: &str) -> bo
         return true;
     }
     let owner = state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .find(|s| s.id == to)
-            .and_then(|s| s.kind.folder_id().map(str::to_string))
+        shelf::find(shelves, to).and_then(|s| s.kind.folder_id().map(str::to_string))
     });
     owner.is_none_or(|owner| !placers.contains(&owner))
 }
@@ -524,7 +521,7 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
     write_moved_stones(state, &book, None);
 
     state.library.books.update(|rows| {
-        if let Some(book) = book_rows_mut(rows).find(|b| b.id == row_id) {
+        if let Some(book) = find_book_mut(rows, row_id) {
             if book.title.is_none() {
                 book.title = Some(display_or_stem(None, &path));
             }
@@ -644,16 +641,13 @@ fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
         return;
     };
     let Some(folder_id) = state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .find(|s| s.id == shelf_id)
-            .and_then(|s| s.kind.folder_id().map(str::to_string))
+        shelf::find(shelves, shelf_id).and_then(|s| s.kind.folder_id().map(str::to_string))
     }) else {
         return;
     };
     let mut bound = false;
     state.library.folders.update(|folders| {
-        let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) else {
+        let Some(folder) = folder_ops::find_mut(folders, &folder_id) else {
             return;
         };
         if let Some(entry) = folder
@@ -1035,10 +1029,7 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
     }
     let mut moved = false;
     state.library.shelves.update(|shelves| {
-        let parent = shelves
-            .iter()
-            .find(|s| s.id == anchor)
-            .and_then(|s| s.parent.clone());
+        let parent = shelf::find(shelves, anchor).and_then(|s| s.parent.clone());
         for id in ids {
             if id == anchor || !shelf::reparent(shelves, id, parent.as_deref()) {
                 continue;
@@ -1083,7 +1074,7 @@ pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
-            let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) else {
+            let Some(shelf) = shelf::find_mut(shelves, shelf_id) else {
                 return;
             };
             for book_id in &book_ids {
@@ -1111,7 +1102,7 @@ pub fn rename_shelf(state: AppState, shelf_id: &str, name: &str) {
     }
     let name = name.to_string();
     state.library.shelves.update(|shelves| {
-        if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+        if let Some(shelf) = shelf::find_mut(shelves, shelf_id) {
             shelf.name = name;
         }
     });
@@ -1147,9 +1138,7 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
             .library
             .shelves
             .with_untracked(|shelves| {
-                shelves
-                    .iter()
-                    .find(|s| s.id == shelf_id)
+                shelf::find(shelves, shelf_id)
                     .map_or((ALL_SHELF.to_string(), None), |gone| {
                         (
                             gone.parent
@@ -1165,7 +1154,7 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
     });
     if let Some(folder_id) = detached {
         state.library.folders.update(|folders| {
-            if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+            if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
                 folder.shelf_map.retain(|_, sid| sid != shelf_id);
             }
         });
@@ -1237,8 +1226,7 @@ fn relink_book(state: AppState, book_id: String, path: String) {
         };
 
         state.library.books.update(|rows| {
-            let Some(book) = library_core::book::book_rows_mut(rows).find(|b| b.id == book_id)
-            else {
+            let Some(book) = find_book_mut(rows, &book_id) else {
                 return;
             };
             match &mut book.origin {

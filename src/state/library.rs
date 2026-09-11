@@ -393,9 +393,12 @@ impl LibraryState {
         self.books.update(|rows| {
             rows.push(Row::link(link_id, name.to_string(), target.to_string(), now));
         });
+        // The root is not a shelf and has no member list, so a link made "on
+        // All" is filed nowhere — and the write is skipped rather than made and
+        // answered with nothing.
         if shelf_id != ALL_SHELF {
             self.shelves.update(|shelves| {
-                if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
+                if let Some(shelf) = shelf::find_mut(shelves, shelf_id) {
                     shelf::shelf_add(shelf, &made);
                 }
             });
