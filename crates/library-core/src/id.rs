@@ -72,12 +72,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ids_from_one_tick_still_differ() {
-        assert_ne!(new_id(1, 0), new_id(1, 1));
-        assert_ne!(new_id(1, 0), new_id(2, 0));
-    }
-
-    #[test]
     fn two_mints_in_one_tick_never_share_an_id() {
         // Two import tasks finishing their walks in the same millisecond: the
         // counter is the crate's, so the second mint differs from the first

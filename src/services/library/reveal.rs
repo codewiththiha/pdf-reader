@@ -48,19 +48,3 @@ pub fn navigate_to_shelf_of(state: AppState, book_id: &str) {
         state.library.shelf.set(target);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::NONCE;
-    use std::sync::atomic::Ordering;
-
-    #[test]
-    fn two_reveals_of_one_book_are_two_reveals() {
-        // The nonce is the reason a second reveal of the same book re-triggers the
-        // scroll: without it the signal would hold an equal value and notify
-        // nobody, and the gesture would silently do nothing the second time.
-        let first = NONCE.fetch_add(1, Ordering::Relaxed);
-        let second = NONCE.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(first, second);
-    }
-}

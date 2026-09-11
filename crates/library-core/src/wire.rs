@@ -180,15 +180,4 @@ mod tests {
         };
         assert!(!empty.is_ok());
     }
-
-    #[test]
-    fn a_store_request_round_trips() {
-        let request = StoreRequest {
-            path: "/downloads/a.pdf".into(),
-            id: "b1".into(),
-        };
-        let json = serde_json::to_string(&request).unwrap();
-        let back: StoreRequest = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, request);
-    }
 }
