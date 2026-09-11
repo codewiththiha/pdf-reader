@@ -153,12 +153,12 @@ pub(crate) fn LinkRow(
         <ShelfItemShell
             state=state
             vocab=SeamVocab::ListRow
-            base_class="library-row book-link"
+            base_class="lib-row book-link"
             policy=policy
             style=indent
             extra_classes=vec![("row-reveal".to_string(), reveal_class)]
         >
-            <span class="library-row-ext" title=link_title(to_shelf)>
+            <span class="lib-row-ext" title=link_title(to_shelf)>
                 <Icon name=IconName::Link size=12 />
             </span>
             <span class="min-w-0 flex-1">
@@ -172,7 +172,7 @@ pub(crate) fn LinkRow(
                     let at = remove_id.clone();
                     view! {
                         <button
-                            class="library-row-action"
+                            class="lib-row-action"
                             type="button"
                             title="Remove this link"
                             aria-label=format!("Remove the link to {}", name.clone())

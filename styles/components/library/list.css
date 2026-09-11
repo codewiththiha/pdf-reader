@@ -2,11 +2,11 @@
    The list layout: one row per book. The same books in the same order as the
    grid, so nothing here carries a decision — only a shape.
    --------------------------------------------------------------------------- */
-.library-list {
+.lib-list {
   overflow: hidden;
   background: color-mix(in srgb, var(--color-surface) 40%, transparent);
 }
-.library-row {
+.lib-row {
   position: relative;
   display: flex;
   align-items: center;
@@ -18,20 +18,20 @@
   -webkit-user-select: none;
   transition: background 0.12s ease;
 }
-.library-row:hover {
+.lib-row:hover {
   background: color-mix(in srgb, var(--color-line) 45%, transparent);
 }
-.library-row:focus-visible {
+.lib-row:focus-visible {
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 /* The tree's shelf row: a book row's shape wearing a disclosure. The indent is
    an inline style — the depth scale lives with the tree that owns it — and the
    tighter gap is all the row itself needs: chevron, glyph and name sit closer
    than a cover sits to its title, because they are one noun. */
-.library-row-shelf {
+.lib-row-shelf {
   gap: 0.5rem;
 }
-.library-row-cover {
+.lib-row-cover {
   position: relative;
   display: block;
   flex: 0 0 auto;
@@ -46,7 +46,7 @@
   );
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.16);
 }
-.library-row-img {
+.lib-row-img {
   display: block;
   width: 100%;
   height: 100%;
@@ -55,7 +55,7 @@
 /* The dense tree's stand-in for the cover: at sidebar width the format IS the
    art — the kind of thing the row is, in the footprint the cover would have
    had, so rows still line up and the eye still lands on the same corner. */
-.library-row-ext {
+.lib-row-ext {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -75,7 +75,7 @@
    action it first carried: a shelf row's is "open shelf", and only a book row's
    and a link row's is the removal's ✕. A class called `remove` on a button that
    navigates is a class the next reader has to disbelieve. */
-.library-row-action {
+.lib-row-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -90,12 +90,12 @@
   cursor: pointer;
   transition: opacity 0.14s ease, color 0.14s ease, background 0.14s ease;
 }
-.library-row:hover .library-row-action,
-.library-row:focus-visible .library-row-action,
-.library-row-action:focus-visible {
+.lib-row:hover .lib-row-action,
+.lib-row:focus-visible .lib-row-action,
+.lib-row-action:focus-visible {
   opacity: 1;
 }
-.library-row-action:hover {
+.lib-row-action:hover {
   border-color: var(--color-line);
   background: var(--color-surface);
   color: var(--color-ink);

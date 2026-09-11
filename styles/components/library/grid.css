@@ -7,7 +7,7 @@
    menu writes one token (--lib-cols, from
    `library_core::view::LibraryView::columns_token`) and the grid reads it, so
    "how many across" is one value in one place and Auto is just its default. */
-.library-grid {
+.lib-grid {
   display: grid;
   grid-template-columns: repeat(var(--lib-cols, auto-fill), minmax(9.5rem, 1fr));
   gap: 2rem 1.5rem;
@@ -286,7 +286,7 @@
    box's ratio is the card's inline style, because a class cannot beat one.
    --------------------------------------------------------------------------- */
 .book-cover-crop .book-cover-img,
-.book-cover-crop .library-row-img {
+.book-cover-crop .lib-row-img {
   object-fit: cover;
 }
 
@@ -302,7 +302,7 @@
    names rather than looking at art, so the kind of thing a row is earns its
    place there. On a cover it was a third statement of what the fallback art and
    the file's own name already said, in the one corner the eye lands on. */
-.library-row-format {
+.lib-row-format {
   flex: 0 0 auto;
   padding: 1px 5px;
   border: 1px solid var(--color-line);
@@ -319,7 +319,7 @@
    one, and the reader gets to decide between finding it again and letting it go.
    --------------------------------------------------------------------------- */
 .book-missing .book-cover-wrap,
-.row-missing .library-row-cover {
+.row-missing .lib-row-cover {
   filter: grayscale(1) opacity(0.62);
 }
 

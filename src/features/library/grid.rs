@@ -99,11 +99,11 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
     view! {
         <div
             node_ref=grid_ref
-            class="library-grid"
+            class="lib-grid"
             // One class on the container rather than one per card: the books not in
             // the set all step back by the same amount, and a shelf of three hundred
             // should not run three hundred derivations to agree on that.
-            class=("library-grid-selecting", move || state.library.selecting.get())
+            class=("lib-grid-selecting", move || state.library.selecting.get())
             style=move || format!("--lib-cols:{}", columns.get())
         >
             // Folders before books at every level: the doors out of this page are

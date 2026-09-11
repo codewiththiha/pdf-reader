@@ -143,8 +143,8 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
 
     view! {
         <div
-            class="library-list divide-y divide-line rounded-xl border border-line"
-            class=("library-list-selecting", move || state.library.selecting.get())
+            class="lib-list divide-y divide-line rounded-xl border border-line"
+            class=("lib-list-selecting", move || state.library.selecting.get())
         >
             <For each=move || roots.get() key=|s| s.id.clone() let:shelf>
                 <TreeRow state=state shelf=shelf depth=0 crop=crop />
@@ -302,7 +302,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
             <ShelfItemShell
                 state=state
                 vocab=SeamVocab::FolderRow
-                base_class="library-row library-row-shelf"
+                base_class="lib-row lib-row-shelf"
                 policy=policy
                 style=indent
                 extra_classes=vec![("row-reveal".to_string(), reveal_class)]
@@ -347,7 +347,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 // Two gestures on one shelf because they are two questions:
                 // "show me inside it" and "take me to it".
                 <button
-                    class="library-row-action"
+                    class="lib-row-action"
                     type="button"
                     title="Open shelf"
                     aria-label=move || format!("Open the {} shelf", name.get())
@@ -430,7 +430,7 @@ fn AddRow(state: AppState) -> impl IntoView {
                 aria-expanded=move || open.get().to_string()
                 title="Add books"
                 on:click=move |_| open.set(!open.get_untracked())
-                class="library-add-row"
+                class="lib-add-row"
             >
                 <Icon name=IconName::Plus size=15 />
                 <span>"Add books"</span>
@@ -527,7 +527,7 @@ fn ListRow(
         <ShelfItemShell
             state=state
             vocab=SeamVocab::ListRow
-            base_class="library-row"
+            base_class="lib-row"
             policy=policy
             style=indent
             extra_classes=vec![
@@ -540,11 +540,11 @@ fn ListRow(
                 // footprint, so a sidebar row still leads with what the file IS.
                 // No selection check rides it — the dense tree is a browser, not
                 // a picker, and the row's own tint is the whole of its state.
-                view! { <span class="library-row-ext">{ext}</span> }.into_any()
+                view! { <span class="lib-row-ext">{ext}</span> }.into_any()
             } else {
                 view! {
                     <span
-                        class="library-row-cover"
+                        class="lib-row-cover"
                         class=("book-cover-crop", move || crop.get())
                     >
                         <SelectionCheck state=state selected=is_selected />
@@ -559,7 +559,7 @@ fn ListRow(
                                     view! {
                                         // Not natively draggable; see `book_card`.
                                         <img
-                                            class="library-row-img"
+                                            class="lib-row-img"
                                             src=cover.data_url.clone()
                                             alt=alt
                                             loading="lazy"
@@ -608,7 +608,7 @@ fn ListRow(
                 // The chip's whole job is done by the head-of-row extension.
                 None
             } else {
-                chip.map(|label| view! { <span class="library-row-format">{label}</span> })
+                chip.map(|label| view! { <span class="lib-row-format">{label}</span> })
             }}
             {if dense {
                 None
@@ -626,7 +626,7 @@ fn ListRow(
                     let at = remove_id.clone();
                     view! {
                         <button
-                            class="library-row-action"
+                            class="lib-row-action"
                             type="button"
                             title="Remove from library"
                             aria-label="Remove from library"

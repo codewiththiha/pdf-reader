@@ -83,7 +83,7 @@
 /* The list's add row: the grid's add card in the shape of a row. Same dashed
    intent and the same accent on hover, so the two layouts read as one library at
    two densities rather than as two features. */
-.library-add-row {
+.lib-add-row {
   display: flex;
   width: 100%;
   align-items: center;
@@ -97,11 +97,11 @@
   cursor: pointer;
   transition: color 0.14s ease, background 0.14s ease;
 }
-.library-add-row:hover {
+.lib-add-row:hover {
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
   color: var(--color-accent);
 }
-.library-add-row:focus-visible {
+.lib-add-row:focus-visible {
   outline: none;
   border-color: var(--color-accent);
   color: var(--color-accent);
@@ -116,7 +116,7 @@
 .book-pressing .book-cover-wrap {
   transform: scale(0.96);
 }
-.library-row-pressing {
+.lib-row-pressing {
   opacity: 0.82;
 }
 
@@ -127,7 +127,7 @@
    on the cancellation and on Escape alike, since all three end the one session in
    `src/features/library/dnd` rather than three flags on three cards. */
 .book-dragging,
-.library-row-dragging,
+.lib-row-dragging,
 .folder-dragging {
   opacity: 0.45;
 }

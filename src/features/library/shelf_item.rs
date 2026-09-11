@@ -62,7 +62,7 @@ impl SeamVocab {
         match self {
             SeamVocab::FolderCard => "folder-selected",
             SeamVocab::GridCard => "book-selected",
-            SeamVocab::ListRow | SeamVocab::FolderRow => "library-row-selected",
+            SeamVocab::ListRow | SeamVocab::FolderRow => "lib-row-selected",
         }
     }
 
@@ -70,7 +70,7 @@ impl SeamVocab {
         match self {
             SeamVocab::FolderCard => "folder-pressing",
             SeamVocab::GridCard => "book-pressing",
-            SeamVocab::ListRow | SeamVocab::FolderRow => "library-row-pressing",
+            SeamVocab::ListRow | SeamVocab::FolderRow => "lib-row-pressing",
         }
     }
 
@@ -78,7 +78,7 @@ impl SeamVocab {
         match self {
             SeamVocab::FolderCard => "folder-dragging",
             SeamVocab::GridCard => "book-dragging",
-            SeamVocab::ListRow | SeamVocab::FolderRow => "library-row-dragging",
+            SeamVocab::ListRow | SeamVocab::FolderRow => "lib-row-dragging",
         }
     }
 

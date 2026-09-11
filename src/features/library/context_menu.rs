@@ -121,7 +121,7 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
             position=|at: &MenuRequest| (at.x, at.y)
             on_close=close
             min_width=208
-            class="library-context-menu"
+            class="lib-context-menu"
         >
             {move || {
                 let Some(at) = request.get() else {

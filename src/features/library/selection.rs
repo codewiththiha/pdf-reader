@@ -314,8 +314,8 @@ pub(crate) fn use_select_mode(state: AppState) {
             exclude_selectors: vec![
                 ".book-card",
                 ".folder-card",
-                ".library-row",
-                ".library-select-bar",
+                ".lib-row",
+                ".lib-select-bar",
                 ".menu-popover",
             ],
             enabled: None,
@@ -375,7 +375,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
             visible=Signal::derive(move || selecting.get())
             role="toolbar"
             aria_label="Library selection"
-            class="library-select-bar"
+            class="lib-select-bar"
         >
             <span class="mr-1.5 text-xs font-medium tabular-nums text-muted">
                 {move || format!("{} selected", count.get())}
