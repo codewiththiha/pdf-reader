@@ -132,13 +132,19 @@ pub enum Answer {
 /// The reader's answer to a name collision, when the arrival is a ROW being
 /// moved — a drag, a filing, a lift out to the root.
 ///
-/// A move is the other question, and it has the other three answers, because
-/// both sides are books the reader already has: two rows of one name on one
-/// level, and the reader is the only one who knows whether that is one book
-/// seen twice, a book superseding a book, or two books that happen to rhyme.
-/// *Go to the one that is there* is not among them — the reader is holding the
-/// other one, so they know where both are — and neither is a link, which is an
-/// answer for an arrival that has no row of its own to keep.
+/// A move is the other question, and its answers are about the two books the
+/// reader already has: two rows of one name on one level, and the reader is
+/// the only one who knows whether that is one book seen twice, a book
+/// superseding a book, or two books that happen to rhyme. *Go to the one that
+/// is there* is not among them — the reader is holding the other one, so they
+/// know where both are.
+///
+/// Which three the sheet offers is the shape's own fact. The usual shape is
+/// Merge / Replace / As new. The shape where the row being moved is a
+/// read-at-place book and the row on the level is one of the library's own
+/// stored copies swaps the destructive *Replace* for [`MoveAnswer::Link`]:
+/// there the reader has a file on disk and a copy in the store, and
+/// "reach the copy from here" is an answer that keeps both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveAnswer {
     /// One book: the row already on the level survives with its id, its name
@@ -152,6 +158,12 @@ pub enum MoveAnswer {
     /// Keep both: the moved row takes the next free name — [`Answer::AsNew`]'s
     /// naming, on the row that already exists rather than on a row to mint.
     AsNew,
+    /// Reach the row that is here instead of putting a second book beside it:
+    /// the moved row dissolves into a `Row::Link` at the level's survivor.
+    /// Offered instead of *Replace* when the row being moved reads a file at
+    /// its place and the row on the level is a stored copy — neither side is
+    /// the reader's to destroy, and a pointer is the answer that keeps both.
+    Link,
 }
 
 /// Whether two names are the same name. Case-insensitive and nothing else: a

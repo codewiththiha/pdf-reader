@@ -509,7 +509,7 @@ async fn run_folder(
     // and no write for a folder nothing changed in. An import owes an answer
     // either way.
     let quiet = asked == Asked::OnFocus;
-    let found = match wire::scan_folder(&task, &root, &opts).await {
+    let mut found = match wire::scan_folder(&task, &root, &opts).await {
         Ok(found) => found,
         Err(message) => return fail(state, &task, message, quiet),
     };
@@ -590,6 +590,36 @@ async fn run_folder(
     // menu's "did this book move out of my folder" answer is only as fresh as the
     // last walk, and a walk that found nothing to do still saw every file.
     folder.record_seen(&found);
+
+    // A file the folder's log says is REPRESENTED — a moved-out log bound to
+    // the stored copy that came home — is an import that succeeds by lighting
+    // that row up, not by minting a linked neighbour beside the copy the
+    // reader already moved back. The log stays standing: it is the folder's
+    // permanent word that this file has a row, and a rescan stays silent
+    // about it as it always was. Explicit runs only — a rescan never reveals.
+    let mut represented: Vec<String> = Vec::new();
+    if !quiet {
+        found.retain(|file| {
+            let Some(row_id) = ledger::find_tombstone(&folder, &file.fp)
+                .and_then(|entry| entry.returned_row.clone())
+            else {
+                return true;
+            };
+            let alive = state
+                .library
+                .books
+                .with_untracked(|rows| find_row(rows, &row_id).is_some());
+            if alive {
+                represented.push(row_id);
+                false
+            } else {
+                // The binding names a dead row: the log is spent of its
+                // meaning and the file takes the ordinary import route, which
+                // lifts the log when the book lands.
+                true
+            }
+        });
+    }
 
     let mut adds: Vec<FoundFile> = Vec::new();
     let mut relinks: Vec<(String, String)> = Vec::new();
@@ -756,6 +786,7 @@ async fn run_folder(
         && healed == 0
         && asks.is_empty()
         && replacements.is_empty()
+        && represented.is_empty()
     {
         // Nothing to do. A quiet run leaves no trace beyond the folder's own
         // "last scanned" stamp; an explicit import still owes the reader an
@@ -984,8 +1015,13 @@ async fn run_folder(
 
     // A book that was removed and has just come back is revealed: the
     // import succeeded by making it reappear where the folder holds it, and
-    // the highlight is how the reader is told so without a sentence.
+    // the highlight is how the reader is told so without a sentence. A
+    // REPRESENTED file reveals the row its folder's log names instead: the
+    // copy that came home is where the import "landed".
+    let represented_count = represented.len() as u32;
     if let Some(first) = restored.into_iter().next() {
+        super::reveal::reveal_book(state, &first);
+    } else if let Some(first) = represented.into_iter().next() {
         super::reveal::reveal_book(state, &first);
     }
 
@@ -998,7 +1034,7 @@ async fn run_folder(
         conflict::raise(state, asks);
     }
 
-    let total = placed + (relink_count + healed + replaced) as u32;
+    let total = placed + (relink_count + healed + replaced) as u32 + represented_count;
     update_task(state, &task, move |t| {
         t.total = total;
         t.done = total;
@@ -1182,8 +1218,32 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         Ok(checks) => checks,
         Err(message) => return fail(state, &task, message, false),
     };
-    let found: Vec<FoundFile> = checks.iter().filter_map(found_from_check).collect();
-    if found.is_empty() {
+    let mut found: Vec<FoundFile> = checks.iter().filter_map(found_from_check).collect();
+    // A file some folder's log says is REPRESENTED by a returned stored copy
+    // succeeds the drop by lighting that row up rather than landing a linked
+    // neighbour beside it — the folder rule, on the loose-file side.
+    let mut represented: Vec<String> = Vec::new();
+    found.retain(|file| {
+        let Some(row_id) = state.library.folders.with_untracked(|folders| {
+            folders.iter().find_map(|folder| {
+                ledger::find_tombstone(folder, &file.fp)
+                    .and_then(|entry| entry.returned_row.clone())
+            })
+        }) else {
+            return true;
+        };
+        let alive = state
+            .library
+            .books
+            .with_untracked(|rows| find_row(rows, &row_id).is_some());
+        if alive {
+            represented.push(row_id);
+            false
+        } else {
+            true
+        }
+    });
+    if found.is_empty() && represented.is_empty() {
         return fail(
             state,
             &task,
@@ -1212,7 +1272,9 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         .map(|file| Arrival::import(file.clone(), shelf_id.clone(), None))
         .collect();
     let (clean, conflicts) = conflict::screen(state, arrivals);
-    let placed = clean.len() as u32;
+    // A represented file is a succeeded import as much as a landed one: the
+    // card says what the drop was worth, and the highlight below says where.
+    let placed = clean.len() as u32 + represented.len() as u32;
     let waiting = conflicts.len() as u32;
     // One persist for the batch rather than one per file: a drop of four
     // hundred files is one write, and a reader who closes the window halfway
@@ -1238,6 +1300,8 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         }
     }
     if let Some(first) = restored.into_iter().next() {
+        super::reveal::reveal_book(state, &first);
+    } else if let Some(first) = represented.into_iter().next() {
         super::reveal::reveal_book(state, &first);
     }
     // The landed rows may read from addresses the cover cache has no art for:

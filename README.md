@@ -391,6 +391,16 @@ the filesystem.
   switch and the confirm button's own wording all describe the set the removal will actually take
   rather than the one you clicked — so a cascade that reaches stored copies is a cascade that shows
   you the copies first.
+- **Moving a read-at-place book out of its folder makes it the library's own.** The departure is
+  the one move that writes a byte: the book becomes a stored copy — its name, its place in it and
+  its highlights all travel with it — and the folder records a moved-out log, so no rescan files
+  the OS copy back and no menu offers it as a book that is gone. Importing that file again brings
+  the linked book back beside the copy that left, and lights it up: two books of one content, each
+  with one address. Dragging the stored copy back onto a shelf of the folder it left binds the log
+  to it by name, and from then on importing the file just lights that copy up — unless you renamed
+  it, in which case the folder does not recognise it and the import brings the linked book back
+  instead. Moving a book inside its own folder's tree, and moving any book the library already
+  stores, copies nothing and stays the membership edit a drag has always been.
 - **A watched folder can give a book back.** Its import menu keeps a tombstone per removal — the name
   the shelf showed, how long ago it went, how big it is — and offers the book back after measuring the
   file to check it is still there. An explicit restore ignores the folder's format and size filters,
@@ -430,8 +440,11 @@ the filesystem.
   leaving with it; **Replace** sends the book that was there out of the library and seats yours in
   its place, on every shelf it was filed on, and the row says how many highlights leave with it
   before you click; **As new** keeps both, yours under the next free name beside it. The two sheets
-  are two different types in the code, so a move can never be offered a link, and a file can never
-  be offered a replace.
+  are two different types in the code, so a file can never be offered a replace — and a move is
+  offered a link in exactly one shape: when the book you dragged reads a file at its place and the
+  book on the level is the library's own stored copy, **Make link** takes Replace's slot, because
+  neither side is yours to destroy. The dragged book becomes a pointer, the file stays on disk and
+  the copy stays in the store.
 - **Importing a folder the library already reads in place does not ask — it tells.** The folder
   itself, or any subfolder inside a tree the library reads where it stands, is one shelf already:
   the import answers with an *already imported* note, and closing it goes to the shelf you meant

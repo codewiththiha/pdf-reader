@@ -63,7 +63,10 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use ai_core::gloss::GlossMark;
-use library_core::book::{Book, Fingerprint, book_rows_mut, find_by_id, find_row, fold_books};
+use library_core::book::{
+    Book, Fingerprint, Origin, book_rows_mut, drop_dangling_links, find_by_id, find_row,
+    fold_books, remove_row,
+};
 use library_core::conflict::{
     Answer, Arrival, MoveAnswer, collide, next_name, next_shelf_name,
 };
@@ -72,7 +75,10 @@ use library_core::ledger;
 use library_core::scan::FoundFile;
 use library_core::shelf;
 
-use super::arrange::{PurgeOpts, memberships, purge_books};
+use super::arrange::{
+    PurgeOpts, converts_on_move_to, convert_to_stored, memberships, purge_books, toast,
+    write_moved_stones,
+};
 use crate::state::{AppState, Toast};
 
 /// The question on screen.
@@ -207,6 +213,7 @@ pub fn answer_move(state: AppState, answer: MoveAnswer) {
         MoveAnswer::Merge => merge(state, &ask),
         MoveAnswer::Replace => replace(state, &ask),
         MoveAnswer::AsNew => as_new(state, &ask),
+        MoveAnswer::Link => link_move(state, &ask),
     }
     advance(state);
 }
@@ -232,12 +239,31 @@ fn merge(state: AppState, ask: &ConflictAsk) {
         .library
         .books
         .with_untracked(|rows| find_by_id(rows, &gone_id).cloned());
-    if let Some(gone_book) = gone_book {
+    if let Some(gone_book) = &gone_book {
         state.library.books.update(|rows| {
             if let Some(keep) = book_rows_mut(rows).find(|b| b.id == survivor) {
-                fold_books(keep, &gone_book);
+                fold_books(keep, gone_book);
             }
         });
+    }
+    // A read-at-place book folding into the library's own stored copy of ITS
+    // content leaves the folder's file with no row to answer for it: the
+    // folder takes a moved-out log bound to the survivor, so a later import
+    // of the file highlights the copy the reader just called the one book,
+    // instead of minting a linked neighbour beside it. The provenance `src`
+    // is the check that it IS that content — a same-name merge of two
+    // different books writes no log, because there the file's own book is
+    // exactly what an import should bring back.
+    if let Some(gone) = &gone_book {
+        let survivor_is_the_copy = state.library.books.with_untracked(|rows| {
+            find_by_id(rows, &survivor).is_some_and(|keep| match &keep.origin {
+                Origin::Stored { src, .. } => src.as_deref() == Some(gone.path()),
+                Origin::Linked { .. } => false,
+            })
+        });
+        if survivor_is_the_copy {
+            write_moved_stones(state, gone, Some(&survivor));
+        }
     }
     let inherited: Vec<String> = memberships(state, &gone_id)
         .into_iter()
@@ -279,16 +305,40 @@ fn replace(state: AppState, ask: &ConflictAsk) {
         std::slice::from_ref(&ask.existing_id),
         PurgeOpts::default(),
     );
-    super::arrange::move_row(
-        state,
-        &moved_id,
-        &ask.arrival.shelf_id,
-        seat.or(ask.arrival.index),
-    );
+    let shelf_id = ask.arrival.shelf_id.clone();
+    let index = seat.or(ask.arrival.index);
+    // A read-at-place arrival becomes the library's own copy before it is
+    // seated, and the seating waits for the copy — the survivor is already
+    // gone, so the arrival seats even if the copy fails: it is the only book
+    // left standing, linked or not.
+    if tauri_bridge::has_tauri() && converts_on_move_to(state, &moved_id, &shelf_id) {
+        spawn_local(async move {
+            if let Err(message) = convert_to_stored(state, &moved_id).await {
+                toast(state, message);
+            }
+            super::covers::backfill_missing(state);
+            seat_replace(state, &moved_id, &shelf_id, index, &inherited);
+        });
+        return;
+    }
+    seat_replace(state, &moved_id, &shelf_id, index, &inherited);
+}
+
+/// The seating half of a replace: the arrival takes the survivor's slot and
+/// every other shelf the survivor was filed on, and the blob is written once
+/// for the whole of it.
+fn seat_replace(
+    state: AppState,
+    moved_id: &str,
+    shelf_id: &str,
+    index: Option<usize>,
+    inherited: &[String],
+) {
+    super::arrange::move_row(state, moved_id, shelf_id, index);
     state.library.shelves.update(|shelves| {
         for one in shelves.iter_mut() {
             if inherited.contains(&one.id) {
-                shelf::shelf_add(one, &moved_id);
+                shelf::shelf_add(one, moved_id);
             }
         }
     });
@@ -390,6 +440,64 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
             crate::storage::persist_library(state.library);
         }
     }
+}
+
+/// Make link, a move's: the row the reader dragged dissolves into a pointer
+/// at the row that is here.
+///
+/// The third answer for a read-at-place book meeting the library's own stored
+/// copy of a name: the copy stays, the file on disk stays, and the level gains
+/// a row that reaches it instead of a second book. Two things ride the
+/// dissolution. The dragged row's highlights STAY under its address — the file
+/// is still the folder's, and an import that brings the linked book back
+/// should bring its marks with it, which a sweep here would have deleted. And
+/// the folder takes a moved-out log bound to the survivor when the survivor is
+/// a copy of that very file — the provenance `src` is the check — so a later
+/// import of the file highlights the copy instead of minting a neighbour. A
+/// different book of the same name gets no log: `placed` already keeps the
+/// rescan quiet, and a re-import should bring the dragged book itself back.
+fn link_move(state: AppState, ask: &ConflictAsk) {
+    let Some(gone_id) = ask.arrival.moving.clone() else {
+        return;
+    };
+    let survivor = ask.existing_id.clone();
+    let gone_book = state
+        .library
+        .books
+        .with_untracked(|rows| find_by_id(rows, &gone_id).cloned());
+    if let Some(book) = &gone_book {
+        let is_the_copy = state.library.books.with_untracked(|rows| {
+            find_by_id(rows, &survivor).is_some_and(|keep| match &keep.origin {
+                Origin::Stored { src, .. } => src.as_deref() == Some(book.path()),
+                Origin::Linked { .. } => false,
+            })
+        });
+        if is_the_copy {
+            write_moved_stones(state, book, Some(&survivor));
+        }
+    }
+    state.library.books.update(|rows| {
+        remove_row(rows, &gone_id);
+        // A link at the dissolved row is a row that renders, is clicked and
+        // does nothing: the pointers go with it, as they do in every removal.
+        drop_dangling_links(rows);
+    });
+    state
+        .library
+        .shelves
+        .update(|shelves| shelf::forget_everywhere(shelves, &gone_id));
+    // The pointer wears the survivor's name, which is what makes the row
+    // recognisable beside the book it points at — the import answer's rule.
+    let name = state.library.row_name(&survivor);
+    let name = if name.trim().is_empty() {
+        ask.arrival.name.clone()
+    } else {
+        name
+    };
+    state
+        .library
+        .add_link(&name, &survivor, &ask.arrival.shelf_id);
+    crate::storage::persist_library(state.library);
 }
 
 /// The question on screen is answered: the next one up, or the sheet closes.
@@ -789,6 +897,44 @@ mod tests {
         }
     }
 
+    /// A stored row: the library's own copy of a file, with the provenance a
+    /// conversion writes — `src` is the address the copy was made from, and it
+    /// is what tells a merge or a link that the copy and a linked book are two
+    /// halves of one content.
+    fn stored_row(id: &str, title: &str, src_path: &str, store: &str, n: u32) -> Row {
+        let mut book = Book::new(
+            id.to_string(),
+            fp(n),
+            Format::Markdown,
+            Origin::Stored {
+                src: Some(src_path.to_string()),
+                store: store.to_string(),
+            },
+            0,
+        );
+        book.title = Some(title.to_string());
+        Row::Book(book)
+    }
+
+    /// An in-place folder that placed the given fingerprints — the ledger half
+    /// of a read-at-place import.
+    fn folder_in_place(
+        id: &str,
+        root: &str,
+        placed: &[u32],
+    ) -> library_core::folder::WatchedFolder {
+        library_core::folder::WatchedFolder {
+            id: id.to_string(),
+            root: root.to_string(),
+            opts: library_core::folder::FolderOpts::default(),
+            placed: placed.iter().copied().map(fp).collect(),
+            ignored: Vec::new(),
+            shelf_map: Default::default(),
+            last_seen: Vec::new(),
+            scanned_ms: 0,
+        }
+    }
+
     fn file(name: &str, n: u32) -> library_core::scan::FoundFile {
         library_core::scan::FoundFile {
             rel: format!("{name}.md"),
@@ -1117,6 +1263,120 @@ mod tests {
             state.library.row_name("b1"),
             "Dune",
             "the row that was already there keeps its own name"
+        );
+    }
+
+    #[test]
+    fn a_link_answer_dissolves_the_dragged_row_into_a_pointer_and_binds_the_log() {
+        // The pointer shape: a read-at-place book meets the library's own
+        // stored copy of its content. The copy stays, the file on disk stays,
+        // the level gains a row that reaches it — and the folder's moved-out
+        // log binds to the survivor, so a later import of the file highlights
+        // the copy instead of minting a neighbour.
+        let (_owner, state) = library(
+            vec![
+                row("b1", "Dune", "/books/dune.md", 1),
+                stored_row("b2", "Dune", "/books/dune.md", "/store/b2.md", 2),
+            ],
+            vec![shelf("s", &["b1"]), shelf("t", &["b2"])],
+        );
+        state
+            .library
+            .folders
+            .set(vec![folder_in_place("f1", "/books", &[1])]);
+        let ask = the_ask(state, Arrival::moved("b1", "Dune", "t", None));
+        raise(state, vec![ask]);
+
+        answer_move(state, MoveAnswer::Link);
+
+        let rows = state.library.books.get_untracked();
+        assert!(find_row(&rows, "b1").is_none(), "the dragged row is gone");
+        let link = rows
+            .iter()
+            .find(|r| r.is_link())
+            .expect("the level holds a pointer");
+        assert_eq!(link.target(), Some("b2"), "pointing at the copy");
+        let shelves = state.library.shelves.get_untracked();
+        let on_t = shelves
+            .iter()
+            .find(|s| s.id == "t")
+            .map(|s| s.books.clone());
+        assert_eq!(
+            on_t,
+            Some(vec!["b2".to_string(), link.id().to_string()]),
+            "the copy keeps its place and the pointer joins the level"
+        );
+        let folders = state.library.folders.get_untracked();
+        let stone = folders[0]
+            .ignored
+            .iter()
+            .find(|entry| entry.moved)
+            .expect("a moved-out log");
+        assert_eq!(stone.fp, fp(1), "for the file on disk");
+        assert_eq!(
+            stone.returned_row.as_deref(),
+            Some("b2"),
+            "bound to the row that represents it"
+        );
+    }
+
+    #[test]
+    fn a_merge_into_the_stored_copy_binds_the_folder_log_to_the_survivor() {
+        // One book, the reader said — and the folder's file has no row of its
+        // own any more, so the log has to name the row that answers for it.
+        let (_owner, state) = library(
+            vec![
+                row("b1", "Dune", "/books/dune.md", 1),
+                stored_row("b2", "Dune", "/books/dune.md", "/store/b2.md", 2),
+            ],
+            vec![shelf("s", &["b1"]), shelf("t", &["b2"])],
+        );
+        state
+            .library
+            .folders
+            .set(vec![folder_in_place("f1", "/books", &[1])]);
+        let ask = the_ask(state, Arrival::moved("b1", "Dune", "t", None));
+        raise(state, vec![ask]);
+
+        answer_move(state, MoveAnswer::Merge);
+
+        let rows = state.library.books.get_untracked();
+        assert_eq!(rows.len(), 1, "two books became one");
+        let folders = state.library.folders.get_untracked();
+        let stone = folders[0]
+            .ignored
+            .iter()
+            .find(|entry| entry.moved)
+            .expect("a moved-out log");
+        assert_eq!(stone.returned_row.as_deref(), Some("b2"));
+    }
+
+    #[test]
+    fn a_merge_of_two_different_books_writes_no_log() {
+        // The same NAME is not the same content: the folder's file still has a
+        // book the reader means by it — the one a re-import brings back — and
+        // a log binding the folder to an unrelated survivor would send that
+        // import to the wrong row.
+        let (_owner, state) = library(
+            vec![
+                row("b1", "Dune", "/books/dune.md", 1),
+                row("b2", "Dune", "/other/dune.md", 2),
+            ],
+            vec![shelf("s", &["b1"]), shelf("t", &["b2"])],
+        );
+        state
+            .library
+            .folders
+            .set(vec![folder_in_place("f1", "/books", &[1])]);
+        let ask = the_ask(state, Arrival::moved("b1", "Dune", "t", None));
+        raise(state, vec![ask]);
+
+        answer_move(state, MoveAnswer::Merge);
+
+        let folders = state.library.folders.get_untracked();
+        assert!(
+            folders[0].ignored.is_empty(),
+            "a different book's merge is no departure of THIS file"
         );
     }
 }

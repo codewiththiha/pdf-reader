@@ -343,6 +343,13 @@ pub fn recoverables(
         if books_by_fp.contains_key(&entry.fp) {
             continue;
         }
+        // A moved-out log is not a removal: the library still holds the book,
+        // as its own stored copy, and a restore would mint a linked second of
+        // a content the reader already has. The way back is an import of the
+        // file, which spends the log and brings the linked book home.
+        if entry.moved {
+            continue;
+        }
         out.push(Recovered::Deleted(entry.clone()));
     }
 
@@ -444,6 +451,8 @@ mod tests {
             last_path: format!("/books/{n}.pdf"),
             shelf_id: None,
             removed_ms: 5,
+            moved: false,
+            returned_row: None,
         }
     }
 
@@ -765,6 +774,28 @@ mod tests {
     }
 
     #[test]
+    fn a_moved_out_log_is_not_offered_back_as_a_removal() {
+        // The book a moved-out log belongs to is still in the library — as the
+        // library's own stored copy — and a restore would mint a linked second
+        // of a content the reader moved out on purpose. The way back is an
+        // import of the file, which spends the log.
+        let mut f = folder(&[1], &[2]);
+        f.ignored.push(Tombstone {
+            moved: true,
+            returned_row: Some("b9".into()),
+            ..stone(3)
+        });
+        let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
+        let index = index_by_fp(&books);
+        let out = recoverables(&f, &index, &[]);
+        assert_eq!(out.len(), 1, "only the real removal is offered back");
+        match &out[0] {
+            Recovered::Deleted(entry) => assert_eq!(entry.fp, fp(2)),
+            other => panic!("expected a removal, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn a_book_that_came_back_by_another_route_is_not_a_recovery() {
         // The next scan's prune says so properly; the menu must not offer a book
         // the reader already has.
@@ -977,6 +1008,20 @@ mod tests {
         .unwrap();
         assert_eq!(older.shelf_id, None);
         assert_eq!(older.title, None);
+        // A blob from before the moved-out log existed loads as a removal.
+        assert!(!older.moved);
+        assert_eq!(older.returned_row, None);
+        // And the log's own half crosses the wire with it.
+        let moved_stone = Tombstone {
+            moved: true,
+            returned_row: Some("b7".into()),
+            ..stone(3)
+        };
+        let json = serde_json::to_string(&moved_stone).unwrap();
+        assert!(json.contains("\"moved\":true"), "{json}");
+        assert!(json.contains("\"returnedRow\":\"b7\""), "{json}");
+        let back: Tombstone = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, moved_stone);
     }
 
     #[test]

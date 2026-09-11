@@ -310,6 +310,21 @@ pub struct Tombstone {
     /// When it was removed, in milliseconds since the epoch.
     #[serde(default)]
     pub removed_ms: u64,
+    /// True when the removal was a MOVE and not a deletion: the book left its
+    /// folder as the library's own stored copy, so the library still holds it
+    /// and the folder's restore menu must not offer it back as a book that is
+    /// gone. The file on disk is untouched — this log is about the shelf, not
+    /// about the filesystem.
+    #[serde(default)]
+    pub moved: bool,
+    /// The row that represents this file to the folder, when one came home: a
+    /// stored copy moved back onto a shelf this folder owns under the name the
+    /// log remembers binds itself here, and a later import of the file lights
+    /// that row up instead of minting a linked neighbour beside it. `None`
+    /// until a return binds it, and stale ids are checked against the library
+    /// before they are trusted.
+    #[serde(default)]
+    pub returned_row: Option<String>,
 }
 
 impl Tombstone {
@@ -325,6 +340,8 @@ impl Tombstone {
             last_path: book.path().to_string(),
             shelf_id,
             removed_ms: now_ms,
+            moved: false,
+            returned_row: None,
         }
     }
 
@@ -408,6 +425,8 @@ mod tests {
             last_path: format!("/books/{n}.pdf"),
             shelf_id: None,
             removed_ms: 5,
+            moved: false,
+            returned_row: None,
         }
     }
 

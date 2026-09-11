@@ -379,9 +379,22 @@ behaviour you discover by pointing the app at a real folder.
   its own copy" back into "the app reads your folder again".
 
 The corollary runs through every layer. A shelf holds book *ids* and nothing else, so a drag
-between shelves edits an ordered list of ids and cannot touch a file — which is what makes filing a
-read-in-place book safe by construction rather than by care. `services::library::arrange` is the
-only module that deletes a byte, and only one the app wrote.
+between shelves edits an ordered list of ids and cannot touch a file the reader owns — which is
+what makes filing a read-in-place book safe by construction rather than by care.
+`services::library::arrange` is the only module that deletes a byte, and only one the app wrote.
+
+One move DOES write a byte, and it is the departure: a read-at-place book leaving the ground that
+made it — off its folder's shelf for another shelf, for the root, or through a collision answer
+that seats it elsewhere — becomes the library's own stored copy on the way out
+(`arrange::convert_to_stored`). The rule it serves is the read-at-place singular: one OS file is
+one linked instance, so a book that has left its folder cannot stay one, or the folder's ledger,
+its rescans and its re-imports would all keep answering for a book that is no longer theirs. The
+copy takes the bytes into the store, the row takes the copy's own measurement as its identity —
+which frees the ORIGINAL fingerprint, and that freedom is the point — the visible name moves into
+`title`, the highlights move their key, and the folder takes a MOVED-OUT log
+(`Tombstone.moved`). A re-arrangement inside the folder's own tree is no departure: the book is
+still a linked book of that ground, and nothing copies. A stored book is already the library's
+own and simply moves.
 
 ### Identity is a fingerprint, not a path
 
@@ -465,10 +478,15 @@ drops it, and both folders' rescans stay quiet.
 
 Row six is the rule the whole design exists for: a book the reader dragged off a folder's shelf is
 still in the library, its fingerprint is still in `WatchedFolder::placed`, and the next rescan
-leaves it where the reader put it. Row seven is the tombstone in `WatchedFolder::ignored`, checked
-before every other row, because a file the reader deleted from the library is still on disk and
-still admitted by the folder's options. `library_core::ledger::tombstone` writes it only into the
-folders that *placed* the book, so removing a hand-added book poisons no watched folder.
+leaves it where the reader put it. A departure that converted holds the original fingerprint in
+`placed` AND writes a moved-out log beside it, so the file stays out of rescans by two independent
+rows and the log can carry what `placed` cannot: a name, and — once the copy comes home — the row
+that represents the file. Row seven is the tombstone in `WatchedFolder::ignored`, checked before
+every other row, because a file the reader deleted from the library is still on disk and still
+admitted by the folder's options. `library_core::ledger::tombstone` writes it only into the
+folders that *placed* the book, so removing a hand-added book poisons no watched folder. A
+moved-out log is a tombstone with `moved: true`, and the restore menu skips it: the book is not
+gone, it left as a copy the library holds, and a restore would mint a linked second of it.
 
 A relink rewrites the address and clears `missing`; it does not touch the id, the resume point or a
 single shelf membership. That is what makes "the file moved" and "the book was re-filed" orthogonal.
@@ -494,7 +512,20 @@ disk and imported there is the file the log was written for. The row returns wea
 shelf showed, and the run reveals it when it lands, so a book that reappeared is a book the reader
 sees appear. A rescan, meanwhile, stays silent about the file, which is the log's whole point: the
 removal was the reader's decision, a watchful folder does not overrule it, and only the reader's own
-import does.
+import does. For a MOVED-OUT log this is the whole design coming around: the copy that left has the
+store's fingerprint, the original is free, and the import of the OS file brings the linked book back
+beside it — two books of one content, each with one address, and the moved copy keeps its place
+wherever the reader put it.
+
+A moved-out log has one more state, and it is the return. Dragging the stored copy BACK onto a
+shelf of the folder it left binds the log to the row (`Tombstone.returned_row`), and the condition
+for the bind is the NAME: the log remembers the name the shelf showed, and a row wearing that exact
+name is the book the reader moved back. From then on an import of the OS file does not mint a
+linked neighbour beside the copy that came home — it succeeds by lighting that row up, which is
+what the reader meant by importing a book they can already see. A row RENAMED since the move binds
+nothing: the folder does not recognise it, and a later import simply brings the linked book back
+and highlights it, which is the honest answer for a name the folder has never seen. A bind to a row
+that later dies is checked against the library at import time and spent like any other log.
 
 ### When the level already holds the name
 
@@ -564,7 +595,11 @@ it would orphan both:
   only when both rows say so. The moved row's shelves become the survivor's and then it goes —
   through `arrange::drop_row`, which is a removal without a tombstone, because the content stays in
   the library through the survivor and a tombstone for a fingerprint the library still holds is
-  noise in a folder's restore menu. Its highlights travel first, while both keys can still be read
+  noise in a folder's restore menu — with one addition: when the survivor is the library's own
+  stored copy of the dissolving row's very file (the provenance `src` is the check), the folders
+  that placed the file take a moved-out log bound to the survivor, because here the library does
+  NOT still hold the fingerprint, and an import of the file should light the copy up rather than
+  mint a neighbour. Its highlights travel first, while both keys can still be read
   (`union_marks`, by `GlossMark::same_spot`, keeping their ids so the AI answers ride along): the
   sweep a removal rides takes the dissolving row's list with it, so a fold that ran afterwards
   would be a merge that deleted them.
@@ -575,7 +610,16 @@ it would orphan both:
   reason a row says what it takes before the click rather than the sheet asking twice afterwards:
   the name of the row going, and how many highlights leave with it.
 - **As new** is the import's naming on a row that already exists: the moved row takes the next free
-  name and lands beside the one it collided with.
+  name and lands beside the one it collided with. A read-at-place row landing beside a stored copy
+  lands as a copy itself — the departure rule runs under the answer — so the two that stay are two
+  stored books of one content, under two names, with nothing shared.
+- **Make link** replaces *Replace* in the one shape where destruction has no side to stand on: the
+  row being moved reads a file at its place and the row on the level is the library's own stored
+  copy. The dragged row dissolves into a pointer at the copy — its highlights stay under the file's
+  address, because the file is still the folder's and an import that brings the linked book back
+  should bring its marks with it — and the folder takes a moved-out log bound to the copy, so that
+  import lights the copy up. The file stays on disk, the copy stays in the store, and the level
+  keeps one book and gains a way to reach it.
 
 One question at a time, and a batch — a drag of four, an import of ten — lands its clean half at
 once and queues the rest on `state::library::LibraryState::conflict_waiting`: answering pops the

@@ -504,6 +504,8 @@ mod tests {
                 last_path: path.to_string(),
                 shelf_id: None,
                 removed_ms: NOW - ago_ms,
+                moved: false,
+                returned_row: None,
             }),
             gone: false,
         }
@@ -540,6 +542,8 @@ mod tests {
                 last_path: "/books/dune.pdf".into(),
                 shelf_id: None,
                 removed_ms: NOW - MINUTE,
+                moved: false,
+                returned_row: None,
             }),
             gone: false,
         };

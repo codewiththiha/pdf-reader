@@ -116,6 +116,13 @@ struct Info {
     where_line: String,
     /// How many questions wait behind this one.
     waiting: usize,
+    /// Whether the move is the pointer shape: the row being dragged is a
+    /// read-at-place book an in-place folder placed, and the row on the level
+    /// is one of the library's own stored copies. Neither side is the
+    /// reader's to destroy, so the sheet offers *make link* in place of the
+    /// destructive *replace*: reach the copy from here, and keep both the
+    /// file on disk and the bytes in the store exactly as they are.
+    link_offer: bool,
 }
 
 impl Info {
@@ -163,6 +170,18 @@ impl Info {
                     .unwrap_or(0)
             })
             .unwrap_or(0);
+        // The pointer shape is a fact about the two ROWS, read off the same
+        // snapshot the rest of the sheet counts against.
+        let link_offer = ask.arrival.moving.as_ref().is_some_and(|moved_id| {
+            find_row(&rows, &ask.existing_id)
+                .and_then(|row| row.book())
+                .is_some_and(|book| book.origin.is_stored())
+                && crate::services::library::arrange::converts_on_move_to(
+                    state,
+                    moved_id,
+                    &ask.arrival.shelf_id,
+                )
+        });
         Self {
             incoming: ask.arrival.name.clone(),
             import: ask.arrival.is_import(),
@@ -172,6 +191,7 @@ impl Info {
             new_name,
             where_line,
             waiting: state.library.conflict_waiting.with_untracked(|w| w.len()),
+            link_offer,
         }
     }
 }
@@ -188,6 +208,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
     };
     let import = info.import;
     let twin_address = info.twin_address;
+    let link_offer = info.link_offer;
     let question = if import && twin_address {
         format!(
             "“{}” is already {} — the library reads this very file, and a file it reads in \
@@ -199,6 +220,12 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
             "“{}” is already {}. Add a second book of its own, put a link here \
              instead, or go to the one you have.",
             info.incoming, info.where_line
+        )
+    } else if link_offer {
+        format!(
+            "A book called “{}” is already {}, and it is one of the library's own copies. \
+             Keep one book, reach the copy from here, or keep both under a new name.",
+            info.existing_name, info.where_line
         )
     } else {
         format!(
@@ -241,6 +268,11 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
         )
     };
     let move_new_note = format!("Keeps both — this one becomes “{}”", info.new_name);
+    let link_note = format!(
+        "The book you dragged becomes a pointer here — “{}” stays, the file on disk stays, \
+         and nothing is destroyed",
+        info.existing_name
+    );
 
     view! {
         <>
@@ -306,13 +338,31 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                                         conflict::answer_move(state, MoveAnswer::Merge)
                                     })
                                 />
-                                <ChoiceRow
-                                    label="Replace"
-                                    note=replace_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_move(state, MoveAnswer::Replace)
-                                    })
-                                />
+                                {if link_offer {
+                                    // The pointer shape: the destructive answer is
+                                    // replaced by the one that keeps both sides.
+                                    view! {
+                                        <ChoiceRow
+                                            label="Make link"
+                                            note=link_note
+                                            on_click=Callback::new(move |_| {
+                                                conflict::answer_move(state, MoveAnswer::Link)
+                                            })
+                                        />
+                                    }
+                                        .into_any()
+                                } else {
+                                    view! {
+                                        <ChoiceRow
+                                            label="Replace"
+                                            note=replace_note
+                                            on_click=Callback::new(move |_| {
+                                                conflict::answer_move(state, MoveAnswer::Replace)
+                                            })
+                                        />
+                                    }
+                                        .into_any()
+                                }}
                                 <ChoiceRow
                                     label="As new"
                                     note=move_new_note
