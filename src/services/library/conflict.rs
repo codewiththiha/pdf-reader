@@ -327,20 +327,8 @@ pub fn answer(state: AppState, answer: Answer) {
         Answer::GoToExisting => super::reveal::reveal_book(state, &ask.existing_id),
         Answer::AsNew => as_new(state, &ask),
         Answer::AsLink => {
-            // The link wears the name of the book it points at, which is what
-            // makes the row recognisable beside it, and falls back to the
-            // arrival's own name if the row went while the sheet was up — a
-            // link with no name is a row the shelf cannot label, and
-            // `library_core::book::sanitize` drops one.
-            let name = state.library.row_name(&ask.existing_id);
-            let name = if name.trim().is_empty() {
-                ask.arrival.name.clone()
-            } else {
-                name
-            };
-            state
-                .library
-                .add_link(&name, &ask.existing_id, &ask.arrival.shelf_id);
+            let target = ask.existing_id.clone();
+            add_link_at_target(state, &ask, &target);
         }
     }
     advance(state);
@@ -522,6 +510,39 @@ fn seat_replace(
     crate::storage::persist_library(state.library);
 }
 
+/// Put a pointer at `target` on the ask's level, wearing the target's own name.
+///
+/// One spelling for the two answers that leave a link behind — an import's *make
+/// link* and a move's *link* — because the name is the whole of what makes the row
+/// recognisable beside the book it points at, and a fallback each answer spelled
+/// itself is a fallback the two could disagree about. A target that went while the
+/// sheet was up has no name left to give, and a link with no name is a row the
+/// shelf cannot label — one `library_core::book::sanitize` drops on the next load
+/// — so the arrival's own name is the honest stand-in.
+fn add_link_at_target(state: AppState, ask: &ConflictAsk, target: &str) {
+    let name = state.library.row_name(target);
+    let name = if name.trim().is_empty() {
+        ask.arrival.name.clone()
+    } else {
+        name
+    };
+    state
+        .library
+        .add_link(&name, target, &ask.arrival.shelf_id);
+}
+
+/// The next free name for this ask's arrival, counted against the level it is
+/// going to.
+///
+/// Read at the click rather than at the raise, and in one place: a shelf that
+/// landed between the two is a name the promise on the row has to skip, and the
+/// two answers that mint one (*as new* for an import, *as new* for a merge) have
+/// to mint the same name for the same arrival.
+fn minted_name(state: AppState, ask: &ConflictAsk) -> String {
+    let (rows, shelves) = state.library.snapshot_rows();
+    next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name)
+}
+
 /// The slot a row holds on one shelf, which is the slot its replacement takes.
 fn member_slot(state: AppState, shelf_id: &str, row_id: &str) -> Option<usize> {
     state.library.shelves.with_untracked(|shelves| {
@@ -582,10 +603,7 @@ fn union_marks(base: &[GlossMark], extra: &[GlossMark]) -> Vec<GlossMark> {
 /// so the second copy's highlights and its place in it are its own rather
 /// than the first one's.
 fn as_new(state: AppState, ask: &ConflictAsk) {
-    let name = {
-        let (rows, shelves) = state.library.snapshot_rows();
-        next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name)
-    };
+    let name = minted_name(state, ask);
     match &ask.arrival.moving {
         Some(row_id) => {
             state.library.rename_row(row_id, &name);
@@ -648,16 +666,9 @@ fn link_move(state: AppState, ask: &ConflictAsk) {
     // nothing. `unlist_row` is the one spelling of that.
     super::arrange::unlist_row(state, &gone_id);
     // The pointer wears the survivor's name, which is what makes the row
-    // recognisable beside the book it points at — the import answer's rule.
-    let name = state.library.row_name(&survivor);
-    let name = if name.trim().is_empty() {
-        ask.arrival.name.clone()
-    } else {
-        name
-    };
-    state
-        .library
-        .add_link(&name, &survivor, &ask.arrival.shelf_id);
+    // recognisable beside the book it points at — the import answer's rule, and
+    // the one spelling of it.
+    add_link_at_target(state, ask, &survivor);
     crate::storage::persist_library(state.library);
 }
 
@@ -1018,10 +1029,7 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
             crate::storage::persist_library(state.library);
         }
         FolderMergeAnswer::AsNew => {
-            let name = {
-                let (rows, shelves) = state.library.snapshot_rows();
-                next_name(&rows, &shelves, &ask.arrival.shelf_id, &ask.arrival.name)
-            };
+            let name = minted_name(state, ask);
             land_answer_file(
                 state,
                 ask.arrival.shelf_id.clone(),

@@ -93,29 +93,11 @@ pub fn move_many_to_shelf(
     // books as what they are about to be. A copy that fails costs that book
     // its move and nothing else: it stays where it was, linked, and the toast
     // says so.
-    if to != ALL_SHELF && from.as_deref().is_some_and(|f| f != to) && tauri_bridge::has_tauri() {
-        let converting: Vec<String> = book_ids
-            .iter()
-            .filter(|id| converts_on_move_to(state, id, &to))
-            .cloned()
-            .collect();
-        if !converting.is_empty() {
-            let (ids, from) = (book_ids.to_vec(), from.clone());
-            spawn_local(async move {
-                let mut failed: Vec<String> = Vec::new();
-                for id in &converting {
-                    if let Err(message) = convert_to_stored(state, id).await {
-                        failed.push(id.clone());
-                        toast(state, message);
-                    }
-                }
-                super::covers::backfill_missing(state);
-                let rest: Vec<String> =
-                    ids.into_iter().filter(|id| !failed.contains(id)).collect();
-                if !rest.is_empty() {
-                    move_many_to_shelf(state, &rest, from, to, index);
-                }
-            });
+    if to != ALL_SHELF && from.as_deref().is_some_and(|f| f != to) {
+        let (lifted_from, landed_on) = (from.clone(), to.clone());
+        if convert_departures(state, book_ids, &to, move |rest| {
+            move_many_to_shelf(state, &rest, lifted_from, landed_on, index)
+        }) {
             return;
         }
     }
@@ -228,18 +210,15 @@ pub fn move_row(state: AppState, row_id: &str, shelf_id: &str, index: Option<usi
     // The departure gate, for the one-row form: convert first, then run the
     // move again over the stored row, so the shelf writes below are the whole
     // of what happens and happen in one order.
-    if tauri_bridge::has_tauri() && converts_on_move_to(state, row_id, shelf_id) {
-        let (row_id, shelf_id) = (row_id.to_string(), shelf_id.to_string());
-        spawn_local(async move {
-            match convert_to_stored(state, &row_id).await {
-                Ok(()) => {
-                    super::covers::backfill_missing(state);
-                    move_row(state, &row_id, &shelf_id, index);
-                }
-                Err(message) => toast(state, message),
+    {
+        let (row, landed_on) = (row_id.to_string(), shelf_id.to_string());
+        if convert_departures(state, std::slice::from_ref(&row), shelf_id, move |rest| {
+            if let Some(one) = rest.into_iter().next() {
+                move_row(state, &one, &landed_on, index);
             }
-        });
-        return;
+        }) {
+            return;
+        }
     }
     if shelf_id == ALL_SHELF {
         state
@@ -287,29 +266,11 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     // A lift OUT of a folder's shelf is a departure like any other move: a
     // read-at-place book becomes the library's own copy on the way out, and
     // the lift then runs again over the stored rows.
-    if tauri_bridge::has_tauri() {
-        let converting: Vec<String> = book_ids
-            .iter()
-            .filter(|id| converts_on_move_to(state, id, ALL_SHELF))
-            .cloned()
-            .collect();
-        if !converting.is_empty() {
-            let (ids, shelf_id) = (book_ids.to_vec(), shelf_id.to_string());
-            spawn_local(async move {
-                let mut failed: Vec<String> = Vec::new();
-                for id in &converting {
-                    if let Err(message) = convert_to_stored(state, id).await {
-                        failed.push(id.clone());
-                        toast(state, message);
-                    }
-                }
-                super::covers::backfill_missing(state);
-                let rest: Vec<String> =
-                    ids.into_iter().filter(|id| !failed.contains(id)).collect();
-                if !rest.is_empty() {
-                    unfile_books(state, &rest, &shelf_id);
-                }
-            });
+    {
+        let lifted_from = shelf_id.to_string();
+        if convert_departures(state, book_ids, ALL_SHELF, move |rest| {
+            unfile_books(state, &rest, &lifted_from)
+        }) {
             return;
         }
     }
@@ -405,6 +366,58 @@ fn insert_many<T>(list: &mut Vec<T>, items: impl Iterator<Item = T>, index: Opti
         list.insert(at, item);
         at += 1;
     }
+}
+
+/// Copy every read-at-place book about to leave its folder's ground, then run
+/// the move again over the survivors. Answers whether a conversion started, which
+/// is the caller's whole question: it did, so the move has not happened yet and
+/// the caller returns.
+///
+/// One spelling for the three moves that owe a departure — a drag between
+/// shelves, a lift out to the root, and the one-row form the conflict sheet rides
+/// — because the ORDER is the whole of the rule. The copy is made and the row is
+/// converted BEFORE any shelf write happens, so every screen, sheet and
+/// membership edit downstream sees the books as what they are about to be rather
+/// than as what they were when the hand lifted. Three copies of this were three
+/// places to get that order wrong.
+///
+/// A copy that fails costs that book its move and nothing else: it stays where it
+/// was, linked, the toast says so, and the other books in the same drag still go.
+/// `retry` runs the move over the survivors and is called from the spawned task,
+/// which is what lets the caller return at once and keep its own shape.
+fn convert_departures(
+    state: AppState,
+    ids: &[String],
+    to: &str,
+    retry: impl FnOnce(Vec<String>) + 'static,
+) -> bool {
+    if !tauri_bridge::has_tauri() {
+        return false;
+    }
+    let converting: Vec<String> = ids
+        .iter()
+        .filter(|id| converts_on_move_to(state, id, to))
+        .cloned()
+        .collect();
+    if converting.is_empty() {
+        return false;
+    }
+    let all: Vec<String> = ids.to_vec();
+    spawn_local(async move {
+        let mut failed: Vec<String> = Vec::new();
+        for id in &converting {
+            if let Err(message) = convert_to_stored(state, id).await {
+                failed.push(id.clone());
+                toast(state, message);
+            }
+        }
+        super::covers::backfill_missing(state);
+        let rest: Vec<String> = all.into_iter().filter(|id| !failed.contains(id)).collect();
+        if !rest.is_empty() {
+            retry(rest);
+        }
+    });
+    true
 }
 
 /// What a removal is allowed to take with it.
