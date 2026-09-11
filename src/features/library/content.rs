@@ -391,3 +391,226 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
         </div>
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use library_core::book::{Book, Fingerprint, Origin};
+    use library_core::shelf::ShelfKind;
+    use library_core::sort::SortKey;
+    use reader_core::format::Format;
+
+    /// The shelf and the level, wired the way the page wires them. Held in the
+    /// returned `Owner` — dropping it disposes every signal the state carries.
+    fn library(rows: Vec<Row>, shelves: Vec<Shelf>) -> (Owner, AppState) {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        state.library.books.set(rows);
+        state.library.shelves.set(shelves);
+        (owner, state)
+    }
+
+    fn book(id: &str, title: &str) -> Row {
+        let mut book = Book::new(
+            id.to_string(),
+            Fingerprint {
+                size: 1,
+                mtime_ms: 1,
+                head_hash: 1,
+            },
+            Format::Markdown,
+            Origin::Linked {
+                src: format!("/books/{id}.md"),
+            },
+            0,
+        );
+        book.title = Some(title.to_string());
+        Row::Book(book)
+    }
+
+    fn shelf(id: &str, name: &str, members: &[&str], parent: Option<&str>) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: name.to_string(),
+            kind: ShelfKind::Virtual,
+            books: members.iter().map(|m| m.to_string()).collect(),
+            parent: parent.map(str::to_string),
+            manual_parent: false,
+        }
+    }
+
+    fn ids(rows: &[Row]) -> Vec<&str> {
+        rows.iter().map(|r| r.id()).collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // visible — the one order both layouts render and a drop counts its index
+    // in. A second definition of it anywhere would be a drop that lands
+    // somewhere the reader did not point.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn the_root_shows_the_rows_no_shelf_holds() {
+        let (_owner, state) = library(
+            vec![book("a", "Dune"), book("b", "Neuromancer"), book("c", "Hyperion")],
+            vec![shelf("s", "Fiction", &["b"], None)],
+        );
+        // "b" is filed, so it is the Fiction shelf's to show; showing it at the
+        // root as well was the same book on two levels at once.
+        assert_eq!(ids(&visible(state)), vec!["a", "c"]);
+    }
+
+    #[test]
+    fn a_shelf_shows_its_own_members_in_its_own_order() {
+        let (_owner, state) = library(
+            vec![book("a", "Dune"), book("b", "Neuromancer"), book("c", "Hyperion")],
+            vec![shelf("s", "Fiction", &["c", "a"], None)],
+        );
+        state.library.shelf.set("s".to_string());
+        assert_eq!(
+            ids(&visible(state)),
+            vec!["c", "a"],
+            "the member list IS the order, not the library's"
+        );
+    }
+
+    #[test]
+    fn a_member_naming_a_row_that_went_is_skipped_not_holed() {
+        let (_owner, state) = library(
+            vec![book("a", "Dune")],
+            vec![shelf("s", "Fiction", &["gone", "a"], None)],
+        );
+        state.library.shelf.set("s".to_string());
+        assert_eq!(ids(&visible(state)), vec!["a"]);
+    }
+
+    #[test]
+    fn a_link_is_a_row_the_level_renders() {
+        // A pointer is not a book, but it is a row the reader put on the shelf,
+        // and a level that dropped it would be a shelf missing a card.
+        let rows = vec![
+            book("a", "Dune"),
+            Row::link("l1".into(), "Dune".into(), "a".into(), 1),
+        ];
+        let (_owner, state) = library(rows, vec![shelf("s", "Fiction", &["l1", "a"], None)]);
+        state.library.shelf.set("s".to_string());
+        assert_eq!(ids(&visible(state)), vec!["l1", "a"]);
+    }
+
+    #[test]
+    fn the_sort_runs_before_the_filter_so_a_query_never_reorders() {
+        let (_owner, state) = library(
+            vec![book("c", "Hyperion"), book("a", "Dune"), book("b", "Endymion")],
+            vec![],
+        );
+        state.library.view.update(|v| {
+            v.sort = SortKey::Title;
+            v.sort_asc = true;
+        });
+        assert_eq!(ids(&visible(state)), vec!["a", "b", "c"]);
+        // Clearing the query is not a re-sort: the shelf comes back exactly as
+        // the reader left it, which is what makes a search safe to type into.
+        state.library.query.set("dy".to_string());
+        assert_eq!(ids(&visible(state)), vec!["b"], "fuzzy, and still in order");
+        state.library.query.set(String::new());
+        assert_eq!(ids(&visible(state)), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_search_from_the_root_reaches_into_every_folder() {
+        let (_owner, state) = library(
+            vec![book("a", "Dune"), book("b", "Neuromancer")],
+            vec![shelf("s", "Fiction", &["b"], None)],
+        );
+        state.library.query.set("neuro".to_string());
+        // The one exception to "the root is the top of the library, not a
+        // flattening of it": a search that could not see inside folders would
+        // miss silently, and the matches it shows are the ones asked for.
+        assert_eq!(ids(&visible(state)), vec!["b"]);
+    }
+
+    #[test]
+    fn an_empty_level_is_empty_rather_than_everything() {
+        let (_owner, state) = library(
+            vec![book("a", "Dune")],
+            vec![shelf("s", "Fiction", &[], None)],
+        );
+        state.library.shelf.set("s".to_string());
+        assert!(visible(state).is_empty());
+    }
+
+    #[test]
+    fn a_shelf_the_list_no_longer_holds_shows_nothing() {
+        let (_owner, state) = library(vec![book("a", "Dune")], vec![]);
+        state.library.shelf.set("gone".to_string());
+        // Not the root's list: a drill into a shelf that was taken apart is a
+        // level with nothing on it, and answering with the whole library would
+        // be a page full of books the reader did not open.
+        assert!(visible(state).is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // level_folders — the doors on a level, for both densities at once.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn the_doors_on_a_level_are_the_shelves_filed_directly_inside_it() {
+        let (_owner, state) = library(
+            vec![],
+            vec![
+                shelf("top", "Fiction", &[], None),
+                shelf("inner", "Sci-fi", &[], Some("top")),
+                shelf("other", "History", &[], None),
+            ],
+        );
+        assert_eq!(
+            level_folders(state, None).iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec!["top", "other"],
+            "a nested shelf is its parent's door, not the root's"
+        );
+        let inside = level_folders(state, Some("top".to_string()));
+        assert_eq!(
+            inside.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec!["inner"]
+        );
+    }
+
+    #[test]
+    fn an_open_query_narrows_the_doors_by_name_with_the_books_own_rule() {
+        let (_owner, state) = library(
+            vec![],
+            vec![
+                shelf("a", "Science Fiction", &[], None),
+                shelf("b", "History", &[], None),
+            ],
+        );
+        state.library.query.set("sci".to_string());
+        assert_eq!(
+            level_folders(state, None).iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec!["a"],
+            "one text box is not two searches wearing one field"
+        );
+    }
+
+    #[test]
+    fn a_pinned_root_walks_its_own_subtree_whatever_level_the_page_is_on() {
+        // The list's tree is a component rather than a layout, so a mount that
+        // pins a subtree gets that subtree's doors and not the route's.
+        let (_owner, state) = library(
+            vec![],
+            vec![
+                shelf("top", "Fiction", &[], None),
+                shelf("inner", "Sci-fi", &[], Some("top")),
+            ],
+        );
+        state.library.shelf.set("elsewhere".to_string());
+        assert_eq!(
+            level_folders(state, Some("top".to_string()))
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["inner"]
+        );
+    }
+}

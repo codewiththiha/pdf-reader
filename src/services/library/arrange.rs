@@ -1287,3 +1287,179 @@ pub fn relink_dialog(state: AppState, book_id: String) {
 pub(crate) fn toast(state: AppState, message: String) {
     state.ui.toast.set(Some(Toast::new(message)));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use library_core::book::{Book, Fingerprint, Origin};
+    use reader_core::format::Format;
+
+    /// A linked row. Markdown rather than PDF so nothing that reads these lists
+    /// ever asks the cover queue to render one — a host test has no engine.
+    fn row(id: &str) -> Row {
+        Row::Book(Book::new(
+            id.to_string(),
+            Fingerprint {
+                size: 1,
+                mtime_ms: 1,
+                head_hash: 1,
+            },
+            Format::Markdown,
+            Origin::Linked {
+                src: format!("/books/{id}.md"),
+            },
+            0,
+        ))
+    }
+
+    fn list() -> Vec<Row> {
+        vec![row("a"), row("b"), row("c"), row("d")]
+    }
+
+    fn ids(rows: &[Row]) -> Vec<&str> {
+        rows.iter().map(|r| r.id()).collect()
+    }
+
+    fn owned(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // reorder_root — "All" IS the library's own list, so a drop on the root
+    // crumb re-orders rows rather than filing them anywhere.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_drop_on_the_root_puts_one_row_where_the_reader_pointed() {
+        let mut rows = list();
+        reorder_root(&mut rows, &owned(&["d"]), Some(1));
+        assert_eq!(ids(&rows), vec!["a", "d", "b", "c"]);
+    }
+
+    #[test]
+    fn the_index_counts_the_list_as_it_was_before_the_lift() {
+        // The whole reason `insert_many` takes a `shift`. "a" and "b" sat at 0
+        // and 1, so lifting them moves "d" from index 3 to index 1 — and the
+        // reader pointed at the slot "d" occupied while they were holding the
+        // two. That is the slot they land in, not two further down the list the
+        // lift just shortened.
+        let mut rows = list();
+        reorder_root(&mut rows, &owned(&["a", "b"]), Some(3));
+        assert_eq!(ids(&rows), vec!["c", "a", "b", "d"]);
+    }
+
+    #[test]
+    fn a_drop_past_the_end_appends() {
+        let mut rows = list();
+        reorder_root(&mut rows, &owned(&["a"]), Some(99));
+        assert_eq!(ids(&rows), vec!["b", "c", "d", "a"]);
+    }
+
+    #[test]
+    fn an_append_keeps_the_payload_s_order_not_the_list_s() {
+        // A set has no order, so the payload is sorted into the level's own
+        // order on the way out — and the payload's order IS the reader's, which
+        // is why the sort is by position in `row_ids` and not by the position
+        // each row used to hold. Putting them back in the list's order would be
+        // a drop that quietly shuffled the hand.
+        let mut rows = list();
+        reorder_root(&mut rows, &owned(&["c", "a"]), None);
+        assert_eq!(ids(&rows), vec!["b", "d", "c", "a"]);
+    }
+
+    #[test]
+    fn a_row_the_list_does_not_hold_is_not_invented() {
+        // A drag can outlive a row: a focus rescan or another surface's removal
+        // can take it between the lift and the drop. A hole in the grid would be
+        // worse than an id quietly dropped.
+        let mut rows = list();
+        reorder_root(&mut rows, &owned(&["gone", "b"]), Some(0));
+        assert_eq!(ids(&rows), vec!["b", "a", "c", "d"]);
+    }
+
+    #[test]
+    fn a_link_is_reordered_by_its_own_id_like_any_other_row() {
+        // "All" holds links as well as books, and a drag of one is a question
+        // about a position rather than about content.
+        let mut rows = vec![
+            row("a"),
+            Row::link("l1".into(), "Dune".into(), "a".into(), 1),
+            row("b"),
+        ];
+        reorder_root(&mut rows, &owned(&["l1"]), Some(0));
+        assert_eq!(ids(&rows), vec!["l1", "a", "b"]);
+    }
+
+    #[test]
+    fn an_empty_set_leaves_the_list_alone() {
+        let mut rows = list();
+        reorder_root(&mut rows, &[], Some(0));
+        assert_eq!(ids(&rows), vec!["a", "b", "c", "d"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // place_many — a shelf's member list, which is ids and nothing else.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_book_already_on_the_shelf_is_moved_not_duplicated() {
+        let mut members = owned(&["a", "b", "c"]);
+        place_many(&mut members, &owned(&["a"]), Some(2));
+        assert_eq!(
+            members,
+            vec!["b", "a", "c"],
+            "one membership, in the slot the drop named"
+        );
+    }
+
+    #[test]
+    fn the_shift_is_counted_per_book_rather_than_for_the_batch() {
+        // "a" and "c" were at 0 and 2, both below the drop's index 3, so the
+        // lift takes two off it. "b" was not on the shelf at all and adds
+        // nothing to the count — counting the batch instead of the members
+        // would have landed the three one slot early.
+        let mut members = owned(&["a", "x", "c", "y"]);
+        place_many(&mut members, &owned(&["a", "b", "c"]), Some(3));
+        assert_eq!(members, vec!["x", "a", "b", "c", "y"]);
+    }
+
+    #[test]
+    fn filing_with_no_index_appends_in_order() {
+        let mut members = owned(&["a"]);
+        place_many(&mut members, &owned(&["b", "c"]), None);
+        assert_eq!(members, vec!["a", "b", "c"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // insert_many — the step both of the above land on.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn each_item_lands_after_the_last_rather_than_all_at_one_place() {
+        let mut list: Vec<&str> = vec!["x", "y"];
+        insert_many(&mut list, ["a", "b", "c"].into_iter(), Some(1), 0);
+        assert_eq!(list, vec!["x", "a", "b", "c", "y"], "not reversed");
+    }
+
+    #[test]
+    fn an_index_past_the_end_clamps_per_item() {
+        let mut list: Vec<&str> = vec!["x"];
+        insert_many(&mut list, ["a", "b"].into_iter(), Some(99), 0);
+        assert_eq!(list, vec!["x", "a", "b"]);
+    }
+
+    #[test]
+    fn a_shift_larger_than_the_index_lands_at_the_front() {
+        let mut list: Vec<&str> = vec!["x", "y"];
+        insert_many(&mut list, ["a"].into_iter(), Some(1), 4);
+        assert_eq!(list, vec!["a", "x", "y"]);
+    }
+
+    #[test]
+    fn a_removal_deletes_the_app_s_own_copy_by_default() {
+        // A copy the app made for a book that is no longer in the library is a
+        // file nothing will ever read again; the sheet is where a reader says
+        // otherwise, and it is the only place that does.
+        assert!(PurgeOpts::default().delete_store_copy);
+    }
+}
