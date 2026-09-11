@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use reader_core::format::{Format, extensions, format_from_ext};
+use reader_core::format::{Format, SUPPORTED, format_from_ext};
 
 use crate::book::Fingerprint;
 use crate::folder::FolderOpts;
@@ -80,38 +80,32 @@ pub fn admits(opts: &FolderOpts, ext: &str, size: u64) -> bool {
 /// same rows the open dialog's filter and the drag-drop admission already
 /// read: a fourth format appears in all of them at once, with no list here to
 /// forget.
+///
+/// The registry's own column rather than a walk of its extensions deduped back
+/// into pipelines: one row is one format, and recovering that from an extension
+/// list is a second answer to a question the table already settled.
 pub fn selectable_formats() -> Vec<Format> {
-    let mut out: Vec<Format> = Vec::new();
-    for ext in extensions() {
-        if let Some(fmt) = format_from_ext(ext)
-            && !out.contains(&fmt)
-        {
-            out.push(fmt);
-        }
-    }
-    out
+    SUPPORTED.iter().map(|kind| kind.format).collect()
 }
 
-/// The store sub-directory a format's copies go into: the registry's own label,
-/// lower-cased, so the directories read `pdf`, `text`, `markdown` and a fourth
-/// kind arrives with its own. `"other"` is only reachable for an extension the
-/// registry refuses — which [`admits`] has already turned away, so it is a
-/// belt-and-braces answer rather than a case the store can land in.
+/// The store sub-directory a format's copies go into: the pipeline's own name
+/// for its directory, so the directories read `pdf`, `text` and `markdown` and a
+/// fourth kind arrives with its own. `"other"` is only reachable for an
+/// extension the registry refuses — which [`admits`] has already turned away, so
+/// it is a belt-and-braces answer rather than a case the store can land in.
 ///
 /// Here rather than in the shell because it is a question about the format
 /// registry, and the shell does not name `reader-core` directly: the registry is
 /// the frontend's, and `tools/check-formats.ts` keeps the shell's own copy of
 /// the extension list honest.
-pub fn store_dir(ext: &str) -> String {
+pub fn store_dir(ext: &str) -> &'static str {
     format_from_ext(ext)
-        .map(|fmt| fmt.label().to_lowercase())
-        .unwrap_or_else(|| "other".to_string())
+        .map_or("other", |fmt| fmt.store_dir())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reader_core::format::SUPPORTED;
     use std::collections::BTreeSet;
 
     fn opts(formats: &[Format], include: bool, min: u64) -> FolderOpts {
@@ -188,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn the_store_directories_are_the_registry_labels() {
+    fn the_store_directories_are_the_pipelines_own() {
         assert_eq!(store_dir("pdf"), "pdf");
         assert_eq!(store_dir("TXT"), "text");
         assert_eq!(store_dir("markdown"), "markdown");

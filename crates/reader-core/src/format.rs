@@ -10,13 +10,23 @@
 
 use serde::{Deserialize, Serialize};
 
-/// One openable document kind: its file extensions (lower-case, no dot) and
-/// the MIME types a drag may advertise it under before its name is known.
+/// One openable document kind: its file extensions (lower-case, no dot), the
+/// MIME types a drag may advertise it under before its name is known, and the
+/// pipeline it opens through.
+///
+/// The [`Format`] is a FIELD of the row rather than something recovered from
+/// `name` by a match, because a match with a catch-all arm answers for a row
+/// nobody wrote yet: a fourth kind added to this table would have resolved to
+/// [`Format::Pdf`] silently, and every doc that promises "a fourth kind arrives
+/// with no edit here" would have been wrong about the one column that decides
+/// how the document is read. Carrying it means the table cannot be extended
+/// without saying which pipeline the new kind uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DocumentKind {
     pub name: &'static str,
     pub extensions: &'static [&'static str],
     pub mimes: &'static [&'static str],
+    pub format: Format,
 }
 
 /// Every kind the reader opens.
@@ -25,16 +35,19 @@ pub const SUPPORTED: &[DocumentKind] = &[
         name: "PDF",
         extensions: &["pdf"],
         mimes: &["application/pdf", "application/x-pdf"],
+        format: Format::Pdf,
     },
     DocumentKind {
         name: "Text",
         extensions: &["txt", "text"],
         mimes: &["text/plain"],
+        format: Format::Text,
     },
     DocumentKind {
         name: "Markdown",
         extensions: &["md", "markdown", "mdown"],
         mimes: &["text/markdown", "text/x-markdown"],
+        format: Format::Markdown,
     },
 ];
 
@@ -91,14 +104,29 @@ impl Format {
             Format::Markdown => "Markdown",
         }
     }
+
+    /// The sub-directory the app's store files this format's copies under.
+    ///
+    /// Its own column rather than the lower-cased [`label`](Self::label): a
+    /// display name is copy a writer may reword, and rewording one must not
+    /// orphan every copy already on disk under the old directory. The match is
+    /// exhaustive, so a fourth pipeline has to name its own directory here
+    /// rather than inheriting one by accident.
+    pub fn store_dir(self) -> &'static str {
+        match self {
+            Format::Pdf => "pdf",
+            Format::Text => "text",
+            Format::Markdown => "markdown",
+        }
+    }
 }
 
 /// The format a bare extension names, if the registry knows it. Accepts the
-/// extension with or without its leading dot, in any case. The one place the
-/// registry's `name` column is turned into a [`Format`]: [`format_of`] and
-/// [`is_supported_path`] both answer through it, so a fourth kind is one row
-/// in [`SUPPORTED`] and one arm here rather than a matching arm in every
-/// caller.
+/// extension with or without its leading dot, in any case. The one place an
+/// extension is turned into a [`Format`]: [`format_of`] and
+/// [`is_supported_path`] both answer through it, and the answer is the row's own
+/// column rather than a match on its display name, so a fourth kind in
+/// [`SUPPORTED`] is admitted by every caller with no edit anywhere else.
 pub fn format_from_ext(ext: &str) -> Option<Format> {
     let ext = ext.trim().trim_start_matches('.').to_ascii_lowercase();
     if ext.is_empty() {
@@ -107,11 +135,7 @@ pub fn format_from_ext(ext: &str) -> Option<Format> {
     SUPPORTED
         .iter()
         .find(|kind| kind.extensions.contains(&ext.as_str()))
-        .map(|kind| match kind.name {
-            "Text" => Format::Text,
-            "Markdown" => Format::Markdown,
-            _ => Format::Pdf,
-        })
+        .map(|kind| kind.format)
 }
 
 /// The last dotted segment of a path, if it has one. Split on both separators
@@ -237,15 +261,39 @@ mod tests {
         assert_eq!(format_from_ext("epub"), None);
         assert_eq!(format_from_ext("."), None);
         assert_eq!(format_from_ext(""), None);
-        // Every registry row resolves through the one arm that reads it.
+        // Every registry row resolves through the one column that answers it.
         for kind in SUPPORTED {
             for ext in kind.extensions {
                 assert_eq!(
-                    format_from_ext(ext).map(|f| f.label()),
-                    Some(kind.name),
+                    format_from_ext(ext),
+                    Some(kind.format),
                     "{ext} must map back to its own row"
                 );
+                // The row's display name and the pipeline's label are one fact
+                // spelled in two places; a reword of either has to move both.
+                assert_eq!(
+                    kind.format.label(),
+                    kind.name,
+                    "{ext}: the registry's name and Format::label disagree"
+                );
             }
+        }
+    }
+
+    #[test]
+    fn every_pipeline_names_its_own_store_directory() {
+        // The directory a copy is filed under is the format's own column, not a
+        // lower-cased display name: rewording "Markdown" must not orphan every
+        // copy already on disk under `markdown/`.
+        assert_eq!(Format::Pdf.store_dir(), "pdf");
+        assert_eq!(Format::Text.store_dir(), "text");
+        assert_eq!(Format::Markdown.store_dir(), "markdown");
+        for kind in SUPPORTED {
+            assert!(
+                !kind.format.store_dir().is_empty(),
+                "{} has no store directory",
+                kind.name
+            );
         }
     }
 
