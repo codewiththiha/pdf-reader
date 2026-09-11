@@ -18,7 +18,10 @@
 //!   * [`import_modal`] — what a folder import is allowed to be
 //!   * [`remove_modal`] — what a removal costs, itemised
 //!   * [`conflict_modal`] — the shelf already holds that book: the
-//!     duplicate/replace/merge question, and the second ask a replace owes
+//!     duplicate/replace/merge question, and the second ask a replace owes;
+//!     a folder merge's per-file asks wear its compact sheet
+//!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
+//!     folder question an import asks before its walk
 //!   * [`selection`] — the hold that starts a multi-select, and the bar that acts
 //!     on it
 //!   * [`context_menu`] — the right-click: one menu per kind of thing under the
@@ -62,6 +65,7 @@ pub mod progress_dock;
 pub mod remove_modal;
 pub mod search_suggest;
 pub mod selection;
+pub mod shelf_conflict_modal;
 pub mod shelf_item;
 pub mod titlebar_search;
 pub mod view_menu;

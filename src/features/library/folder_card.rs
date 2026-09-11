@@ -127,6 +127,16 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     // "open" drills the breadcrumb route, and the right-click asks about a
     // folder. A set being selected is not a reason to refuse a drag: lifting
     // one of three held folders is the whole of a multi-drag.
+    // The folder half of the reveal: a folder link's tap lights the folder
+    // itself, on the same signal and nonce a book's reveal rides.
+    let reveal_id = id.clone();
+    let reveal_class = Signal::derive(move || {
+        state
+            .library
+            .reveal
+            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
+    });
+
     let open_id = id.clone();
     let target_id = id.clone();
     let policy = ShelfItemPolicy {
@@ -148,6 +158,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
             vocab=SeamVocab::FolderCard
             base_class="folder-card"
             policy=policy
+            extra_classes=vec![("folder-reveal".to_string(), reveal_class)]
         >
             <div class="folder-thumb-grid">
                 <Plate state=state shelf_id=id.clone() depth=0 />

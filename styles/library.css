@@ -872,6 +872,28 @@
   box-shadow: inset 0 0 0 2px var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
+/* The folder half of the reveal: a folder link lights the folder itself —
+   the same accent ring and the same one-shot pulse a book's cover wears, on
+   the whole card, because a folder has no cover frame of its own. The list
+   density needs no rule of its own: its folder row wears `row-reveal`. */
+.folder-reveal {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  animation: folder-reveal-pulse 1.6s ease-out both;
+}
+@keyframes folder-reveal-pulse {
+  from {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 16px color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  to {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+}
 
 /* The sheets' cover thumbnail — the remove receipt and the conflict sheet both
    wear it: the book being talked about, at a size that fits a receipt line

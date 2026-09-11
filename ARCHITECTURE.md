@@ -567,7 +567,25 @@ it would orphan both:
 One question at a time, and a batch — a drag of four, an import of ten — lands its clean half at
 once and queues the rest on `state::library::LibraryState::conflict_waiting`: answering pops the
 next onto the screen, and Cancel drops them, which is what Cancel has always meant. There is no
-"apply to all" and no queue bookkeeping beyond the list.
+"apply to all" and no queue bookkeeping beyond the list — with one exception, below, where the
+questions are forty files of one folder rather than forty gestures.
+
+A FOLDER has its own spelling of the question, asked before the walk rather than after it: an
+import whose name the root level already holds (`library_core::conflict::collide_shelf`, which
+counts the level's SHELF names and nothing else) raises the folder sheet, because two doors of one
+name on one level are two doors a reader cannot tell apart — which is what two books of one name
+are. Its answers are about the whole run rather than one placement: *Add as new* mints the folder's
+root under the next free counter (`next_shelf_name`) and imports into its own tree; *Make link*
+imports nothing and leaves a pointer row instead — a `Row::Link` whose target is a SHELF id, which
+the ids' first letters keep disjoint from a book's, and whose tap reveals the shelf it names
+(`services::library::reveal_shelf`: its level, then its card, lit); *Merge into it* maps the
+folder's root rung onto the shelf that is here — the folder's `shelf_map` carries the promise, so
+every later rescan keeps it — and every root-level file whose NAME that shelf already holds goes
+to the compact per-file sheet: Merge (the row stays and takes the file's measurement), Replace, or
+As new, one at a time or, behind the sheet's apply-to-all switch, one answer for the whole queue.
+A file nothing collides with simply goes in: new books in a merged folder are the default, not a
+case. A folder's own re-import never asks — the shelf its `shelf_map` minted is a continuation
+rather than an arrival — and a nesting still asks nothing at all, for the reason below.
 
 Nesting asks nothing at all, and that is the rule rather than an oversight: filing a folder inside
 another writes no membership, so nothing arrives on the parent's level for a name to collide with.

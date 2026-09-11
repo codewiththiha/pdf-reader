@@ -37,6 +37,7 @@ use crate::features::library::dnd::layer::DragLayer;
 use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
 use crate::features::library::progress_dock::ProgressDock;
 use crate::features::library::remove_modal::{RemoveBookModal, RemoveSheet};
+use crate::features::library::shelf_conflict_modal::ShelfConflictModal;
 use crate::features::library::titlebar_search::TitlebarSearch;
 use crate::features::library::view_menu::ViewMenu;
 use crate::state::AppState;
@@ -125,6 +126,10 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             // services that raise it — a drop, an import's spawned run — are
             // nobody's component child.
             <ConflictModal state=state />
+            // The FOLDER's spelling of the same question, asked before the
+            // walk rather than after it: its answers are about a whole import
+            // run, not one placement.
+            <ShelfConflictModal state=state />
             // Fixed, and mounted at the page rather than inside the content: an
             // import outlives the state the shelf is in, and a card that unmounted
             // with an "Opening…" would take its progress with it.

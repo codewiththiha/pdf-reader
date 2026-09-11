@@ -295,6 +295,16 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     // the next re-hang passes it by. What the shell gets besides the policy is
     // the disclosure's two facts of its own: its expanded state for the aria,
     // and the Space key it owns before the shared keyboard halves.
+    // The folder half of the reveal, at this density: the row the folder
+    // wears in the tree lights the way the card does in the grid.
+    let reveal_id = id.clone();
+    let reveal_class = Signal::derive(move || {
+        state
+            .library
+            .reveal
+            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
+    });
+
     let target_id = id.clone();
     let policy = ShelfItemPolicy {
         id: id.clone(),
@@ -327,6 +337,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 base_class="library-row library-row-shelf"
                 policy=policy
                 style=indent
+                extra_classes=vec![("row-reveal".to_string(), reveal_class)]
                 aria_expanded=open
                 on_keydown_first=Callback::new(move |ev: leptos::ev::KeyboardEvent| {
                     // Space is the key a disclosure owns — prevented, so the
@@ -416,8 +427,9 @@ fn row_view(
             <ListRow state=state book=book crop=crop depth=depth parent=parent />
         }
             .into_any(),
-        Row::Link { id, name, .. } => {
-            view! { <LinkRow state=state id=id name=name depth=depth parent=parent /> }
+        Row::Link { id, name, target, .. } => {
+            let to_shelf = library_core::id::is_shelf(&target);
+            view! { <LinkRow state=state id=id name=name to_shelf=to_shelf depth=depth parent=parent /> }
                 .into_any()
         }
     }

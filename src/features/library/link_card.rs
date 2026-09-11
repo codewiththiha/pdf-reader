@@ -29,9 +29,25 @@ use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 use crate::services::document;
 use crate::state::AppState;
 
-/// The line a link carries where a book carries its author or its page: what it
-/// is, and that a tap goes to the book rather than opening a file.
-const LINK_LINE: &str = "Link · opens the book where it is";
+/// The line a link carries where a book carries its author or its page: what
+/// it is, and that a tap goes to the thing rather than opening a file. A
+/// folder link says folder: the promise has to name what the tap reveals.
+fn link_line(to_shelf: bool) -> &'static str {
+    if to_shelf {
+        "Link · opens the folder where it is"
+    } else {
+        "Link · opens the book where it is"
+    }
+}
+
+/// The badge and chip's own sentence, in the same two voices.
+fn link_title(to_shelf: bool) -> &'static str {
+    if to_shelf {
+        "A pointer at a folder, not a second one"
+    } else {
+        "A pointer at a book, not a copy of one"
+    }
+}
 
 /// The policy both link surfaces share: the same label, the same open, and the
 /// same menu answer — a link is a row like any other to the menu, Open goes to
@@ -57,7 +73,7 @@ fn link_policy(state: AppState, id: &str, name: &str, container: Option<String>)
 
 /// One link on the grid.
 #[component]
-pub(crate) fn LinkCard(state: AppState, id: String, name: String) -> impl IntoView {
+pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
     let reveal_id = id.clone();
@@ -87,7 +103,7 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String) -> impl IntoVi
                     <div class="book-cover-fallback">
                         <span>{name.clone()}</span>
                     </div>
-                    <span class="book-link-badge" title="A pointer at a book, not a copy of one">
+                    <span class="book-link-badge" title=link_title(to_shelf)>
                         <Icon name=IconName::Link size=11 />
                     </span>
                 </div>
@@ -95,7 +111,7 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String) -> impl IntoVi
 
             <div class="book-info">
                 <span class="book-title" title=name.clone()>{name.clone()}</span>
-                <span class="book-page">{LINK_LINE}</span>
+                <span class="book-page">{link_line(to_shelf)}</span>
             </div>
 
             <button
@@ -117,6 +133,11 @@ pub(crate) fn LinkRow(
     state: AppState,
     id: String,
     name: String,
+    /// Whether the target is a shelf rather than a book — the first letter of
+    /// the target's id, which the mint guarantees is an answer
+    /// (`library_core::id::is_shelf`). The words a link wears, and nothing
+    /// else: the tap's routing is `crate::services::document::open_row`'s.
+    to_shelf: bool,
     depth: usize,
     /// The shelf whose member list renders this row — the tree's own id inside
     /// an expanded branch, `None` in the flat section. See
@@ -149,14 +170,14 @@ pub(crate) fn LinkRow(
             style=indent
             extra_classes=vec![("row-reveal".to_string(), reveal_class)]
         >
-            <span class="library-row-ext" title="A pointer at a book, not a copy of one">
+            <span class="library-row-ext" title=link_title(to_shelf)>
                 <Icon name=IconName::Link size=12 />
             </span>
             <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-semibold text-ink" title=tooltip.clone()>
                     {name.clone()}
                 </span>
-                <span class="block truncate text-xs text-muted">{LINK_LINE}</span>
+                <span class="block truncate text-xs text-muted">{link_line(to_shelf)}</span>
             </span>
             {move || {
                 remove_sheet.map(|sheet| {

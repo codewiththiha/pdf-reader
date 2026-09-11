@@ -113,8 +113,9 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
                     Row::Book(book) => {
                         view! { <BookCard state=state book=book crop=crop /> }.into_any()
                     }
-                    Row::Link { id, name, .. } => {
-                        view! { <LinkCard state=state id=id name=name /> }.into_any()
+                    Row::Link { id, name, target, .. } => {
+                        let to_shelf = library_core::id::is_shelf(&target);
+                        view! { <LinkCard state=state id=id name=name to_shelf=to_shelf /> }.into_any()
                     }
                 }}
             </For>

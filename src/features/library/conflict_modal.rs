@@ -34,10 +34,11 @@ use app_chrome::icon_button::IconButton;
 use library_core::shelf::ALL_SHELF;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
+use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::services::library::conflict::{self, ConflictAsk};
+use crate::services::library::conflict::{self, ConflictAsk, FolderMergeAnswer};
 use library_core::book::find_row;
-use library_core::conflict::{Answer, MoveAnswer};
+use library_core::conflict::{Answer, MoveAnswer, next_name};
 use crate::state::AppState;
 
 /// The sheet, mounted once by the library page.
@@ -69,8 +70,16 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
         >
             {move || {
                 let ask = state.library.conflict.get()?;
+                // A folder merge's file asks wear the compact sheet: the
+                // shelf's question is already answered, and what is left is a
+                // run of files with the same three doors each.
+                if ask.folder_merge {
+                    return Some(
+                        view! { <FolderMergeSheet state=state ask=ask /> }.into_any(),
+                    );
+                }
                 let info = Info::of(state, &ask);
-                Some(view! { <Sheet state=state info=info /> })
+                Some(view! { <Sheet state=state info=info /> }.into_any())
             }}
         </ModalShell>
     }
@@ -305,9 +314,10 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
 
 /// One of the three answers: the name of it, and the one line that says what it
 /// does. No icons — the rows are a sentence each, and a glyph beside a sentence
-/// is decoration the reader has to look past.
+/// is decoration the reader has to look past. Shared with the folder sheet,
+/// whose rows are the same shape of promise.
 #[component]
-fn ChoiceRow(label: &'static str, note: String, on_click: Callback<()>) -> impl IntoView {
+pub(crate) fn ChoiceRow(label: &'static str, note: String, on_click: Callback<()>) -> impl IntoView {
     view! {
         <button
             type="button"
@@ -318,5 +328,131 @@ fn ChoiceRow(label: &'static str, note: String, on_click: Callback<()>) -> impl 
             <span class="text-sm text-ink">{label}</span>
             <span class="text-xs text-muted">{note}</span>
         </button>
+    }
+}
+
+/// The compact per-file sheet a folder merge asks: two names, three answers,
+/// and — behind the row of them — the switch that gives every waiting question
+/// the same answer in one click.
+///
+/// The move sheet's three, re-spelled for an arrival with no row of its own:
+/// there is nothing to fold INTO the shelf's row yet, so *merge* is the file
+/// handing the row its measurement rather than two rows becoming one. Smaller
+/// than the import sheet on purpose: the shelf's question is already answered,
+/// and a sheet that re-explained the whole situation per file would be a
+/// sentence the reader has to re-read forty times.
+#[component]
+fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
+    // The switch starts off on every question: "apply to all" is the reader's
+    // answer per sheet, not a preference the first click leaves behind.
+    let apply_all = RwSignal::new(false);
+    let waiting = state
+        .library
+        .conflict_waiting
+        .with_untracked(|w| w.iter().filter(|each| each.folder_merge).count());
+    let incoming = ask.arrival.name.clone();
+    let existing = ask.existing_name.clone();
+    let heading = incoming.clone();
+    let tooltip = heading.clone();
+    let subtitle = if waiting > 0 {
+        format!("Into “{existing}” · {} more waiting", waiting)
+    } else {
+        format!("Into “{existing}”")
+    };
+    let question = format!(
+        "“{incoming}” is arriving, and “{existing}” is already on this shelf. \
+         Keep the one that is here, seat this file in its place, or keep both \
+         under a name of its own."
+    );
+    let merge_note =
+        format!("One book — “{existing}” stays, and takes this file's measurement");
+    const REPLACE_NOTE: &str =
+        "The row on the shelf leaves the library; this file takes its slot";
+    let new_name = {
+        let (rows, shelves) = state.library.snapshot_rows();
+        next_name(&rows, &shelves, &ask.arrival.shelf_id, &incoming)
+    };
+    let new_note = format!("Keep both — this file becomes “{new_name}”");
+
+    view! {
+        <>
+            <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
+                <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
+                        {heading}
+                    </span>
+                    <span class="mt-0.5 block text-xs text-muted">{subtitle}</span>
+                </span>
+                <IconButton
+                    icon=IconName::Close
+                    title="Close"
+                    class="rounded-full bg-line/60 hover:bg-line".to_string()
+                    on_click=move || conflict::cancel(state)
+                />
+            </header>
+
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                <p class="text-xs text-muted">{question}</p>
+                <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+                    <ChoiceRow
+                        label="Merge"
+                        note=merge_note
+                        on_click=Callback::new(move |_| {
+                            conflict::answer_folder_merge(
+                                state,
+                                FolderMergeAnswer::Merge,
+                                apply_all.get_untracked(),
+                            )
+                        })
+                    />
+                    <ChoiceRow
+                        label="Replace"
+                        note=REPLACE_NOTE.to_string()
+                        on_click=Callback::new(move |_| {
+                            conflict::answer_folder_merge(
+                                state,
+                                FolderMergeAnswer::Replace,
+                                apply_all.get_untracked(),
+                            )
+                        })
+                    />
+                    <ChoiceRow
+                        label="As new"
+                        note=new_note
+                        on_click=Callback::new(move |_| {
+                            conflict::answer_folder_merge(
+                                state,
+                                FolderMergeAnswer::AsNew,
+                                apply_all.get_untracked(),
+                            )
+                        })
+                    />
+                </div>
+                {(waiting > 0).then(|| {
+                    let label = format!("Apply to all {}", waiting + 1);
+                    view! {
+                        <div class="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2">
+                            <span class="text-xs text-muted">{label}</span>
+                            <Switch
+                                checked=Signal::derive(move || apply_all.get())
+                                on_change=Callback::new(move |on| apply_all.set(on))
+                                title="Give every waiting question this same answer"
+                                    .to_string()
+                            />
+                        </div>
+                    }
+                })}
+            </div>
+
+            <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+                <Button
+                    on_click=move |_| conflict::cancel(state)
+                    variant=ButtonVariant::Ghost
+                    title="Leave the shelf as it is"
+                >
+                    <span>"Cancel"</span>
+                </Button>
+            </footer>
+        </>
     }
 }

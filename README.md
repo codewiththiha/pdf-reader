@@ -426,6 +426,13 @@ the filesystem.
   before you click; **As new** keeps both, yours under the next free name beside it. The two sheets
   are two different types in the code, so a move can never be offered a link, and a file can never
   be offered a replace.
+- **Importing a FOLDER whose name the level already holds asks its own question**, before the walk
+  rather than after it: **Add as new** imports it under the next free name (`Books_1`, promised on
+  the row); **Make link** imports nothing and leaves a pointer that lights the folder where it is
+  when you tap it; **Merge into it** files the folder's books onto the shelf that is here, and a
+  book whose name that shelf already holds is asked one by one on a compact sheet — Merge, Replace
+  or As new — with an apply-to-all switch for a reader who has seen enough of the folder to answer
+  for the rest. Books nothing collides with simply go in.
 - **Importing a file puts a book where you dropped it.** A file the library already holds somewhere
   else is not a reason for a shelf to stay empty: importing `notes.md` into a second folder gives
   that folder its own book, with its own highlights and its own place in it, and the first folder
