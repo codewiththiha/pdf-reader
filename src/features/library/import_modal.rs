@@ -24,7 +24,7 @@ use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
-use crate::components::settings::common::Row;
+use crate::components::primitives::form::row::Row;
 use crate::services::library::{import_folder, pick_folder};
 use crate::state::{AppState, Toast};
 

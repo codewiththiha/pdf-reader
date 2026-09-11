@@ -116,15 +116,15 @@ pub fn AppearanceMenu(
             >
                 <SectionLabel text="Presets" />
                 <PresetSection state=state />
-                <div class="my-3"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-3" />
                 <SectionLabel text="Mode & colour" />
                 <BaseSection state=state />
                 <Show when=move || texture_applies.get()>
-                    <div class="my-3"><Separator vertical=false /></div>
+                    <Separator vertical=false spacing="my-3" />
                     <SectionLabel text="Page texture" />
                     <TextureSection state=state />
                 </Show>
-                <div class="my-3"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-3" />
                 <SectionLabel text="Film grain" />
                 <NoiseSection state=state />
             </MenuPopover>

@@ -14,7 +14,8 @@ use reader_core::settings::PaperArea;
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::settings::common::{Row, StyleSelect};
+use crate::components::primitives::form::row::Row;
+use crate::components::settings::common::StyleSelect;
 use crate::state::AppState;
 
 /// The raster-only half of the Theme tab: the paper blend and its detection.
@@ -30,7 +31,7 @@ pub(crate) fn PaperSection(state: AppState) -> impl IntoView {
 
     view! {
         <Show when=move || !reflowable.get()>
-        <div class="mt-5"><Separator vertical=false /></div>
+        <Separator vertical=false spacing="mt-5" />
         <SectionLabel text="Paper" />
         <div class="divide-y divide-line rounded-xl border border-line">
             <Row label="Blend Mode">

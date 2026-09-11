@@ -286,7 +286,7 @@ pub(crate) fn AddMenu(
                                 let root = folder.root.clone();
                                 view! {
                                     <>
-                                        <div class="my-1"><Separator /></div>
+                                        <Separator spacing="my-1" />
                                         <MenuItem
                                             icon=IconName::Drop
                                             label="Choose files from this folder"
@@ -308,7 +308,7 @@ pub(crate) fn AddMenu(
                             has_rows.get().then(|| {
                                 view! {
                                     <>
-                                        <div class="my-1"><Separator /></div>
+                                        <Separator spacing="my-1" />
                                         <SectionLabel text="Restore" />
                                         {move || {
                                             let now = crate::time::now_ms();
@@ -442,7 +442,7 @@ fn Confirm(
                 label="Back"
                 on_click=move || confirm.set(None)
             />
-            <div class="my-1"><Separator /></div>
+            <Separator spacing="my-1" />
             <p class="px-2 py-1.5 text-xs text-muted">{question}</p>
             <MenuItem
                 icon=IconName::Plus

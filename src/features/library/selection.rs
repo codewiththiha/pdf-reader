@@ -429,7 +429,7 @@ pub(crate) fn LibrarySelectBar(state: AppState) -> impl IntoView {
                             }
                         }).collect_view()
                     }}
-                    <div class="my-1"><Separator /></div>
+                    <Separator spacing="my-1" />
                     <MenuItem
                         icon=IconName::Plus
                         label="New shelf"

@@ -105,7 +105,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                         create_shelf_and_enter(state, None);
                     }
                 />
-                <div class="my-1.5"><Separator /></div>
+                <Separator spacing="my-1.5" />
                 <MenuItem
                     label="List"
                     selected=Signal::derive(move || is_list.get())
@@ -123,7 +123,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     }
                 />
 
-                <div class="my-1.5"><Separator /></div>
+                <Separator spacing="my-1.5" />
                 <SectionLabel text="Columns" />
                 <div class="flex items-center justify-between gap-2 px-1 py-1">
                     <OptionButton
@@ -169,7 +169,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     </div>
                 </div>
 
-                <div class="my-1.5"><Separator /></div>
+                <Separator spacing="my-1.5" />
                 <SectionLabel text="Book covers" />
                 <MenuItem
                     label=CoverFit::Fit.label()
@@ -188,7 +188,7 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                     }
                 />
 
-                <div class="my-1.5"><Separator /></div>
+                <Separator spacing="my-1.5" />
                 <SectionLabel text="Sort by" />
                 {move || {
                     has_direction.get().then(|| {

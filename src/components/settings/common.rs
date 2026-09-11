@@ -1,6 +1,13 @@
-//! Shared pieces of the reader settings modal: the tab switcher, the labelled
-//! `Row` wrapper, and the generic `StyleSelect` dropdown. The tabs (in their
-//! own files) build on these; `modal` is the shell that hosts them.
+//! Shared pieces of the reader settings modal: the tab switcher and the generic
+//! `StyleSelect` dropdown. The tabs (in their own files) build on these; `modal`
+//! is the shell that hosts them.
+//!
+//! The labelled `Row` these used to sit beside is
+//! [`crate::components::primitives::form::row::Row`] now: the library's import
+//! sheet and removal receipt are built out of the same rows, and a component two
+//! features reach into a third for is a primitive with the wrong address.
+//! `StyleSelect` stays because it is built on the toolbar's `MenuPopover`, and
+//! moving it would make `primitives` depend on `shell` — the wrong way round.
 //!
 //! `TabButton` takes the tab to display as a SEPARATE signal from the one it
 //! writes, because the tab set is not fixed: the Animations tab only exists
@@ -53,16 +60,6 @@ focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
             <Icon name=icon size=17 />
             {move || (active.get() == t).then(|| view! { <span>{label}</span> })}
         </button>
-    }
-}
-
-#[component]
-pub(crate) fn Row(label: &'static str, children: Children) -> impl IntoView {
-    view! {
-        <div class="flex items-center justify-between gap-3 px-4 py-3.5">
-            <span class="text-sm text-ink">{label}</span>
-            {children()}
-        </div>
     }
 }
 

@@ -50,7 +50,7 @@ use crate::components::primitives::controls::button::{Button, ButtonTone, Button
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
-use crate::components::settings::common::Row;
+use crate::components::primitives::form::row::Row;
 use crate::services::library::{PurgeOpts, delete_shelf, purge_books};
 use crate::state::AppState;
 

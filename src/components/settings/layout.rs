@@ -11,7 +11,8 @@ use reader_core::settings::{
     FloatingLabelStyle, MAX_COLUMN_WIDTH_PCT, MIN_COLUMN_WIDTH_PCT, PageIndicatorStyle,
 };
 
-use crate::components::settings::common::{Row, StyleSelect};
+use crate::components::primitives::form::row::Row;
+use crate::components::settings::common::StyleSelect;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use crate::components::primitives::form::slider::Slider;

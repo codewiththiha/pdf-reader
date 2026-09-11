@@ -17,7 +17,8 @@ use app_chrome::icon_button::IconButton;
 use crate::components::primitives::form::slider::Slider;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
-use crate::components::settings::common::{Row, StyleSelect};
+use crate::components::primitives::form::row::Row;
+use crate::components::settings::common::StyleSelect;
 use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::state::AppState;
 

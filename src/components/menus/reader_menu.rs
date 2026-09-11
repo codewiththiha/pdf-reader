@@ -89,7 +89,7 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                     <FitButton state=state f=FitMode::Width icon=IconName::FitWidth title="Fit width" />
                     <FitButton state=state f=FitMode::Page icon=IconName::FitPage title="Fit page" />
                 </div>
-                <div class="my-1"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-1" />
                 // ── Auto scroll: disabled + dimmed on paginated modes ──
                 {move || {
                     let disabled = !mode.get().can_scroll();
@@ -105,13 +105,13 @@ pub fn ReaderMenu(state: AppState, settings_open: RwSignal<bool>) -> impl IntoVi
                         </MenuItem>
                     }
                 }}
-                <div class="my-1"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-1" />
                 <MenuItem
                     icon=IconName::Settings
                     label="Settings…".to_string()
                     on_click=move || { open.set(false); settings_open.set(true); }
                 />
-                <div class="my-1"><Separator vertical=false /></div>
+                <Separator vertical=false spacing="my-1" />
                 <MenuItem
                     icon=IconName::Keyboard
                     label="Keyboard Shortcuts".to_string()

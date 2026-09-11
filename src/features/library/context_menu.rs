@@ -206,7 +206,7 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
                     />
                 }
             })}
-            <div class="my-1"><Separator /></div>
+            <Separator spacing="my-1" />
             <MenuItem
                 icon=IconName::Close
                 label="Remove from library"
@@ -260,7 +260,7 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                     create_shelf_and_enter(state, Some(&inside_id));
                 }
             />
-            <div class="my-1"><Separator /></div>
+            <Separator spacing="my-1" />
             <MenuItem
                 icon=IconName::Close
                 label="Take shelf apart"
@@ -299,7 +299,7 @@ fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>
                     file_selection_on_new_shelf(state);
                 }
             />
-            <div class="my-1"><Separator /></div>
+            <Separator spacing="my-1" />
             <MenuItem
                 icon=IconName::Close
                 label=remove_label
