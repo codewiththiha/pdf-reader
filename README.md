@@ -827,10 +827,12 @@ styles/
   page_host.css           the .pdf-page host, its canvas and the zoom snapshot
   text.css                the reflowable page host and the continuous stream
   textures.css, noise.css texture modes, and the grain overlay + its crawl
-  library.css             the bookshelf: book cards and their frames, folder
-                          cards and their cover plates, the list rows, the
-                          import dock's ring, the drop markers and the drag
-                          layer a held set is carried in
+  components/library/     the bookshelf, one file per surface: the grid and its
+                          book cards, the folder's cover plate, the list rows,
+                          the import dock's ring, the reveal, the drag layer a
+                          held set is carried in, the breadcrumb's elided chain,
+                          the multi-select a hold starts, and the search
+                          suggestions
   components/             shell, title bar, animations, ai, gloss, appearance,
                           thumbnails, pdf.js's text layer, and the search-hit
                           box both format families share

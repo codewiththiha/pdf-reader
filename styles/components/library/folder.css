@@ -1,0 +1,167 @@
+/* ---------------------------------------------------------------------------
+   A shelf drawn as a folder: a 2×2 plate of the covers inside it, then the same
+   two-line caption a book card has. It replaces the shelf tile — a row of
+   spines on a board, spanning the whole grid — because a row cannot be inside a
+   row, and a shelf filed in another shelf needs to be a cell of the same grid the
+   books are cells of.
+
+   The plate is 3:4 rather than the 210:297 a cover is, so a folder and a book
+   side by side are close enough in height to read as one shelf and different
+   enough in shape to tell apart at a glance.
+   --------------------------------------------------------------------------- */
+.folder-card {
+  border-radius: 12px;
+  padding: 8px;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.folder-card:hover {
+  background: color-mix(in srgb, var(--color-line) 35%, transparent);
+}
+.folder-card:active {
+  transform: scale(0.98);
+}
+.folder-card:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+/* Layout only: the plate is recursive, so a cell that holds a folder holds
+   another one of these, and the shadow, the rounding and the hover lift belong
+   to the OUTERMOST plate — the ones below are scoped to the card's direct
+   child. A nested plate that lifted with the card would lift twice. */
+.folder-thumb-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 3px;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 8px;
+  /* The joinery is the theme's line nudged a fifth of the way toward the theme's
+     MUTED — the neutral every base already reserves for things that must be seen
+     but not read. Not the ink: a seam at the ink's weight is a stroke, and a
+     plate drawn in strokes is a table rather than a preview. Not the line alone
+     either, which in the light base is the surface's neighbour (#e5e7eb against
+     #f3f4f6) and therefore invisible. A variation of the theme's own edge
+     colour, in every base, by construction. */
+  --plate-seam: color-mix(in srgb, var(--color-line) 80%, var(--color-muted) 20%);
+  background: var(--plate-seam);
+}
+.folder-card > .folder-thumb-grid {
+  /* A hairline of the joinery's own colour around the outside, so the plate is
+     an object on the page rather than four cells happening to align: in the
+     light base the surface-on-paper edge was the other invisible line, and a
+     frame is what makes a grid read as one thing held together. */
+  box-shadow:
+    inset 0 0 0 1px var(--plate-seam),
+    0 1px 3px rgb(0 0 0 / 0.10),
+    0 5px 14px -4px rgb(0 0 0 / 0.28);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+}
+.folder-card:hover > .folder-thumb-grid {
+  transform: translateY(-3px);
+  box-shadow:
+    0 3px 6px rgb(0 0 0 / 0.12),
+    0 12px 26px -8px rgb(0 0 0 / 0.38);
+}
+
+/* A cell holding a folder is that folder's own plate, edge to edge: the preview
+   answers "what is inside" the same way at every depth, so a folder of three
+   books previews as three covers and a hatched quarter inside the cell that
+   previews it. No rounding and no shadow of its own — the outer plate clips. */
+.folder-thumb-cell > .folder-thumb-grid {
+  position: absolute;
+  inset: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+  /* A quarter of a quarter is small enough that the outer plate's gutters would
+     eat it; the deeper the plate, the tighter the joinery. */
+  gap: 1px;
+}
+
+.folder-thumb-cell {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.folder-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A cell with no cover in it is a flat quarter recessed a touch toward the
+   paper: no texture, just a panel plainly emptier than the covers beside it,
+   held in place by the seam around it. Toward the PAPER rather than toward the
+   line, so an empty cell and a seam are opposite moves in every base — lighter
+   than the surface in light, darker in dark — and never the same tone. */
+.folder-thumb-empty {
+  background: color-mix(in srgb, var(--color-surface) 72%, var(--color-paper));
+}
+
+/* The two cells a fold's preview lights, in the plate a drag carries
+   (`src/features/library/dnd/layer`). Filled is the accent's own tint rather than
+   a cover, because the shelf does not exist yet and has nothing to show; the next
+   cell holds the `+` that says the plate is still taking items, and the rest stay
+   the empty cell's recessed tone. One preview, three of a folder card's own
+   states, and no colours of its own. */
+.folder-thumb-fill {
+  background: color-mix(in srgb, var(--color-accent) 34%, var(--color-surface));
+}
+.folder-thumb-next {
+  display: grid;
+  place-items: center;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+}
+
+/* A folder deeper than the preview recurses: a few pixels of something is a
+   smear, so it draws as what it is — a folder — on a quieter ground than the
+   hatched empty cell, because "there is more in here" and "there is nothing
+   here" are opposite sentences and must not share a pattern. */
+.folder-thumb-deep {
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+  background: color-mix(in srgb, var(--color-surface) 72%, var(--color-paper));
+}
+
+/* The one marker a folder-derived shelf carries, over the plate's top-right:
+   whether the directory it was cut from is still watched. Where the books live
+   on disk needs no badge of its own — the breadcrumb above the shelf already
+   says which folder the reader is inside, and saying it twice more on the card
+   was chrome the plate did not need. */
+.folder-badges {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+/* --- The folder's three states. Pressing is the instant tint before the hold
+   decides anything; selected is membership of the set; drag-over is the drop
+   this folder is about to accept, and it is the loudest of the three because it
+   is the one answer the reader is waiting for. --- */
+.folder-pressing > .folder-thumb-grid {
+  transform: scale(0.97);
+}
+.folder-selected {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+.folder-drag-over {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 6px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+.folder-drag-over > .folder-thumb-grid {
+  transform: translateY(-3px);
+}

@@ -2,7 +2,7 @@
 //! library needs that a recents list never did — a drag handle, and a way back
 //! when the address the book points at dies.
 //!
-//! The cover sits in a frame (`.book-cover-wrap` in `styles/library.css`) rather
+//! The cover sits in a frame (`.book-cover-wrap` in `styles/components/library/grid.css`) rather
 //! than carrying its own shadow, spine gradient and fore-edge. Three reasons, and
 //! the first is the one that decided it: the reading-progress bar belongs at the
 //! bottom of the ART, and a bar under the title is a bar the eye has to leave the

@@ -7,7 +7,7 @@
 //! dashed instead of painted, plus instead of art.
 //!
 //! It wears the book card's classes for that shape and is not a book, so the
-//! selection dimming in `styles/library.css` names it as an exception — an add
+//! selection dimming in `styles/components/library/select.css` names it as an exception — an add
 //! affordance that stepped back with the unselected books would be advertising a
 //! choice it does not offer.
 

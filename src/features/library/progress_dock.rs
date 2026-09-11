@@ -26,7 +26,7 @@ use crate::state::AppState;
 const HOLD_MS: u64 = 1600;
 
 /// The ring's circumference at `r=15`, which is what turns a fraction into a dash
-/// offset. Written down once here and once in `styles/library.css`, where the
+/// offset. Written down once here and once in `styles/components/library/dock.css`, where the
 /// dash array lives; the two have to agree or the ring ends short of full.
 const CIRCUMFERENCE: f64 = 94.248;
 
