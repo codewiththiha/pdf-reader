@@ -722,13 +722,7 @@ fn purge_one(state: AppState, row: &Row, opts: PurgeOpts) {
     // writing a tombstone for a fingerprint it does not have would keep a file
     // out of a watched folder that never placed it.
     let Some(book) = row.book() else {
-        state.library.books.update(|rows| {
-            remove_row(rows, row_id);
-        });
-        state
-            .library
-            .shelves
-            .update(|shelves| shelf::forget_everywhere(shelves, row_id));
+        unlist_row(state, row_id);
         return;
     };
     let shelves = state.library.shelves.get_untracked();
@@ -830,6 +824,27 @@ fn sweep_book(state: AppState, book: &Book, delete_store: bool) {
     sweep_path(state, book.path(), delete_store);
 }
 
+/// Take a row off the library's list and off every shelf, and drop the links
+/// that pointed at it. The whole of a removal that is NOT a sweep: no tombstone,
+/// no cover, no highlights, no store copy.
+///
+/// One spelling because three callers wanted exactly this and each wrote it out
+/// — [`drop_row`], a purge of a link row, and the conflict sheet's link answer —
+/// and the half that is easy to forget is the expensive one: a sweep that drops
+/// the row but not the pointers at it leaves a row on the shelf that renders, is
+/// clicked, and does nothing, for the rest of the session rather than until the
+/// next load's sanitize.
+pub(crate) fn unlist_row(state: AppState, row_id: &str) {
+    state.library.books.update(|rows| {
+        remove_row(rows, row_id);
+        drop_dangling_links(rows);
+    });
+    state
+        .library
+        .shelves
+        .update(|shelves| shelf::forget_everywhere(shelves, row_id));
+}
+
 /// Remove one row, everywhere it is filed, and sweep the side data only it
 /// used. Returns the row that went.
 ///
@@ -845,14 +860,7 @@ pub(crate) fn drop_row(state: AppState, row_id: &str) -> Option<Row> {
         .library
         .books
         .with_untracked(|rows| find_row(rows, row_id).cloned())?;
-    state.library.books.update(|rows| {
-        remove_row(rows, row_id);
-        drop_dangling_links(rows);
-    });
-    state
-        .library
-        .shelves
-        .update(|shelves| shelf::forget_everywhere(shelves, row_id));
+    unlist_row(state, row_id);
     if let Some(book) = row.book() {
         sweep_book(state, book, book.origin.is_stored());
     }

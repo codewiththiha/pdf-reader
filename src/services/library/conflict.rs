@@ -83,10 +83,7 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use ai_core::gloss::GlossMark;
-use library_core::book::{
-    Book, Fingerprint, drop_dangling_links, find_book_mut, find_by_id, find_row, fold_books,
-    remove_row,
-};
+use library_core::book::{Book, Fingerprint, find_book_mut, find_by_id, find_row, fold_books};
 use library_core::conflict::{
     Answer, Arrival, MoveAnswer, collide, next_name, next_shelf_name,
 };
@@ -528,16 +525,10 @@ fn link_move(state: AppState, ask: &ConflictAsk) {
     {
         write_moved_stones(state, book, Some(&survivor));
     }
-    state.library.books.update(|rows| {
-        remove_row(rows, &gone_id);
-        // A link at the dissolved row is a row that renders, is clicked and
-        // does nothing: the pointers go with it, as they do in every removal.
-        drop_dangling_links(rows);
-    });
-    state
-        .library
-        .shelves
-        .update(|shelves| shelf::forget_everywhere(shelves, &gone_id));
+    // The pointers at the dissolved row go with it, as they do in every
+    // removal: a link at nothing is a row that renders, is clicked and does
+    // nothing. `unlist_row` is the one spelling of that.
+    super::arrange::unlist_row(state, &gone_id);
     // The pointer wears the survivor's name, which is what makes the row
     // recognisable beside the book it points at — the import answer's rule.
     let name = state.library.row_name(&survivor);
@@ -805,22 +796,48 @@ pub enum FolderMergeAnswer {
 /// folder-merge one stops the drain: it belongs to another gesture and gets
 /// its own sheet.
 pub fn answer_folder_merge(state: AppState, answer: FolderMergeAnswer, apply_all: bool) {
+    answer_batch(
+        state,
+        answer,
+        apply_all,
+        |ask| ask.folder_merge,
+        apply_folder_merge,
+    );
+}
+
+/// The drain both compact sheets ride: answer the question on screen, then —
+/// with *apply to all* on — every question behind it that is the SAME kind, and
+/// stop at the first one that is not.
+///
+/// One spelling rather than one per sheet because the two sheets' contract is
+/// one contract, and the half of it that is easy to get wrong is the stop: a
+/// question of the other kind belongs to another gesture and owes its own sheet,
+/// so the drain has to leave it at the front of the queue rather than answer it
+/// with a button the reader pressed for something else. A second copy of this
+/// loop is a second place to get that wrong.
+fn answer_batch<A: Copy + 'static>(
+    state: AppState,
+    answer: A,
+    apply_all: bool,
+    is_mine: fn(&ConflictAsk) -> bool,
+    apply: fn(AppState, &ConflictAsk, A),
+) {
     let Some(ask) = state.library.conflict.get_untracked() else {
         return;
     };
-    if !ask.folder_merge {
+    if !is_mine(&ask) {
         return;
     }
-    apply_folder_merge(state, &ask, answer);
+    apply(state, &ask, answer);
     advance(state);
     if !apply_all {
         return;
     }
     while let Some(next) = state.library.conflict.get_untracked() {
-        if !next.folder_merge {
+        if !is_mine(&next) {
             break;
         }
-        apply_folder_merge(state, &next, answer);
+        apply(state, &next, answer);
         advance(state);
     }
 }
@@ -992,24 +1009,7 @@ pub enum CoveredAnswer {
 /// NOT a covered one stops the drain: it belongs to another gesture and gets
 /// its own sheet.
 pub fn answer_covered(state: AppState, answer: CoveredAnswer, apply_all: bool) {
-    let Some(ask) = state.library.conflict.get_untracked() else {
-        return;
-    };
-    if !ask.covered {
-        return;
-    }
-    apply_covered(state, &ask, answer);
-    advance(state);
-    if !apply_all {
-        return;
-    }
-    while let Some(next) = state.library.conflict.get_untracked() {
-        if !next.covered {
-            break;
-        }
-        apply_covered(state, &next, answer);
-        advance(state);
-    }
+    answer_batch(state, answer, apply_all, |ask| ask.covered, apply_covered);
 }
 
 /// One answer, applied: the folder's book lit, or the library's own copy on

@@ -52,7 +52,7 @@ use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 use library_core::text::display_or_stem;
-use library_core::wire::{PathCheck, StoreRequest};
+use library_core::wire::{PathCheck, StoreRequest, StoreResult};
 use reader_core::format::{Format, is_supported_path};
 
 use super::arrange::{PurgeOpts, migrate_gloss};
@@ -183,6 +183,60 @@ fn rel_of(key: &str) -> Option<String> {
     }
 }
 
+/// The shelf a found file belongs on: every rung between the folder's root shelf
+/// and the file's own subfolder, minted or reused, with each rung this call minted
+/// collected into `new_shelves` for the caller to put a shelf row under.
+///
+/// One spelling for the two loops a folder run mints through — the books it adds
+/// and the books the library already held, which a planned tree owes a membership
+/// of — because the two have to agree about what a rung is CALLED and about who
+/// OWNS it, and a second copy was a second answer to both. An *as new* run that
+/// named its root rung one way for new files and another for known ones would
+/// have minted two trees side by side instead of one.
+///
+/// The whole chain rather than the leaf, which is `shelf_chain_for`'s own rule:
+/// importing "1" whose inside is "2", "3" and four books has to produce "1" at the
+/// root with "2", "3" and the four books inside it — not three siblings at the
+/// root and the books twice.
+fn chain_for(
+    folder: &mut WatchedFolder,
+    key: &str,
+    now: u64,
+    root: &str,
+    planned_name: &Option<String>,
+    merged: bool,
+    new_shelves: &mut Vec<Shelf>,
+) -> String {
+    let folder_id = folder.id.clone();
+    folder.shelf_chain_for(
+        key,
+        |_| id::next_shelf_id(now),
+        |rung| match (rung.is_empty(), planned_name) {
+            // The folder sheet's *as new* answer: the root rung wears the counter
+            // name it promised, and every rung below it keeps the disk's own.
+            (true, Some(name)) => name.clone(),
+            _ => shelf_name(rung, root),
+        },
+        |rung, id, name, parent| {
+            new_shelves.push(Shelf {
+                id: id.to_string(),
+                name,
+                kind: ShelfKind::Folder {
+                    folder_id: folder_id.clone(),
+                    rel: rel_of(rung),
+                },
+                books: Vec::new(),
+                parent,
+                // Minted by the scan, so the scan owns its rung — until a hand
+                // moves it, which is `reparent`'s mark. A merged run marks every
+                // rung it mints: their tree hangs off a shelf the disk does not
+                // own, so there is no disk shape for a re-hang to put them back on.
+                manual_parent: merged,
+            });
+        },
+    )
+}
+
 // ---------------------------------------------------------------------------
 // The dock's cards. Written from here rather than from the dock: the dock is a
 // view, and a view that owned the lifecycle of the thing it renders would have
@@ -210,6 +264,20 @@ pub fn dismiss_task(state: AppState, id: &str) {
         .library
         .tasks
         .update(|tasks| tasks.retain(|t| t.id != id));
+}
+
+/// Close a dock card on its final counts.
+///
+/// One spelling for the runs that finish one — a folder walk, a loose-file drop
+/// and a restore — because a card is a report and three routes into the library
+/// reporting three different sets of numbers is three answers about one import.
+fn finish_task(state: AppState, task: &str, total: u32, waiting: u32) {
+    update_task(state, task, move |t| {
+        t.total = total;
+        t.done = total;
+        t.waiting = waiting;
+        t.finish();
+    });
 }
 
 fn fail(state: AppState, task: &str, message: String, quiet: bool) {
@@ -1028,7 +1096,6 @@ async fn run_folder(
     // one highlight and no sentence.
     let mut restored: Vec<String> = Vec::new();
     let in_place = folder.opts.in_place;
-    let folder_id = folder.id.clone();
     let planned_name = plan.rename.clone();
     let merged = plan.into.is_some();
 
@@ -1120,40 +1187,14 @@ async fn run_folder(
                 restored.push(placed_id.clone());
             }
             let key = folder.shelf_key(file);
-            // The whole chain, not the leaf: importing "1" whose inside is "2",
-            // "3" and four books has to produce "1" at the root with "2", "3" and
-            // the four books inside it — not three siblings at the root and the
-            // books twice. `shelf_chain_for` mints every rung between the root
-            // shelf and the file's own subfolder, and reuses the rungs a previous
-            // scan already minted.
-            let shelf_id = folder.shelf_chain_for(
+            let shelf_id = chain_for(
+                &mut folder,
                 &key,
-                |_| id::next_shelf_id(now),
-                |rung| match (rung.is_empty(), &planned_name) {
-                    // The folder sheet's *as new* answer: the root rung wears
-                    // the counter name it promised, and every rung below it
-                    // keeps the disk's own.
-                    (true, Some(name)) => name.clone(),
-                    _ => shelf_name(rung, &root),
-                },
-                |rung, id, name, parent| {
-                    new_shelves.push(Shelf {
-                        id: id.to_string(),
-                        name,
-                        kind: ShelfKind::Folder {
-                            folder_id: folder_id.clone(),
-                            rel: rel_of(rung),
-                        },
-                        books: Vec::new(),
-                        parent,
-                        // Minted by the scan, so the scan owns its rung —
-                        // until a hand moves it, which is `reparent`'s mark.
-                        // A merged run marks every rung it mints: their tree
-                        // hangs off a shelf the disk does not own, so there is
-                        // no disk shape for a re-hang to put them back on.
-                        manual_parent: merged,
-                    });
-                },
+                now,
+                &root,
+                &planned_name,
+                merged,
+                &mut new_shelves,
             );
             placements.push((placed_id, shelf_id));
             folder.mark_placed(file.fp);
@@ -1172,26 +1213,14 @@ async fn run_folder(
         // where it is being put from moving to the end of it.
         for (row_id, file) in &replacements {
             let key = folder.shelf_key(file);
-            let shelf_id = folder.shelf_chain_for(
+            let shelf_id = chain_for(
+                &mut folder,
                 &key,
-                |_| id::next_shelf_id(now),
-                |rung| match (rung.is_empty(), &planned_name) {
-                    (true, Some(name)) => name.clone(),
-                    _ => shelf_name(rung, &root),
-                },
-                |rung, id, name, parent| {
-                    new_shelves.push(Shelf {
-                        id: id.to_string(),
-                        name,
-                        kind: ShelfKind::Folder {
-                            folder_id: folder_id.clone(),
-                            rel: rel_of(rung),
-                        },
-                        books: Vec::new(),
-                        parent,
-                        manual_parent: merged,
-                    });
-                },
+                now,
+                &root,
+                &planned_name,
+                merged,
+                &mut new_shelves,
             );
             placements.push((row_id.clone(), shelf_id));
         }
@@ -1257,12 +1286,7 @@ async fn run_folder(
 
     let total =
         placed + (relink_count + healed + replaced) as u32 + represented_count + converted as u32;
-    update_task(state, &task, move |t| {
-        t.total = total;
-        t.done = total;
-        t.waiting = waiting;
-        t.finish();
-    });
+    finish_task(state, &task, total, waiting);
 }
 
 /// Put a removed book back, from the folder's own import menu.
@@ -1380,11 +1404,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
         // A removed book took its cover with it; a restored one gets it back
         // without asking to be opened first.
         super::covers::backfill_missing(state);
-        update_task(state, &task, |t| {
-            t.total = 1;
-            t.done = 1;
-            t.finish();
-        });
+        finish_task(state, &task, 1, 0);
     });
 }
 
@@ -1396,10 +1416,43 @@ fn root_shelf_of(shelves: &[Shelf], folder_id: &str) -> Option<String> {
         .map(|s| s.id.clone())
 }
 
-/// Copy one batch into the store, answering with the stored address per book id.
+/// Split one batch of copy results into the addresses that landed, and say
+/// something about the ones that did not.
 ///
-/// A per-file failure is collected rather than fatal: the reader gets every book
-/// that copied, plus one toast naming the ones that did not.
+/// One spelling for both batches the library copies — an import's and a mode
+/// switch's — because a per-file failure is the same news either way and the
+/// reader should hear it in the same words. `noun` is the only thing that
+/// differs and it is what the sentence counts: files on the way in, books on the
+/// way over to the library's own copies.
+///
+/// A per-file failure is collected rather than fatal, which is the rule both
+/// callers were already keeping: a folder with one locked file in it should
+/// still import the other ninety-nine.
+fn partition_store_results(
+    state: AppState,
+    results: Vec<StoreResult>,
+    noun: &str,
+) -> HashMap<String, String> {
+    let mut landed = HashMap::new();
+    let mut failures = Vec::new();
+    for result in results {
+        if result.is_ok() {
+            landed.insert(result.id, result.store);
+        } else {
+            failures.push(file_name(&result.src));
+        }
+    }
+    if !failures.is_empty() {
+        let message = match failures.len() {
+            1 => format!("Could not copy {}", failures[0]),
+            n => format!("Could not copy {n} {noun}, starting with {}", failures[0]),
+        };
+        state.ui.toast.set(Some(Toast::new(message)));
+    }
+    landed
+}
+
+/// Copy one batch into the store, answering with the stored address per book id.
 async fn copy_batch(
     state: AppState,
     task: &str,
@@ -1413,23 +1466,7 @@ async fn copy_batch(
         })
         .collect();
     let results = wire::store_books(task, &requests).await?;
-    let mut copies = HashMap::new();
-    let mut failures = Vec::new();
-    for result in results {
-        if result.is_ok() {
-            copies.insert(result.id, result.store);
-        } else {
-            failures.push(file_name(&result.src));
-        }
-    }
-    if !failures.is_empty() {
-        let message = match failures.len() {
-            1 => format!("Could not copy {}", failures[0]),
-            n => format!("Could not copy {n} files, starting with {}", failures[0]),
-        };
-        state.ui.toast.set(Some(Toast::new(message)));
-    }
-    Ok(copies)
+    Ok(partition_store_results(state, results, "files"))
 }
 
 /// The living linked rows whose fingerprint a folder's `placed` set holds —
@@ -1562,22 +1599,7 @@ async fn convert_folder_books_to_stored(state: AppState, task: &str, ids: &[Stri
             return 0;
         }
     };
-    let mut stores: HashMap<String, String> = HashMap::new();
-    let mut failures: Vec<String> = Vec::new();
-    for result in results {
-        if result.is_ok() {
-            stores.insert(result.id, result.store);
-        } else {
-            failures.push(file_name(&result.src));
-        }
-    }
-    if !failures.is_empty() {
-        let message = match failures.len() {
-            1 => format!("Could not copy {}", failures[0]),
-            n => format!("Could not copy {n} books, starting with {}", failures[0]),
-        };
-        state.ui.toast.set(Some(Toast::new(message)));
-    }
+    let stores = partition_store_results(state, results, "books");
     let measured = measure_stores(stores.values().cloned().collect()).await;
     let mut converted = 0usize;
     for (id, path, from_key) in candidates {
@@ -1850,12 +1872,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     asks.extend(conflicts);
     conflict::raise(state, asks);
     crate::storage::persist_library(state.library);
-    update_task(state, &task, move |t| {
-        t.total = placed;
-        t.done = placed;
-        t.waiting = waiting;
-        t.finish();
-    });
+    finish_task(state, &task, placed, waiting);
 }
 
 /// What the read-at-place folder this file stands in already says about a
