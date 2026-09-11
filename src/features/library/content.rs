@@ -27,7 +27,7 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::by_id;
 use pdf_engine::types::DocStatus;
 use library_core::query;
-use library_core::shelf::{ALL_SHELF, Shelf, children_of, members_of};
+use library_core::shelf::{ALL_SHELF, Shelf, children_of, find, members_of};
 use library_core::sort::{self, SortKey};
 use library_core::book::Row;
 
@@ -41,6 +41,7 @@ use crate::features::library::grid::GridView;
 use crate::features::library::list::ListView;
 use crate::features::library::selection::{LibrarySelectBar, use_select_mode};
 use crate::services::library::backfill_missing;
+use crate::state::library::Reveal;
 use crate::state::AppState;
 
 /// The id of the element a drag's empty space is: the level's own scroll
@@ -79,7 +80,7 @@ const REVEAL_MS: u64 = 1600;
 /// lets Leptos flush the new shelf, the second is the one that can find the card.
 fn install_reveal(state: AppState) {
     Effect::new(move |_| {
-        let Some((book_id, nonce)) = state.library.reveal.get() else {
+        let Some(Reveal { id: book_id, nonce }) = state.library.reveal.get() else {
             return;
         };
         // A folder link lights the FOLDER: its card in the grid, its row in
@@ -121,7 +122,7 @@ fn install_reveal(state: AppState) {
         let handle = set_timeout_with_handle(
             move || {
                 state.library.reveal.update(|at| {
-                    if at.as_ref().is_some_and(|(_, seen)| *seen == nonce) {
+                    if at.as_ref().is_some_and(|each| each.nonce == nonce) {
                         *at = None;
                     }
                 });
@@ -193,13 +194,10 @@ pub(crate) fn visible(state: AppState) -> Vec<Row> {
                 .collect()
         }
     } else {
-        let members = state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == shelf_id)
-                .map(|s| s.books.clone())
-                .unwrap_or_default()
-        });
+        let members = state
+            .library
+            .shelves
+            .with(|shelves| find(shelves, &shelf_id).map(|s| s.books.clone()).unwrap_or_default());
         sort::ordered(&rows, &members, SortKey::Manual, true)
     };
     sort::sort_rows(&mut list, view.sort, view.sort_asc);

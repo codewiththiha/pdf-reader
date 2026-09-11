@@ -43,7 +43,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{
     Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut, find_book_mut,
-    find_row,
+    find_by_id, find_row,
 };
 use library_core::conflict::Arrival;
 use library_core::folder::{self as folder_ops, FolderOpts, Tombstone, WatchedFolder};
@@ -60,7 +60,7 @@ use super::conflict::{self, ConflictAsk};
 use super::{file_name, folder_label};
 use crate::services::library as wire;
 use crate::time::now_ms;
-use crate::state::library::ImportTask;
+use crate::state::library::{ImportTask, NoteKind};
 use crate::state::{AppState, Toast};
 
 /// Who asked for a folder run, which is what the tombstones mean.
@@ -275,7 +275,7 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     // over to copies, or copies in place of the books that are here.
     if let Some((rel, shelf_id, shelf_name)) = covered_shelf(state, &root) {
         if !rel.is_empty() {
-            conflict::raise_already_imported(state, shelf_id, shelf_name);
+            conflict::raise_note(state, shelf_id, shelf_name, NoteKind::Gated);
             return;
         }
         if opts.in_place {
@@ -704,13 +704,11 @@ async fn run_folder(
             .iter()
             .filter(|file| {
                 registry.get(&file.fp).is_some_and(|known| {
-                    book_rows(&books)
-                        .find(|b| b.id == known.id)
-                        .is_some_and(|b| {
-                            matches!(b.origin, Origin::Linked { .. })
-                                && b.path() == file.path
-                                && folder.placed.contains(&file.fp)
-                        })
+                    find_by_id(&books, &known.id).is_some_and(|b| {
+                        matches!(b.origin, Origin::Linked { .. })
+                            && b.path() == file.path
+                            && folder.placed.contains(&file.fp)
+                    })
                 })
             })
             .map(|file| file.path.clone())
@@ -962,7 +960,7 @@ async fn run_folder(
         write_folder(state, folder);
         if !quiet {
             if let Some((shelf_id, name)) = plan.continuation.clone() {
-                conflict::raise_nothing_new(state, shelf_id, name);
+                conflict::raise_note(state, shelf_id, name, NoteKind::NothingNew);
             }
             update_task(state, &task, |t| t.finish());
         }
@@ -1281,7 +1279,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
     // because a restore measures the address the tombstone recorded rather than
     // assuming the file is still where the folder put it.
     let taken = state.library.folders.with_untracked(|folders| {
-        folder_ops::find(folders, folder_id).and_then(|f| {
+        folder_ops::find(folders, &folder_id).and_then(|f| {
             ledger::find_tombstone(f, &fp)
                 .map(|entry| (f.opts.clone(), entry.clone()))
         })

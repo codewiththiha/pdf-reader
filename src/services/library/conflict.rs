@@ -99,6 +99,7 @@ use super::arrange::{
     PurgeOpts, converts_on_move_to, convert_to_stored, memberships, purge_books, toast,
     write_moved_stones,
 };
+use crate::state::library::{AlreadyNote, NoteKind};
 use crate::state::{AppState, Toast};
 
 /// The question on screen.
@@ -751,24 +752,19 @@ pub fn cancel_shelf(state: AppState) {
 /// sentence and a highlight, and the reveal rides the modal's close rather
 /// than its open, because a light that burns its 1.6 seconds behind a modal
 /// nobody has dismissed is a light nobody sees.
-pub fn raise_already_imported(state: AppState, shelf_id: String, shelf_name: String) {
+///
+/// One raiser for both of the note's sentences, because the two are one act
+/// with one difference and [`NoteKind`] is that difference:
+/// [`NoteKind::Gated`] is the gate, said before any walk ran, and
+/// [`NoteKind::NothingNew`] is the report of a re-import walk that reconciled
+/// the tree and found every book already standing, no log coming back and
+/// nothing copied. Two raisers that differed by a boolean were two places to
+/// keep in step about which sentence the reader was owed.
+pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKind) {
     state
         .library
         .already_imported
-        .set(Some((shelf_id, shelf_name, false)));
-    state.library.already_imported_open.set(true);
-}
-
-/// The same note, earned rather than gated: a re-import of a tree the library
-/// already reads in place RAN — the reconciliation walked the folder — and
-/// found nothing new: every book already stood, no log came back and nothing
-/// was copied. The sentence the note says is the honest report of that walk,
-/// and the highlight on close is the same.
-pub fn raise_nothing_new(state: AppState, shelf_id: String, shelf_name: String) {
-    state
-        .library
-        .already_imported
-        .set(Some((shelf_id, shelf_name, true)));
+        .set(Some(AlreadyNote { shelf_id, name, kind }));
     state.library.already_imported_open.set(true);
 }
 
@@ -1262,8 +1258,8 @@ mod tests {
             "no row was written"
         );
         assert_eq!(state.library.shelf.get_untracked(), "s");
-        let (id, first) = state.library.reveal.get_untracked().expect("a reveal");
-        assert_eq!(id, "b1");
+        let first = state.library.reveal.get_untracked().expect("a reveal");
+        assert_eq!(first.id, "b1");
         assert!(!state.library.conflict_open.get_untracked());
 
         // Asking again is asking again: the nonce is what makes a second
@@ -1272,8 +1268,8 @@ mod tests {
         let ask = the_ask(state, Arrival::import(file("dune", 2), "s", None));
         raise(state, vec![ask]);
         answer(state, Answer::GoToExisting);
-        let (_, second) = state.library.reveal.get_untracked().expect("a second reveal");
-        assert_ne!(first, second);
+        let second = state.library.reveal.get_untracked().expect("a second reveal");
+        assert_ne!(first.nonce, second.nonce);
     }
 
     #[test]
@@ -1442,7 +1438,7 @@ mod tests {
             1,
             "no row was written"
         );
-        let (id, _) = state.library.reveal.get_untracked().expect("a reveal");
+        let id = state.library.reveal.get_untracked().expect("a reveal").id;
         assert_eq!(id, "b1", "and the light lands on the book the folder holds");
         assert!(!state.library.conflict_open.get_untracked());
     }

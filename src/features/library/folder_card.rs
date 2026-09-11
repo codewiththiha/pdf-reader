@@ -36,7 +36,7 @@ use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
-use library_core::shelf::{Shelf, children_of};
+use library_core::shelf::{Shelf, children_of, find};
 use library_core::text::plural;
 
 use crate::features::library::context_menu::MenuTarget;
@@ -74,27 +74,15 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let id = shelf.id.clone();
     let watched_folder = shelf.kind.folder_id().map(str::to_string);
 
-    let name_id = id.clone();
-    let name = Signal::derive(move || {
-        state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == name_id)
-                .map(|s| s.name.clone())
-                .unwrap_or_default()
-        })
-    });
+    let name = state.library.shelf_name_signal(&id);
 
     // Two counts, one line: what the folder holds, and what it holds it in.
     let count_id = id.clone();
     let counts = Signal::derive(move || {
-        let books = state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == count_id)
-                .map(|s| s.books.len())
-                .unwrap_or_default()
-        });
+        let books = state
+            .library
+            .shelves
+            .with(|shelves| find(shelves, &count_id).map(|s| s.books.len()).unwrap_or_default());
         let inside = state
             .library
             .shelves
@@ -117,10 +105,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     let selecting = state.library.selecting;
     // The membership the plate's check mark paints from — the same set the
     // shell's own selected class reads.
-    let check_id = id.clone();
-    let is_selected = Signal::derive(move || {
-        state.library.selected.with(|s| s.contains(&check_id))
-    });
+    let is_selected = state.library.is_selected(&id);
 
     // The shelf's one press contract, the same wiring a book wears (see
     // `crate::features::library::gestures`) with the folder's own answers:
@@ -129,13 +114,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     // one of three held folders is the whole of a multi-drag.
     // The folder half of the reveal: a folder link's tap lights the folder
     // itself, on the same signal and nonce a book's reveal rides.
-    let reveal_id = id.clone();
-    let reveal_class = Signal::derive(move || {
-        state
-            .library
-            .reveal
-            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
-    });
+    let reveal_class = state.library.is_revealed(&id);
 
     let open_id = id.clone();
     let target_id = id.clone();
@@ -218,11 +197,7 @@ fn plate_items(state: AppState, shelf_id: &str) -> Vec<PlateItem> {
                     .iter()
                     .map(|s| s.id.clone())
                     .collect(),
-                shelves
-                    .iter()
-                    .find(|s| s.id == shelf_id)
-                    .map(|s| s.books.clone())
-                    .unwrap_or_default(),
+                find(shelves, shelf_id).map(|s| s.books.clone()).unwrap_or_default(),
             )
         });
     // The plate is covers, and a link has none: it is a pointer at a book

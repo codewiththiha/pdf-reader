@@ -129,15 +129,11 @@ fn current_shelf_id(state: AppState) -> Option<String> {
 
 /// The name a shelf has right now. Read when an action runs rather than when the
 /// crumb is built, so renaming the same shelf twice starts from what it is called
-/// now and not from what it was called at mount.
+/// now and not from what it was called at mount. The library's own accessor
+/// rather than a walk of the list here: a crumb, a folder card and a tree row all
+/// ask the same question, and one of them has to own the answer.
 fn shelf_name_now(state: AppState, shelf_id: &str) -> String {
-    state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .find(|s| s.id == shelf_id)
-            .map(|s| s.name.clone())
-            .unwrap_or_default()
-    })
+    state.library.shelf_name(shelf_id)
 }
 
 
@@ -155,7 +151,7 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
         state.library.shelves.with(|shelves| {
             // A shelf the list no longer holds answers as the root rather than as a
             // crumb with no name in it.
-            let Some(current) = shelves.iter().find(|s| s.id == id) else {
+            let Some(current) = library_core::shelf::find(shelves, &id) else {
                 return Vec::new();
             };
             let of = |shelf: &Shelf| {

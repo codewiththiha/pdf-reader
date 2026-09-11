@@ -17,9 +17,8 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use app_chrome::icon::IconName;
-use library_core::folder::WatchedFolder;
 use library_core::ledger::{Recovered, index_by_fp, recoverables};
-use library_core::shelf::ALL_SHELF;
+use library_core::shelf::{ALL_SHELF, find};
 use library_core::text::{human_age, human_size};
 
 use crate::components::primitives::menu::menu_item::MenuItem;
@@ -97,7 +96,7 @@ impl RestoreRow {
 /// Build the rows from the folder's ledger. Synchronous and cheap: two lists the
 /// last scan already wrote.
 fn candidates(state: AppState, folder_id: &str) -> Vec<RestoreRow> {
-    let Some(folder) = folder_of(state, folder_id) else {
+    let Some(folder) = state.library.folder(folder_id) else {
         return Vec::new();
     };
     let rows = state.library.books.get_untracked();
@@ -111,15 +110,6 @@ fn candidates(state: AppState, folder_id: &str) -> Vec<RestoreRow> {
         .into_iter()
         .map(|item| RestoreRow { item, gone: false })
         .collect()
-}
-
-/// The folder a removed-book row would be restored through, and its root — which
-/// is where the "open the picker here" row starts.
-fn folder_of(state: AppState, folder_id: &str) -> Option<WatchedFolder> {
-    state
-        .library
-        .folders
-        .with_untracked(|folders| folders.iter().find(|f| f.id == folder_id).cloned())
 }
 
 /// Pick files and import them, read in place.
@@ -182,10 +172,7 @@ pub(crate) fn AddMenu(
             return None;
         }
         state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == id)
-                .and_then(|s| s.kind.folder_id().map(str::to_string))
+            find(shelves, &id).and_then(|s| s.kind.folder_id().map(str::to_string))
         })
     });
 
@@ -279,7 +266,7 @@ pub(crate) fn AddMenu(
                             }
                         />
                         {move || {
-                            folder_id.get().and_then(|id| folder_of(state, &id)).map(|folder| {
+                            folder_id.get().and_then(|id| state.library.folder(&id)).map(|folder| {
                                 let root = folder.root.clone();
                                 view! {
                                     <>
@@ -353,12 +340,7 @@ fn current_folder_id(state: AppState) -> Option<String> {
     if shelf_id == ALL_SHELF {
         return None;
     }
-    state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .find(|s| s.id == shelf_id)
-            .and_then(|s| s.kind.folder_id().map(str::to_string))
-    })
+    state.library.shelf_folder_id(&shelf_id)
 }
 
 /// One restore row. Its own component because a row is four strings and a branch,

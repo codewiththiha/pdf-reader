@@ -76,13 +76,7 @@ fn link_policy(state: AppState, id: &str, name: &str, container: Option<String>)
 pub(crate) fn LinkCard(state: AppState, id: String, name: String, to_shelf: bool) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
-    let reveal_id = id.clone();
-    let reveal_class = Signal::derive(move || {
-        state
-            .library
-            .reveal
-            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
-    });
+    let reveal_class = state.library.is_revealed(&id);
     let remove_id = id.clone();
     let policy = link_policy(state, &id, &name, None);
     let remove = move |ev: leptos::ev::MouseEvent| {
@@ -149,13 +143,7 @@ pub(crate) fn LinkRow(
     // sheet has no ✕ to draw.
     let remove_sheet = use_context::<RemoveSheet>();
 
-    let reveal_id = id.clone();
-    let reveal_class = Signal::derive(move || {
-        state
-            .library
-            .reveal
-            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
-    });
+    let reveal_class = state.library.is_revealed(&id);
     let remove_id = id.clone();
     let policy = link_policy(state, &id, &name, parent);
     let indent = row_indent(depth);

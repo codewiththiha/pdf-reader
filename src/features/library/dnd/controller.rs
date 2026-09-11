@@ -26,7 +26,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use library_core::book::{Row, find_row};
-use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
+use library_core::shelf::{ALL_SHELF, Shelf, can_nest, find};
 
 use super::effect::{
     Band, DropEffect, DropQuery, FoldPreview, drop_effect, fold_items, fold_preview,
@@ -452,11 +452,7 @@ impl DragController {
             for id in &held.folders {
                 tiles.push(GhostTile {
                     cover: None,
-                    label: shelves
-                        .iter()
-                        .find(|each| &each.id == id)
-                        .map(|each| each.name.clone())
-                        .unwrap_or_default(),
+                    label: find(&shelves, id).map(|each| each.name.clone()).unwrap_or_default(),
                     folder: true,
                 });
             }
@@ -684,7 +680,7 @@ impl DragController {
     /// itself.
     fn can_sibling_held(&self, held: &DragPayload, anchor: &str) -> bool {
         self.state.library.shelves.with_untracked(|shelves| {
-            let Some(target) = shelves.iter().find(|s| s.id == anchor) else {
+            let Some(target) = find(shelves, anchor) else {
                 return false;
             };
             held.folders.iter().all(|each| {

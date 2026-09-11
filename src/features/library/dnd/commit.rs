@@ -15,7 +15,7 @@
 
 use leptos::prelude::*;
 
-use library_core::shelf::ALL_SHELF;
+use library_core::shelf::{ALL_SHELF, find};
 
 use super::controller::DragPayload;
 use super::effect::DropEffect;
@@ -161,9 +161,7 @@ fn insert_anchor(
         Some(id) => {
             let index = reorder.then(|| {
                 state.library.shelves.with_untracked(|shelves| {
-                    shelves
-                        .iter()
-                        .find(|each| each.id == id)
+                    find(shelves, &id)
                         .and_then(|each| each.books.iter().position(|member| member == book_id))
                         .map_or(0, |at| at + step)
                 })

@@ -115,22 +115,13 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
 
     // The card's two own classes: the reveal's light, and the grey a book
     // wears whose address stopped resolving.
-    let reveal_id = id.clone();
-    let reveal_class = Signal::derive(move || {
-        state
-            .library
-            .reveal
-            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
-    });
+    let reveal_class = state.library.is_revealed(&id);
     let missing_class = Signal::derive(move || {
         facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
     });
     // The membership the cover's check mark paints from — the same set the
     // shell's own selected class reads.
-    let check_id = id.clone();
-    let is_selected = Signal::derive(move || {
-        state.library.selected.with(|s| s.contains(&check_id))
-    });
+    let is_selected = state.library.is_selected(&id);
 
     // The press contract's three surface answers (see
     // `crate::features::library::gestures`). Opening names the ROW, not its

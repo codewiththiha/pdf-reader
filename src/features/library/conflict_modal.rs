@@ -138,15 +138,13 @@ impl Info {
         let where_line = if ask.arrival.shelf_id == ALL_SHELF {
             "in your library".to_string()
         } else {
-            let name = state.library.shelves.with_untracked(|shelves| {
-                shelves
-                    .iter()
-                    .find(|s| s.id == ask.arrival.shelf_id)
-                    .map(|s| s.name.clone())
-            });
-            match name {
-                Some(name) => format!("on “{name}”"),
-                None => "on this shelf".to_string(),
+            // Empty means the shelf went while the sheet was up, which is
+            // the same answer as the root's: a level with no name to speak.
+            // `sanitize` drops a shelf whose name is blank, so nothing on a
+            // loaded list answers with one.
+            match state.library.shelf_name(&ask.arrival.shelf_id) {
+                name if !name.is_empty() => format!("on “{name}”"),
+                _ => "on this shelf".to_string(),
             }
         };
         // One read of both lists, so the promise on the row and the answer the
@@ -578,14 +576,7 @@ fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
     let folder_name = ask
         .folder_id
         .as_deref()
-        .and_then(|folder_id| {
-            state.library.folders.with_untracked(|folders| {
-                folders
-                    .iter()
-                    .find(|f| f.id == folder_id)
-                    .map(|f| folder_label(&f.root))
-            })
-        })
+        .and_then(|folder_id| state.library.folder(folder_id).map(|f| folder_label(&f.root)))
         .unwrap_or_else(|| "a folder read in place".to_string());
     let book_name = ask.existing_name.clone();
     let subtitle = if waiting > 0 {
@@ -596,15 +587,11 @@ fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
     let where_line = if ask.arrival.shelf_id == ALL_SHELF {
         "in your library".to_string()
     } else {
-        let name = state.library.shelves.with_untracked(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == ask.arrival.shelf_id)
-                .map(|s| s.name.clone())
-        });
-        match name {
-            Some(name) => format!("on “{name}”"),
-            None => "on this shelf".to_string(),
+        // Empty means the shelf went while the sheet was up, which reads the
+        // same as the root's: a level with no name to speak.
+        match state.library.shelf_name(&ask.arrival.shelf_id) {
+            name if !name.is_empty() => format!("on “{name}”"),
+            _ => "on this shelf".to_string(),
         }
     };
     let question = format!(

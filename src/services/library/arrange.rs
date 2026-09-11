@@ -154,7 +154,7 @@ pub fn move_many_to_shelf(
                     shelf::forget(&mut shelf.books, book_id);
                 }
             }
-            if let Some(shelf) = shelf::find_mut(shelves, to) {
+            if let Some(shelf) = shelf::find_mut(shelves, &to) {
                 place_many(&mut shelf.books, &book_ids, index);
             }
         });
@@ -464,9 +464,7 @@ pub(crate) fn converts_on_move_to(state: AppState, row_id: &str, to: &str) -> bo
     if to == ALL_SHELF {
         return true;
     }
-    let owner = state.library.shelves.with_untracked(|shelves| {
-        shelf::find(shelves, to).and_then(|s| s.kind.folder_id().map(str::to_string))
-    });
+    let owner = state.library.shelf_folder_id(to);
     owner.is_none_or(|owner| !placers.contains(&owner))
 }
 
@@ -640,9 +638,7 @@ fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
     }) else {
         return;
     };
-    let Some(folder_id) = state.library.shelves.with_untracked(|shelves| {
-        shelf::find(shelves, shelf_id).and_then(|s| s.kind.folder_id().map(str::to_string))
-    }) else {
+    let Some(folder_id) = state.library.shelf_folder_id(shelf_id) else {
         return;
     };
     let mut bound = false;
@@ -1154,7 +1150,7 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
     });
     if let Some(folder_id) = detached {
         state.library.folders.update(|folders| {
-            if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
+            if let Some(folder) = folder_ops::find_mut(folders, &folder_id) {
                 folder.shelf_map.retain(|_, sid| sid != shelf_id);
             }
         });

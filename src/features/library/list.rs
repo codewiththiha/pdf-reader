@@ -65,7 +65,7 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::{Book, Row, find_by_id};
 use library_core::query;
-use library_core::shelf::{ALL_SHELF, Shelf, children_of};
+use library_core::shelf::{ALL_SHELF, Shelf, children_of, find};
 use library_core::sort;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
@@ -212,23 +212,10 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     let members_id = id.clone();
     let members = Signal::derive(move || {
         state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == members_id)
-                .map(|s| s.books.clone())
-                .unwrap_or_default()
+            find(shelves, &members_id).map(|s| s.books.clone()).unwrap_or_default()
         })
     });
-    let name_id = id.clone();
-    let name = Signal::derive(move || {
-        state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == name_id)
-                .map(|s| s.name.clone())
-                .unwrap_or_default()
-        })
-    });
+    let name = state.library.shelf_name_signal(&id);
     let open_id = id.clone();
     let open = Signal::derive(move || ctx.expanded.with(|set| set.contains(&open_id)));
 
@@ -297,13 +284,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     // and the Space key it owns before the shared keyboard halves.
     // The folder half of the reveal, at this density: the row the folder
     // wears in the tree lights the way the card does in the grid.
-    let reveal_id = id.clone();
-    let reveal_class = Signal::derive(move || {
-        state
-            .library
-            .reveal
-            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
-    });
+    let reveal_class = state.library.is_revealed(&id);
 
     let target_id = id.clone();
     let policy = ShelfItemPolicy {
@@ -552,10 +533,7 @@ fn ListRow(
 
     // The membership the cover's check mark paints from — the same set the
     // shell's own selected class reads.
-    let check_id = id.clone();
-    let is_selected = Signal::derive(move || {
-        state.library.selected.with(|s| s.contains(&check_id))
-    });
+    let is_selected = state.library.is_selected(&id);
 
     // The shelf's one press contract, the same one the grid's cards wear — a
     // row and a card answer to a hold, a tap and a movement alike at two
@@ -587,13 +565,7 @@ fn ListRow(
     };
 
     // The row's two own classes: the reveal's light and the missing grey.
-    let reveal_id = id.clone();
-    let reveal_class = Signal::derive(move || {
-        state
-            .library
-            .reveal
-            .with(|at| at.as_ref().is_some_and(|(each, _)| each == reveal_id.as_str()))
-    });
+    let reveal_class = state.library.is_revealed(&id);
     let missing_class = Signal::derive(move || {
         facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
     });

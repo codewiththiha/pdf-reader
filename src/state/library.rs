@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use library_core::blob::LibraryBlob;
 use library_core::book::{Book, Row, book_rows};
-use library_core::folder::WatchedFolder;
+use library_core::folder::{self as folder_ops, WatchedFolder};
 use library_core::id;
 use library_core::shelf::{self, ALL_SHELF, Shelf};
 use library_core::text::plural;
@@ -226,6 +226,59 @@ impl ImportTask {
 /// search that survived would be one the reader did not type, a dock card that
 /// survived would report an import that finished last week, and a selection that
 /// survived would be a set of books the reader cannot see selected.
+/// One "light this up" gesture: the row or shelf to scroll to, and the nonce
+/// that makes a second reveal of the SAME thing a second reveal.
+///
+/// A named value rather than the `(id, nonce)` pair it replaced, because six
+/// surfaces ask "am I the one being revealed" and each of them destructured the
+/// pair to compare its first half. A counter that reads as `.1` at every one of
+/// those sites is a fact nobody can see.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reveal {
+    /// The row's or the shelf's id. A shelf id is a letter apart from a book's
+    /// ([`library_core::id::is_shelf`]), so one signal serves both kinds and the
+    /// surfaces tell whose reveal is whose by the letter.
+    pub id: String,
+    /// Monotonic, so revealing one thing twice in a row works twice: a plain
+    /// `Option<String>` would be unchanged by the second and notify nobody.
+    pub nonce: u64,
+}
+
+/// Which of the two sentences the "already a shelf here" note says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteKind {
+    /// The gate's: a rung inside a tree the library reads in place, said BEFORE
+    /// any walk ran, because a linked shelf IS the OS folder and there is no
+    /// second instance of it to make.
+    Gated,
+    /// The report's: a re-import of the tree's own root DID walk and reconcile,
+    /// and found nothing new — every book already stood and no log came back.
+    NothingNew,
+}
+
+impl NoteKind {
+    /// The line under the note's heading.
+    pub fn sublabel(self) -> &'static str {
+        match self {
+            NoteKind::Gated => "Already in the library",
+            NoteKind::NothingNew => "Nothing new to import",
+        }
+    }
+}
+
+/// The "that folder is already a shelf here" note. Not a question: the modal's
+/// one job is to say the sentence and then light the shelf up, and the highlight
+/// rides its CLOSE so a light cannot burn its seconds behind a modal nobody has
+/// dismissed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AlreadyNote {
+    /// The shelf to reveal when the note closes.
+    pub shelf_id: String,
+    /// The name the modal speaks.
+    pub name: String,
+    pub kind: NoteKind,
+}
+
 #[derive(Clone, Copy)]
 pub struct LibraryState {
     /// Every ROW, in the order the "All" shelf shows them: the books, and the
@@ -244,10 +297,12 @@ pub struct LibraryState {
     pub shelf: RwSignal<String>,
     /// The import dock's cards, oldest first.
     pub tasks: RwSignal<Vec<ImportTask>>,
-    /// The book to scroll to and light up, with a nonce so revealing the same
-    /// book twice in a row re-triggers. Written by a "show it in its shelf"
-    /// action, cleared by the shelf that scrolled to it.
-    pub reveal: RwSignal<Option<(String, u64)>>,
+    /// The row or shelf to scroll to and light up, with a nonce so revealing the
+    /// same one twice in a row re-triggers. Written by a "show it in its shelf"
+    /// action, cleared by the shelf that scrolled to it. Ask
+    /// [`Self::is_revealed`] rather than reading the signal: the nonce is the
+    /// shelf's business and no surface wants it.
+    pub reveal: RwSignal<Option<Reveal>>,
     /// Whether a long-press has put the shelf into multi-select. While it is on a
     /// click toggles instead of opening, and the action bar owns the bottom-right
     /// corner.
@@ -289,13 +344,10 @@ pub struct LibraryState {
     /// The pair of [`Self::shelf_conflict`] the lane and the Escape rule hold,
     /// for the reason [`Self::conflict_open`] exists.
     pub shelf_conflict_open: RwSignal<bool>,
-    /// The "that folder is already a shelf here" answer: the shelf's id, the
-    /// name the modal speaks, and whether the sentence is the gate's — a rung
-    /// inside a tree the library reads in place, told before any walk — or
-    /// the report of a re-import walk that found nothing new. Not a question
-    /// either way — the modal's one job is to say the sentence and then light
-    /// the shelf up.
-    pub already_imported: RwSignal<Option<(String, String, bool)>>,
+    /// The "that folder is already a shelf here" note: which shelf to light when
+    /// it closes, the name the modal speaks, and which of the two sentences it
+    /// says. Not a question either way.
+    pub already_imported: RwSignal<Option<AlreadyNote>>,
     /// The pair of [`Self::already_imported`] the lane and the Escape rule
     /// hold, for the reason [`Self::conflict_open`] exists.
     pub already_imported_open: RwSignal<bool>,
@@ -363,6 +415,68 @@ impl LibraryState {
     /// surface just removed a no-op rather than a placement of nothing.
     pub fn row_name(&self, row_id: &str) -> String {
         self.row(row_id).map_or_else(String::new, |r| r.display_name())
+    }
+
+    /// The name a shelf has right now, read untracked. Empty for a shelf the
+    /// list no longer holds and for the root, which is not a shelf — the answer
+    /// [`shelf::find`] gives, and the reason the callers that used to walk the
+    /// list for it now ask here: a hand-rolled `find(|s| s.id == id)` answers the
+    /// root by luck, while `sanitize` happens to drop a row wearing that id.
+    pub fn shelf_name(&self, shelf_id: &str) -> String {
+        self.shelves.with_untracked(|shelves| {
+            shelf::find(shelves, shelf_id).map_or_else(String::new, |s| s.name.clone())
+        })
+    }
+
+    /// The same, reactively: what a folder card, a tree row and a crumb all
+    /// paint their own name from, so a rename reaches every one of them on the
+    /// frame it happens. One spelling rather than one derive per surface, and
+    /// one place that knows a shelf's name is `shelf::find`'s answer.
+    pub fn shelf_name_signal(&self, shelf_id: &str) -> Signal<String> {
+        let shelves = self.shelves;
+        let id = shelf_id.to_string();
+        Signal::derive(move || {
+            shelves.with(|list| shelf::find(list, &id).map_or_else(String::new, |s| s.name.clone()))
+        })
+    }
+
+    /// Whether `id` is the row or shelf being revealed right now — the light a
+    /// book card, a folder card, a link and a tree row all paint from.
+    pub fn is_revealed(&self, id: &str) -> Signal<bool> {
+        let reveal = self.reveal;
+        let id = id.to_string();
+        Signal::derive(move || reveal.with(|at| at.as_ref().is_some_and(|each| each.id == id)))
+    }
+
+    /// Whether `id` is in the page's selection — the check mark on a cover, on a
+    /// folder's plate and on a row's thumbnail. The same set the shelf item's
+    /// own selected class reads, so a card cannot check a book it is not dimmed
+    /// for.
+    pub fn is_selected(&self, id: &str) -> Signal<bool> {
+        let selected = self.selected;
+        let id = id.to_string();
+        Signal::derive(move || selected.with(|set| set.contains(&id)))
+    }
+
+    /// The watched folder a shelf was cut from, when it was cut from one.
+    ///
+    /// The question four call sites asked by walking the shelf list for a row
+    /// and then reading its kind: whether a move is a departure (a book leaving
+    /// ground its folder owns), whether a landing is a return (a copy back on a
+    /// shelf of the folder it left), which folder's import menu a card belongs
+    /// to, and what a folder link's row says. One answer here, so the four
+    /// cannot drift about what "this shelf's folder" means.
+    pub fn shelf_folder_id(&self, shelf_id: &str) -> Option<String> {
+        self.shelves.with_untracked(|shelves| {
+            shelf::find(shelves, shelf_id).and_then(|s| s.kind.folder_id().map(str::to_string))
+        })
+    }
+
+    /// The watched folder an id names, cloned and read untracked: what the
+    /// folder's import menu and the covered sheet both start from.
+    pub fn folder(&self, folder_id: &str) -> Option<WatchedFolder> {
+        self.folders
+            .with_untracked(|folders| folder_ops::find(folders, folder_id).cloned())
     }
 
     /// Give a row a new name: a book's title, a link's own. What the sheet's

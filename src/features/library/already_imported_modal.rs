@@ -31,6 +31,7 @@ use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::services::library::conflict;
 use crate::services::library::reveal_shelf;
+use crate::state::library::{AlreadyNote, NoteKind};
 use crate::state::AppState;
 
 #[component]
@@ -44,11 +45,11 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
         if open.get() {
             return;
         }
-        let Some((shelf_id, _, _)) = state.library.already_imported.get_untracked() else {
+        let Some(note) = state.library.already_imported.get_untracked() else {
             return;
         };
         state.library.already_imported.set(None);
-        reveal_shelf(state, &shelf_id);
+        reveal_shelf(state, &note.shelf_id);
     });
 
     view! {
@@ -58,29 +59,28 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
             width="min(92vw, 400px)"
         >
             {move || {
-                let (_, name, nothing_new) = state.library.already_imported.get()?;
+                let AlreadyNote { name, kind, .. } = state.library.already_imported.get()?;
                 let tooltip = name.clone();
-                let sublabel = if nothing_new {
-                    "Nothing new to import"
-                } else {
-                    "Already in the library"
-                };
+                let sublabel = kind.sublabel();
                 // Two sentences, one shelf light. The gate's is for a pick
                 // that never walked — a rung inside a tree the library reads
                 // in place; the report's is for a re-import that DID walk and
                 // found every book already standing.
-                let sentence = if nothing_new {
-                    "This folder is already in the library, and the library reads it where it \
-                     stands. The import walked it again and found nothing new: every book it \
-                     holds is on the shelf already, no removed or moved-away book came back, \
-                     and nothing was copied, moved, or asked. Close this and the shelf lights \
-                     up for you."
-                } else {
-                    "This folder is already imported — the library reads it where it stands, \
-                     and a folder it reads in place cannot be imported twice. Nothing was \
-                     copied, moved, or asked. Close this and the shelf it is on lights up for \
-                     you; if the folder you picked is a subfolder of that shelf, the light \
-                     is on the shelf inside the tree."
+                let sentence = match kind {
+                    NoteKind::NothingNew => {
+                        "This folder is already in the library, and the library reads it where \
+                         it stands. The import walked it again and found nothing new: every \
+                         book it holds is on the shelf already, no removed or moved-away book \
+                         came back, and nothing was copied, moved, or asked. Close this and \
+                         the shelf lights up for you."
+                    }
+                    NoteKind::Gated => {
+                        "This folder is already imported — the library reads it where it stands, \
+                         and a folder it reads in place cannot be imported twice. Nothing was \
+                         copied, moved, or asked. Close this and the shelf it is on lights up for \
+                         you; if the folder you picked is a subfolder of that shelf, the light \
+                         is on the shelf inside the tree."
+                    }
                 };
                 Some(view! {
                     <>

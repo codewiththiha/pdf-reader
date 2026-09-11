@@ -16,6 +16,7 @@ use leptos::prelude::*;
 
 use library_core::shelf::{ALL_SHELF, containing, find};
 
+use crate::state::library::Reveal;
 use crate::state::AppState;
 
 /// Monotonic, so two reveals in the same millisecond are still two reveals.
@@ -24,10 +25,19 @@ static NONCE: AtomicU64 = AtomicU64::new(1);
 /// Go to a book: its shelf, then the card itself.
 pub fn reveal_book(state: AppState, book_id: &str) {
     navigate_to_shelf_of(state, book_id);
-    state.library.reveal.set(Some((
-        book_id.to_string(),
-        NONCE.fetch_add(1, Ordering::Relaxed),
-    )));
+    light(state, book_id);
+}
+
+/// The one write a reveal is: what to light, and the nonce that makes a second
+/// reveal of the SAME thing a second reveal. A book's reveal and a shelf's go
+/// through it, so the six surfaces asking
+/// [`crate::state::library::LibraryState::is_revealed`] read one shape and the
+/// nonce stays this module's business rather than theirs.
+fn light(state: AppState, id: &str) {
+    state.library.reveal.set(Some(Reveal {
+        id: id.to_string(),
+        nonce: NONCE.fetch_add(1, Ordering::Relaxed),
+    }));
 }
 
 /// Go to a shelf: the level it hangs on, then the folder itself, lit.
@@ -46,10 +56,7 @@ pub fn reveal_shelf(state: AppState, shelf_id: &str) {
     if state.library.shelf.get_untracked() != level {
         state.library.shelf.set(level);
     }
-    state.library.reveal.set(Some((
-        shelf_id.to_string(),
-        NONCE.fetch_add(1, Ordering::Relaxed),
-    )));
+    light(state, shelf_id);
 }
 
 /// Put the breadcrumb under the shelf a book is filed on — the FIRST one, in
