@@ -80,9 +80,37 @@ pub fn plural(count: usize, one: &str, many: &str) -> String {
     }
 }
 
+/// Where the reader left off, as the one line a shelf row has room for:
+/// "Page 12 of 340" when the book has reported a length, "Page 12" when it
+/// has not. Spelled here rather than at each of the three surfaces that show
+/// it — the grid's card, the list's row and the removal's receipt — because
+/// a resume point the receipt words differently from the shelf is two
+/// answers about one book.
+pub fn page_line(page: u32, num_pages: u32) -> String {
+    if num_pages > 0 {
+        format!("Page {page} of {num_pages}")
+    } else {
+        format!("Page {page}")
+    }
+}
+
+/// The name to show for a document: its own title when it has one worth
+/// showing, else the stem of its address, else the address. One chain rather
+/// than one spelling per caller, because a book, a tombstone and a restore
+/// row that each fell back their own way would eventually disagree about the
+/// same file.
+pub fn display_or_stem(title: Option<&str>, path: &str) -> String {
+    if let Some(title) = title
+        && !title.trim().is_empty()
+    {
+        return title.to_string();
+    }
+    reader_core::filename::file_stem_from_path(path).unwrap_or_else(|| path.to_string())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{human_age, human_size, plural};
+    use super::{display_or_stem, human_age, human_size, page_line, plural};
 
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
@@ -145,6 +173,23 @@ mod tests {
         // The irregular plural is the caller's to spell, which is the whole of
         // why the rule takes both words.
         assert_eq!(plural(2, "shelf", "shelves"), "2 shelves");
+    }
+
+    #[test]
+    fn a_resume_point_reads_as_one_line() {
+        assert_eq!(page_line(12, 340), "Page 12 of 340");
+        assert_eq!(page_line(12, 0), "Page 12");
+        assert_eq!(page_line(1, 1), "Page 1 of 1");
+    }
+
+    #[test]
+    fn a_name_falls_back_to_the_stem_and_then_to_the_address() {
+        assert_eq!(display_or_stem(Some("Dune"), "/books/x.pdf"), "Dune");
+        // A blank title is no title: the stem of the address shows.
+        assert_eq!(display_or_stem(Some("  "), "/books/dune.pdf"), "dune");
+        assert_eq!(display_or_stem(None, "/books/dune.pdf"), "dune");
+        // An address with no stem to give answers with itself rather than "".
+        assert_eq!(display_or_stem(None, ""), "");
     }
 
     #[test]

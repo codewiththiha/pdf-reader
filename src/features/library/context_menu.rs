@@ -38,7 +38,7 @@ use crate::features::library::selection::{
     select_on_screen,
 };
 use crate::services::document;
-use crate::services::library::{delete_shelf, new_shelf, new_shelf_in, relink_dialog};
+use crate::services::library::{create_shelf_and_enter, delete_shelf, relink_dialog};
 use crate::state::AppState;
 
 /// What was right-clicked.
@@ -257,7 +257,7 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                 label="New shelf"
                 on_click=move || {
                     close.run(());
-                    new_shelf_in(state, &inside_id);
+                    create_shelf_and_enter(state, Some(&inside_id));
                 }
             />
             <div class="my-1"><Separator /></div>
@@ -343,7 +343,7 @@ fn LevelMenu(
                 label="New shelf"
                 on_click=move || {
                     close.run(());
-                    new_shelf(state);
+                    create_shelf_and_enter(state, None);
                 }
             />
             {move || {

@@ -19,9 +19,8 @@ use wasm_bindgen_futures::spawn_local;
 use app_chrome::icon::IconName;
 use library_core::folder::WatchedFolder;
 use library_core::ledger::{Recovered, index_by_fp, recoverables};
-use library_core::shelf::{Shelf, ALL_SHELF};
+use library_core::shelf::ALL_SHELF;
 use library_core::text::{human_age, human_size};
-use reader_core::filename::file_stem_from_path;
 
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
@@ -47,11 +46,9 @@ impl RestoreRow {
     fn label(&self) -> String {
         match &self.item {
             Recovered::Deleted(entry) => entry.label(),
-            Recovered::Moved { title, path, .. } => title
-                .clone()
-                .filter(|t| !t.trim().is_empty())
-                .or_else(|| file_stem_from_path(path))
-                .unwrap_or_else(|| path.clone()),
+            Recovered::Moved { title, path, .. } => {
+                library_core::text::display_or_stem(title.as_deref(), path)
+            }
         }
     }
 
@@ -100,37 +97,19 @@ impl RestoreRow {
 /// Build the rows from the folder's ledger. Synchronous and cheap: two lists the
 /// last scan already wrote.
 fn candidates(state: AppState, folder_id: &str) -> Vec<RestoreRow> {
-    let folder = state
-        .library
-        .folders
-        .with_untracked(|folders| folders.iter().find(|f| f.id == folder_id).cloned());
-    let Some(folder) = folder else {
+    let Some(folder) = folder_of(state, folder_id) else {
         return Vec::new();
     };
     let rows = state.library.books.get_untracked();
     let shelves = state.library.shelves.get_untracked();
     // A link has no fingerprint, so it is not in this index and a folder can
     // never offer one back: it is a pointer at a book, not a copy of a file.
+    // Which shelves the folder owns and which a book is on are the ledger's
+    // own questions, asked of the shelf list inside `recoverables`.
     let index = index_by_fp(&rows);
-    let owned = folder_shelf_ids(&shelves, folder_id);
-    let membership = |book_id: &str| -> Vec<(String, String)> {
-        shelves
-            .iter()
-            .filter(|s| s.books.iter().any(|m| m == book_id))
-            .map(|s| (s.id.clone(), s.name.clone()))
-            .collect()
-    };
-    recoverables(&folder, &index, &membership, &owned)
+    recoverables(&folder, &index, &shelves)
         .into_iter()
         .map(|item| RestoreRow { item, gone: false })
-        .collect()
-}
-
-fn folder_shelf_ids(shelves: &[Shelf], folder_id: &str) -> Vec<String> {
-    shelves
-        .iter()
-        .filter(|s| s.kind.folder_id() == Some(folder_id))
-        .map(|s| s.id.clone())
         .collect()
 }
 
@@ -329,7 +308,7 @@ pub(crate) fn AddMenu(
                                         <div class="my-1"><Separator /></div>
                                         <SectionLabel text="Restore" />
                                         {move || {
-                                            let now = js_sys::Date::now() as u64;
+                                            let now = crate::time::now_ms();
                                             rows.get()
                                                 .into_iter()
                                                 .map(|row| {

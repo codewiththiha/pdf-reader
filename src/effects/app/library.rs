@@ -86,7 +86,7 @@ fn install_progress_sink(state: AppState) {
 /// Rescan unless one just ran. The cooldown is the whole guard: a rescan that
 /// finds nothing writes nothing, so the only cost of a second one is the walk.
 fn rescan_once(state: AppState) {
-    let now = js_sys::Date::now() as u64;
+    let now = crate::time::now_ms();
     let last = LAST_RESCAN.load(Ordering::Relaxed);
     if now.saturating_sub(last) < RESCAN_COOLDOWN_MS {
         return;

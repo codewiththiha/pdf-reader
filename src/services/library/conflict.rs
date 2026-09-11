@@ -360,6 +360,10 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
                 &ask.arrival.shelf_id,
                 ask.arrival.index,
             );
+            // The row may read from an address the cover cache has no art
+            // for; `land_file` leaves the queue to its caller, and this is a
+            // landing of one.
+            super::covers::backfill_missing(state);
         }
     }
 }

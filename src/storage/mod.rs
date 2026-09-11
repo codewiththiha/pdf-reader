@@ -185,7 +185,7 @@ pub fn load_library() -> LibraryBlob {
         return LibraryBlob::default();
     }
     let count = legacy.len();
-    let mut blob = migrate_v1(legacy, js_sys::Date::now() as u64);
+    let mut blob = migrate_v1(legacy, crate::time::now_ms());
     sanitize_library(&mut blob);
     log_info(&format!("[storage] migrated {count} books from {LEGACY_KEY}"));
     blob

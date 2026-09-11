@@ -593,13 +593,9 @@ fn ListRow(
             find_by_id(rows, &facts_id).map(|b| RowFacts {
                 path: b.path().to_string(),
                 title: b.title(),
-                author_line: b.author().unwrap_or_else(|| {
-                    if b.num_pages > 0 {
-                        format!("Page {} of {}", b.page, b.num_pages)
-                    } else {
-                        format!("Page {}", b.page)
-                    }
-                }),
+                author_line: b
+                    .author()
+                    .unwrap_or_else(|| library_core::text::page_line(b.page, b.num_pages)),
                 missing: b.missing,
                 percent: b.progress().map(|p| format!("{:.0}%", p * 100.0)),
             })
@@ -747,9 +743,7 @@ fn ListRow(
                             })
                         }}
                         {move || {
-                            let Some(f) = facts.get() else {
-                                return None;
-                            };
+                            let f = facts.get()?;
                             state
                                 .library
                                 .covers

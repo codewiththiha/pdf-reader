@@ -238,10 +238,7 @@ fn Sheet(
     let stored_count = info.stored_count;
     let stored_bytes = info.stored_bytes;
     let page_line = match info.books.first() {
-        Some(book) if !many && book.num_pages > 0 => {
-            format!("Page {} of {}", book.page, book.num_pages)
-        }
-        Some(book) if !many => format!("Page {}", book.page),
+        Some(book) if !many => library_core::text::page_line(book.page, book.num_pages),
         _ => String::new(),
     };
     let started = !many

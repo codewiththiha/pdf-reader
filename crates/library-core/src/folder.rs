@@ -330,11 +330,7 @@ impl Tombstone {
 
     /// What a restore row calls the book: its own title, else the file's stem.
     pub fn label(&self) -> String {
-        self.title
-            .clone()
-            .filter(|t| !t.trim().is_empty())
-            .or_else(|| reader_core::filename::file_stem_from_path(&self.last_path))
-            .unwrap_or_else(|| self.last_path.clone())
+        crate::text::display_or_stem(self.title.as_deref(), &self.last_path)
     }
 }
 

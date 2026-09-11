@@ -21,11 +21,11 @@ use library_core::conflict::Arrival;
 use library_core::folder::Tombstone;
 use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
-use library_core::wire::StoreRequest;
 
 use super::conflict;
 use super::covers::prune_now;
 use crate::services::library as wire;
+use crate::time::now_ms;
 use crate::state::{AppState, Toast};
 
 /// Move books: onto `to` at `index`, and off `from` when the two differ.
@@ -516,11 +516,9 @@ pub(crate) fn drop_row(state: AppState, row_id: &str) -> Option<Row> {
 /// shelf and a tombstone that listed three would have to choose at restore time
 /// with less information than it has now.
 fn folder_shelf_of(shelves: &[Shelf], folder_id: &str, book_id: &str) -> Option<String> {
-    shelves
-        .iter()
-        .find(|s| {
-            s.kind.folder_id() == Some(folder_id) && s.books.iter().any(|m| m == book_id)
-        })
+    shelf::containing(shelves, book_id)
+        .into_iter()
+        .find(|s| s.kind.folder_id() == Some(folder_id))
         .map(|s| s.id.clone())
 }
 
@@ -538,48 +536,42 @@ pub fn also_show(state: AppState, book_id: &str, shelf_id: &str) {
     file_many(state, &[book_id.to_string()], shelf_id);
 }
 
-/// Make a shelf the reader owns, at the level they are looking at, and drill
-/// into it. Returns its id.
+/// Make a shelf the reader owns, and drill into it. Returns its id.
+///
+/// `parent` is where the shelf hangs: `None` is the level the page is on, and
+/// `Some` is a shelf the reader named — what a folder's own right-click mints,
+/// because a shelf made from inside a folder is that folder being subdivided,
+/// so the parent is the folder that was asked rather than the level the page
+/// happens to be on. A shelf the reader made three folders down appears three
+/// folders down, whichever level they are standing on.
 ///
 /// Named "New shelf" and left there on purpose: a modal that asks for a name
 /// before the shelf exists is a modal the reader has to answer to find out what
 /// they were asking for, and the breadcrumb's rename is one keystroke away and
 /// shows the shelf it is naming.
-pub fn new_shelf(state: AppState) -> String {
-    let id = create_shelf(state);
-    state.library.shelf.set(id.clone());
-    crate::storage::persist_library(state.library);
-    id
-}
-
-/// Make a shelf the reader owns INSIDE `parent`, and drill into it. Returns its
-/// id.
-///
-/// What a folder's own right-click mints: a shelf made from inside a folder is
-/// that folder being subdivided, so the parent is the folder that was asked
-/// rather than the level the page happens to be on — a shelf the reader made
-/// three folders down appears three folders down, whichever level they are
-/// standing on. The drill-in is [`new_shelf`]'s, for the reason it gives.
 ///
 /// No `can_nest` question: a shelf with no children yet closes no loop, and a
 /// virtual shelf filed inside a folder shelf is a filing the next rescan leaves
 /// alone — the scan re-hangs the folder's own rungs and nothing else.
-pub fn new_shelf_in(state: AppState, parent: &str) -> String {
-    let id = create_shelf_at(state, Some(parent.to_string()));
+pub fn create_shelf_and_enter(state: AppState, parent: Option<&str>) -> String {
+    let id = match parent {
+        Some(parent) => create_shelf_at(state, Some(parent.to_string())),
+        None => create_shelf_here(state),
+    };
     state.library.shelf.set(id.clone());
     crate::storage::persist_library(state.library);
     id
 }
 
-/// Make a shelf and stay where you are. What a bulk "file onto a new shelf" wants:
-/// the reader picked books on one shelf and asked for them to be on another, and
-/// navigating them away from the shelf they were looking at is an answer to a
-/// question they did not ask.
+/// Make a shelf at the level the reader is looking at, and stay where you are.
+/// What a bulk "file onto a new shelf" wants: the reader picked books on one
+/// shelf and asked for them to be on another, and navigating them away from
+/// the shelf they were looking at is an answer to a question they did not ask.
 ///
 /// Filed at the level the reader is looking at, because a shelf made from inside a
 /// folder is a folder being subdivided and one made from the root is a new top
 /// level; "All" is not a shelf, so it is the root.
-pub fn create_shelf(state: AppState) -> String {
+pub fn create_shelf_here(state: AppState) -> String {
     let at = state.library.shelf.get_untracked();
     let parent = (at != ALL_SHELF).then_some(at);
     create_shelf_at(state, parent)
@@ -776,26 +768,29 @@ pub fn rename_shelf(state: AppState, shelf_id: &str, name: &str) {
 /// pointer is cut here, so a returning shelf is a new shelf, not a ghost.
 pub fn delete_shelf(state: AppState, shelf_id: &str) {
     let was_inside = state.library.shelf.get_untracked() == shelf_id;
-    let stepped_out = state
-        .library
-        .shelves
-        .with_untracked(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == shelf_id)
-                .and_then(|gone| gone.parent.clone())
-        })
-        .unwrap_or_else(|| ALL_SHELF.to_string());
-    // The folder tree's own pointer at this shelf, cut as well. Left in place,
-    // a watched folder that places a book here again would file it onto a shelf
-    // that no longer exists — a ghost row the reader can neither see nor remove,
-    // and the one way a removal could lose a book rather than a shelf.
-    let detached = state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .find(|s| s.id == shelf_id)
-            .and_then(|s| s.kind.folder_id().map(str::to_string))
-    });
+    // One read of the shelf list answers both facts about the shelf that is
+    // going: the level to step out to, and — the folder tree's own pointer at
+    // this shelf, cut as well — which watched folder filed onto it. Left in
+    // place, a folder that places a book here again would file it onto a shelf
+    // that no longer exists: a ghost row the reader can neither see nor
+    // remove, and the one way a removal could lose a book rather than a shelf.
+    let (stepped_out, detached) =
+        state
+            .library
+            .shelves
+            .with_untracked(|shelves| {
+                shelves
+                    .iter()
+                    .find(|s| s.id == shelf_id)
+                    .map_or((ALL_SHELF.to_string(), None), |gone| {
+                        (
+                            gone.parent
+                                .clone()
+                                .unwrap_or_else(|| ALL_SHELF.to_string()),
+                            gone.kind.folder_id().map(str::to_string),
+                        )
+                    })
+            });
     state.library.shelves.update(|shelves| {
         shelf::lift_children(shelves, shelf_id);
         shelves.retain(|s| s.id != shelf_id);
@@ -818,9 +813,8 @@ pub fn delete_shelf(state: AppState, shelf_id: &str) {
 /// still where it was filed.
 pub fn memberships(state: AppState, book_id: &str) -> Vec<(String, String)> {
     state.library.shelves.with_untracked(|shelves| {
-        shelves
-            .iter()
-            .filter(|s| s.books.iter().any(|m| m == book_id))
+        shelf::containing(shelves, book_id)
+            .into_iter()
             .map(|s| (s.id.clone(), s.name.clone()))
             .collect()
     })
@@ -859,21 +853,8 @@ pub fn relink_book(state: AppState, book_id: String, path: String) {
             Origin::Linked { .. } => None,
             Origin::Stored { .. } => {
                 let task = format!("relink-{book_id}");
-                let requests = [StoreRequest {
-                    path: path.clone(),
-                    id: book_id.clone(),
-                }];
-                match wire::store_books(&task, &requests).await {
-                    Ok(results) => match results.into_iter().next() {
-                        Some(result) if result.is_ok() => Some(result.store),
-                        Some(result) => {
-                            let message = result
-                                .error
-                                .unwrap_or_else(|| "Could not copy that file.".to_string());
-                            return toast(state, message);
-                        }
-                        None => return toast(state, "Could not copy that file.".to_string()),
-                    },
+                match wire::copy_one_to_store(&task, &path, &book_id).await {
+                    Ok(store) => Some(store),
                     Err(message) => return toast(state, message),
                 }
             }
@@ -922,25 +903,6 @@ pub fn relink_dialog(state: AppState, book_id: String) {
             Err(message) => toast(state, message),
         }
     });
-}
-
-/// Milliseconds since the epoch — the stamp on a tombstone and the counter a
-/// shelf id is minted from.
-///
-/// Off wasm the clock is inert rather than a panic, for the reason
-/// `crate::storage` gives: the wasm-bindgen stubs abort when called natively,
-/// and a stamp nobody persists is fine at zero. Ids stay unique regardless, on
-/// `library_core::id`'s own counter — which is what lets a host test remove a
-/// book at all.
-fn now_ms() -> u64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as u64
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        0
-    }
 }
 
 fn toast(state: AppState, message: String) {

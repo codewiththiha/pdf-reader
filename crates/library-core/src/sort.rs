@@ -165,10 +165,22 @@ pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
 /// Members naming a row the library no longer has are dropped — a stale
 /// membership must not become a hole in the grid — and a member naming a LINK
 /// resolves to the link, which is a row the shelf renders like any other.
+///
+/// The resolution is one pass over the list into a map and one lookup per
+/// member, rather than a walk of the library per member: a level renders on
+/// every change to the books, and a shelf of hundreds inside a library of
+/// thousands is exactly where a quadratic walk becomes a dropped frame.
 pub fn ordered(rows: &[Row], members: &[String], key: SortKey, asc: bool) -> Vec<Row> {
+    let mut index: std::collections::HashMap<&str, &Row> =
+        std::collections::HashMap::with_capacity(rows.len());
+    for row in rows {
+        // First wins, which is `find`'s own answer for a list that somehow
+        // carries one id twice.
+        index.entry(row.id()).or_insert(row);
+    }
     let mut out: Vec<Row> = members
         .iter()
-        .filter_map(|id| rows.iter().find(|r| r.id() == id).cloned())
+        .filter_map(|id| index.get(id.as_str()).map(|row| (*row).clone()))
         .collect();
     sort_rows(&mut out, key, asc);
     out

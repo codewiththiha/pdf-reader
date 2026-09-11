@@ -107,11 +107,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                 author: b.author(),
                 missing: b.missing,
                 progress: b.progress(),
-                page_line: if b.num_pages > 0 {
-                    format!("Page {} of {}", b.page, b.num_pages)
-                } else {
-                    format!("Page {}", b.page)
-                },
+                page_line: library_core::text::page_line(b.page, b.num_pages),
             })
         })
     });
@@ -328,9 +324,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                 // under the title: it is a fact about the cover the reader is
                 // looking at, and the frame is what makes it flush with anything.
                 {move || {
-                    let Some(p) = facts.get().and_then(|f| f.progress) else {
-                        return None;
-                    };
+                    let p = facts.get().and_then(|f| f.progress)?;
                     let width = format!("{:.0}%", p * 100.0);
                     let now = format!("{:.0}", (p * 100.0).round());
                     Some(view! {

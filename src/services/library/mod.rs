@@ -35,9 +35,9 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    PurgeOpts, also_show, create_shelf, delete_shelf, file_many, memberships, move_many_to_shelf,
-    nest_many, nest_shelf, new_shelf, new_shelf_in, purge_books, relink_dialog, rename_shelf,
-    reorder_shelves_to_anchor, unfile_books,
+    PurgeOpts, also_show, create_shelf_and_enter, create_shelf_here, delete_shelf, file_many,
+    memberships, move_many_to_shelf, nest_many, nest_shelf, purge_books, relink_dialog,
+    rename_shelf, reorder_shelves_to_anchor, unfile_books,
 };
 pub use covers::backfill_missing;
 pub use reveal::reveal_book;
@@ -178,6 +178,30 @@ pub async fn store_books(
     requests: &[StoreRequest],
 ) -> Result<Vec<StoreResult>, String> {
     call(CMD_STORE, &StoreArgs { task, requests }).await
+}
+
+/// Copy ONE file into the app's store, answering with the stored address.
+///
+/// The single-file form of [`store_books`], for the two places that copy
+/// outside a batch — a restore's re-measured file and a relink's new source —
+/// which used to each hand-roll the request, the result match and the same
+/// two error sentences. A failure is the shell's own per-file answer, already
+/// a sentence; the caller decides where it goes (a dock card, a toast).
+pub(crate) async fn copy_one_to_store(task: &str, path: &str, id: &str) -> Result<String, String> {
+    let requests = [StoreRequest {
+        path: path.to_string(),
+        id: id.to_string(),
+    }];
+    match store_books(task, &requests).await {
+        Ok(results) => match results.into_iter().next() {
+            Some(result) if result.is_ok() => Ok(result.store),
+            Some(result) => Err(result
+                .error
+                .unwrap_or_else(|| "Could not copy that file.".to_string())),
+            None => Err("Could not copy that file.".to_string()),
+        },
+        Err(message) => Err(message),
+    }
 }
 
 /// Delete a copy the app made, when the book it belonged to is removed. Fire

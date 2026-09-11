@@ -40,7 +40,7 @@
 
 use std::collections::HashSet;
 
-use crate::book::{Row, duplicate_title, find_row, stem_of};
+use crate::book::{Row, duplicate_title, stem_of};
 use crate::scan::FoundFile;
 use crate::shelf::Shelf;
 
@@ -177,10 +177,11 @@ pub fn same_name(a: &str, b: &str) -> bool {
 ///   * names compare as [`same_name`], so a counter a previous answer minted
 ///     (`1_1`) is a different name from the one that arrives (`1`).
 pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> {
+    let index = row_index(rows);
     level_members(rows, shelves, &at.shelf_id)
         .into_iter()
         .find_map(|member| {
-            let row = find_row(rows, member)?;
+            let row = *index.get(member)?;
             if row.is_link() || Some(row.id()) == at.moving.as_deref() {
                 return None;
             }
@@ -200,9 +201,10 @@ pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> 
 /// it mints survives [`crate::book::sanitize`]'s rule about titles that look
 /// like file names.
 pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) -> String {
+    let index = row_index(rows);
     let in_use: HashSet<String> = level_members(rows, shelves, shelf_id)
         .iter()
-        .filter_map(|member| find_row(rows, member))
+        .filter_map(|member| index.get(*member).copied())
         .map(Row::display_name)
         .collect();
     duplicate_title(name, &in_use)
@@ -216,6 +218,17 @@ pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) ->
 /// that follows is the caller's to refuse.
 fn level_members<'a>(rows: &'a [Row], shelves: &'a [Shelf], shelf_id: &str) -> Vec<&'a str> {
     crate::shelf::members_of(rows, shelves, shelf_id)
+}
+
+/// Id → row, in one pass, so a level's members resolve against a map rather
+/// than re-walking the library per member — a batch of arrivals asks the
+/// question once per file, and the library is the list being asked about.
+fn row_index(rows: &[Row]) -> std::collections::HashMap<&str, &Row> {
+    let mut index = std::collections::HashMap::with_capacity(rows.len());
+    for row in rows {
+        index.entry(row.id()).or_insert(row);
+    }
+    index
 }
 
 #[cfg(test)]

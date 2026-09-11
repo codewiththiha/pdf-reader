@@ -250,20 +250,12 @@ pub fn drop_effect(query: DropQuery<'_>) -> DropEffect {
             // The middle of a folder is its mouth: a book is always welcome,
             // and a shelf is welcome unless filing it here would put it inside
             // itself, which is a folder no level renders and a reader can never
-            // open again.
-            if query.band == Band::Middle {
-                if query.held_folders > 0 && !query.can_nest {
-                    return DropEffect::Refused;
-                }
-                return DropEffect::NestInto {
-                    folder_id: id.to_string(),
-                };
-            }
-            // The edges are seams between SHELVES — but only for a hold that is
-            // shelves alone. Books on an edge, or a mixed hold, still go inside:
-            // a book has no position among a level's folders, and splitting one
-            // hold two ways at one release is two answers to one question.
-            if query.held_books > 0 || query.held_folders == 0 {
+            // open again. The edges are seams between SHELVES — but only for a
+            // hold that is shelves alone. Books on an edge, or a mixed hold,
+            // still go inside: a book has no position among a level's folders,
+            // and splitting one hold two ways at one release is two answers to
+            // one question.
+            if query.band == Band::Middle || query.held_books > 0 || query.held_folders == 0 {
                 if query.held_folders > 0 && !query.can_nest {
                     return DropEffect::Refused;
                 }

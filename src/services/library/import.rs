@@ -45,7 +45,7 @@ use library_core::book::{
     Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut,
 };
 use library_core::conflict::Arrival;
-use library_core::folder::{FolderOpts, WatchedFolder, parent_key};
+use library_core::folder::{FolderOpts, WatchedFolder};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
@@ -56,6 +56,7 @@ use reader_core::format::{Format, is_supported_path};
 use super::conflict;
 use super::{file_name, folder_label};
 use crate::services::library as wire;
+use crate::time::now_ms;
 use crate::state::library::ImportTask;
 use crate::state::{AppState, Toast};
 
@@ -81,29 +82,9 @@ fn task_id() -> String {
     static SEQ: AtomicU32 = AtomicU32::new(0);
     format!(
         "t{:x}-{}",
-        js_sys::Date::now() as u64,
+        now_ms(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     )
-}
-
-/// Milliseconds since the epoch — the library's only clock. Stamps a book's
-/// `added_ms`, its id, and a folder's last scan.
-///
-/// Off wasm the clock is inert rather than a panic: the wasm-bindgen stubs abort
-/// when called natively, and a stamp nobody persists is fine at zero. The ids
-/// minted from it stay unique regardless, on [`id`]'s own counter — which is
-/// what lets a host test land a file at all.
-///
-/// [`id`]: library_core::id
-fn now_ms() -> u64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as u64
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        0
-    }
 }
 
 thread_local! {
@@ -367,6 +348,26 @@ fn apply_checks(state: AppState, checks: &[PathCheck]) {
 // afterwards would leave two imports of a folder that holds a `report.pdf`
 // fighting over one `report_0.pdf` in the store.
 
+/// Measure the rows the walk found at addresses the library already holds,
+/// taking those files out of the add list. The heal half of the migrated-row
+/// rule: a file at an address the library reads IS that book, whatever the two
+/// fingerprints say, and the walk has just made the measurement the startup
+/// pass could not. Answers how many rows it healed.
+fn heal_by_address(books: &mut [Row], adds: &mut Vec<FoundFile>) -> usize {
+    let mut healed = 0usize;
+    adds.retain(|file| match book_rows_mut(books).find(|b| b.path() == file.path) {
+        Some(book) => {
+            book.fp = file.fp;
+            book.fp_pending = false;
+            book.missing = false;
+            healed += 1;
+            false
+        }
+        None => true,
+    });
+    healed
+}
+
 /// Scan one folder, run the ledger over what the walk found, copy whatever the
 /// options say to copy, and write the result in one go.
 async fn run_folder(
@@ -414,52 +415,18 @@ async fn run_folder(
     folder.opts = opts;
 
     // The tree on disk is the tree on the shelf, for the shelves this folder
-    // owns: a folder card cut from a watched tree is a VIEW of that tree, so its
-    // rung is the one its `rel` names — including for shelves an older, flatter
-    // build minted as siblings, which this pass re-hangs under the rung they were
-    // always cut from. Virtual shelves are the reader's own arrangement and are
-    // never touched here, and neither is a shelf of another folder — nor a shelf
-    // the reader moved BY HAND, which `reparent` marked `manual_parent`: the
-    // hand beats the disk, and this pass is the disk's. A moved shelf still
-    // serves as its subfolders' rung in the map below, so the subtree the reader
-    // carried off re-hangs together, wherever it now hangs.
+    // owns — the rule and its edge cases (a hand-moved shelf keeps its place,
+    // a subtree re-hangs together, a virtual shelf is never touched) are
+    // `library_core::shelf::rehang_moves`', pure and host-tested; this is the
+    // one pass that asks it and applies the answer.
     //
     // Before the diff and before the "nothing changed" return on purpose: a
     // library arranged by an older build is repaired by the first rescan that
     // looks at the folder, not only by an import that happens to add something.
-    let rehanged = state.library.shelves.with_untracked(|shelves| {
-        let rungs: HashMap<String, String> = shelves
-            .iter()
-            .filter_map(|s| match &s.kind {
-                ShelfKind::Folder { folder_id, rel } if folder_id == &folder.id => {
-                    Some((rel.clone().unwrap_or_default(), s.id.clone()))
-                }
-                _ => None,
-            })
-            .collect();
-        let mut moved = Vec::new();
-        for shelf in shelves.iter() {
-            // The reader's placement wins over the disk's shape.
-            if shelf.manual_parent {
-                continue;
-            }
-            let want: Option<Option<String>> = match &shelf.kind {
-                ShelfKind::Folder { folder_id, rel } if folder_id == &folder.id => {
-                    let key = rel.clone().unwrap_or_default();
-                    Some(parent_key(&key).and_then(|rung| rungs.get(rung).cloned()))
-                }
-                _ => None,
-            };
-            if let Some(want) = want {
-                // A shelf is never its own parent, whatever a stale map claims.
-                let want = want.filter(|w| w != &shelf.id);
-                if shelf.parent != want {
-                    moved.push((shelf.id.clone(), want));
-                }
-            }
-        }
-        moved
-    });
+    let rehanged = state
+        .library
+        .shelves
+        .with_untracked(|shelves| shelves_ops::rehang_moves(shelves, &folder.id));
     if !rehanged.is_empty() {
         state.library.shelves.update(|shelves| {
             for (id, want) in &rehanged {
@@ -514,17 +481,7 @@ async fn run_folder(
     // would put a second copy of the same file on the shelf next to its own
     // twin. Healing the row is the honest answer, and the walk has just made the
     // measurement the startup pass could not.
-    let mut healed = 0usize;
-    adds.retain(|file| match book_rows_mut(&mut books).find(|b| b.path() == file.path) {
-        Some(book) => {
-            book.fp = file.fp;
-            book.fp_pending = false;
-            book.missing = false;
-            healed += 1;
-            false
-        }
-        None => true,
-    });
+    let mut healed = heal_by_address(&mut books, &mut adds);
 
     // One book per fingerprint INSIDE a single scan, always: a tree holding two
     // byte-identical files is one book, and copying both would leave an orphan
@@ -759,25 +716,10 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
                 src: found.path.clone(),
             }
         } else {
-            let requests = [StoreRequest {
-                path: found.path.clone(),
-                id: book_id.clone(),
-            }];
-            match wire::store_books(&task, &requests).await {
-                Ok(results) => match results.into_iter().next() {
-                    Some(result) if result.is_ok() => Origin::Stored {
-                        src: Some(found.path.clone()),
-                        store: result.store,
-                    },
-                    Some(result) => {
-                        let message = result
-                            .error
-                            .unwrap_or_else(|| "Could not copy that file.".to_string());
-                        return fail(state, &task, message, false);
-                    }
-                    None => {
-                        return fail(state, &task, "Could not copy that file.".to_string(), false)
-                    }
+            match wire::copy_one_to_store(&task, &found.path, &book_id).await {
+                Ok(store) => Origin::Stored {
+                    src: Some(found.path.clone()),
+                    store,
                 },
                 Err(message) => return fail(state, &task, message, false),
             }
@@ -944,6 +886,11 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         };
         land_file(state, file, None, &arrival.shelf_id, arrival.index);
     }
+    // The landed rows may read from addresses the cover cache has no art for:
+    // one ask for the batch rather than one per file.
+    if placed > 0 {
+        super::covers::backfill_missing(state);
+    }
     // Raised after the clean half landed: the sheet counts the questions, and
     // a landing that shifted a member list is one the answers resolve against.
     conflict::raise(state, conflicts);
@@ -975,8 +922,10 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
 /// another level holds would answer with nothing new on the level they dropped
 /// on — the vanishing the collision sheet exists to stop.
 ///
-/// Writes no persist, because a caller that lands four hundred files owes one
-/// write and only the caller knows whether this is one file or four hundred.
+/// Writes no persist and queues no cover, because a caller that lands four
+/// hundred files owes ONE write and ONE cover ask — the queue re-derives its
+/// whole want-list on every call — and only the caller knows whether this is
+/// one file or four hundred.
 pub fn land_file(
     state: AppState,
     file: &FoundFile,
@@ -1019,9 +968,6 @@ pub fn land_file(
             }
         });
     }
-    // The row may read from an address the cache has no art for, and the queue
-    // is the shelf's one answer to that.
-    super::covers::backfill_missing(state);
     placed
 }
 

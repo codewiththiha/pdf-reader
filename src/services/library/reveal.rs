@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use leptos::prelude::*;
 
-use library_core::shelf::ALL_SHELF;
+use library_core::shelf::{ALL_SHELF, containing};
 
 use crate::state::AppState;
 
@@ -39,9 +39,8 @@ pub fn navigate_to_shelf_of(state: AppState, book_id: &str) {
         .library
         .shelves
         .with_untracked(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.books.iter().any(|m| m == book_id))
+            containing(shelves, book_id)
+                .first()
                 .map(|s| s.id.clone())
         })
         .unwrap_or_else(|| ALL_SHELF.to_string());

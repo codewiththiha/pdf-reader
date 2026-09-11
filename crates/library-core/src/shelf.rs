@@ -244,6 +244,68 @@ pub fn lift_children(shelves: &mut [Shelf], folder_id: &str) {
     }
 }
 
+/// The moves a watched folder's rescan owes its own shelves: every shelf the
+/// folder owns that is not hand-moved, when the rung its `rel` names resolves
+/// to a different parent than the one it hangs on.
+///
+/// The tree on disk is the tree on the shelf, for the shelves this folder
+/// owns: a folder card cut from a watched tree is a VIEW of that tree, so its
+/// rung is the one its `rel` names — including for shelves an older, flatter
+/// build minted as siblings, which this pass re-hangs under the rung they were
+/// always cut from. Virtual shelves are the reader's own arrangement and are
+/// never touched here, and neither is a shelf of another folder — nor a shelf
+/// the reader moved BY HAND, which [`reparent`] marked [`Shelf::manual_parent`]:
+/// the hand beats the disk, and this pass is the disk's. A moved shelf still
+/// serves as its subfolders' rung in the answer below, so the subtree the
+/// reader carried off re-hangs together, wherever it now hangs.
+///
+/// Answers the moves rather than writing them, so the caller holds one list of
+/// `(shelf id, wanted parent)` it can apply in one pass — and so the rule is a
+/// pure function a test can hold to account. A shelf is never its own parent,
+/// whatever a stale `shelf_map` claims: a self-edge the walk resolved through
+/// is filtered here rather than trusted to the sanitizer to catch later.
+pub fn rehang_moves(shelves: &[Shelf], folder_id: &str) -> Vec<(String, Option<String>)> {
+    // The folder's rungs: its own `rel` to the shelf that carries it.
+    let rungs: std::collections::HashMap<String, String> = shelves
+        .iter()
+        .filter_map(|s| match &s.kind {
+            ShelfKind::Folder {
+                folder_id: owner,
+                rel,
+            } if owner == folder_id => {
+                Some((rel.clone().unwrap_or_default(), s.id.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    let mut moved = Vec::new();
+    for shelf in shelves.iter() {
+        // The reader's placement wins over the disk's shape.
+        if shelf.manual_parent {
+            continue;
+        }
+        let ShelfKind::Folder {
+            folder_id: owner,
+            rel,
+        } = &shelf.kind
+        else {
+            continue;
+        };
+        if owner != folder_id {
+            continue;
+        }
+        let key = rel.clone().unwrap_or_default();
+        let want = crate::folder::parent_key(&key)
+            .and_then(|rung| rungs.get(rung).cloned())
+            // A shelf is never its own parent, whatever a stale map claims.
+            .filter(|w| *w != shelf.id);
+        if shelf.parent != want {
+            moved.push((shelf.id.clone(), want));
+        }
+    }
+    moved
+}
+
 /// Put `id` on a member list at `index`, or move it there when it is already a
 /// member. `None` appends. The whole of the drag-and-drop contract: one
 /// ordered list, one id, one index.
@@ -386,23 +448,30 @@ pub fn sanitize(shelves: &mut Vec<Shelf>) {
     // root shelf's child once the loop below it is open. Cutting on a walk that
     // fails to come back instead would empty a whole branch for one bad edge,
     // and would not be idempotent — the second pass would find nothing to cut.
-    let mut on_a_cycle: Vec<String> = Vec::new();
-    for s in shelves.iter() {
-        let mut current = s.parent.clone();
-        for _ in 0..=shelves.len() {
-            let Some(parent_id) = current else {
-                break;
-            };
-            if parent_id == s.id {
-                on_a_cycle.push(s.id.clone());
-                break;
+    // One edge map rather than a `find` per hop of every walk: the walk per
+    // shelf stays — it is the rule — but each hop is a lookup now, and the
+    // ids come back owned so the map's borrow ends before the writes begin.
+    let on_a_cycle: std::collections::HashSet<String> = {
+        let parents: std::collections::HashMap<&str, Option<&str>> = shelves
+            .iter()
+            .map(|s| (s.id.as_str(), s.parent.as_deref()))
+            .collect();
+        let mut out = std::collections::HashSet::new();
+        for s in shelves.iter() {
+            let mut current = parents.get(s.id.as_str()).copied().flatten();
+            for _ in 0..=shelves.len() {
+                let Some(parent_id) = current else {
+                    break;
+                };
+                if parent_id == s.id {
+                    out.insert(s.id.clone());
+                    break;
+                }
+                current = parents.get(parent_id).copied().flatten();
             }
-            current = shelves
-                .iter()
-                .find(|p| p.id == parent_id)
-                .and_then(|p| p.parent.clone());
         }
-    }
+        out
+    };
     for s in shelves.iter_mut() {
         if on_a_cycle.contains(&s.id) {
             s.parent = None;
@@ -850,5 +919,76 @@ mod tests {
         assert!(json.contains("\"parent\":\"s1\""), "{json}");
         let back: Shelf = serde_json::from_str(&json).unwrap();
         assert_eq!(back, s);
+    }
+
+    /// A shelf cut from a watched folder's tree: `rel` is the rung it serves,
+    /// `None` for the folder's root shelf.
+    fn cut(id: &str, folder_id: &str, rel: Option<&str>, parent: Option<&str>) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: id.to_string(),
+            kind: ShelfKind::Folder {
+                folder_id: folder_id.to_string(),
+                rel: rel.map(str::to_string),
+            },
+            books: Vec::new(),
+            parent: parent.map(str::to_string),
+            manual_parent: false,
+        }
+    }
+
+    #[test]
+    fn a_flat_subfolder_shelf_rehangs_under_the_rung_it_was_cut_from() {
+        // An older build minted "2/deep" as a sibling of the root; the disk's
+        // tree says it hangs on "2", and "2" on the folder's own shelf.
+        let shelves = vec![
+            cut("r", "f1", None, None),
+            cut("two", "f1", Some("2"), None),
+            cut("deep", "f1", Some("2/deep"), None),
+        ];
+        let moves = rehang_moves(&shelves, "f1");
+        assert_eq!(
+            moves,
+            vec![
+                ("two".to_string(), Some("r".to_string())),
+                ("deep".to_string(), Some("two".to_string())),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_hand_moved_shelf_keeps_its_place_and_still_routes_its_subtree() {
+        let mut two = cut("two", "f1", Some("2"), Some("r"));
+        two.manual_parent = true;
+        let shelves = vec![
+            cut("r", "f1", None, None),
+            two,
+            // The child still resolves its rung through the moved shelf: the
+            // subtree the reader carried off re-hangs together.
+            cut("deep", "f1", Some("2/deep"), None),
+        ];
+        let moves = rehang_moves(&shelves, "f1");
+        assert_eq!(moves, vec![("deep".to_string(), Some("two".to_string()))]);
+    }
+
+    #[test]
+    fn a_rehang_never_touches_a_virtual_shelf_or_another_folders() {
+        let shelves = vec![
+            cut("r", "f1", None, None),
+            plain("mine", &[]),
+            cut("other", "f2", None, None),
+        ];
+        assert!(rehang_moves(&shelves, "f1").is_empty());
+    }
+
+    #[test]
+    fn a_stale_rung_that_names_the_shelf_itself_is_not_a_move_onto_itself() {
+        // "2/deep" whose rung resolves through a map that names ITSELF: the
+        // self-edge is filtered, and what is left is the honest answer — the
+        // shelf belongs on the rung above, and with no "2" in the list that is
+        // a re-hang to the root.
+        let shelves = vec![cut("loop", "f1", Some("loop"), Some("r"))];
+        let moves = rehang_moves(&shelves, "f1");
+        assert_eq!(moves, vec![("loop".to_string(), None)]);
     }
 }

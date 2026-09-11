@@ -53,6 +53,7 @@ use std::collections::HashMap;
 use crate::book::{Book, Fingerprint, Row, book_rows, book_rows_mut};
 use crate::folder::{Tombstone, WatchedFolder};
 use crate::scan::FoundFile;
+use crate::shelf::Shelf;
 
 /// What the ledger needs to know about a book that is already in the library:
 /// its id (so a relink can write back to it), its address (so a move on disk
@@ -321,14 +322,16 @@ pub enum Recovered {
 /// A restore re-measures the one file it is about to import, which is where the
 /// freshness actually matters.
 ///
-/// `membership` answers, for a book id, the shelves it is on as
-/// `(id, name)` pairs in shelf order — the order is what makes "first membership"
-/// a deterministic answer rather than whichever the map happened to yield.
+/// Takes the shelf list rather than a membership callback: which shelves a
+/// book is on and which of them the folder owns are both questions
+/// [`crate::shelf`] already answers, and a caller that spelled either out
+/// would be spelling out a rule this crate owns. "First membership" is shelf
+/// order, which is what makes the row's home a deterministic answer rather
+/// than whichever a map happened to yield.
 pub fn recoverables(
     folder: &WatchedFolder,
     books_by_fp: &HashMap<Fingerprint, &Book>,
-    membership: &impl Fn(&str) -> Vec<(String, String)>,
-    folder_shelf_ids: &[String],
+    shelves: &[Shelf],
 ) -> Vec<Recovered> {
     let mut out = Vec::new();
 
@@ -343,11 +346,7 @@ pub fn recoverables(
         out.push(Recovered::Deleted(entry.clone()));
     }
 
-    let on_a_folder_shelf = |shelves: &[(String, String)]| {
-        shelves
-            .iter()
-            .any(|(id, _)| folder_shelf_ids.iter().any(|own| own == id))
-    };
+    let owned_by_folder = |shelf: &Shelf| shelf.kind.folder_id() == Some(folder.id.as_str());
     for (fp, path) in &folder.last_seen {
         let Some(book) = books_by_fp.get(fp) else {
             continue;
@@ -358,15 +357,15 @@ pub fn recoverables(
         if book.missing {
             continue;
         }
-        let shelves = membership(&book.id);
-        if on_a_folder_shelf(&shelves) {
+        let on = crate::shelf::containing(shelves, &book.id);
+        if on.iter().any(|shelf| owned_by_folder(shelf)) {
             continue;
         }
         out.push(Recovered::Moved {
             book_id: book.id.clone(),
             title: book.title.clone(),
             path: path.clone(),
-            home_shelf: shelves.first().map(|(_, name)| name.clone()),
+            home_shelf: on.first().map(|shelf| shelf.name.clone()),
         });
     }
     out
@@ -724,14 +723,36 @@ mod tests {
         })
     }
 
-    const NO_SHELVES: fn(&str) -> Vec<(String, String)> = |_| Vec::new();
+    /// A shelf the reader made.
+    fn vshelf(id: &str, name: &str, books: &[&str]) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: name.to_string(),
+            kind: crate::shelf::ShelfKind::Virtual,
+            books: books.iter().map(|b| b.to_string()).collect(),
+            parent: None,
+            manual_parent: false,
+        }
+    }
+
+    /// A shelf cut from the test folder ("f1"): one of the shelves the folder
+    /// owns, which is the fact a "moved off every folder shelf" answer reads.
+    fn fshelf(id: &str, name: &str, books: &[&str]) -> Shelf {
+        Shelf {
+            kind: crate::shelf::ShelfKind::Folder {
+                folder_id: "f1".to_string(),
+                rel: None,
+            },
+            ..vshelf(id, name, books)
+        }
+    }
 
     #[test]
     fn a_removed_book_is_offered_back_with_enough_to_recognise_it() {
         let f = folder(&[1], &[2]);
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let out = recoverables(&f, &index, &NO_SHELVES, &["s1".to_string()]);
+        let out = recoverables(&f, &index, &[fshelf("s1", "Books", &[])]);
         assert_eq!(out.len(), 1);
         match &out[0] {
             Recovered::Deleted(entry) => {
@@ -750,7 +771,7 @@ mod tests {
         let f = folder(&[1], &[1]);
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        assert!(recoverables(&f, &index, &NO_SHELVES, &[]).is_empty());
+        assert!(recoverables(&f, &index, &[]).is_empty());
     }
 
     #[test]
@@ -770,9 +791,12 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
+        let shelves = [
+            fshelf("s1", "Books", &[]),
+            vshelf("s9", "Fiction", &["b1"]),
+        ];
         assert_eq!(
-            recoverables(&f, &index, &elsewhere, &["s1".to_string()]),
+            recoverables(&f, &index, &shelves),
             vec![Recovered::Moved {
                 book_id: "b1".into(),
                 title: Some("Dune".into()),
@@ -789,8 +813,8 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let here = |_: &str| vec![("s1".to_string(), "Books".to_string())];
-        assert!(recoverables(&f, &index, &here, &["s1".to_string()]).is_empty());
+        let here = [fshelf("s1", "Books", &["b1"])];
+        assert!(recoverables(&f, &index, &here).is_empty());
     }
 
     #[test]
@@ -799,8 +823,12 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
-        let out = recoverables(&f, &index, &elsewhere, &["s1".to_string(), "s2".to_string()]);
+        let shelves = [
+            fshelf("s1", "Books", &[]),
+            fshelf("s2", "Sci-fi", &[]),
+            vshelf("s9", "Fiction", &["b1"]),
+        ];
+        let out = recoverables(&f, &index, &shelves);
         assert_eq!(out.len(), 1);
     }
 
@@ -812,8 +840,11 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", true)];
         let index = index_by_fp(&books);
-        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
-        assert!(recoverables(&f, &index, &elsewhere, &["s1".to_string()]).is_empty());
+        let shelves = [
+            fshelf("s1", "Books", &[]),
+            vshelf("s9", "Fiction", &["b1"]),
+        ];
+        assert!(recoverables(&f, &index, &shelves).is_empty());
     }
 
     #[test]
@@ -823,7 +854,7 @@ mod tests {
         f.last_seen = vec![(fp(2), "/books/2.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        assert!(recoverables(&f, &index, &NO_SHELVES, &["s1".to_string()]).is_empty());
+        assert!(recoverables(&f, &index, &[fshelf("s1", "Books", &[])]).is_empty());
     }
 
     #[test]
@@ -832,8 +863,11 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let elsewhere = |_: &str| vec![("s9".to_string(), "Fiction".to_string())];
-        let out = recoverables(&f, &index, &elsewhere, &["s1".to_string()]);
+        let shelves = [
+            fshelf("s1", "Books", &[]),
+            vshelf("s9", "Fiction", &["b1"]),
+        ];
+        let out = recoverables(&f, &index, &shelves);
         assert_eq!(out.len(), 2);
         assert!(matches!(out[0], Recovered::Deleted(_)));
         assert!(matches!(out[1], Recovered::Moved { .. }));
@@ -847,13 +881,12 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let two = |_: &str| {
-            vec![
-                ("s8".to_string(), "Fiction".to_string()),
-                ("s3".to_string(), "Classics".to_string()),
-            ]
-        };
-        let out = recoverables(&f, &index, &two, &["s1".to_string()]);
+        let shelves = [
+            fshelf("s1", "Books", &[]),
+            vshelf("s8", "Fiction", &["b1"]),
+            vshelf("s3", "Classics", &["b1"]),
+        ];
+        let out = recoverables(&f, &index, &shelves);
         match &out[0] {
             Recovered::Moved { home_shelf, .. } => {
                 assert_eq!(home_shelf.as_deref(), Some("Fiction"))
@@ -868,7 +901,7 @@ mod tests {
         f.last_seen = vec![(fp(1), "/books/1.pdf".to_string())];
         let books = vec![sized_book("b1", 1, "/books/1.pdf", false)];
         let index = index_by_fp(&books);
-        let out = recoverables(&f, &index, &NO_SHELVES, &["s1".to_string()]);
+        let out = recoverables(&f, &index, &[fshelf("s1", "Books", &[])]);
         match &out[0] {
             Recovered::Moved { home_shelf, .. } => assert_eq!(home_shelf, &None),
             other => panic!("expected a move, got {other:?}"),

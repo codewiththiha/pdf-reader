@@ -33,7 +33,7 @@ pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: 
     // time an open reaches here. Read untracked: this is a write path, not a
     // view, and a subscription would only re-run it on somebody else's change.
     let author = state.reader.document.author.get_untracked();
-    let now = js_sys::Date::now() as u64;
+    let now = crate::time::now_ms();
     // The row the reader opened by name — a card, a list row, the context
     // menu's Open — records against that row, so a book of its own keeps the
     // position its own reader reached instead of handing it to its twin at the

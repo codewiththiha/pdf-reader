@@ -35,6 +35,7 @@ use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
 
 use crate::services::library::conflict::ConflictAsk;
+use crate::time::now_ms;
 
 /// How many covers the cache holds. A cover is a base64 JPEG of a few tens of
 /// kilobytes, so this — not [`BOOKS_CAP`](library_core::book::BOOKS_CAP)
@@ -302,25 +303,6 @@ impl Default for LibraryState {
             conflict_waiting: RwSignal::new(Vec::new()),
             conflict_open: RwSignal::new(false),
         }
-    }
-}
-
-/// Milliseconds since the epoch — the library's only clock here.
-///
-/// Off wasm the clock is inert rather than a panic: the wasm-bindgen stubs
-/// abort when called natively, and a stamp nobody persists is fine at zero.
-/// The ids minted from it stay unique regardless, on [`id`]'s own counter —
-/// which is what lets a host test make a link at all.
-///
-/// [`id`]: library_core::id
-fn now_ms() -> u64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as u64
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        0
     }
 }
 

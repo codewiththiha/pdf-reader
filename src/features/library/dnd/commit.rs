@@ -2,7 +2,7 @@
 //!
 //! Every move here rides a service the shelf's menus already ride —
 //! `crate::services::library::arrange` for the moves and
-//! `crate::services::library::create_shelf` for the one a fold makes — so a
+//! `crate::services::library::create_shelf_here` for the one a fold makes — so a
 //! dragged book persists, keeps its cover and is revealed exactly as a filed one
 //! is. Nothing in here decides anything either: the decision arrived as a
 //! [`DropEffect`] and what is left is which operation it names.
@@ -20,7 +20,7 @@ use library_core::shelf::ALL_SHELF;
 use super::controller::DragPayload;
 use super::effect::DropEffect;
 use crate::services::library::{
-    create_shelf, move_many_to_shelf, nest_many, nest_shelf, reorder_shelves_to_anchor,
+    create_shelf_here, move_many_to_shelf, nest_many, nest_shelf, reorder_shelves_to_anchor,
     unfile_books,
 };
 use crate::state::AppState;
@@ -64,13 +64,7 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
             // in, which is the same roof the level's empty space files under.
             let (to, index) = insert_anchor(state, &book_id, shelf.as_deref(), after);
             move_many_to_shelf(state, &payload.books, from, to.clone(), index);
-            if to == ALL_SHELF {
-                for folder in &payload.folders {
-                    nest_shelf(state, folder, None);
-                }
-            } else {
-                nest_many(state, &payload.folders, &to);
-            }
+            land_folders(state, &payload.folders, &to);
         }
         DropEffect::ShelfSibling { anchor_id, after } => {
             // Folders alone on a shelf row's edge: the same level, a new place
@@ -88,33 +82,45 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
                     move_many_to_shelf(state, &payload.books, None, ALL_SHELF.to_string(), None)
                 }
             }
-            for folder in &payload.folders {
-                nest_shelf(state, folder, None);
-            }
+            land_folders(state, &payload.folders, ALL_SHELF);
         }
         DropEffect::FileToShelf { shelf_id } => {
             move_many_to_shelf(state, &payload.books, from, shelf_id.clone(), None);
-            nest_many(state, &payload.folders, &shelf_id);
+            land_folders(state, &payload.folders, &shelf_id);
         }
         DropEffect::NestInto { folder_id } => {
             move_many_to_shelf(state, &payload.books, from, folder_id.clone(), None);
-            nest_many(state, &payload.folders, &folder_id);
+            land_folders(state, &payload.folders, &folder_id);
         }
         DropEffect::CreateFolder { with_book_id } => {
             // Made at the level the reader is looking at, which is
-            // `create_shelf`'s own rule: a shelf folded together inside a folder
+            // `create_shelf_here`'s own rule: a shelf folded together inside a folder
             // subdivides it, and one folded together at the root is a new top
             // level. Named "New shelf" and left there, for the reason that
             // service gives — the crumb that names it is one keystroke from a
             // rename and shows the shelf it is naming.
-            let shelf_id = create_shelf(state);
+            let shelf_id = create_shelf_here(state);
             let mut books = payload.books;
             if !books.contains(&with_book_id) {
                 books.push(with_book_id);
             }
             move_many_to_shelf(state, &books, from, shelf_id.clone(), None);
-            nest_many(state, &payload.folders, &shelf_id);
+            land_folders(state, &payload.folders, &shelf_id);
         }
+    }
+}
+
+/// The folders' half of every landing, in the one shape the level's own two
+/// answers allow: filed INSIDE the level the books went to when it is a shelf,
+/// and back out to the root when it is not — "All" is a level and not a shelf,
+/// and a nesting writes a parent rather than a membership.
+fn land_folders(state: AppState, folders: &[String], to: &str) {
+    if to == ALL_SHELF {
+        for folder in folders {
+            nest_shelf(state, folder, None);
+        }
+    } else {
+        nest_many(state, folders, to);
     }
 }
 

@@ -11,7 +11,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use reader_core::filename::file_stem_from_path;
 use reader_core::format::Format;
 
 /// Storage guard on the library's size. This is NOT a "recent books" cap — a
@@ -414,11 +413,7 @@ impl Book {
     /// the address. Never empty — a card with no name is a card the reader
     /// cannot tell from its neighbour.
     pub fn title(&self) -> String {
-        self.title
-            .clone()
-            .filter(|t| !t.trim().is_empty())
-            .or_else(|| file_stem_from_path(self.path()))
-            .unwrap_or_else(|| self.path().to_string())
+        crate::text::display_or_stem(self.title.as_deref(), self.path())
     }
 
     /// The human-readable stem of this book's address — the file's own name
@@ -931,23 +926,6 @@ pub fn drop_dangling_links(rows: &mut Vec<Row>) {
     rows.retain(|r| !matches!(r, Row::Link { target, .. } if !books.contains(target)));
 }
 
-/// The resume page for an address, if the library knows it.
-pub fn find_page(rows: &[Row], path: &str) -> Option<u32> {
-    book_rows(rows)
-        .find(|b| b.path() == path)
-        .map(|b| b.page.max(1))
-}
-
-/// The saved fractional stream position for an address (see
-/// [`Book::fraction`]), for a reflowable document opening back into the
-/// continuous mode.
-pub fn find_fraction(rows: &[Row], path: &str) -> Option<f64> {
-    book_rows(rows)
-        .find(|b| b.path() == path)
-        .and_then(|b| b.fraction)
-        .filter(|f| (0.0..=1.0).contains(f))
-}
-
 /// The book an address resolves to. A relink changes the address a book
 /// answers to, so this is the one lookup every path-keyed caller should make.
 ///
@@ -982,24 +960,26 @@ pub fn gloss_key_of(rows: &[Row], book_id: Option<&str>, path: &str) -> String {
 }
 
 /// Where the reader left off in the book they are about to open: the resume
-/// page and the stream fraction, clamped exactly as [`find_page`] and
-/// [`find_fraction`] clamp them.
+/// page and the fractional stream position (see [`Book::fraction`]), clamped
+/// the way [`ReadPoint::settled`] clamps a write.
 ///
 /// The row the reader named decides when the address holds more than one, so
 /// a private book resumes where its own reader left off rather than where the
-/// twin did. With no row named — a drop, an "open with", a dialog — the
-/// address's own rule answers, which every shared row agrees on.
+/// twin did. With no row named — a drop, an "open with", a dialog — the first
+/// row at the address answers, which every shared row agrees on. One walk of
+/// the list per open rather than one per question.
 pub fn resume_point(rows: &[Row], book_id: Option<&str>, path: &str) -> (u32, Option<f64>) {
-    if let Some(book) = book_id
+    let book = book_id
         .and_then(|id| find_by_id(rows, id))
         .filter(|b| b.path() == path)
-    {
-        return (
-            book.page.max(1),
-            book.fraction.filter(|f| (0.0..=1.0).contains(f)),
-        );
+        .or_else(|| find_by_path(rows, path));
+    match book {
+        Some(b) => (
+            b.page.max(1),
+            b.fraction.filter(|f| (0.0..=1.0).contains(f)),
+        ),
+        None => (1, None),
     }
-    (find_page(rows, path).unwrap_or(1), find_fraction(rows, path))
 }
 
 /// Make a persisted list internally valid: drop rows with no id, books with no
@@ -1749,9 +1729,8 @@ mod tests {
             fraction: Some(0.5),
             ..linked("a", "/books/one.pdf")
         }]);
-        assert_eq!(find_page(&books, "/books/one.pdf"), Some(42));
-        assert_eq!(find_page(&books, "/books/zzz.pdf"), None);
-        assert_eq!(find_fraction(&books, "/books/one.pdf"), Some(0.5));
+        assert_eq!(resume_point(&books, None, "/books/one.pdf"), (42, Some(0.5)));
+        assert_eq!(resume_point(&books, None, "/books/zzz.pdf"), (1, None));
         assert_eq!(find_by_path(&books, "/books/one.pdf").map(|b| b.id.as_str()), Some("a"));
     }
 

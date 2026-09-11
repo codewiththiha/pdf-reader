@@ -52,7 +52,7 @@ use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
 use crate::features::library::content::{FolderOrder, ShelfOrder, visible};
 use crate::features::library::dnd::controller::DragPayload;
 use crate::features::library::remove_modal::RemoveSheet;
-use crate::services::library::{create_shelf, file_many, nest_many};
+use crate::services::library::{create_shelf_here, file_many, nest_many};
 use crate::state::AppState;
 
 /// Enter selection with the pressed card already in it, which is what a hold
@@ -222,7 +222,7 @@ fn file_selection(state: AppState, shelf_id: &str) {
 /// *New shelf* row and the level's right-click menu are the same action: two places
 /// that each minted a shelf would eventually differ about whether to drill in.
 pub(crate) fn file_selection_on_new_shelf(state: AppState) {
-    let shelf_id = create_shelf(state);
+    let shelf_id = create_shelf_here(state);
     file_selection(state, &shelf_id);
     exit_selection(state);
 }

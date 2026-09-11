@@ -27,7 +27,7 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::by_id;
 use pdf_engine::types::DocStatus;
 use library_core::query;
-use library_core::shelf::{ALL_SHELF, Shelf, children_of};
+use library_core::shelf::{ALL_SHELF, Shelf, children_of, members_of};
 use library_core::sort::{self, SortKey};
 use library_core::book::Row;
 
@@ -167,14 +167,16 @@ pub(crate) fn visible(state: AppState) -> Vec<Row> {
         if query::is_active(&terms) {
             rows
         } else {
-            let filed: HashSet<String> = state.library.shelves.with(|shelves| {
-                shelves
-                    .iter()
-                    .flat_map(|s| s.books.iter().cloned())
+            // The root's list is `members_of`' own answer — the rows no shelf
+            // holds — spelled once in the core rather than once per reader.
+            let unfiled: HashSet<String> = state.library.shelves.with(|shelves| {
+                members_of(&rows, shelves, ALL_SHELF)
+                    .into_iter()
+                    .map(str::to_string)
                     .collect()
             });
             rows.into_iter()
-                .filter(|r| !filed.contains(r.id()))
+                .filter(|r| unfiled.contains(r.id()))
                 .collect()
         }
     } else {
