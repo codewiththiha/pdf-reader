@@ -108,7 +108,13 @@ impl Arrival {
     }
 }
 
-/// The reader's answer to a name collision.
+/// The reader's answer to a name collision, when the arrival is a FILE.
+///
+/// An import has nothing of its own yet — no row, no resume point, no
+/// highlights — so its answers are about what to put on the level: nothing
+/// (go to the book that is already there), a second book under a new name, or
+/// a pointer instead of a copy. Merging or replacing is not among them, and
+/// cannot be: there is no row to fold and no row to take the place of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answer {
     /// Place nothing: take the reader to the row that is already there,
@@ -121,6 +127,31 @@ pub enum Answer {
     /// Place a [`Row::Link`] pointing at the row that is already there: a row
     /// on this shelf that is not a second copy of anything.
     AsLink,
+}
+
+/// The reader's answer to a name collision, when the arrival is a ROW being
+/// moved — a drag, a filing, a lift out to the root.
+///
+/// A move is the other question, and it has the other three answers, because
+/// both sides are books the reader already has: two rows of one name on one
+/// level, and the reader is the only one who knows whether that is one book
+/// seen twice, a book superseding a book, or two books that happen to rhyme.
+/// *Go to the one that is there* is not among them — the reader is holding the
+/// other one, so they know where both are — and neither is a link, which is an
+/// answer for an arrival that has no row of its own to keep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveAnswer {
+    /// One book: the row already on the level survives with its id, its name
+    /// and its memberships, and the moved row dissolves into it — the further
+    /// place in it wins, a name or an author fills a gap, the shelves and the
+    /// highlights of both end up on the survivor ([`crate::book::fold_books`]).
+    Merge,
+    /// The row already on the level goes, and the moved row takes its slot and
+    /// every other shelf it was filed on.
+    Replace,
+    /// Keep both: the moved row takes the next free name — [`Answer::AsNew`]'s
+    /// naming, on the row that already exists rather than on a row to mint.
+    AsNew,
 }
 
 /// Whether two names are the same name. Case-insensitive and nothing else: a
@@ -138,7 +169,7 @@ pub fn same_name(a: &str, b: &str) -> bool {
 ///   * only BOOK rows are compared — a link is not a book and has no name of
 ///     its own to defend, so it never collides and never blocks;
 ///   * only rows on the TARGET level, which is a shelf's own member list, and
-///     at the root the rows nobody has filed (the list \"All\" renders — the
+///     at the root the rows nobody has filed (the list "All" renders — the
 ///     root is a level like any other and a drop on Home beside an unfiled row
 ///     of one name is the same question as a drop on a shelf beside a filed
 ///     one);
@@ -162,7 +193,7 @@ pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> 
 /// already shows rather than against the whole library.
 ///
 /// A level's own names are the right pool because the collision was a level's:
-/// `1` on \"Fiction\" and `1` on \"Sci-Fi\" are two rows a reader never sees
+/// `1` on "Fiction" and `1` on "Sci-Fi" are two rows a reader never sees
 /// together, and renaming the second of them would be an answer to a question
 /// nobody asked. The counter itself is [`duplicate_title`]'s — it steps rather
 /// than stacks (`1_1` becomes `1_2`, not `1_1_1`), it fills gaps, and the name

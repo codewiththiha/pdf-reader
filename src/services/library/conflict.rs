@@ -1,4 +1,4 @@
-//! The \"already imported?\" sheet: one question, three answers.
+//! The "already imported?" sheet: one question, three answers.
 //!
 //! The RULE is not here — it is `library_core::conflict`, which is pure and
 //! host-tested, and answers the only question this surface asks: does the level
@@ -8,10 +8,15 @@
 //! `crate::features::library::conflict_modal`), decides nothing (that is the
 //! crate) and stores nothing (that is `crate::state::library`).
 //!
-//! ## The three answers
+//! ## Two arrivals, and so two questions
 //!
-//! *Already imported* places nothing and reveals the row that is already there
-//! — the answer that means \"I did not intend to add anything\", and the one
+//! Which three answers the sheet offers is decided by what is arriving, and the
+//! two cases are different questions rather than one question with six answers.
+//!
+//! An IMPORT has nothing of its own yet — no row, no resume point, no
+//! highlights — so its answers are about what to put on the level, and *already
+//! imported* places nothing and reveals the row that is already there
+//! — the answer that means "I did not intend to add anything", and the one
 //! that used to be a book silently vanishing into the shelf it was dropped on.
 //! *Add as new* places the arrival under the next free name, so both rows are
 //! books and each is a book of its own. *Make link* places a pointer row
@@ -19,6 +24,20 @@
 //! that opens the book wherever it lives, holds no fingerprint, no resume
 //! point and no highlights, and is invisible to every content check the
 //! library runs.
+//!
+//! A MOVE is two books the reader already has, so its answers are about which
+//! of them the level keeps. *Merge* folds the moved row into the one already
+//! here — the survivor keeps its id, its name and its memberships, and takes
+//! the further place in it, the gaps the other row can fill, its shelves and
+//! its highlights. *Replace* sends the row that was here out of the library and
+//! seats the arrival in its slot and on every other shelf it was filed on. *As
+//! new* is the import's naming on a row that already exists: the moved row
+//! takes the next free name and lands beside the one it collided with.
+//!
+//! Neither set has a second ask, and the reason differs per set. An import's
+//! answers cannot destroy anything — the worst one can do is add a row. A
+//! move's Replace can, so its row says what goes before the click: the name of
+//! the row, and how many highlights leave with it.
 //!
 //! ## Two doors
 //!
@@ -36,15 +55,18 @@
 //! [`crate::state::library::LibraryState::conflict_waiting`]: answering pops
 //! the next one onto the screen, and Cancel drops them, which is what Cancel
 //! has always meant — the placements already answered keep their answers and
-//! the ones not asked simply do not land. There is no \"apply to all\" and no
+//! the ones not asked simply do not land. There is no "apply to all" and no
 //! second ask, because nothing here is destructive: the worst an answer can do
 //! is add a row, and a row is removed by the sheet that says what it takes.
 
 use leptos::prelude::*;
 
-use library_core::book::find_row;
-use library_core::conflict::{Answer, Arrival, collide, next_name};
+use ai_core::gloss::GlossMark;
+use library_core::book::{Book, book_rows_mut, find_by_id, find_row, fold_books};
+use library_core::conflict::{Answer, Arrival, MoveAnswer, collide, next_name};
+use library_core::shelf;
 
+use super::arrange::{PurgeOpts, memberships, purge_books};
 use crate::state::AppState;
 
 /// The question on screen.
@@ -145,6 +167,164 @@ pub fn answer(state: AppState, answer: Answer) {
     advance(state);
 }
 
+/// One of the three buttons on a MOVE's sheet.
+///
+/// The arrival is a row the reader is holding, so every answer here writes that
+/// row rather than minting one — and an ask whose arrival names no row (it went
+/// while the sheet was up) has nothing to write, so it is answered by moving on.
+pub fn answer_move(state: AppState, answer: MoveAnswer) {
+    let Some(ask) = state.library.conflict.get_untracked() else {
+        return;
+    };
+    if ask.arrival.moving.is_none() {
+        advance(state);
+        return;
+    }
+    match answer {
+        MoveAnswer::Merge => merge(state, &ask),
+        MoveAnswer::Replace => replace(state, &ask),
+        MoveAnswer::AsNew => as_new(state, &ask),
+    }
+    advance(state);
+}
+
+/// Merge: the row already on the level survives and the moved row dissolves
+/// into it.
+///
+/// The survivor is the row the reader can already see here, and its id is what
+/// every shelf holding it and every key in storage already names, so it is the
+/// one that stays. The order of the three writes is the whole of the care this
+/// takes: the marks move while both rows can still be read, because the sweep a
+/// removal rides takes the dissolving row's list with it and a fold that ran
+/// afterwards would be a merge that deleted one side's highlights; then the
+/// rows fold, by [`fold_books`]; then the memberships the dissolving row held
+/// become the survivor's, and the row itself goes.
+fn merge(state: AppState, ask: &ConflictAsk) {
+    let survivor = ask.existing_id.clone();
+    let Some(gone_id) = ask.arrival.moving.clone() else {
+        return;
+    };
+    fold_marks(state, &survivor, &gone_id);
+    let gone_book = state
+        .library
+        .books
+        .with_untracked(|rows| find_by_id(rows, &gone_id).cloned());
+    if let Some(gone_book) = gone_book {
+        state.library.books.update(|rows| {
+            if let Some(keep) = book_rows_mut(rows).find(|b| b.id == survivor) {
+                fold_books(keep, &gone_book);
+            }
+        });
+    }
+    let inherited: Vec<String> = memberships(state, &gone_id)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    state.library.shelves.update(|shelves| {
+        for one in shelves.iter_mut() {
+            if inherited.contains(&one.id) {
+                shelf::shelf_add(one, &survivor);
+            }
+        }
+    });
+    super::arrange::drop_row(state, &gone_id);
+}
+
+/// Replace: the row that was on the level goes, and the arrival takes its
+/// place.
+///
+/// Its SLOT and not the tail, because a replace is an overwrite and an
+/// overwrite stays where the thing it replaced was — and every OTHER shelf the
+/// displaced row was filed on, because a replace that quietly took a book off
+/// shelves the question never mentioned is a removal the reader did not ask
+/// for. What it does take is the row's own: its name, its resume point, its
+/// highlights and the store copy when the app made one, which is what the
+/// sheet's row says before the click.
+fn replace(state: AppState, ask: &ConflictAsk) {
+    let Some(moved_id) = ask.arrival.moving.clone() else {
+        return;
+    };
+    // Read the world before writing any of it: the slot and the memberships
+    // are both facts about the row that is about to go.
+    let seat = member_slot(state, &ask.arrival.shelf_id, &ask.existing_id);
+    let inherited: Vec<String> = memberships(state, &ask.existing_id)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    purge_books(
+        state,
+        std::slice::from_ref(&ask.existing_id),
+        PurgeOpts::default(),
+    );
+    super::arrange::move_row(
+        state,
+        &moved_id,
+        &ask.arrival.shelf_id,
+        seat.or(ask.arrival.index),
+    );
+    state.library.shelves.update(|shelves| {
+        for one in shelves.iter_mut() {
+            if inherited.contains(&one.id) {
+                shelf::shelf_add(one, &moved_id);
+            }
+        }
+    });
+    crate::storage::persist_library(state.library);
+}
+
+/// The slot a row holds on one shelf, which is the slot its replacement takes.
+fn member_slot(state: AppState, shelf_id: &str, row_id: &str) -> Option<usize> {
+    state.library.shelves.with_untracked(|shelves| {
+        shelves
+            .iter()
+            .find(|s| s.id == shelf_id)
+            .and_then(|s| s.books.iter().position(|m| m == row_id))
+    })
+}
+
+/// Both rows' highlights under the survivor's key, and nothing else: the marks
+/// keep their ids, and the AI answers ride the ids, so a mark that travels
+/// arrives with the answer it already had.
+///
+/// Two rows of ONE address already share one list, and there is nothing to
+/// move — which is the common case, and the reason this reads the keys rather
+/// than assuming they differ.
+fn fold_marks(state: AppState, survivor_id: &str, gone_id: &str) {
+    let (into, from) = state.library.books.with_untracked(|rows| {
+        (
+            find_by_id(rows, survivor_id).map(Book::gloss_key),
+            find_by_id(rows, gone_id).map(Book::gloss_key),
+        )
+    });
+    let (Some(into), Some(from)) = (into, from) else {
+        return;
+    };
+    if into == from {
+        return;
+    }
+    let all = crate::storage::load_gloss();
+    let mine = all.get(&into).cloned().unwrap_or_default();
+    let Some(theirs) = all.get(&from).filter(|marks| !marks.is_empty()) else {
+        return;
+    };
+    crate::storage::persist_gloss(&into, &union_marks(&mine, theirs));
+}
+
+/// The union of two mark lists by spot identity: everything `base` holds, in
+/// its order, plus every mark of `extra` denoting a spot `base` has not
+/// marked. [`GlossMark::same_spot`] is the identity — the same rule a capture
+/// dedupes by and a re-click toggles by — so a merged shelf agrees with the
+/// page it renders on about what "the same mark" is.
+fn union_marks(base: &[GlossMark], extra: &[GlossMark]) -> Vec<GlossMark> {
+    let mut union: Vec<GlossMark> = base.to_vec();
+    for mark in extra {
+        if !union.iter().any(|kept| kept.same_spot(mark)) {
+            union.push(mark.clone());
+        }
+    }
+    union
+}
+
 /// Add as new: the arrival takes the next free name on that level and lands.
 ///
 /// A moved row is renamed and then moved — the rename is what frees the
@@ -237,6 +417,14 @@ mod tests {
         );
         book.title = Some(title.to_string());
         Row::Book(book)
+    }
+
+    /// A book row that has been read to `page`, so a fold has something to take.
+    fn row_at(id: &str, title: &str, path: &str, n: u32, page: u32) -> Row {
+        let mut row = row(id, title, path, n);
+        row.as_book_mut().unwrap().page = page;
+        row.as_book_mut().unwrap().num_pages = 400;
+        row
     }
 
     fn shelf(id: &str, members: &[&str]) -> Shelf {
@@ -440,6 +628,107 @@ mod tests {
     }
 
     #[test]
+    fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
+        // Two books of one name on one level, and the reader says they are one
+        // book: the row already here survives — its id is what every shelf and
+        // every storage key names — and takes the further place in it.
+        let (_owner, state) = library(
+            vec![
+                row_at("b1", "Dune", "/one/dune.md", 1, 12),
+                row_at("b2", "Dune", "/two/dune.md", 2, 240),
+            ],
+            vec![shelf("s", &["b1"]), shelf("t", &["b2"]), shelf("u", &[])],
+        );
+        let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None));
+        raise(state, vec![ask]);
+
+        answer_move(state, MoveAnswer::Merge);
+
+        let rows = state.library.books.get_untracked();
+        assert_eq!(rows.len(), 1, "two books became one");
+        assert_eq!(rows[0].id(), "b1", "and the one that was here is the one that stayed");
+        assert_eq!(
+            rows[0].book().map(|b| b.page),
+            Some(240),
+            "a merge never sends a reader backwards"
+        );
+        let shelves = state.library.shelves.get_untracked();
+        let on = |id: &str| {
+            shelves
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.books.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(on("s"), vec!["b1".to_string()], "still on the level it was asked about");
+        assert_eq!(
+            on("t"),
+            vec!["b1".to_string()],
+            "and on every shelf the dissolved row held"
+        );
+        assert!(!state.library.conflict_open.get_untracked());
+    }
+
+    #[test]
+    fn replace_sends_the_row_that_was_here_out_and_seats_the_arrival_in_its_place() {
+        let (_owner, state) = library(
+            vec![
+                row_at("b1", "Dune", "/one/dune.md", 1, 12),
+                row_at("b2", "Dune", "/two/dune.md", 2, 240),
+            ],
+            vec![shelf("s", &["b1"]), shelf("t", &["b2"]), shelf("u", &["b1"])],
+        );
+        let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None));
+        raise(state, vec![ask]);
+
+        answer_move(state, MoveAnswer::Replace);
+
+        let rows = state.library.books.get_untracked();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id(), "b2", "the arrival is the book that is left");
+        let shelves = state.library.shelves.get_untracked();
+        let on = |id: &str| {
+            shelves
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.books.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(on("s"), vec!["b2".to_string()], "in the displaced row's slot");
+        assert_eq!(
+            on("u"),
+            vec!["b2".to_string()],
+            "and on the other shelves it was filed on — a replace is not a quiet removal"
+        );
+        assert_eq!(on("t"), Vec::<String>::new(), "having left the one it was lifted from");
+    }
+
+    #[test]
+    fn a_move_collision_is_the_other_question() {
+        let (_owner, state) = library(
+            vec![
+                row_at("b1", "Dune", "/one/dune.md", 1, 12),
+                row_at("b2", "Dune", "/two/dune.md", 2, 1),
+            ],
+            vec![shelf("s", &["b1"]), shelf("t", &["b2"])],
+        );
+        // Two books of one name and the reader is holding one of them, so the
+        // sheet offers merge, replace and as new — and never a link, which is
+        // an answer for an arrival that has no row of its own to keep. The two
+        // answer sets are two types, so a sheet cannot offer one for the other.
+        let (clean, asks) = screen(state, vec![Arrival::moved("b2", "Dune", "s", None)]);
+        assert!(clean.is_empty());
+        assert_eq!(asks.len(), 1);
+        assert!(!asks[0].arrival.is_import());
+        assert_eq!(asks[0].existing_id, "b1");
+        // The same name arriving as a FILE on the same level is the other
+        // question, and says so on the arrival the sheet reads.
+        let (clean, asks) = screen(state, vec![Arrival::import(file("dune", 3), "s", None)]);
+        assert!(clean.is_empty());
+        assert!(asks[0].arrival.is_import());
+    }
+
+    #[test]
     fn add_as_new_renames_a_moved_row_and_then_moves_it() {
         let (_owner, state) = library(
             vec![
@@ -451,7 +740,7 @@ mod tests {
         let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None));
         raise(state, vec![ask]);
 
-        answer(state, Answer::AsNew);
+        answer_move(state, MoveAnswer::AsNew);
 
         let rows = state.library.books.get_untracked();
         let renamed = rows

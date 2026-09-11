@@ -520,27 +520,54 @@ are not gone from the library, they are gone from *this* question — a watched 
 (`library_core::ledger`) and a path check (`book::apply_check`) still need one, because "is this
 the file I already placed" is a question about bytes and only bytes can answer it.
 
-The sheet (`features::library::conflict_modal`) offers the three things a reader can mean, and
-none of them is destructive, which is why there is no second ask anywhere in it:
+The sheet (`features::library::conflict_modal`) offers three answers, and WHICH three is a fact
+about the arrival rather than a setting on the sheet: a file arriving has no row of its own, and a
+row being moved has two books in the question. `Arrival::is_import` is the whole of the branch, and
+the two answer sets are two types (`conflict::Answer`, `conflict::MoveAnswer`), so a sheet cannot
+offer a file's answer to a move or a move's to a file.
+
+An **import** asks what to put on this level, and nothing it offers is destructive:
 
 - **Already imported** places nothing and reveals the row that is already there
   (`services::library::reveal` — its shelf, then its card, lit). It is the answer that means *I did
   not intend to add anything*, and it is what the old silence should have been.
 - **Add as new** places the arrival under the next free name (`conflict::next_name`, counted
-  against that level's own names and promised on the row before the click). A moved row is renamed
-  and then moved; an imported file becomes a second book of the address, marked
-  `Book::independent` so its highlights and its resume point are its own rather than the first
-  copy's.
+  against that level's own names and promised on the row before the click), as a second book of the
+  address marked `Book::independent`, so its highlights and its resume point are its own rather
+  than the first copy's.
 - **Make link** places a `Row::Link` instead of a copy: a row on this level with the book's name,
   no fingerprint, no page, no cover and no storage, which opens by revealing the book wherever it
   is filed. It is the answer for "I want it reachable from here" that used to be a second copy of a
   two-gigabyte file, or nothing.
 
+A **move** asks which of two books this level keeps, and its survivor is always the row already
+here — its id is what every shelf membership and every key in storage names, so a fold that moved
+it would orphan both:
+
+- **Merge** folds the moved row into it by `book::fold_books`: the further place in it wins (and on
+  a page tie the deeper stream fraction, because a merge never sends a reader backwards), the page
+  count is the best either row knew, names and authors fill gaps and never overwrite, the stamps
+  keep the first join and the last read, a measurement beats a placeholder, and an address is dead
+  only when both rows say so. The moved row's shelves become the survivor's and then it goes —
+  through `arrange::drop_row`, which is a removal without a tombstone, because the content stays in
+  the library through the survivor and a tombstone for a fingerprint the library still holds is
+  noise in a folder's restore menu. Its highlights travel first, while both keys can still be read
+  (`union_marks`, by `GlossMark::same_spot`, keeping their ids so the AI answers ride along): the
+  sweep a removal rides takes the dissolving row's list with it, so a fold that ran afterwards
+  would be a merge that deleted them.
+- **Replace** sends the row that was here out of the library and seats the arrival in its SLOT —
+  an overwrite stays where the thing it replaced was — and on every other shelf the displaced row
+  was filed on, because a replace that quietly took a book off shelves the question never mentioned
+  is a removal nobody asked for. This is the one destructive answer on either sheet, and it is the
+  reason a row says what it takes before the click rather than the sheet asking twice afterwards:
+  the name of the row going, and how many highlights leave with it.
+- **As new** is the import's naming on a row that already exists: the moved row takes the next free
+  name and lands beside the one it collided with.
+
 One question at a time, and a batch — a drag of four, an import of ten — lands its clean half at
 once and queues the rest on `state::library::LibraryState::conflict_waiting`: answering pops the
 next onto the screen, and Cancel drops them, which is what Cancel has always meant. There is no
-"apply to all" and no queue bookkeeping beyond the list, because there is no answer here that
-needs a batch to be consistent — the worst one can do is add a row.
+"apply to all" and no queue bookkeeping beyond the list.
 
 Nesting asks nothing at all, and that is the rule rather than an oversight: filing a folder inside
 another writes no membership, so nothing arrives on the parent's level for a name to collide with.

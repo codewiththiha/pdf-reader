@@ -713,6 +713,107 @@ pub fn record_read_row(
     record_read(rows, path, title, author, point, now_ms)
 }
 
+/// Fold one book into another: `gone` dissolves and `survivor` keeps its id,
+/// its name and its address, taking everything the survivor does not already
+/// know.
+///
+/// One function and no table of policies, because there is one fold and one
+/// question that asks for it — a row moved onto a level that already holds its
+/// name — and the rule per field is the one a reader means by "these are the
+/// same book":
+///
+///   * the place in it is the FURTHER of the two, and on a page tie the deeper
+///     stream fraction, because a merge must never send a reader backwards;
+///   * the page COUNT is the best either row ever knew even when the resume
+///     point came from the other — a merged book that knew 300 pages must not
+///     go back to not knowing;
+///   * a name and an author fill a gap and never overwrite, so the title a
+///     document gave at first open survives a fold with a row that had none;
+///   * the stamps keep the first join and the last read, with `0` ("never") as
+///     a gap the other side fills rather than as the dawn of time;
+///   * a measurement beats a placeholder, and an address is dead only when
+///     BOTH rows say so;
+///   * the survivor's identity is untouched — its id, its pipeline, its address
+///     and its independence are what every shelf membership and every key in
+///     storage already names, and a fold that moved them would orphan both.
+///
+/// The marks are NOT a field of a `Book`: they live in the app's own storage
+/// under a key this crate cannot see, so the caller folds them
+/// (`services::library::conflict` does, before it drops the row). A fold
+/// that forgot would be a merge that deleted one side's highlights.
+pub fn fold_books(survivor: &mut Book, gone: &Book) {
+    // The resume point travels as one unit: a page without its count is a
+    // position the progress bar cannot draw, and a fraction without its page is
+    // half a stream reading.
+    let mine = ReadPoint {
+        page: survivor.page,
+        num_pages: survivor.num_pages,
+        fraction: survivor.fraction,
+    };
+    let theirs = ReadPoint {
+        page: gone.page,
+        num_pages: gone.num_pages,
+        fraction: gone.fraction,
+    };
+    let point = further_point(mine, theirs).settled();
+    survivor.page = point.page;
+    survivor.fraction = point.fraction;
+    survivor.num_pages = point.num_pages.max(survivor.num_pages).max(gone.num_pages);
+    if survivor.title.as_deref().map(str::trim).unwrap_or("").is_empty()
+        && let Some(title) = gone.title.clone().filter(|t| !t.trim().is_empty())
+    {
+        survivor.title = Some(title);
+    }
+    if survivor.author.is_none() {
+        survivor.author = gone.author.clone().filter(|a| !a.trim().is_empty());
+    }
+    survivor.added_ms = earliest_known(survivor.added_ms, gone.added_ms);
+    survivor.last_read_ms = survivor.last_read_ms.max(gone.last_read_ms);
+    survivor.missing = survivor.missing && gone.missing;
+    // The pending flag is the survivor's OWN before it is folded, and the fold
+    // that reads it after overwriting it can never take a measurement: two
+    // placeholders stay one, but a placeholder yields to a row that has been
+    // weighed, because an unweighed row has nothing to defend its guess with.
+    let was_pending = survivor.fp_pending;
+    survivor.fp_pending = was_pending && gone.fp_pending;
+    if was_pending && !gone.fp_pending {
+        survivor.fp = gone.fp;
+    }
+}
+
+/// The point that got FURTHER: the higher page, and on a page tie the deeper
+/// stream fraction — a stream reader got somewhere a page count of zero cannot
+/// name. A full tie keeps the survivor's own, which is what makes "the point
+/// came from the other row" a fact worth reporting rather than a coin toss.
+pub fn further_point(mine: ReadPoint, theirs: ReadPoint) -> ReadPoint {
+    use std::cmp::Ordering;
+    match theirs.page.cmp(&mine.page) {
+        Ordering::Greater => theirs,
+        Ordering::Less => mine,
+        Ordering::Equal => match (mine.fraction, theirs.fraction) {
+            (_, None) => mine,
+            (None, Some(_)) => theirs,
+            (Some(a), Some(b)) => {
+                if b > a {
+                    theirs
+                } else {
+                    mine
+                }
+            }
+        },
+    }
+}
+
+/// The earlier of two stamps, with `0` as the gap it is: a migrated row carries
+/// no join stamp, and a fold that treated zero as the epoch would date every
+/// book it touched to 1970.
+fn earliest_known(mine: u64, theirs: u64) -> u64 {
+    match (mine, theirs) {
+        (0, other) | (other, 0) => other,
+        _ => mine.min(theirs),
+    }
+}
+
 /// Apply one path check to every book at that address, and say which books it
 /// touched.
 ///
@@ -1483,6 +1584,90 @@ mod tests {
             crate::ledger::registry_of(&only).get(&fp(10, 1, 7)).map(|k| k.id.as_str()),
             Some("a")
         );
+    }
+
+    #[test]
+    fn a_fold_takes_the_further_place_and_fills_the_gaps() {
+        let mut keep = linked("keep", "/books/dune.pdf");
+        keep.page = 12;
+        keep.num_pages = 300;
+        keep.added_ms = 500;
+        keep.last_read_ms = 900;
+        let mut gone = linked("gone", "/copies/dune.pdf");
+        gone.page = 240;
+        gone.title = Some("Dune".into());
+        gone.author = Some("Frank Herbert".into());
+        gone.added_ms = 300;
+        gone.last_read_ms = 700;
+
+        fold_books(&mut keep, &gone);
+        assert_eq!(keep.page, 240, "a merge never sends a reader backwards");
+        assert_eq!(keep.num_pages, 300, "the count survives from whichever row knew it");
+        assert_eq!(keep.title.as_deref(), Some("Dune"), "a name fills a gap");
+        assert_eq!(keep.author.as_deref(), Some("Frank Herbert"));
+        assert_eq!(keep.added_ms, 300, "the book joined when it first joined");
+        assert_eq!(keep.last_read_ms, 900, "and was read as recently as it was");
+        // The survivor's own identity is what every membership and every
+        // storage key already names, so a fold leaves all of it alone.
+        assert_eq!(keep.id, "keep");
+        assert_eq!(keep.path(), "/books/dune.pdf");
+        // And the other way round the point still wins, because which row the
+        // caller named is the caller's choice and not a coin toss per field.
+        let mut keep2 = linked("keep", "/books/dune.pdf");
+        keep2.page = 12;
+        keep2.title = Some("Mine".into());
+        fold_books(&mut keep2, &gone);
+        assert_eq!(keep2.page, 240);
+        assert_eq!(keep2.title.as_deref(), Some("Mine"), "and never overwrites a name");
+    }
+
+    #[test]
+    fn a_page_tie_goes_to_the_deeper_stream_fraction() {
+        let a = ReadPoint { page: 10, num_pages: 0, fraction: Some(0.4) };
+        let b = ReadPoint { page: 10, num_pages: 0, fraction: Some(0.7) };
+        assert_eq!(further_point(a, b), b);
+        assert_eq!(further_point(b, a), b);
+        // A fraction beats no fraction on the same page, and a full tie keeps
+        // the first — the survivor's own point.
+        let plain = ReadPoint { page: 10, num_pages: 0, fraction: None };
+        assert_eq!(further_point(plain, a), a);
+        assert_eq!(further_point(a, plain), a);
+        assert_eq!(further_point(a, a), a);
+    }
+
+    #[test]
+    fn a_fold_measures_and_unloses_an_address() {
+        // A placeholder yields to a measurement, and an address is dead only
+        // when both rows say so — one live copy is a book that opens.
+        let mut pending = linked("a", "/gone/dune.pdf");
+        pending.fp = Fingerprint::placeholder("/gone/dune.pdf");
+        pending.fp_pending = true;
+        pending.missing = true;
+        let measured = linked("b", "/books/dune.pdf");
+        fold_books(&mut pending, &measured);
+        assert!(!pending.fp_pending, "the merged row has been weighed");
+        assert_eq!(pending.fp, measured.fp);
+        assert!(!pending.missing);
+        // Two placeholders stay one: nothing has been measured, so the
+        // survivor's stands until the check that follows.
+        let mut both = linked("a", "/gone/dune.pdf");
+        both.fp_pending = true;
+        both.missing = true;
+        let mut also = linked("b", "/gone/dune.pdf");
+        also.fp_pending = true;
+        also.missing = true;
+        fold_books(&mut both, &also);
+        assert!(both.fp_pending && both.missing);
+        // And a join stamp of zero is "never", not the epoch.
+        let mut never = linked("a", "/one.pdf");
+        never.added_ms = 0;
+        let joined = {
+            let mut b = linked("b", "/two.pdf");
+            b.added_ms = 40;
+            b
+        };
+        fold_books(&mut never, &joined);
+        assert_eq!(never.added_ms, 40);
     }
 
     #[test]

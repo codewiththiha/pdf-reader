@@ -68,9 +68,9 @@ pub use reader_core::format::Format;
 pub use blob::{LibraryBlob, RecentBook, migrate_v1, migrate_v2};
 pub use book::{
     BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, Row, apply_check, book_rows, duplicate_title,
-    find_row, record_read, record_read_row, remove_row,
+    find_row, fold_books, further_point, record_read, record_read_row, remove_row,
 };
-pub use conflict::{Answer, Arrival, collide, next_name, same_name};
+pub use conflict::{Answer, Arrival, MoveAnswer, collide, next_name, same_name};
 pub use folder::{FolderOpts, Tombstone, WatchedFolder};
 pub use ledger::{
     KnownBook, Recovered, ScanAction, diff_folder, find_tombstone, index_by_fp, prune_tombstones,

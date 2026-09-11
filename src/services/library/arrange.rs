@@ -390,7 +390,7 @@ fn purge_one(state: AppState, row: &Row, opts: PurgeOpts) {
     let home = placed_by
         .as_deref()
         .and_then(|folder_id| folder_shelf_of(&shelves, folder_id, &book.id));
-    let entry = Tombstone::of(book, home, js_sys::Date::now() as u64);
+    let entry = Tombstone::of(book, home, now_ms());
     let was_stored = book.origin.is_stored();
 
     state.library.books.update(|rows| {
@@ -480,6 +480,36 @@ fn sweep_book(state: AppState, book: &Book, delete_store: bool) {
     sweep_path(state, book.path(), delete_store);
 }
 
+/// Remove one row, everywhere it is filed, and sweep the side data only it
+/// used. Returns the row that went.
+///
+/// The conflict sheet's removal — a Replace's displaced row and a Merge's
+/// dissolving one both go through here — and lighter than [`purge_one`] in
+/// exactly one way: no tombstone. The content stays in the library through the
+/// row on the other side of the question, so a folder rescan that re-found it
+/// would resolve to that row, and a tombstone for a fingerprint the library
+/// still holds is noise in the folder's restore menu until the next scan
+/// prunes it.
+pub(crate) fn drop_row(state: AppState, row_id: &str) -> Option<Row> {
+    let row = state
+        .library
+        .books
+        .with_untracked(|rows| find_row(rows, row_id).cloned())?;
+    state.library.books.update(|rows| {
+        remove_row(rows, row_id);
+        drop_dangling_links(rows);
+    });
+    state
+        .library
+        .shelves
+        .update(|shelves| shelf::forget_everywhere(shelves, row_id));
+    if let Some(book) = row.book() {
+        sweep_book(state, book, book.origin.is_stored());
+    }
+    crate::storage::persist_library(state.library);
+    Some(row)
+}
+
 /// The first of one folder's shelves a book is filed on, in shelf order.
 ///
 /// One answer rather than every answer, because a removed book comes back to ONE
@@ -559,7 +589,7 @@ pub fn create_shelf(state: AppState) -> String {
 /// level `parent` names, and the search tick that lands it on the frame it is
 /// made.
 fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
-    let id = library_core::id::next_shelf_id(js_sys::Date::now() as u64);
+    let id = library_core::id::next_shelf_id(now_ms());
     let made = id.clone();
     state.library.shelves.update(|shelves| {
         shelves.push(Shelf {
@@ -892,6 +922,25 @@ pub fn relink_dialog(state: AppState, book_id: String) {
             Err(message) => toast(state, message),
         }
     });
+}
+
+/// Milliseconds since the epoch — the stamp on a tombstone and the counter a
+/// shelf id is minted from.
+///
+/// Off wasm the clock is inert rather than a panic, for the reason
+/// `crate::storage` gives: the wasm-bindgen stubs abort when called natively,
+/// and a stamp nobody persists is fine at zero. Ids stay unique regardless, on
+/// `library_core::id`'s own counter — which is what lets a host test remove a
+/// book at all.
+fn now_ms() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() as u64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0
+    }
 }
 
 fn toast(state: AppState, message: String) {

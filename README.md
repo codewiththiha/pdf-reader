@@ -408,12 +408,25 @@ the filesystem.
 - **A shelf that already holds the name asks.** Importing a file, dragging a book or filing one onto
   a level that already holds a book OF THAT NAME — the same name, not the same bytes; a second
   format of one title is a second book and is simply placed — used to do nothing at all, which read
-  as the book vanishing into the shelf. Now it asks, with the three answers a reader can mean:
-  **Already imported** adds nothing and takes you to the book you have, on the shelf it is filed on,
-  with its card lit up; **Add as new** keeps both and names the arrival `1_1`, `1_2` and so on, the
-  counter a file manager appends, counted against that shelf's own names and promised on the row
-  before you click; **Make link** puts a pointer on the shelf instead of a copy. Home is a level
-  like any other and asks the same question of the books nobody has filed.
+  as the book vanishing into the shelf. Now it asks, and what it asks depends on which side of the
+  question has a book of its own.
+- **Importing a file onto a shelf that has the name asks what to put there**, with the three answers
+  a reader can mean: **Already imported** adds nothing and takes you to the book you have, on the
+  shelf it is filed on, with its card lit up; **Add as new** keeps both and names the arrival `1_1`,
+  `1_2` and so on, the counter a file manager appends, counted against that shelf's own names and
+  promised on the row before you click; **Make link** puts a pointer on the shelf instead of a copy.
+  A file has no book of its own yet, so none of these answers can cost you one. Home is a level like
+  any other and asks the same question of the books nobody has filed.
+- **Dragging a book onto a shelf that has the name asks which book the shelf keeps.** Both sides are
+  books you already have, so the three answers are the three things a reader can mean about them:
+  **Merge** folds the one you dragged into the one that was there — the further place in it wins, so
+  a merge never sends you backwards, the page count is the best either knew, names fill gaps rather
+  than overwrite, and the moved book's shelves and its highlights join the survivor instead of
+  leaving with it; **Replace** sends the book that was there out of the library and seats yours in
+  its place, on every shelf it was filed on, and the row says how many highlights leave with it
+  before you click; **As new** keeps both, yours under the next free name beside it. The two sheets
+  are two different types in the code, so a move can never be offered a link, and a file can never
+  be offered a replace.
 - **Importing a file puts a book where you dropped it.** A file the library already holds somewhere
   else is not a reason for a shelf to stay empty: importing `notes.md` into a second folder gives
   that folder its own book, with its own highlights and its own place in it, and the first folder
