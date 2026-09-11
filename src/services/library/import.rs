@@ -43,7 +43,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{
     Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut, find_book_mut,
-    find_by_id, find_row,
+    find_row,
 };
 use library_core::conflict::Arrival;
 use library_core::folder::{self as folder_ops, FolderOpts, Tombstone, WatchedFolder};
@@ -762,24 +762,12 @@ async fn run_folder(
     // new* run's: the addresses whose linked book the old tree keeps, and
     // where the new tree lands a copy of its own beside it.
     let convert_ids: Vec<String> = if switch_converts {
-        linked_rows_of_placed(&books, &folder.placed)
+        ledger::linked_rows_of(&books, &folder.placed)
     } else {
         Vec::new()
     };
     let switch_copy_paths: HashSet<String> = if switch_copies_known {
-        found
-            .iter()
-            .filter(|file| {
-                registry.get(&file.fp).is_some_and(|known| {
-                    find_by_id(&books, &known.id).is_some_and(|b| {
-                        matches!(b.origin, Origin::Linked { .. })
-                            && b.path() == file.path
-                            && folder.placed.contains(&file.fp)
-                    })
-                })
-            })
-            .map(|file| file.path.clone())
-            .collect()
+        ledger::switch_copy_paths(&found, &registry, &books, &folder.placed)
     } else {
         HashSet::new()
     };
@@ -839,13 +827,8 @@ async fn run_folder(
         }
     }
     // A relink that would point a book at an address another row already reads
-    // is a relink of the WRONG row. Two rows can hold one fingerprint now — a
-    // folder imported beside another that held a byte-identical copy — and the
-    // registry is first-wins, so it names one of them and a walk of the other
-    // folder would rewrite the first one's address out from under it. The
-    // address this walk found is already a book's address, so there is nothing
-    // here to heal and the walk stays quiet about it.
-    relinks.retain(|(_, to)| !book_rows(&books).any(|b| b.path() == to.as_str()));
+    // is a relink of the WRONG row — the ledger owns that rule and its test.
+    ledger::keep_healable_relinks(&mut relinks, &books);
     let relinked = relinks.len();
 
     // The ledger answered Skip for the switch's own files — their content is
@@ -1461,17 +1444,6 @@ async fn copy_batch(
     Ok(partition_store_results(state, results, "files"))
 }
 
-/// The living linked rows whose fingerprint a folder's `placed` set holds —
-/// the books its tree reads in place. The predicate both halves of the mode
-/// switch run on: what a merge converts into copies, and what a replace puts
-/// through the removal's sweep first.
-fn linked_rows_of_placed(rows: &[Row], placed: &HashSet<Fingerprint>) -> Vec<String> {
-    book_rows(rows)
-        .filter(|b| matches!(b.origin, Origin::Linked { .. }) && placed.contains(&b.fp))
-        .map(|b| b.id.clone())
-        .collect()
-}
-
 /// The rows a mode switch's *replace* would take out: the read-at-place
 /// folder's own linked books. A stored book on one of its shelves — a copy
 /// that came home — is NOT among them: the replace is about the instances
@@ -1491,7 +1463,7 @@ pub fn mode_switch_replace_rows(state: AppState, root: &str) -> Vec<String> {
     state
         .library
         .books
-        .with_untracked(|rows| linked_rows_of_placed(rows, &placed))
+        .with_untracked(|rows| ledger::linked_rows_of(rows, &placed))
 }
 
 /// The replace answer's first half: the folder's linked books leave the

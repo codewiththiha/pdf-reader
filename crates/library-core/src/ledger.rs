@@ -48,9 +48,9 @@
 //! rescan's answer unchanged: a book the library holds at this address is a
 //! Skip, at another address a Relink.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::book::{Book, Fingerprint, Row, book_rows, book_rows_mut};
+use crate::book::{Book, Fingerprint, Origin, Row, book_rows, book_rows_mut, find_by_id};
 use crate::folder::{Tombstone, WatchedFolder};
 use crate::scan::FoundFile;
 use crate::shelf::Shelf;
@@ -225,6 +225,69 @@ pub fn diff_import(folder: &WatchedFolder, registry: &Registry, found: &[FoundFi
         out.push(decide_import(folder, registry, file));
     }
     out
+}
+
+/// The addresses an *as new* mode switch owes a copy of its own.
+///
+/// The switch's COPY list, as against its CONVERT list — [`linked_rows_of`]
+/// answers the other one. A file is on this list when all four of these hold, and
+/// the four are the whole of what separates "a second instance the reader just
+/// asked for by name" from "the instance the library already has":
+///
+///   * the walk found it and the ledger knows its content, so it is a file the
+///     library already holds rather than a new one;
+///   * the row the ledger named is the row at THIS address, so the copy is a
+///     second instance of the same file and not a namesake of it;
+///   * that row reads in place, because a stored row is already the library's own
+///     copy and making another would be a third;
+///   * this folder placed it, so the copy belongs to this folder's tree and not to
+///     a watched folder that happens to hold the same bytes.
+///
+/// Pure over the walk, the registry and the rows, which is the point: the four
+/// conditions are a host test rather than something discovered by re-importing a
+/// real folder with the read-in-place switch off and reading the shelf.
+pub fn switch_copy_paths(
+    found: &[FoundFile],
+    registry: &Registry,
+    rows: &[Row],
+    placed: &HashSet<Fingerprint>,
+) -> HashSet<String> {
+    found
+        .iter()
+        .filter(|file| {
+            registry.get(&file.fp).is_some_and(|known| {
+                find_by_id(rows, &known.id).is_some_and(|b| {
+                    matches!(b.origin, Origin::Linked { .. })
+                        && b.path() == file.path
+                        && placed.contains(&file.fp)
+                })
+            })
+        })
+        .map(|file| file.path.clone())
+        .collect()
+}
+
+/// The living linked rows a folder's `placed` set answers for — the books its
+/// tree reads in place. The CONVERT list of a mode switch: what a merge flips
+/// into the library's own copies where they stand, and what a replace puts
+/// through the removal's sweep first.
+pub fn linked_rows_of(rows: &[Row], placed: &HashSet<Fingerprint>) -> Vec<String> {
+    book_rows(rows)
+        .filter(|b| matches!(b.origin, Origin::Linked { .. }) && placed.contains(&b.fp))
+        .map(|b| b.id.clone())
+        .collect()
+}
+
+/// Drop the relinks that would point a book at an address another row reads.
+///
+/// A relink of the WRONG row. Two rows can hold one fingerprint — a folder
+/// imported beside another that held a byte-identical copy — and [`registry_of`]
+/// is first-wins, so it names one of them and a walk of the OTHER folder would
+/// rewrite the first one's address out from under it. The address this walk found
+/// is already a book's address, so there is nothing here to heal and the walk
+/// stays quiet about it rather than moving a row nobody asked about.
+pub fn keep_healable_relinks(relinks: &mut Vec<(String, String)>, rows: &[Row]) {
+    relinks.retain(|(_, to)| !book_rows(rows).any(|b| b.path() == to.as_str()));
 }
 
 /// Record a deliberate removal, so the next rescan stays quiet about the file.
@@ -635,6 +698,155 @@ mod tests {
         let r = registry(&[(1, "b1", "/books/a.pdf", false), (2, "b2", "/books/b.pdf", false)]);
         let walk = vec![file(1, "/books/a.pdf"), file(2, "/books/b.pdf")];
         assert!(diff_folder(&f, &r, &walk).iter().all(|a| !changes(a)));
+    }
+
+    #[test]
+    fn the_switch_copies_the_files_its_own_tree_reads_in_place() {
+        // All four conditions, one per row of the walk: known content at its own
+        // address, read in place, placed by THIS folder.
+        let linked = |id: &str, path: &str, n: u32| {
+            Row::Book(Book::new(
+                id.into(),
+                fp(n),
+                Format::Markdown,
+                Origin::Linked { src: path.into() },
+                0,
+            ))
+        };
+        let stored = |id: &str, path: &str, n: u32| {
+            Row::Book(Book::new(
+                id.into(),
+                fp(n),
+                Format::Markdown,
+                Origin::Stored {
+                    src: Some(path.into()),
+                    store: format!("/store/{id}.md"),
+                },
+                0,
+            ))
+        };
+        let rows = vec![
+            linked("b1", "/one/a.md", 1),   // on the list
+            stored("b2", "/one/b.md", 2),   // already the library's own copy
+            linked("b3", "/one/c.md", 3),   // placed by ANOTHER folder
+        ];
+        let found = vec![
+            file(1, "/one/a.md"),
+            file(2, "/one/b.md"),
+            file(3, "/one/c.md"),
+            file(4, "/one/d.md"), // content the library does not hold
+        ];
+        // This folder placed the first two. The third is a linked book of the
+        // same content that ANOTHER watched folder placed, which is exactly the
+        // row a copy here would duplicate rather than answer for.
+        let placed: HashSet<Fingerprint> = [fp(1), fp(2)].into_iter().collect();
+        let registry = registry_of(&rows);
+        let paths = switch_copy_paths(&found, &registry, &rows, &placed);
+        assert_eq!(
+            paths.into_iter().collect::<Vec<_>>(),
+            vec!["/one/a.md".to_string()],
+            "a stored row is already a copy, a row another folder placed is not this tree's, \
+             and a file the library does not hold is an ordinary add"
+        );
+    }
+
+    #[test]
+    fn a_namesake_at_another_address_is_not_a_second_instance() {
+        // The registry knows the CONTENT; the copy list is about the file. A
+        // byte-identical book filed at a different address is a namesake the
+        // ledger will Relink or Skip, not a file this tree reads.
+        let rows = vec![Row::Book(Book::new(
+            "b1".into(),
+            fp(1),
+            Format::Markdown,
+            Origin::Linked {
+                src: "/elsewhere/a.md".into(),
+            },
+            0,
+        ))];
+        let found = vec![file(1, "/one/a.md")];
+        let placed: HashSet<Fingerprint> = [fp(1)].into_iter().collect();
+        assert!(
+            switch_copy_paths(&found, &registry_of(&rows), &rows, &placed).is_empty(),
+            "the row the ledger named is not the row at this address"
+        );
+    }
+
+    #[test]
+    fn the_convert_list_is_the_linked_rows_the_ledger_answers_for() {
+        let rows = vec![
+            Row::Book(Book::new(
+                "b1".into(),
+                fp(1),
+                Format::Markdown,
+                Origin::Linked {
+                    src: "/one/a.md".into(),
+                },
+                0,
+            )),
+            Row::Book(Book::new(
+                "b2".into(),
+                fp(2),
+                Format::Markdown,
+                Origin::Stored {
+                    src: Some("/one/b.md".into()),
+                    store: "/store/b2.md".into(),
+                },
+                0,
+            )),
+            Row::Book(Book::new(
+                "b3".into(),
+                fp(3),
+                Format::Markdown,
+                Origin::Linked {
+                    src: "/one/c.md".into(),
+                },
+                0,
+            )),
+        ];
+        let placed: HashSet<Fingerprint> = [fp(1), fp(2), fp(3)].into_iter().collect();
+        assert_eq!(
+            linked_rows_of(&rows, &placed),
+            vec!["b1".to_string(), "b3".to_string()],
+            "a stored book is already the library's own and never converts"
+        );
+    }
+
+    #[test]
+    fn a_relink_onto_an_address_a_row_already_reads_is_dropped() {
+        // Two rows, one fingerprint: the registry is first-wins, so a walk of
+        // the OTHER folder names b1 and would rewrite its address out from
+        // under it. The address is already a book's, so there is nothing to heal.
+        let rows = vec![
+            Row::Book(Book::new(
+                "b1".into(),
+                fp(1),
+                Format::Markdown,
+                Origin::Linked {
+                    src: "/one/a.md".into(),
+                },
+                0,
+            )),
+            Row::Book(Book::new(
+                "b2".into(),
+                fp(2),
+                Format::Markdown,
+                Origin::Linked {
+                    src: "/one/gone.md".into(),
+                },
+                0,
+            )),
+        ];
+        let mut relinks = vec![
+            ("b1".to_string(), "/one/a.md".to_string()),
+            ("b2".to_string(), "/one/moved.md".to_string()),
+        ];
+        keep_healable_relinks(&mut relinks, &rows);
+        assert_eq!(
+            relinks,
+            vec![("b2".to_string(), "/one/moved.md".to_string())],
+            "the heal that moves nobody stays, and the one that would steal an address goes"
+        );
     }
 
     #[test]
