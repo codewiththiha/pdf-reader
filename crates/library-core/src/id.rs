@@ -54,7 +54,7 @@ pub fn is_shelf(id: &str) -> bool {
 /// counter so two books imported in the same tick differ.
 ///
 /// The explicit-seq form is public for the one mint that is deliberately
-/// deterministic: the `v1` migration ([`crate::blob::migrate_v1`]), which
+/// deterministic: the `v1` migration ([`crate::blob::migrate::migrate_v1`]), which
 /// numbers a list it is handed in one pass and must produce the same ids if it
 /// ever runs twice over the same legacy blob. Everything else mints through
 /// [`next_id`]. Rendered in lower-case hex, which is 11 + 4 characters and reads

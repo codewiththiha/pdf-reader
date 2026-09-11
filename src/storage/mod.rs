@@ -20,9 +20,8 @@ use crate::state::library::{CoverImage, CoverMap, LibraryState};
 // The library's key names, its persisted shape and the migration from the shape
 // it replaced all live in `library_core::blob`, so the schema and the rules that
 // keep it valid are one crate's business rather than two.
-use library_core::blob::{
-    BlobV2, LEGACY_KEY, LIBRARY_KEY, LibraryBlob, RecentBook, V2_KEY, migrate_v1, migrate_v2,
-};
+use library_core::blob::{LIBRARY_KEY, LibraryBlob};
+use library_core::blob::migrate::{BlobV2, LEGACY_KEY, RecentBook, V2_KEY, migrate_v1, migrate_v2};
 use library_core::blob::sanitize as sanitize_library;
 use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
 
