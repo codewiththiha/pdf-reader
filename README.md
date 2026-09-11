@@ -360,10 +360,9 @@ the filesystem.
   Taking a shelf apart is the selection bar's receipt: select the folder and *Remove* itemises what
   survives it — every book stays in the library, the shelves inside it move up a level, and a shelf
   cut from a watched folder says the folder keeps watching.
-  The crumb's own *Rename…* / *Remove shelf* popover is written and parked behind
-  `SHOW_SHELF_CRUMB_MENU` in `src/features/library/breadcrumb/mod.rs` while the bar's crumb shapes
-  settle; flipping that one constant restores it, and until then renaming a shelf is not reachable
-  from the UI.
+  The crumb of the shelf you are on carries its own popover: *Rename…* replaces the label with a
+  field in place — Enter commits, Escape cancels — and *Remove shelf* is the same receipt the
+  selection bar gives, with a note when the shelf was cut from a watched folder.
 - **The breadcrumb keeps three crumbs and elides the rest behind `…`.** A chain has no end and a title
   bar does. The ellipsis is its own affordance rather than an arrow on a crumb, because an arrow on the
   third level whose panel lists the first and second reads as "deeper than three" when those levels are

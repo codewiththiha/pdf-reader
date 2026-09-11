@@ -920,7 +920,7 @@ A card's right-click is stopped before the hold's exhaust is even asked about. A
 answers with a synthetic `contextmenu` on some platforms, and one that went on to bubble would open
 the LEVEL's menu under the finger that was busy selecting.
 
-The current shelf's crumb used to carry the rename and remove popover, and that popover is now parked
-behind `SHOW_SHELF_CRUMB_MENU` while the crumb's shapes settle. It is parked rather than deleted for a
-reason that is not sentimental: `services::library::rename_shelf` has no other caller, and a service
-nothing calls is a service the next cleanup deletes.
+The current shelf's crumb carries the shelf's own popover: a rename in place — the thing being
+named is the thing being typed over, so no dialog has to describe a shelf the reader can already
+see — and the removal, with the watched-folder note when one applies. It is the second door to
+both acts beside the right-click's folder menu, and the only door to a rename.

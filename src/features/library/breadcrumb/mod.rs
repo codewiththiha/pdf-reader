@@ -52,22 +52,20 @@
 //! capture that still tells the truth.
 //!
 
-//! ## The parked shelf menu
+//! ## The shelf's own menu
 //!
-//! The LAST crumb used to be a button for a second reason: it is where a shelf the
-//! reader made got its name changed or got taken apart. That popover is parked
-//! behind [`SHOW_SHELF_CRUMB_MENU`] and the crumb reads as plain text, so the bar
-//! has one kind of crumb in it while the fold is being settled. It is parked rather
-//! than deleted: flipping the constant restores it verbatim, and keeping it
-//! compiled is what keeps `crate::services::library::rename_shelf` reachable — a
-//! service with no caller left is a service the next change deletes. Removal is
-//! still reachable without it, from the selection bar's receipt.
-//!
-//! Renaming happens inline, in the crumb itself. A dialog that asks for a name
-//! before showing the shelf it belongs to is a dialog the reader has to answer to
-//! find out what they were asking for; here the thing being named is the thing
-//! being typed over. Enter commits and Escape cancels, which is the pair a reader
+//! The LAST crumb is a button for a second reason: it is where a shelf the
+//! reader made gets its name changed or gets taken apart. Renaming happens
+//! inline, in the crumb itself. A dialog that asks for a name before showing
+//! the shelf it belongs to is a dialog the reader has to answer to find out
+//! what they were asking for; here the thing being named is the thing being
+//! typed over. Enter commits and Escape cancels, which is the pair a reader
 //! already expects from a field that replaced a label.
+//!
+//! The crumb stays a drop target while it wears the menu — the registration
+//! is the one every other crumb rides — and while a rename field is up the
+//! box is simply not there to hit, which is the honest answer for a crumb
+//! that is being edited.
 //!
 //! ## Three files, one bar
 //!
@@ -98,11 +96,6 @@ use crate::state::AppState;
 
 use fold::choose_split;
 use panel::{EllipsisCrumb, HoverIntent};
-
-/// Whether the current shelf's crumb carries its rename/remove popover. Parked;
-/// see the module docs.
-const SHOW_SHELF_CRUMB_MENU: bool = false;
-
 
 /// The element id of the root crumb, which stands for no shelf at all and so has
 /// no id of its own to be named after.
@@ -385,7 +378,7 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
                 let crumbs = shown.iter().enumerate().map(|(at, crumb)| {
                     let crumb = crumb.clone();
                     if split + at == last {
-                        view! { <CurrentCrumb state=state ctrl=ctrl crumb=crumb /> }.into_any()
+                        view! { <ShelfCrumbMenu state=state ctrl=ctrl crumb=crumb /> }.into_any()
                     } else {
                         view! { <LevelCrumb state=state ctrl=ctrl crumb=crumb /> }.into_any()
                     }
@@ -469,37 +462,12 @@ fn LevelCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoV
 }
 
 
-/// The shelf the page is on. Plain text while its popover is parked, but still a
-/// drop target: releasing a held book here files it onto the level the reader is
-/// already looking at, which is how a drag from inside a nested shelf lands back on
-/// the shelf that contains it.
+/// The shelf the page is on: its own popover — rename in place, or take the
+/// shelf apart — and still a drop target, because releasing a held book here
+/// files it onto the level the reader is already looking at, which is how a
+/// drag from inside a nested shelf lands back on the shelf that contains it.
 #[component]
-fn CurrentCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoView {
-    if SHOW_SHELF_CRUMB_MENU {
-        return view! { <ShelfCrumbMenu state=state crumb=crumb /> }.into_any();
-    }
-    let id = crumb.id.clone();
-    let label = crumb.name.clone();
-    let tooltip = crumb.name;
-    let dom_id = register_crumb(&ctrl, &id);
-    let hot_id = id;
-
-    view! {
-        <span class="flex min-w-0 items-center gap-0.5">
-            <Icon name=IconName::Next size=13 class="shrink-0 text-muted" />
-            <span id=dom_id title=tooltip class=move || crumb_class(true, ctrl.over_shelf(&hot_id))>
-                <span class="truncate">{label}</span>
-            </span>
-        </span>
-    }
-        .into_any()
-}
-
-
-/// The current shelf's own popover: rename in place, or take the shelf apart.
-/// Parked behind [`SHOW_SHELF_CRUMB_MENU`]; see the module docs.
-#[component]
-fn ShelfCrumbMenu(state: AppState, crumb: Crumb) -> impl IntoView {
+fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoView {
     let menu_open = RwSignal::new(false);
     let renaming = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
@@ -507,6 +475,12 @@ fn ShelfCrumbMenu(state: AppState, crumb: Crumb) -> impl IntoView {
     let name = crumb.name.clone();
     let tooltip = name.clone();
     let aria = format!("{name} shelf options");
+    // The crumb's drop registration is the one every crumb rides: the menu
+    // button wears the target's id, and while the rename field has replaced
+    // the button the box is simply not there to hit.
+    let id = crumb.id.clone();
+    let dom_id = register_crumb(&ctrl, &id);
+    let hot_id = id;
     // A Copy local rather than a field of the prop, so the popover's children stay
     // an `Fn`: the note under the row is the only thing here that reads the crumb.
     let watched = crumb.watched;
@@ -522,9 +496,12 @@ fn ShelfCrumbMenu(state: AppState, crumb: Crumb) -> impl IntoView {
                 let title = tooltip.clone();
                 let aria_label = aria.clone();
                 let shown = name.clone();
+                let button_id = dom_id.clone();
+                let class_id = hot_id.clone();
                 view! {
                     <div node_ref=anchor class="relative flex min-w-0 shrink items-center">
                         <button
+                            id=button_id
                             type="button"
                             title=title
                             aria-label=aria_label
@@ -532,6 +509,9 @@ fn ShelfCrumbMenu(state: AppState, crumb: Crumb) -> impl IntoView {
                             class="flex min-w-0 max-w-40 items-center gap-1 rounded-md px-1.5 py-0.5 \
                                    font-medium text-ink transition-colors hover:bg-line \
                                    focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            // The accent rule that says the held items are about to go
+                            // there — the same answer every other crumb paints.
+                            class=("crumb-drop", move || ctrl.over_shelf(&class_id))
                         >
                             <span class="truncate">{shown}</span>
                             <Icon name=IconName::ChevronDown size=11 class="shrink-0 text-muted" />
