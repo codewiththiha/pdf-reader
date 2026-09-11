@@ -88,8 +88,22 @@ fn task_id() -> String {
 
 /// Milliseconds since the epoch — the library's only clock. Stamps a book's
 /// `added_ms`, its id, and a folder's last scan.
+///
+/// Off wasm the clock is inert rather than a panic: the wasm-bindgen stubs abort
+/// when called natively, and a stamp nobody persists is fine at zero. The ids
+/// minted from it stay unique regardless, on [`id`]'s own counter — which is
+/// what lets a host test land a file at all.
+///
+/// [`id`]: library_core::id
 fn now_ms() -> u64 {
-    js_sys::Date::now() as u64
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() as u64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0
+    }
 }
 
 thread_local! {
@@ -483,6 +497,14 @@ async fn run_folder(
             ScanAction::Skip => {}
         }
     }
+    // A relink that would point a book at an address another row already reads
+    // is a relink of the WRONG row. Two rows can hold one fingerprint now — a
+    // folder imported beside another that held a byte-identical copy — and the
+    // registry is first-wins, so it names one of them and a walk of the other
+    // folder would rewrite the first one's address out from under it. The
+    // address this walk found is already a book's address, so there is nothing
+    // here to heal and the walk stays quiet about it.
+    relinks.retain(|(_, to)| !book_rows(&books).any(|b| b.path() == to.as_str()));
     let relinked = relinks.len();
 
     // A file at an address the library already holds IS that book, whatever the
@@ -507,7 +529,17 @@ async fn run_folder(
     // One book per fingerprint, inside a single scan as well as across scans: a
     // tree holding two byte-identical files is one book, and copying both would
     // leave an orphan in the store that nothing can ever remove.
-    let mut seen: HashSet<Fingerprint> = registry.keys().copied().collect();
+    // One book per fingerprint INSIDE a single scan, always: a tree holding two
+    // byte-identical files is one book, and copying both would leave an orphan
+    // in the store that nothing can ever remove. Across scans it is the
+    // RESCAN's rule and not an explicit import's — a reader who asks for this
+    // folder is asking for the files in it, and a byte-identical copy of a book
+    // another folder placed is still a file this folder holds, so it is still a
+    // book on this folder's shelf.
+    let mut seen: HashSet<Fingerprint> = match asked {
+        Asked::OnFocus => registry.keys().copied().collect(),
+        Asked::Explicitly => HashSet::new(),
+    };
     adds.retain(|f| seen.insert(f.fp));
 
     if adds.is_empty() && relinked == 0 && healed == 0 {
@@ -940,13 +972,11 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
 /// its resume point is written by itself, which is what makes "add as new"
 /// mean something a reader can see rather than a second name for one book.
 ///
-/// A NAMED landing always makes a row, and an unnamed one may not. The name is
-/// the sheet's *add as new*, which is an instruction to add a book: resolving it
-/// to the row the library already has — what [`add_book`] does for a fingerprint
-/// it recognises, and the right thing for a file dropped on a shelf the library
-/// already holds it from, where one book simply gains a second shelf — would
-/// answer "a second book of its own" with nothing happening at all, which is the
-/// vanishing the sheet exists to stop.
+/// The row is always a new one, named or not. The name is the sheet's *add as
+/// new* and the absence of one is a file the level had no book of that name
+/// for; either way the reader asked for a book HERE, and a resolve to the row
+/// another level holds would answer with nothing new on the level they dropped
+/// on — the vanishing the collision sheet exists to stop.
 ///
 /// Writes no persist, because a caller that lands four hundred files owes one
 /// write and only the caller knows whether this is one file or four hundred.
@@ -975,17 +1005,16 @@ pub fn land_file(
             now,
         )
     };
-    let named = book.title.is_some();
-    let mut placed = String::new();
-    state.library.books.update(|rows| {
-        placed = if named {
-            let id = book.id.clone();
-            rows.push(Row::Book(book));
-            id
-        } else {
-            add_book(rows, book)
-        };
-    });
+    // Always a row of its own, and never a resolve to the row the library
+    // already holds: the reader asked for THIS file on THIS level, and filing
+    // another level's row here leaves the level they dropped on with a book
+    // that is not its own — one removal from both shelves, one resume point
+    // between them, and a shelf that shows a book the reader never put there.
+    // Content identity is the ledger's business, which is a rescan's and a
+    // watched folder's; it is not an answer to a hand. What keeps two rows of
+    // one file honest is the mark above, not a dedupe here.
+    let placed = book.id.clone();
+    state.library.books.update(|rows| rows.push(Row::Book(book)));
     if shelf_id != shelves_ops::ALL_SHELF {
         state.library.shelves.update(|shelves| {
             if let Some(shelf) = shelves.iter_mut().find(|s| s.id == shelf_id) {
@@ -1037,7 +1066,82 @@ fn write_folder(state: AppState, folder: WatchedFolder) {
 
 #[cfg(test)]
 mod tests {
-    use super::{claim_root, rel_of, shelf_name};
+    use super::{claim_root, land_file, rel_of, shelf_name};
+    use crate::state::AppState;
+    use leptos::prelude::*;
+    use library_core::book::Fingerprint;
+    use library_core::scan::FoundFile;
+    use library_core::shelf::Shelf;
+
+    /// A measured Markdown file: the cover queue skips anything that is not a
+    /// PDF, so a host test that lands one never starts the wasm render chain.
+    fn found(path: &str, n: u32) -> FoundFile {
+        FoundFile {
+            rel: path.rsplit('/').next().unwrap_or(path).to_string(),
+            path: path.to_string(),
+            ext: "md".to_string(),
+            size: u64::from(n),
+            fp: Fingerprint {
+                size: u64::from(n),
+                mtime_ms: u64::from(n),
+                head_hash: n,
+            },
+        }
+    }
+
+    fn plain(id: &str) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: id.to_string(),
+            kind: Default::default(),
+            books: Vec::new(),
+            parent: None,
+            manual_parent: false,
+        }
+    }
+
+    #[test]
+    fn a_file_lands_as_its_own_row_on_the_level_it_was_dropped_on() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        state.library.shelves.set(vec![plain("a"), plain("b")]);
+        let file = found("/one/notes.md", 7);
+
+        land_file(state, &file, None, "a", None);
+        assert_eq!(state.library.books.get_untracked().len(), 1);
+
+        // The same file, imported onto an unrelated level. Nothing on that
+        // level holds the name, so nothing asks — and the answer to nothing
+        // asking is a book on that level, not a shrug. Filing the first
+        // level's row here instead would leave the reader looking at a shelf
+        // that gained nothing they put there, and one removal would take the
+        // book off both.
+        land_file(state, &file, None, "b", None);
+        let rows = state.library.books.get_untracked();
+        assert_eq!(rows.len(), 2, "each level gets a book of its own");
+        assert!(
+            rows[1].book().is_some_and(|b| b.independent),
+            "two books of one address keep their own highlights and place"
+        );
+        let shelves = state.library.shelves.get_untracked();
+        assert_eq!(
+            shelves.iter().find(|s| s.id == "b").map(|s| s.books.len()),
+            Some(1),
+            "and the level it was dropped on is the level it landed on"
+        );
+
+        // A name the sheet minted always makes a row too, whatever the library
+        // holds: "add as new" is an instruction to add a book.
+        land_file(
+            state,
+            &found("/two/other.md", 9),
+            Some("other_1".into()),
+            "b",
+            None,
+        );
+        assert_eq!(state.library.books.get_untracked().len(), 3);
+    }
 
     #[test]
     fn one_root_is_one_run_at_a_time() {

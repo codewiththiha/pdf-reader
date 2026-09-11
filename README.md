@@ -414,6 +414,10 @@ the filesystem.
   counter a file manager appends, counted against that shelf's own names and promised on the row
   before you click; **Make link** puts a pointer on the shelf instead of a copy. Home is a level
   like any other and asks the same question of the books nobody has filed.
+- **Importing a file puts a book where you dropped it.** A file the library already holds somewhere
+  else is not a reason for a shelf to stay empty: importing `notes.md` into a second folder gives
+  that folder its own book, with its own highlights and its own place in it, and the first folder
+  keeps the one it had. The same file imported twice onto ONE shelf is the collision above, and asks.
 - **A link is a row, not a book.** It carries the name of the book it points at and nothing else —
   no file, no cover of its own, no page, no highlights, no second copy of a two-gigabyte PDF — and
   tapping it goes to that book wherever in the library it is filed and lights its card up. Because

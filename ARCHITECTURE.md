@@ -403,9 +403,10 @@ of one file are allowed, so the sanitizer dedupes by *id* rather than by fingerp
 path-keyed writer treats the twins as the twins they are: a read and a path check update *all* the
 rows at an address (the reading position is a fact about the file, not about the row), and a
 removal sweeps the address's gloss, cover and store copy only when no remaining row reads from it
-(`services::library::arrange`'s `sweep_path`). The scans are unaffected either way: the ledger's
-registry is first-wins per fingerprint, and a content the library holds is a Skip whichever of its
-rows the index names.
+(`services::library::arrange`'s `sweep_path`). The ledger's registry is first-wins per fingerprint,
+which is a safe answer while every row of one fingerprint reads one address — and the reason a
+relink is dropped when the address it would write is one another row already reads, which is what
+keeps it safe now that two folders can each hold a copy.
 
 The list those rules run over is a list of ROWS, not of books. `book::Row` is either a `Book` or a
 `Row::Link` — a name, a target and a stamp, and nothing else — and the split is what every rule in
@@ -444,9 +445,23 @@ per file. The decision table is the test suite:
 | known, at the address already stored | yes | yes | – | `ScanAction::Skip` |
 | known, at a different address | yes | yes | – | `ScanAction::Relink` |
 | known, but the book is missing | yes | no | – | `ScanAction::Relink` |
-| known, placed by another folder | yes | no | – | `ScanAction::Skip` |
+| known, placed by another folder | yes | no | – | `ScanAction::Skip` — an explicit import's `Add` |
 | seen here, but the row is gone | no | yes | – | `ScanAction::Skip` |
 | anything | – | – | yes | `ScanAction::Skip` |
+
+That last cell is the one row the two tables answer differently, and it is the row a reader meets
+when they import a second folder holding a byte-identical copy of a book the first one placed. A
+rescan stays quiet, because staying quiet is a rescan's whole job and the alternative is a book
+reappearing on every window focus. An explicit import is a reader asking for *this* folder, and the
+file in it is a file this folder has, so it is a book on this folder's shelf: handing back an empty
+shelf for a folder the reader can see files in is the answer that reads as a broken import. The
+address the library already holds is not a second book either way — that is the same file, and the
+heal in `import::run_folder` measures the row rather than adding one beside it.
+
+Two rows of one fingerprint at two addresses are what that makes possible, and one guard keeps them
+honest: the registry is first-wins per fingerprint, so it names one of the two, and a relink that
+would point a book at an address another row already reads is a relink of the wrong row. The walk
+drops it, and both folders' rescans stay quiet.
 
 Row six is the rule the whole design exists for: a book the reader dragged off a folder's shelf is
 still in the library, its fingerprint is still in `WatchedFolder::placed`, and the next rescan

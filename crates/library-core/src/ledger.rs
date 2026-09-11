@@ -204,7 +204,23 @@ fn known_action(folder: &WatchedFolder, known: &KnownBook, file: &FoundFile) -> 
 pub fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFile) -> ScanAction {
     match registry.get(&file.fp) {
         None => ScanAction::Add(file.clone()),
-        Some(known) => known_action(folder, known, file),
+        Some(known) => {
+            let action = known_action(folder, known, file);
+            // The one row `diff_folder` and this table answer differently. A
+            // rescan that found content another folder placed stays quiet,
+            // because staying quiet is a rescan's whole job; an explicit import
+            // is a reader asking for THIS folder, and a byte-identical copy of
+            // a book another folder holds is still a file this folder has, so
+            // it is still a book on this folder's shelf. Handing back an empty
+            // shelf for a folder the reader can see files in is the answer that
+            // reads as a broken import. The address the library already holds
+            // is not a second book either way — that is the same file, and the
+            // heal in `import::run_folder` measures it rather than adding it.
+            match action {
+                ScanAction::Skip if known.path != file.path => ScanAction::Add(file.clone()),
+                other => other,
+            }
+        }
     }
 }
 
@@ -539,12 +555,22 @@ mod tests {
         );
     }
 
-    /// The import table keeps every row the tombstone does not own: a book the
-    /// library already holds at this address is still a Skip, and at another
-    /// address still a Relink — an explicit import is not a licence to
-    /// duplicate what the reader has.
+    /// The import table keeps the rows that are about THIS folder: a book the
+    /// library already holds at this address is still a Skip, because that is
+    /// the same file and not a second one, and at another address this folder
+    /// placed it is still a Relink, because the file moved inside a tree it
+    /// owns.
+    ///
+    /// The row it no longer keeps is the one that made a second folder's
+    /// identical copy invisible. An explicit import is a reader asking for
+    /// THESE files, and "a book another folder placed" is an answer about the
+    /// other folder: handing back a Skip for it is an empty shelf for a folder
+    /// the reader can see files in, and a dock card that says Imported. The
+    /// rescan's answer is the quiet one and stays quiet, because staying quiet
+    /// is a rescan's whole job and the alternative is a book reappearing on
+    /// every window focus.
     #[test]
-    fn an_explicit_import_still_refuses_to_duplicate_a_book_it_has() {
+    fn an_explicit_import_duplicates_nothing_this_folder_placed() {
         let f = folder(&[1], &[]);
         let r = registry(&[(1, "b1", "/books/a.pdf", false)]);
         assert_eq!(decide_import(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
@@ -555,10 +581,22 @@ mod tests {
                 to: "/books/moved/a.pdf".into()
             }
         );
-        // And a book another folder placed is still none of this folder's business.
+        // A copy another folder placed is a file THIS folder holds.
         let f = folder(&[], &[]);
         let r = registry(&[(1, "b1", "/other/a.pdf", false)]);
-        assert_eq!(decide_import(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
+        assert_eq!(
+            decide_import(&f, &r, &file(1, "/books/a.pdf")),
+            ScanAction::Add(file(1, "/books/a.pdf"))
+        );
+        assert_eq!(decide(&f, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
+        // And a folder that placed the content itself still heals a move
+        // rather than adding a second row for it, on either table.
+        let placed = folder(&[1], &[]);
+        let relink = ScanAction::Relink {
+            book_id: "b1".into(),
+            to: "/books/a.pdf".into(),
+        };
+        assert_eq!(decide_import(&placed, &r, &file(1, "/books/a.pdf")), relink);
     }
 
     #[test]
