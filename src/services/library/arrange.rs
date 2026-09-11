@@ -577,15 +577,15 @@ pub(crate) fn write_moved_stones(state: AppState, book: &Book, returned_row: Opt
             .find(|f| f.placed.contains(&book.fp))
             .and_then(|f| folder_shelf_of(&shelves, &f.id, &book.id))
     };
+    // The removal's own constructor, with the two facts a departure adds: this
+    // book left as the library's copy rather than died, and — when one answer
+    // named it — the row the file is represented by from now on. Spelling all
+    // eight fields here instead would be a second place a new `Tombstone` field
+    // has to be remembered, and the removal's receipt already owns the first six.
     let entry = Tombstone {
-        fp: book.fp,
-        title: book.title.clone(),
-        format: book.format,
-        last_path: book.path().to_string(),
-        shelf_id: home,
-        removed_ms: now_ms(),
         moved: true,
         returned_row: returned_row.map(str::to_string),
+        ..Tombstone::of(book, home, now_ms())
     };
     // `ledger::tombstone` writes it only into the folders that placed the
     // fingerprint and do not already hold a log for it — the removal's own

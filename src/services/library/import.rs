@@ -129,6 +129,19 @@ impl Drop for RootClaim {
     }
 }
 
+/// The sentence a second ask for a folder that is already being walked gets.
+///
+/// One spelling, because the two doors that can refuse a run — an import and the
+/// mode switch's replace — refuse it for the same reason and owe the reader the
+/// same words. A toast each door worded itself would eventually differ about
+/// whether the refusal was about this folder or about imports generally.
+fn already_importing(state: AppState, root: &str) {
+    state.ui.toast.set(Some(Toast::new(format!(
+        "{} is already being imported.",
+        folder_label(root)
+    ))));
+}
+
 /// Whether a walk of `root` is already in flight — the question the replace
 /// answer has to ask BEFORE its purge, because a removal behind a refused
 /// claim would be a sweep with no import to answer it.
@@ -388,10 +401,7 @@ pub(crate) fn proceed_folder(
     // its card is on the dock and its walk is the same tree. Racing it would
     // clobber its ledger write, so the second ask says so instead.
     let Some(claim) = claim_root(&root) else {
-        state.ui.toast.set(Some(Toast::new(format!(
-            "{} is already being imported.",
-            folder_label(&root)
-        ))));
+        already_importing(state, &root);
         return;
     };
     let task = task_id();
@@ -1239,9 +1249,11 @@ async fn run_folder(
     // REPRESENTED file reveals the row its folder's log names instead: the
     // copy that came home is where the import "landed".
     let represented_count = represented.len() as u32;
-    if let Some(first) = restored.into_iter().next() {
-        super::reveal::reveal_book(state, &first);
-    } else if let Some(first) = represented.into_iter().next() {
+    // One light for whichever came back first, restorations ahead of the rows a
+    // log named as represented — the same order `run_files` reveals in, and the
+    // same shape: a chain and a `next`, rather than two arms doing one thing.
+    let came_back = restored.into_iter().chain(represented).next();
+    if let Some(first) = came_back {
         super::reveal::reveal_book(state, &first);
     }
 
@@ -1488,10 +1500,7 @@ pub(crate) fn purge_folder_linked_books(state: AppState, root: &str) {
 /// prevent.
 pub(crate) fn replace_folder_with_copies(state: AppState, root: String, opts: FolderOpts) {
     if root_is_claimed(&root) {
-        state.ui.toast.set(Some(Toast::new(format!(
-            "{} is already being imported.",
-            folder_label(&root)
-        ))));
+        already_importing(state, &root);
         return;
     }
     purge_folder_linked_books(state, &root);

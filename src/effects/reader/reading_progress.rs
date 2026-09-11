@@ -1,8 +1,11 @@
 //! Persist the reader's position in the current book.
 //!
 //! Watches `viewer.page` (kept in sync with scrolling in both view modes) and,
-//! while a document is open, keeps the current path's `RecentBook.page` in the
-//! library up to date, so the next open resumes where the reader left off.
+//! while a document is open, keeps the open book's resume point in the library
+//! up to date, so the next open resumes where the reader left off. The write is
+//! `library_core::book::record_read`'s — every row that shares the address moves,
+//! and a row that is a book of its own moves alone — through the same seam an
+//! open records through (`crate::services::document::open::shelf`).
 //! Persistence is debounced: a fast scroll through continuous mode is one
 //! localStorage write, not one per row.
 //!

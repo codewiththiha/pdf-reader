@@ -29,10 +29,12 @@ use app_chrome::icon::{Icon, IconName};
 use crate::features::library::dnd::controller::{DragController, GhostTile};
 use crate::features::library::folder_card::THUMB_CAP;
 
-/// The most tiles the ghost fans out. The same cap a folder's plate has, so a
-/// drag of nine books looks like the shelf it is offering to make and not like a
-/// hand of cards; the count badge carries the rest.
-const GHOST_TILES: usize = 4;
+/// The most tiles the ghost fans out. Named after the folder's own plate cap
+/// rather than spelled a second time beside it: a drag of nine books is a promise
+/// about the shelf it is offering to make, and a promise drawn with a different
+/// number of cells than the card it becomes is a promise about a folder the
+/// library does not have. The count badge carries the rest.
+const GHOST_TILES: usize = THUMB_CAP;
 
 /// The overlay a live drag draws under the pointer.
 #[component]

@@ -32,6 +32,7 @@ use library_core::sort::{self, SortKey};
 use library_core::book::Row;
 
 use crate::components::primitives::feedback::CenteredLoader;
+use crate::components::primitives::motion::reduced_motion::prefers_reduced_motion;
 use crate::features::library::context_menu::{LibraryContextMenu, LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
@@ -140,13 +141,13 @@ fn install_reveal(state: AppState) {
 /// platform's answer are two different questions with the same answer shape, and
 /// either one saying no is enough: a smooth scroll under
 /// `prefers-reduced-motion` is exactly the motion the preference is about.
+///
+/// The platform half is the motion primitive's rather than a second
+/// `match_media` here — one spelling of the query, and the primitive's sibling
+/// `reduced_motion_signal` is what a surface that has to react to the OS
+/// changing its mind mid-session reads.
 fn scroll_may_animate(state: AppState) -> bool {
-    if !state.settings.with_untracked(|s| s.animations.enabled) {
-        return false;
-    }
-    web_sys::window()
-        .and_then(|window| window.match_media("(prefers-reduced-motion: reduce)").ok().flatten())
-        .is_some_and(|query| !query.matches())
+    state.settings.with_untracked(|s| s.animations.enabled) && !prefers_reduced_motion()
 }
 
 /// The rows the page shows, in the order it shows them — the books and the
