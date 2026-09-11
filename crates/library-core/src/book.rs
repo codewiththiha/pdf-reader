@@ -504,16 +504,11 @@ pub fn stem_of(path: &str) -> String {
 pub fn duplicate_title(base: &str, in_use: &std::collections::HashSet<String>) -> String {
     let base = base.trim();
     let root = if base.is_empty() { "Book" } else { base };
-    let root = match root.rsplit_once('_') {
-        Some((stem, counter))
-            if !stem.is_empty()
-                && !counter.is_empty()
-                && counter.chars().all(|c| c.is_ascii_digit()) =>
-        {
-            stem
-        }
-        _ => root,
-    };
+    // The counter rule is the filename policy's and not this crate's: the same
+    // predicate decides whether a document-supplied title is download debris
+    // wearing a copy counter, and a second spelling of it here would be a second
+    // convention the moment either half was edited.
+    let root = reader_core::filename::strip_copy_counter(root);
     (1u32..)
         .map(|n| format!("{root}_{n}"))
         .find(|candidate| !in_use.contains(candidate))

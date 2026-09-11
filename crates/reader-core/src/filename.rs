@@ -72,7 +72,14 @@ fn looks_like_file_name(t: &str) -> bool {
 /// "dune_1_2" is not a counter on "dune_1" but a snake-case name in its own
 /// right — and the duplicate namer never mints one (it strips the old counter
 /// before appending the next).
-fn strip_copy_counter(t: &str) -> &str {
+///
+/// Public because it is ONE rule with two readers, and the two have to agree or
+/// the convention breaks: this module reads it to spare a name the namer minted
+/// from the download-debris test above, and `library_core::book::duplicate_title`
+/// reads it to step a counter instead of stacking one ("Dune_1" → "Dune_2", not
+/// "Dune_1_1"). Two spellings of it would be two conventions the moment one of
+/// them was edited.
+pub fn strip_copy_counter(t: &str) -> &str {
     match t.rsplit_once('_') {
         Some((base, counter))
             if !base.is_empty()
