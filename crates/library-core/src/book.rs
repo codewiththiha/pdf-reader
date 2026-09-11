@@ -437,6 +437,47 @@ impl Book {
         }
         Some((self.page.min(self.num_pages) as f64 / self.num_pages as f64).clamp(0.0, 1.0))
     }
+
+    /// Take a measurement of THIS book's own bytes as its identity.
+    ///
+    /// The copy half of the library's two measurements. A stored row is the
+    /// library's own instance of a file, so its fingerprint is the copy's and
+    /// the source address's stays free for whatever folder reads it — which is
+    /// the whole of why a departure can leave a book on its shelf and still
+    /// hand the OS file back to its folder's ledger.
+    ///
+    /// A copy that could not be weighed leaves [`Book::fp_pending`] set rather
+    /// than wearing a fingerprint that is not its own: the startup sweep
+    /// measures the store path and finishes the job, and every watched folder's
+    /// rescan is held off until it does, because a real fingerprint compared
+    /// against a placeholder matches nothing and would re-add the book.
+    ///
+    /// Deliberately does NOT clear [`Book::missing`]. "What is this instance"
+    /// and "is the address there" are two questions, and this answers only the
+    /// first; a caller that has just made the bytes its own says so itself.
+    pub fn adopt_measurement(&mut self, measured: Option<Fingerprint>) {
+        match measured {
+            Some(fp) => {
+                self.fp = fp;
+                self.fp_pending = false;
+            }
+            None => self.fp_pending = true,
+        }
+    }
+
+    /// The address resolved, and this is what was at it.
+    ///
+    /// The heal half, and the one every path check and every folder walk goes
+    /// through: the row's identity becomes the measurement, the placeholder
+    /// mark goes, and the address is not missing. A row migrated from the `v1`
+    /// schema carries a [`Fingerprint::placeholder`] that no measurement ever
+    /// matched, so this is also what stops a rescan from adding a second copy of
+    /// a book the library has always had — see [`apply_check`].
+    pub fn heal(&mut self, fp: Fingerprint) {
+        self.fp = fp;
+        self.fp_pending = false;
+        self.missing = false;
+    }
 }
 
 /// Where the reader is in a book: the resume page, the page count, and (for a
@@ -836,9 +877,7 @@ pub fn apply_check(rows: &mut [Row], check: &crate::wire::PathCheck) -> Vec<Stri
         let changed = match measured {
             Some(fp) => {
                 let changed = book.fp != fp || book.missing || book.fp_pending;
-                book.fp = fp;
-                book.missing = false;
-                book.fp_pending = false;
+                book.heal(fp);
                 changed
             }
             None => {
@@ -1927,5 +1966,43 @@ mod tests {
         assert!(!b.missing);
         assert_eq!(b.title, None);
         assert_eq!(b.path(), "/n.md");
+    }
+
+    #[test]
+    fn adopting_a_measurement_makes_the_copy_the_identity() {
+        let mut b = linked("b1", "/src/a.pdf");
+        b.fp_pending = true;
+        b.adopt_measurement(Some(fp(99, 5, 3)));
+        assert_eq!(b.fp, fp(99, 5, 3));
+        assert!(!b.fp_pending);
+        // An adoption answers "what is this instance", not "is an address
+        // there": the two callers that also clear `missing` are the two that
+        // have just made the bytes their own, and they say so themselves.
+        assert!(!b.missing);
+    }
+
+    #[test]
+    fn a_copy_that_could_not_be_weighed_stays_pending() {
+        // A placeholder the startup sweep finishes is honest. A fingerprint
+        // nobody measured would be a guess every later rescan trusts, and a
+        // guess that matched nothing is a book the library adds twice.
+        let mut b = linked("b1", "/src/a.pdf");
+        b.adopt_measurement(None);
+        assert!(b.fp_pending);
+        assert_eq!(b.fp, fp(10, 1, 7), "the identity it had is left alone");
+    }
+
+    #[test]
+    fn healing_an_address_brings_a_missing_book_back() {
+        // A migrated row carries a placeholder, and the first walk that finds
+        // the file is what replaces it: until then every watched folder's
+        // rescan is held off, because a real fingerprint matches no placeholder.
+        let mut b = linked("b1", "/src/a.pdf");
+        b.missing = true;
+        b.fp_pending = true;
+        b.heal(fp(40, 9, 2));
+        assert_eq!(b.fp, fp(40, 9, 2));
+        assert!(!b.missing);
+        assert!(!b.fp_pending);
     }
 }

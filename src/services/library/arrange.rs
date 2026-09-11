@@ -532,13 +532,11 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
                 src: Some(path.clone()),
                 store: store.clone(),
             };
-            match measured {
-                Some(fp) => {
-                    book.fp = fp;
-                    book.fp_pending = false;
-                }
-                None => book.fp_pending = true,
-            }
+            book.adopt_measurement(measured);
+            // The bytes are the app's own copy now, so the address the row used
+            // to read is provenance and nothing more: a row left `missing`
+            // through a conversion would be a card offering to find a file the
+            // library already holds.
             book.missing = false;
         }
     });
@@ -1252,9 +1250,7 @@ fn relink_book(state: AppState, book_id: String, path: String) {
                     }
                 }
             }
-            book.fp = fp;
-            book.fp_pending = false;
-            book.missing = false;
+            book.heal(fp);
         });
         // Covers are keyed by address, so the old entry now belongs to nobody;
         // the prune drops it and the next open renders the new one.

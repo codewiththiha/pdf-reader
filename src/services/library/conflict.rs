@@ -866,12 +866,8 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
             });
             if same_file {
                 state.library.books.update(|rows| {
-                    if let Some(book) =
-                        book_rows_mut(rows).find(|b| b.id == existing)
-                    {
-                        book.fp = file.fp;
-                        book.fp_pending = false;
-                        book.missing = false;
+                    if let Some(book) = book_rows_mut(rows).find(|b| b.id == existing) {
+                        book.heal(file.fp);
                     }
                 });
             }

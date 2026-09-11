@@ -582,9 +582,7 @@ fn heal_by_address(
         }
         match book_rows_mut(books).find(|b| b.path() == file.path) {
             Some(book) => {
-                book.fp = file.fp;
-                book.fp_pending = false;
-                book.missing = false;
+                book.heal(file.fp);
                 healed += 1;
                 false
             }
@@ -1055,9 +1053,7 @@ async fn run_folder(
             if !switch_copy
                 && let Some(existing) = book_rows_mut(books).find(|b| b.path() == file.path)
             {
-                existing.fp = file.fp;
-                existing.fp_pending = false;
-                existing.missing = false;
+                existing.heal(file.fp);
                 folder.mark_placed(file.fp);
                 healed += 1;
                 continue;
@@ -1111,16 +1107,12 @@ async fn run_folder(
             // pushed past it.
             let placed_id = if switch_copy {
                 book.independent = true;
-                match store_at
-                    .as_ref()
-                    .and_then(|store| switch_measured.get(store))
-                {
-                    Some(fp) => {
-                        book.fp = *fp;
-                        book.fp_pending = false;
-                    }
-                    None => book.fp_pending = true,
-                }
+                book.adopt_measurement(
+                    store_at
+                        .as_ref()
+                        .and_then(|store| switch_measured.get(store))
+                        .copied(),
+                );
                 let id = book.id.clone();
                 books.push(Row::Book(book));
                 id
@@ -1611,13 +1603,11 @@ async fn convert_folder_books_to_stored(state: AppState, task: &str, ids: &[Stri
                 src: Some(path.clone()),
                 store: store.clone(),
             };
-            match fp {
-                Some(fp) => {
-                    book.fp = fp;
-                    book.fp_pending = false;
-                }
-                None => book.fp_pending = true,
-            }
+            book.adopt_measurement(fp);
+            // The bytes are the app's own copy now, so an address that stopped
+            // resolving is no longer this row's problem — and a row that stays
+            // `missing` after a conversion is a card offering a relink to a
+            // file the library already holds.
             book.missing = false;
         });
         // The highlights follow the address, by the departure's own rule:
@@ -2176,13 +2166,7 @@ pub(crate) fn land_stored_copy(
 fn adopt_copy_measurement(state: AppState, row_id: &str, measured: Option<Fingerprint>) {
     state.library.books.update(|rows| {
         if let Some(book) = book_rows_mut(rows).find(|b| b.id == row_id) {
-            match measured {
-                Some(fp) => {
-                    book.fp = fp;
-                    book.fp_pending = false;
-                }
-                None => book.fp_pending = true,
-            }
+            book.adopt_measurement(measured);
         }
     });
 }
