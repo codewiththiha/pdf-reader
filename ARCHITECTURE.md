@@ -655,9 +655,9 @@ enforced only on the way in is a rule one backup can break. Sanitising the shelv
 folder is gone is dropped there, and a shelf nested inside it would otherwise be left pointing at a
 parent that no longer exists.
 
-Removing a shelf lifts the shelves inside it to the level it was on (`shelf::lift_children`, and the
-same rule in SQL in `src-tauri/src/db/repo.rs`), for the same reason its books stay in the library:
-a reader who took one folder apart did not ask to lose the folders filed in it.
+Removing a shelf lifts the shelves inside it to the level it was on (`shelf::lift_children`), for the
+same reason its books stay in the library: a reader who took one folder apart did not ask to lose the
+folders filed in it.
 
 That is the default and not the only answer, because "take this shelf apart" and "get rid of this
 shelf and everything in it" are both things a reader means, and only the first of them was reachable.
@@ -686,9 +686,8 @@ folder's shelves on the rung their `rel` names — until the reader moves one by
 the disk: `library_core::shelf::reparent` accepts the move and marks the row
 `Shelf::manual_parent`, and the re-hang passes a marked shelf by, so the move is a promise the next
 scan KEEPS instead of one it breaks. The mark is written in `reparent` alone — the one function
-every hand-move rides — and mirrored by the catalog's own `shelf_reparent`, because the two stores
-hold the same library and a value that survives a restart in one and not the other is a value
-lost. The moved shelf keeps every disk fact it had: its `rel` still routes newly scanned files
+every hand-move rides. The moved shelf keeps every disk fact it had: its `rel` still routes newly
+scanned files
 into it, and its subtree hangs off `parent` pointers, so a moved folder carries its folders and
 its books the way a moved directory carries its tree — and a read-in-place book's address travels
 on the book, so tracking, relink and the resume points never knew a move happened. For a VIRTUAL

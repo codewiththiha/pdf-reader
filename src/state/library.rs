@@ -37,7 +37,7 @@ use library_core::wire::{ImportPhase, ImportProgress};
 use crate::services::library::conflict::ConflictAsk;
 
 /// How many covers the cache holds. A cover is a base64 JPEG of a few tens of
-/// kilobytes, so this — not [`library_core::BOOKS_CAP`](library_core::book::BOOKS_CAP)
+/// kilobytes, so this — not [`BOOKS_CAP`](library_core::book::BOOKS_CAP)
 /// — is the library's real memory and quota budget. Past it the least recently
 /// read covers go; they are derived, and reopening a book renders its page 1
 /// again.

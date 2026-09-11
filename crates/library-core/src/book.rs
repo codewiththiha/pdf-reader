@@ -471,9 +471,8 @@ impl ReadPoint {
     }
 
     /// The point with an impossible fraction dropped and the page clamped to
-    /// the first. What [`record_read`] writes, and what the catalog's own SQL
-    /// layer in the shell applies before an UPDATE, so no writer in either
-    /// process can hand the library a resume point it has to second-guess
+    /// the first. What [`record_read`] writes before the row is touched, so no
+    /// writer can hand the library a resume point it has to second-guess
     /// later.
     pub fn settled(self) -> Self {
         Self {
