@@ -206,38 +206,44 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
 /// cannot tell apart, which is the shelf's own spelling of the collision the
 /// book sheet asks about. The question goes to the folder sheet
 /// (`crate::services::library::conflict`), and the run starts with the answer
-/// it gave as its [`RootPlan`]. A folder whose own previous run minted the
-/// colliding shelf does NOT ask: re-importing one folder continues it rather
-/// than arriving beside it, which is the whole of what its `shelf_map` is.
+/// it gave as its [`RootPlan`].
+///
+/// ALWAYS: a reader who picked a folder and clicked Import asked for an
+/// answer, and a run that ends on "Imported 0 books" with no sheet in between
+/// is the silent nothing the book collision used to be. A folder colliding
+/// with its OWN previous shelf asks too — the continuation is a choice rather
+/// than a surprise — and its ask says which kind of question it is, so the
+/// sheet can offer the two answers a continuation has.
 pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     let incoming = folder_label(&root);
     let shelves = state.library.shelves.get_untracked();
     if let Some(existing_id) = library_core::conflict::collide_shelf(&shelves, None, &incoming) {
-        let already_mine = state.library.folders.with_untracked(|folders| {
+        // The folder's own root shelf, when a previous run minted one: the
+        // `shelf_map`'s root rung is the whole of that memory.
+        let own = state.library.folders.with_untracked(|folders| {
             folders
                 .iter()
                 .find(|f| f.root == root)
                 .and_then(|f| f.shelf_map.get("").cloned())
                 == Some(existing_id.clone())
         });
-        if !already_mine {
-            let existing_name = shelves
-                .iter()
-                .find(|s| s.id == existing_id)
-                .map(|s| s.name.clone())
-                .unwrap_or_else(|| incoming.clone());
-            conflict::raise_shelf(
-                state,
-                conflict::ShelfConflictAsk {
-                    incoming_name: incoming,
-                    existing_id,
-                    existing_name,
-                    root,
-                    opts,
-                },
-            );
-            return;
-        }
+        let existing_name = shelves
+            .iter()
+            .find(|s| s.id == existing_id)
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| incoming.clone());
+        conflict::raise_shelf(
+            state,
+            conflict::ShelfConflictAsk {
+                incoming_name: incoming,
+                existing_id,
+                existing_name,
+                root,
+                opts,
+                own,
+            },
+        );
+        return;
     }
     proceed_folder(state, root, opts, RootPlan::default());
 }

@@ -584,8 +584,12 @@ every later rescan keeps it — and every root-level file whose NAME that shelf 
 to the compact per-file sheet: Merge (the row stays and takes the file's measurement), Replace, or
 As new, one at a time or, behind the sheet's apply-to-all switch, one answer for the whole queue.
 A file nothing collides with simply goes in: new books in a merged folder are the default, not a
-case. A folder's own re-import never asks — the shelf its `shelf_map` minted is a continuation
-rather than an arrival — and a nesting still asks nothing at all, for the reason below.
+case. A folder colliding with its OWN previous shelf asks too — a reader who picked a folder and
+clicked Import asked for an answer, and a run that ends on "Imported 0 books" with no sheet in
+between is the silent nothing the book collision used to be — but its sheet is the
+continuation's: the merge and the link, and no counter name, because a second shelf of one folder
+is a shelf the ledger could only fill with books the library already holds. A nesting still asks
+nothing at all, because a nesting writes a parent and not a membership.
 
 Nesting asks nothing at all, and that is the rule rather than an oversight: filing a folder inside
 another writes no membership, so nothing arrives on the parent's level for a name to collide with.

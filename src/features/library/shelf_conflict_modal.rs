@@ -10,11 +10,17 @@
 //! (`crate::services::library::import::RootPlan`); the third walks away with a
 //! pointer row and no import at all.
 //!
+//! A folder colliding with its OWN previous shelf asks the continuation's
+//! question rather than the arrival's: the sheet offers the merge (which
+//! picks up anything new since the last import) and the link, and not a
+//! counter name whose shelf the ledger could only fill with books the library
+//! already holds. A re-import that ended on "Imported 0 books" with no sheet
+//! in between was the silent nothing this exists to stop.
+//!
 //! A drag never asks this: nesting a shelf writes a parent rather than a
 //! membership, so nothing arrives on a level for a name to collide with — the
 //! rule `crate::services::library::arrange` gives. And a watched folder's own
-//! rescan never asks either: staying quiet is a rescan's whole job, and a
-//! folder the reader is already watching has already answered this once.
+//! rescan never asks either: staying quiet is a rescan's whole job.
 
 use leptos::prelude::*;
 
@@ -48,6 +54,14 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
         >
             {move || {
                 let ask = state.library.shelf_conflict.get()?;
+                // A folder colliding with its OWN previous shelf is a
+                // continuation, and the sheet reads as one: the merge and the
+                // link are the two answers a continuation has, and the counter
+                // name stays off it — a second shelf of one folder is a shelf
+                // the ledger could only fill with books the library already
+                // holds, and a row that promises an empty tree is a row the
+                // reader has to find out about the hard way.
+                let own = ask.own;
                 // The name *as new* would mint, counted against the level's own
                 // shelves at the click — the row promises the counter rather
                 // than asking the reader to take "the next free name" on
@@ -57,22 +71,48 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                 });
                 let heading = ask.incoming_name.clone();
                 let tooltip = heading.clone();
-                let subtitle = format!("A shelf called “{}” is already here", ask.existing_name);
-                let question = format!(
-                    "You are importing the folder “{}”, and this level already has a shelf \
-                     called that. Give the arriving folder the next free name, leave a pointer \
-                     to the shelf that is here, or file the folder's books into it.",
-                    ask.incoming_name
-                );
+                let subtitle = if own {
+                    format!("Already in the library as “{}”", ask.existing_name)
+                } else {
+                    format!("A shelf called “{}” is already here", ask.existing_name)
+                };
+                let question = if own {
+                    format!(
+                        "This folder is already in the library — “{}” is the shelf its last \
+                         import made. Continue the import into it, or leave a pointer here \
+                         instead.",
+                        ask.existing_name
+                    )
+                } else {
+                    format!(
+                        "You are importing the folder “{}”, and this level already has a shelf \
+                         called that. Give the arriving folder the next free name, leave a \
+                         pointer to the shelf that is here, or file the folder's books into it.",
+                        ask.incoming_name
+                    )
+                };
                 let new_note =
                     format!("Import as “{new_name}” — its own shelf, its own tree");
                 const LINK_NOTE: &str = "A pointer row, not a second shelf: nothing is \
                                          imported, and tapping it lights the folder where it is";
-                let merge_note = format!(
-                    "The folder's books join “{}”; a book whose name it already holds is \
-                     asked one by one",
-                    ask.existing_name
-                );
+                let merge_label = if own {
+                    "Import into it"
+                } else {
+                    "Merge into it"
+                };
+                let merge_note = if own {
+                    format!(
+                        "Continue into “{}” — anything new since the last import joins it, \
+                         and a book whose name it already holds is asked one by one",
+                        ask.existing_name
+                    )
+                } else {
+                    format!(
+                        "The folder's books join “{}”; a book whose name it already holds is \
+                         asked one by one",
+                        ask.existing_name
+                    )
+                };
                 Some(view! {
                     <>
                         <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
@@ -93,13 +133,17 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                         <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
                             <p class="text-xs text-muted">{question}</p>
                             <div class="mt-3 divide-y divide-line rounded-xl border border-line">
-                                <ChoiceRow
-                                    label="Add as new"
-                                    note=new_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::AsNew)
-                                    })
-                                />
+                                {(!own).then(|| {
+                                    view! {
+                                        <ChoiceRow
+                                            label="Add as new"
+                                            note=new_note
+                                            on_click=Callback::new(move |_| {
+                                                conflict::answer_shelf(state, ShelfAnswer::AsNew)
+                                            })
+                                        />
+                                    }
+                                })}
                                 <ChoiceRow
                                     label="Make link"
                                     note=LINK_NOTE.to_string()
@@ -108,7 +152,7 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                                     })
                                 />
                                 <ChoiceRow
-                                    label="Merge into it"
+                                    label=merge_label
                                     note=merge_note
                                     on_click=Callback::new(move |_| {
                                         conflict::answer_shelf(state, ShelfAnswer::Merge)

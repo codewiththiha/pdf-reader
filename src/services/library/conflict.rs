@@ -442,6 +442,13 @@ pub struct ShelfConflictAsk {
     /// The import the question interrupted, kept whole: an answer runs it.
     pub root: String,
     pub opts: FolderOpts,
+    /// Whether the shelf that holds the name is the arriving folder's OWN —
+    /// the one its previous run minted, which its `shelf_map` still names. A
+    /// re-import of one folder is a continuation rather than an arrival, and
+    /// the sheet says so: it offers the merge and the link, and not a counter
+    /// name whose shelf the ledger could only fill with books the library
+    /// already holds.
+    pub own: bool,
 }
 
 /// The reader's answer to a folder's name collision.
