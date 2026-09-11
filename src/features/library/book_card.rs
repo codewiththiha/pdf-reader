@@ -9,8 +9,15 @@
 //! cover to find. A frame that clips gives the bar a box to be flush with, and
 //! gives the lift, the ring and the selection outline one element to be painted on
 //! instead of four. The second is that the skeuomorphic spine and fore-edge were
-//! two pseudo-elements spent on a decoration, and the third is that a shelf of
+//! two pseudo-elements spent on a decoration, and third is that a shelf of
 //! mixed page sizes reads calmer as one row of frames than as one row of volumes.
+//!
+//! The prop is the row the `For` keyed this card on, and a keyed row is not
+//! re-created when the row's CONTENT changes — a startup measurement marking the
+//! book missing, a relink moving its address, a conflict sheet's rename, a fold
+//! merging a twin into it. So the facts that can move are read back out of the
+//! state by id (the rule the folder card and the list's tree rows follow), and
+//! the prop supplies the identity: which book this card is.
 //!
 //! Three gestures share the card and the shelf's one wiring decides between
 //! them — `crate::features::library::gestures`, on the
@@ -38,7 +45,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use library_core::book::Book;
+use library_core::book::{Book, find_by_id};
 
 use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
@@ -49,6 +56,25 @@ use crate::services::document;
 use crate::services::library::relink_dialog;
 use crate::state::AppState;
 use crate::state::reader::DEFAULT_PAGE_ASPECT;
+
+/// The facts about the book a card paints, read back out of the library by id
+/// on the frame they are asked for. One derive rather than one per field: they
+/// all move together (a relink rewrites the address AND the art it keys on),
+/// and a card that read six signals would subscribe six times to one list.
+#[derive(Clone)]
+struct CardFacts {
+    /// Where the book lives, on the line that has room for it and nothing
+    /// better to say. A card whose title came from the document gives the
+    /// reader no way to tell two books called "Report" apart; the address does.
+    /// It is also the key the cover cache answers to, which is why a relink
+    /// has to move it: the old address's art belongs to nobody afterwards.
+    path: String,
+    title: String,
+    author: Option<String>,
+    missing: bool,
+    progress: Option<f64>,
+    page_line: String,
+}
 
 /// One book on the shelf.
 ///
@@ -68,32 +94,38 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // than being told about itself.
     let selecting = state.library.selecting;
 
-    // Owned copies so each closure below captures its own value: the card renders
-    // a dozen closures that all outlive this function's frame.
+    // The prop supplies the identity; everything that can move while the card
+    // is mounted is read back by it. `None` is the beat between a removal and
+    // the list catching up — the card paints its blanks and is gone next tick.
     let id = book.id.clone();
-    let path = book.path().to_string();
-    let title = book.title();
-    let author = book.author();
-    let missing = book.missing;
-    let progress = book.progress();
-    let page_line = if book.num_pages > 0 {
-        format!("Page {} of {}", book.page, book.num_pages)
-    } else {
-        format!("Page {}", book.page)
-    };
-    // Where the book lives, on the line that has room for it and nothing better to
-    // say. A card whose title came from the document gives the reader no way to
-    // tell two books called "Report" apart; the address does.
-    let path_hint = book.path().to_string();
+    let facts_id = id.clone();
+    let facts = Signal::derive(move || {
+        state.library.books.with(|rows| {
+            find_by_id(rows, &facts_id).map(|b| CardFacts {
+                path: b.path().to_string(),
+                title: b.title(),
+                author: b.author(),
+                missing: b.missing,
+                progress: b.progress(),
+                page_line: if b.num_pages > 0 {
+                    format!("Page {} of {}", b.page, b.num_pages)
+                } else {
+                    format!("Page {}", b.page)
+                },
+            })
+        })
+    });
 
     // Aspect ratio (width / height) for the cover box, so a landscape plate stays
     // landscape on the shelf. Clamped so a pathological page cannot break the
     // grid; falls back to 3:4 portrait.
-    let cover_path = path.clone();
     let aspect = move || {
+        let Some(f) = facts.get() else {
+            return DEFAULT_PAGE_ASPECT;
+        };
         state.library.covers.with(|covers| {
             covers
-                .get(&cover_path)
+                .get(&f.path)
                 .map(|c| {
                     if c.width > 0.0 && c.height > 0.0 {
                         (c.width / c.height).clamp(0.55, 1.8)
@@ -112,7 +144,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // It used to be off while a set was selected, on the reasoning that the
     // pointer was choosing rather than filing — which is the reasoning that made
     // a selection undraggable, and lifting one of three held books is the whole
-    // of what a multi-drag is.
+    // of a multi-drag.
     // Opening names the ROW, not its address: the library can hold two rows of
     // one file, and the address cannot say which of them the reader clicked.
     let open_id = id.clone();
@@ -123,12 +155,17 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
         Some(menu),
         ShelfItemPolicy {
             id: id.clone(),
-            label: Signal::stored(title.clone()),
+            label: Signal::derive(move || {
+                facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+            }),
             draggable: Signal::derive(|| true),
             open: Callback::new(move |_| document::open_row(state, open_id.clone())),
+            // The missing flag is read when the menu is ASKED rather than
+            // carried from the mount: the row it describes is exactly the one
+            // a background measurement can change between the two.
             menu_target: Callback::new(move |_| MenuTarget::Book {
                 id: context_id.clone(),
-                missing,
+                missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
             }),
             // No shelf of its own: a card is drawn by the open level, which is
             // the container the session resolves a nameless lift to.
@@ -151,7 +188,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // book's place in the level, and a rest here while holding two or more offers
     // to fold them into a new shelf beside it. Registered for the life of the
     // card, which is the life of its box on screen.
-    let dom_id = format!("book-{}", id);
+    let dom_id = format!("book-{id}");
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Book, id.clone()),
         dom_id: dom_id.clone(),
@@ -162,31 +199,19 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     });
 
     // A removal asks first. The card does not know what a removal costs — the
-    // resume point, the placements, the highlights, the app's own copy — and the
-    // sheet that does is one context away.
+    // resume point, the placements, the highlights, the app's own copy — and
+    // the sheet that does is one context away.
     let remove_id = id.clone();
     let remove = move |ev: leptos::ev::MouseEvent| {
         ev.stop_propagation();
         remove_sheet.ask(&remove_id);
     };
     let relink_id = id.clone();
-    let relink = move |ev: leptos::ev::MouseEvent| {
-        ev.stop_propagation();
-        relink_dialog(state, relink_id.clone());
-    };
 
     let reveal_id = id.clone();
     let held_id = id.clone();
     let over_id = id.clone();
-    let fold_id = id.clone();
-    let cover_title = title.clone();
-    let alt_title = title.clone();
-    let meta_title = title.clone();
-    let card_title = title.clone();
-    let author_line = author.clone();
-    let alt_path = path.clone();
-    let progress_width = progress.map(|p| format!("{:.0}%", p * 100.0));
-    let progress_now = progress.map(|p| format!("{:.0}", (p * 100.0).round()));
+    let fold_id = id;
 
     view! {
         <div
@@ -200,7 +225,9 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
             })
             class=("book-drop-before", move || drag.inserts_before(&over_id))
             class=("book-fold-here", move || drag.folds_with(&fold_id))
-            class=("book-missing", missing)
+            class=("book-missing", move || {
+                facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
+            })
             class=("book-selected", move || is_selected.get())
             class=("book-pressing", move || pressing.get())
             // Every held card fades, not only the one the press began on: the set
@@ -250,23 +277,27 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                         })
                     }}
                     {move || {
+                        let Some(f) = facts.get() else {
+                            return ().into_any();
+                        };
                         match state
                             .library
                             .covers
-                            .with(|covers| covers.get(&alt_path).cloned())
+                            .with(|covers| covers.get(&f.path).cloned())
                         {
                             Some(c) => {
+                                let alt = f.title.clone();
                                 view! {
                                     // Not draggable, and the reason is the whole
                                     // of this card's gesture: an image is natively
                                     // draggable, so a press on the cover would hand
                                     // the pointer to the engine's own drag, which
-                                    // is the drag this shelf no longer uses and the
-                                    // one that used to swallow the release.
+                                    // is the drag this shelf no longer uses and
+                                    // the one that used to swallow the release.
                                     <img
                                         class="book-cover-img"
                                         src=c.data_url.clone()
-                                        alt=alt_title.clone()
+                                        alt=alt
                                         loading="lazy"
                                         draggable="false"
                                     />
@@ -276,27 +307,33 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                             None => {
                                 view! {
                                     <div class="book-cover-fallback">
-                                        <span>{cover_title.clone()}</span>
+                                        <span>{f.title.clone()}</span>
                                     </div>
-                                }
-                                    .into_any()
+                                }.into_any()
                             }
                         }
                     }}
-                    {missing.then(|| {
-                        view! {
-                            <span class="book-missing-badge" title="This file is not where the library left it">
-                                <Icon name=IconName::Close size=11 />
-                            </span>
-                        }
-                    })}
+                    {move || {
+                        facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
+                            .then(|| {
+                                view! {
+                                    <span class="book-missing-badge" title="This file is not where the library left it">
+                                        <Icon name=IconName::Close size=11 />
+                                    </span>
+                                }
+                            })
+                    }}
                 </div>
                 // Reading progress, flush with the bottom of the art rather than
                 // under the title: it is a fact about the cover the reader is
                 // looking at, and the frame is what makes it flush with anything.
-                {progress_width.map(|width| {
-                    let now = progress_now.clone().unwrap_or_default();
-                    view! {
+                {move || {
+                    let Some(p) = facts.get().and_then(|f| f.progress) else {
+                        return None;
+                    };
+                    let width = format!("{:.0}%", p * 100.0);
+                    let now = format!("{:.0}", (p * 100.0).round());
+                    Some(view! {
                         <div
                             class="book-progress-track"
                             role="progressbar"
@@ -307,40 +344,62 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                         >
                             <div class="book-progress-fill" style:width=width></div>
                         </div>
-                    }
-                })}
+                    })
+                }}
             </div>
 
             <div class="book-info">
-                <span class="book-title" title=meta_title.clone()>{card_title.clone()}</span>
-                {match author_line {
-                    Some(author) => {
-                        let author_title = author.clone();
-                        view! { <span class="book-author" title=author_title>{author}</span> }
-                            .into_any()
+                <span
+                    class="book-title"
+                    title=move || {
+                        facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
                     }
-                    None => {
-                        view! {
-                            <span class="book-page" title=path_hint.clone()>{page_line.clone()}</span>
+                >
+                    {move || {
+                        facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+                    }}
+                </span>
+                {move || {
+                    let Some(f) = facts.get() else {
+                        return ().into_any();
+                    };
+                    match f.author {
+                        Some(author) => {
+                            let author_title = author.clone();
+                            view! { <span class="book-author" title=author_title>{author}</span> }
+                                .into_any()
                         }
-                            .into_any()
+                        None => {
+                            let hint = f.path.clone();
+                            view! {
+                                <span class="book-page" title=hint>{f.page_line.clone()}</span>
+                            }
+                                .into_any()
+                        }
                     }
                 }}
             </div>
 
-            {missing.then(|| {
-                view! {
-                    <button
-                        class="book-relink"
-                        type="button"
-                        title="Find this book again"
-                        aria-label="Find this book again"
-                        on:click=relink
-                    >
-                        <Icon name=IconName::Open size=11 />
-                    </button>
-                }
-            })}
+            {move || {
+                facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
+                    .then(|| {
+                        let at = relink_id.clone();
+                        view! {
+                            <button
+                                class="book-relink"
+                                type="button"
+                                title="Find this book again"
+                                aria-label="Find this book again"
+                                on:click=move |ev: leptos::ev::MouseEvent| {
+                                    ev.stop_propagation();
+                                    relink_dialog(state, at.clone());
+                                }
+                            >
+                                <Icon name=IconName::Open size=11 />
+                            </button>
+                        }
+                    })
+            }}
             <button
                 class="book-remove"
                 type="button"

@@ -64,7 +64,7 @@ use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use library_core::book::{Book, Row};
+use library_core::book::{Book, Row, find_by_id};
 use library_core::query;
 use library_core::shelf::{ALL_SHELF, Shelf, children_of};
 use library_core::sort;
@@ -530,6 +530,23 @@ fn AddRow(state: AppState) -> impl IntoView {
     }
 }
 
+/// The facts about a row that can move while it is mounted, read back out of
+/// the library by id on the frame they are asked for — the rule the tree rows
+/// and the folder card follow, and the one the grid's book card follows too.
+#[derive(Clone)]
+struct RowFacts {
+    /// The address, which is also the key the cover cache answers to: a
+    /// relink moves it, and the row's art has to move with it.
+    path: String,
+    title: String,
+    /// The author when the book has one and the resume point when it does
+    /// not: at this density there is room for one line of prose and the
+    /// reader gets to choose which by opening the book.
+    author_line: String,
+    missing: bool,
+    percent: Option<String>,
+}
+
 #[component]
 fn ListRow(
     state: AppState,
@@ -537,8 +554,8 @@ fn ListRow(
     crop: Signal<bool>,
     depth: usize,
     /// The shelf whose member list renders this row: the tree's own id for a
-    /// row inside an expanded branch, `None` for the flat section — which the
-    /// open level renders, and which the session resolves at the drop rather
+    /// row inside an expanded branch, `None` for the flat section — which is
+    /// the open level renders, and which the session resolves at the drop rather
     /// than at the mount, so a flat row can never carry a stale container
     /// through a drill. It is the fact a grid card never had to state, because
     /// a card is only ever drawn by the level the page is on.
@@ -547,60 +564,81 @@ fn ListRow(
     let ctx = use_context::<TreeCtx>().expect("the list provides the tree context");
     // The dense variant's whole difference, decided once at the mount: at
     // sidebar width the format IS the cover — the kind of thing the row is, in
-    // the footprint the art would have had — and the one line of prose under the
-    // title is a line the sidebar does not have.
+    // the art's own footprint — and the one line of prose under the title is a
+    // line the sidebar does not have.
     let dense = ctx.dense;
 
-    // Both, because the card keeps its own ✕: the menu is what a right-click asks
-    // and the sheet is what a removal costs, and the second is reached from the
-    // first as well as from the button.
-    let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
-    let menu = use_context::<LibraryMenuHost>().expect("the library page provides the menu");
-    let drag = use_context::<DragController>().expect("the library page installs the drag session");
+    // Both, because the row keeps its own ✕: the menu is what a right-click
+    // asks and the sheet is what a removal costs, and the second is reached
+    // from the first as well as from the button. Asked for rather than
+    // expected, for the reason the tree row gives: the sidebar mounts this
+    // same row with no page hosts under it, and a row with no sheet has no ✕
+    // to draw and no menu to ask.
+    let remove_sheet = use_context::<RemoveSheet>();
+    let menu = use_context::<LibraryMenuHost>();
+    let drag = use_context::<DragController>();
 
+    // Selection is a page-wide mode, so every row asks the same signal rather
+    // than being told about itself.
     let selecting = state.library.selecting;
 
+    // The prop supplies the identity; everything that can move — a startup
+    // measurement marking the book missing, a relink moving the address the
+    // cover keys on, a rename, a fold merging a twin into it — is read back
+    // by id, because a keyed row is not re-created when its content changes.
     let id = book.id.clone();
-    let path = book.path().to_string();
-    let title = book.title();
-    let author = book.author().unwrap_or_else(|| {
-        if book.num_pages > 0 {
-            format!("Page {} of {}", book.page, book.num_pages)
-        } else {
-            format!("Page {}", book.page)
-        }
+    let facts_id = id.clone();
+    let facts = Signal::derive(move || {
+        state.library.books.with(|rows| {
+            find_by_id(rows, &facts_id).map(|b| RowFacts {
+                path: b.path().to_string(),
+                title: b.title(),
+                author_line: b.author().unwrap_or_else(|| {
+                    if b.num_pages > 0 {
+                        format!("Page {} of {}", b.page, b.num_pages)
+                    } else {
+                        format!("Page {}", b.page)
+                    }
+                }),
+                missing: b.missing,
+                percent: b.progress().map(|p| format!("{:.0}%", p * 100.0)),
+            })
+        })
     });
-    let missing = book.missing;
-    let percent = book.progress().map(|p| format!("{:.0}%", p * 100.0));
     // The list has room for the format on every row, and at this density a reader
     // is scanning names rather than looking at art — so the kind of thing a row is
-    // earns its place here in a way a chip on a cover would not.
+    // earns its place here in a way a chip on a cover would not. A row's format
+    // is the one fact nothing rewrites under it, so it stays the prop's.
     let chip = (book.format != Format::Pdf).then(|| book.format.label().to_string());
     let ext = book.format.label();
-    let path_hint = book.path().to_string();
 
     // The shelf's one press contract, the same one the grid's cards wear — a
-    // row and a card answer a hold, a tap and a movement alike at two densities
-    // because they are ONE wiring (see `crate::features::library::gestures`). A
-    // movement is always a drag here, including from inside a selection: a set
-    // that could not be lifted was a set the bar's "Add to shelf" was the only
-    // way to move.
+    // row and a card answer to a hold, a tap and a movement alike at two
+    // densities because they are ONE wiring (see
+    // `crate::features::library::gestures`). A movement is always a drag here,
+    // including from inside a selection: a set that could not be lifted was a
+    // set the bar's "Add to shelf" was the only way to move.
     // Opening names the ROW, not its address: the library can hold two rows of
     // one file, and the address cannot say which of them the reader clicked.
     let open_id = id.clone();
     let context_id = id.clone();
     let gestures = use_shelf_item(
         state,
-        Some(drag),
-        Some(menu),
+        drag,
+        menu,
         ShelfItemPolicy {
             id: id.clone(),
-            label: Signal::stored(title.clone()),
+            label: Signal::derive(move || {
+                facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+            }),
             draggable: Signal::derive(|| true),
             open: Callback::new(move |_| document::open_row(state, open_id.clone())),
+            // The missing flag is read when the menu is ASKED rather than
+            // carried from the mount: the row it describes is exactly the one
+            // a background measurement can change between the two.
             menu_target: Callback::new(move |_| MenuTarget::Book {
                 id: context_id.clone(),
-                missing,
+                missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
             }),
             // The tree's own fact: a nested row answers to its branch, a flat
             // row to the level the page is on.
@@ -624,23 +662,21 @@ fn ListRow(
     // the tree adds: the container that renders THIS row, so a drop inside an
     // expanded branch indexes the branch's own member list and not the flat
     // order the page is showing.
-    let dom_id = format!("book-{}", id);
-    drag.registry.register(DropTargetEntry {
-        id: DropTargetId(DropTargetKind::Book, id.clone()),
-        dom_id: dom_id.clone(),
-        shelf: parent,
-    });
+    let dom_id = format!("book-{id}");
+    if let Some(drag) = drag {
+        drag.registry.register(DropTargetEntry {
+            id: DropTargetId(DropTargetKind::Book, id.clone()),
+            dom_id: dom_id.clone(),
+            shelf: parent,
+        });
+    }
 
     let reveal_id = id.clone();
     let remove_id = id.clone();
     let over_id = id.clone();
     let after_id = id.clone();
     let fold_id = id.clone();
-    let held_id = id.clone();
-    let alt_path = path.clone();
-    let alt_title = title.clone();
-    let row_title = title.clone();
-    let row_tooltip = title.clone();
+    let held_id = id;
     let indent = row_indent(depth);
 
     view! {
@@ -654,13 +690,23 @@ fn ListRow(
                         .is_some_and(|(id, _)| id == reveal_id.as_str())
                 })
             })
-            class=("row-drop-before", move || drag.inserts_before(&over_id))
-            class=("row-drop-after", move || drag.inserts_after(&after_id))
-            class=("row-fold-here", move || drag.folds_with(&fold_id))
-            class=("row-missing", missing)
+            class=("row-drop-before", move || {
+                drag.is_some_and(|each| each.inserts_before(&over_id))
+            })
+            class=("row-drop-after", move || {
+                drag.is_some_and(|each| each.inserts_after(&after_id))
+            })
+            class=("row-fold-here", move || {
+                drag.is_some_and(|each| each.folds_with(&fold_id))
+            })
+            class=("row-missing", move || {
+                facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
+            })
             class=("library-row-selected", move || is_selected.get())
             class=("library-row-pressing", move || pressing.get())
-            class=("library-row-dragging", move || drag.holds(&held_id))
+            class=("library-row-dragging", move || {
+                drag.is_some_and(|each| each.holds(&held_id))
+            })
             role="button"
             tabindex="0"
             aria-label=move || aria_label.get()
@@ -701,17 +747,21 @@ fn ListRow(
                             })
                         }}
                         {move || {
+                            let Some(f) = facts.get() else {
+                                return None;
+                            };
                             state
                                 .library
                                 .covers
-                                .with(|covers| covers.get(&alt_path).cloned())
+                                .with(|covers| covers.get(&f.path).cloned())
                                 .map(|cover| {
+                                    let alt = f.title.clone();
                                     view! {
                                         // Not natively draggable; see `book_card`.
                                         <img
                                             class="library-row-img"
                                             src=cover.data_url.clone()
-                                            alt=alt_title.clone()
+                                            alt=alt
                                             loading="lazy"
                                             draggable="false"
                                         />
@@ -723,16 +773,32 @@ fn ListRow(
                     .into_any()
             }}
             <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-semibold text-ink" title=row_tooltip.clone()>
-                    {row_title}
+                <span
+                    class="block truncate text-sm font-semibold text-ink"
+                    title=move || {
+                        facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+                    }
+                >
+                    {move || {
+                        facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+                    }}
                 </span>
                 {if dense {
                     None
                 } else {
                     Some(
                         view! {
-                            <span class="block truncate text-xs text-muted" title=path_hint.clone()>
-                                {author}
+                            <span
+                                class="block truncate text-xs text-muted"
+                                title=move || {
+                                    facts.with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
+                                }
+                            >
+                                {move || {
+                                    facts.with(|f| {
+                                        f.as_ref().map(|x| x.author_line.clone()).unwrap_or_default()
+                                    })
+                                }}
                             </span>
                         },
                     )
@@ -747,24 +813,33 @@ fn ListRow(
             {if dense {
                 None
             } else {
-                percent.map(|p| {
+                Some(move || {
+                    facts.get().and_then(|f| f.percent).map(|p| {
+                        view! {
+                            <span class="shrink-0 text-xs tabular-nums text-muted">{p}</span>
+                        }
+                    })
+                })
+            }}
+            {move || {
+                remove_sheet.map(|sheet| {
+                    let at = remove_id.clone();
                     view! {
-                        <span class="shrink-0 text-xs tabular-nums text-muted">{p}</span>
+                        <button
+                            class="library-row-remove"
+                            type="button"
+                            title="Remove from library"
+                            aria-label="Remove from library"
+                            on:click=move |ev: leptos::ev::MouseEvent| {
+                                ev.stop_propagation();
+                                sheet.ask(&at);
+                            }
+                        >
+                            <Icon name=IconName::Close size=12 />
+                        </button>
                     }
                 })
             }}
-            <button
-                class="library-row-remove"
-                type="button"
-                title="Remove from library"
-                aria-label="Remove from library"
-                on:click=move |ev: leptos::ev::MouseEvent| {
-                    ev.stop_propagation();
-                    remove_sheet.ask(&remove_id);
-                }
-            >
-                <Icon name=IconName::Close size=12 />
-            </button>
         </div>
     }
 }
