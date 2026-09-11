@@ -35,6 +35,11 @@ pub fn ModalShell(
     /// The panel's width as a CSS value — `min(92vw, 420px)` — one sheet's
     /// width is its own fact and the chrome's job is to wear it.
     width: &'static str,
+    /// The panel's height, for a sheet that sizes ITSELF rather than its
+    /// content — the reader's settings modal, whose tabs share one box. `None`
+    /// lets the body decide, under the shell's own `max-h-[86vh]`.
+    #[prop(optional)]
+    height: Option<&'static str>,
     /// `ChildrenFn`, not `Children`: `Show`'s children closure must be an
     /// `Fn`, and only children that can be called from inside one may ride
     /// it — the reason the sidebar's overlay rail gives for the same choice.
@@ -55,7 +60,10 @@ pub fn ModalShell(
             >
                 <div
                     class="flex max-h-[86vh] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
-                    style=format!("width:{width}")
+                    style=format!(
+                        "width:{width}{}",
+                        height.map_or(String::new(), |h| format!(";height:{h}"))
+                    )
                     // The panel is not the backdrop: a click inside the sheet
                     // is the sheet's.
                     on:click=move |ev| ev.stop_propagation()
