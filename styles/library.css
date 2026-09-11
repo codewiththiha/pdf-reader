@@ -160,13 +160,16 @@
   transition: width 0.3s ease;
 }
 
-/* Remove button: revealed on hover/focus, floating over the cover's corner.
-   Inside the card rather than outside it now that the frame clips — a button
-   hanging past the card's edge is one the grid's gap has to make room for. */
-.book-remove {
+/* The two round buttons floating over the cover's corner — the remove, and
+   the relink a missing book grows — wear one chrome: revealed on hover/focus,
+   inside the card rather than outside it now that the frame clips, because a
+   button hanging past the card's edge is one the grid's gap has to make room
+   for. The per-button rules are the position and the hover's ink, and nothing
+   else. */
+.book-remove,
+.book-relink {
   position: absolute;
   top: 6px;
-  right: 6px;
   z-index: 3;
   display: flex;
   align-items: center;
@@ -182,9 +185,15 @@
   cursor: pointer;
   transition: opacity 0.14s ease, transform 0.14s ease, color 0.14s ease, background 0.14s ease;
 }
+.book-remove {
+  right: 6px;
+}
 .book-card:hover .book-remove,
 .book-card:focus-visible .book-remove,
-.book-remove:focus-visible {
+.book-remove:focus-visible,
+.book-card:hover .book-relink,
+.book-card:focus-visible .book-relink,
+.book-relink:focus-visible {
   opacity: 1;
   transform: scale(1);
 }
@@ -330,33 +339,11 @@
   color: var(--color-muted);
 }
 
-/* Relink: the remove button's twin, one button to its left, revealed by the same
-   hover and focus. Two affordances on a missing card and one on a healthy one,
+/* Relink: the remove button's twin, one button to its left, wearing the shared
+   chrome above. Two affordances on a missing card and one on a healthy one,
    which is the whole of the difference between the two states. */
 .book-relink {
-  position: absolute;
-  top: 6px;
   right: 32px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 9999px;
-  border: 1px solid var(--color-line);
-  background: var(--color-surface);
-  color: var(--color-muted);
-  opacity: 0;
-  transform: scale(0.85);
-  cursor: pointer;
-  transition: opacity 0.14s ease, transform 0.14s ease, color 0.14s ease, background 0.14s ease;
-}
-.book-card:hover .book-relink,
-.book-card:focus-visible .book-relink,
-.book-relink:focus-visible {
-  opacity: 1;
-  transform: scale(1);
 }
 .book-relink:hover {
   background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
