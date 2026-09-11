@@ -33,8 +33,9 @@
 use std::rc::Rc;
 
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+
+use super::press_core::{self, PendingTimer};
 
 /// What a press has to have begun on for the card to stand aside.
 ///
@@ -143,32 +144,21 @@ pub struct DraggableItemHandle {
     pub swallow_context: Rc<dyn Fn() -> bool>,
 }
 
-/// A pending hold timer: the JS timeout handle plus the wasm-shim closure it
-/// keeps alive. Parked in a `StoredValue` so a re-run or a cleanup cannot free
-/// the closure while the timeout is still queued.
-type PendingTimer = Option<(i32, Closure<dyn FnMut()>)>;
-
-/// Stop an in-flight hold. Clears the pending timer — harmless when it has
-/// already fired — and drops the parked closure.
+/// Stop an in-flight hold. The clear is [`press_core::clear_timer`]'s — the same
+/// one the long-press primitive's cancel uses, because a stale `setTimeout`
+/// calling into a dropped wasm shim is a crash rather than a wrong answer and
+/// there is one right way to drop it.
 fn cancel_hold(timer: StoredValue<PendingTimer, LocalStorage>) {
-    timer.with_value(|t| {
-        if let Some((handle, _)) = t
-            && let Some(win) = web_sys::window()
-        {
-            win.clear_timeout_with_handle(*handle);
-        }
-    });
-    timer.set_value(None);
+    press_core::clear_timer(timer);
 }
 
-/// Whether the pointer has left the threshold around its origin. Both sides
-/// squared, so a drag decision costs no square root on the event that arrives
-/// most often; the boundary itself is still inside, which keeps a threshold of
-/// zero from firing on a perfectly still pointer.
+/// Whether the pointer has left the threshold around its origin. The arithmetic
+/// is [`press_core::outside_radius`]'s, shared with the long-press primitive's
+/// slop: a slop and a threshold are the same question asked of two gestures, and
+/// the boundary counting as inside is what keeps a threshold of zero from firing
+/// on a perfectly still pointer.
 fn travelled(x: f64, y: f64, origin: (f64, f64), threshold_px: f64) -> bool {
-    let dx = x - origin.0;
-    let dy = y - origin.1;
-    dx * dx + dy * dy > threshold_px * threshold_px
+    press_core::outside_radius(x - origin.0, y - origin.1, threshold_px)
 }
 
 /// Whether a press that has travelled may become a drag.
@@ -276,10 +266,7 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
             if !selectable.get_untracked() {
                 return;
             }
-            let Some(win) = web_sys::window() else {
-                return;
-            };
-            let cb = Closure::<dyn FnMut()>::new(move || {
+            press_core::arm_timer(timer, press_ms, move || {
                 // Decided once: a hold that fired while the pointer was already
                 // dragging would be a second answer to the same press.
                 if mode.get_value() != Mode::Undecided {
@@ -291,12 +278,6 @@ pub fn use_draggable_item(options: DraggableItemOptions) -> DraggableItemHandle 
                 suppress_context.set_value(true);
                 on_long_press.run(());
             });
-            let f: js_sys::Function = cb.as_ref().unchecked_ref::<js_sys::Function>().clone();
-            if let Ok(handle) =
-                win.set_timeout_with_callback_and_timeout_and_arguments_0(&f, press_ms)
-            {
-                timer.set_value(Some((handle, cb)));
-            }
         }
     });
 
