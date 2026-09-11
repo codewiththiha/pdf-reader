@@ -24,7 +24,11 @@
 //!   * [`conflict_modal`] — the shelf already holds that book: the
 //!     duplicate/replace/merge question, and the second ask a replace owes;
 //!     a folder merge's per-file asks wear its compact sheet, and a loose
-//!     file of a read-at-place folder wears the covered sheet's two answers
+//!     file of a read-at-place folder wears the covered sheet's two answers.
+//!     One file per question, with the strings all three print in [`info`]
+//!     beside them
+//!
+//! [`info`]: crate::features::library::conflict_modal
 //!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
 //!     folder question an import asks before its walk, and the mode switch a
 //!     read-at-place folder asks when it is re-picked as copies
