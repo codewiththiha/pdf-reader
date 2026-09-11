@@ -445,9 +445,10 @@ pub struct ShelfConflictAsk {
     /// Whether the shelf that holds the name is the arriving folder's OWN —
     /// the one its previous run minted, which its `shelf_map` still names. A
     /// re-import of one folder is a continuation rather than an arrival, and
-    /// the sheet says so: it offers the merge and the link, and not a counter
-    /// name whose shelf the ledger could only fill with books the library
-    /// already holds.
+    /// the sheet words it as one; the three answers are the three answers
+    /// either way, and an *as new* tree of one folder holds that folder's
+    /// books as memberships of the rows the library already holds — a second
+    /// arrangement, never a second copy.
     pub own: bool,
 }
 
@@ -589,16 +590,28 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
     };
     match answer {
         FolderMergeAnswer::Merge => {
+            // One book — and the measurement only travels with the answer
+            // when the arriving file IS the row's file, which a re-import of
+            // one folder always is. A different folder's namesake is
+            // another content wearing one name: the shelf's book keeps its
+            // own identity, the arriving file simply does not land, and the
+            // ledger mark below is what keeps the next rescan quiet about it.
             let existing = ask.existing_id.clone();
-            state.library.books.update(|rows| {
-                if let Some(book) =
-                    book_rows_mut(rows).find(|b| b.id == existing)
-                {
-                    book.fp = file.fp;
-                    book.fp_pending = false;
-                    book.missing = false;
-                }
+            let same_file = state.library.books.with_untracked(|rows| {
+                find_by_id(rows, &existing)
+                    .is_some_and(|b| b.path() == file.path)
             });
+            if same_file {
+                state.library.books.update(|rows| {
+                    if let Some(book) =
+                        book_rows_mut(rows).find(|b| b.id == existing)
+                    {
+                        book.fp = file.fp;
+                        book.fp_pending = false;
+                        book.missing = false;
+                    }
+                });
+            }
             settle_folder_ledger(state, ask, file.fp);
             crate::storage::persist_library(state.library);
         }

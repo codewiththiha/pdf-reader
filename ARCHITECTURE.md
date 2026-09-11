@@ -584,12 +584,18 @@ every later rescan keeps it — and every root-level file whose NAME that shelf 
 to the compact per-file sheet: Merge (the row stays and takes the file's measurement), Replace, or
 As new, one at a time or, behind the sheet's apply-to-all switch, one answer for the whole queue.
 A file nothing collides with simply goes in: new books in a merged folder are the default, not a
-case. A folder colliding with its OWN previous shelf asks too — a reader who picked a folder and
+case — and "a file nothing collides with" is answered over EVERY file the walk found, not only the
+ones the ledger marked new: a planned tree (a merge's, or an *as new* one) owes a membership of the
+row the library holds for each file it already knows, because one content is one identity and one
+identity is one row, and a second shelf of one folder is a second arrangement rather than a second
+copy. A folder colliding with its OWN previous shelf asks too — a reader who picked a folder and
 clicked Import asked for an answer, and a run that ends on "Imported 0 books" with no sheet in
-between is the silent nothing the book collision used to be — but its sheet is the
-continuation's: the merge and the link, and no counter name, because a second shelf of one folder
-is a shelf the ledger could only fill with books the library already holds. A nesting still asks
-nothing at all, because a nesting writes a parent and not a membership.
+between is the silent nothing the book collision used to be — and it gets the same three answers,
+worded as the continuation it is. Its merge is the reconcile a re-import asks for: every root-level
+file whose name the shelf holds goes to the compact per-file sheet — a file's OWN row included,
+which is what makes re-importing one folder a question per book rather than a shrug — and *Merge*
+there is the one-book answer that keeps everything as it is. A nesting still asks nothing at all,
+because a nesting writes a parent and not a membership.
 
 Nesting asks nothing at all, and that is the rule rather than an oversight: filing a folder inside
 another writes no membership, so nothing arrives on the parent's level for a name to collide with.

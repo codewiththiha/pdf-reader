@@ -212,8 +212,11 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
 /// answer, and a run that ends on "Imported 0 books" with no sheet in between
 /// is the silent nothing the book collision used to be. A folder colliding
 /// with its OWN previous shelf asks too — the continuation is a choice rather
-/// than a surprise — and its ask says which kind of question it is, so the
-/// sheet can offer the two answers a continuation has.
+/// than a surprise — and its ask carries which kind of question it is, so the
+/// sheet can word it as the continuation it is while offering the same three
+/// answers: an *as new* tree of one folder holds that folder's books as
+/// memberships of the rows the library holds, which is a second arrangement
+/// and never a second copy.
 pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     let incoming = folder_label(&root);
     let shelves = state.library.shelves.get_untracked();
@@ -492,6 +495,13 @@ async fn run_folder(
     if let Some(into) = &plan.into {
         folder.shelf_map.insert(String::new(), into.clone());
     }
+    // An *as new* answer owes a tree of its OWN: every rung is minted fresh
+    // under the counter-named root rather than reusing the rungs that hang off
+    // the shelf the folder used to file onto — and from this run on, the new
+    // tree is the folder's tree, which is what the map records.
+    if plan.rename.is_some() {
+        folder.shelf_map.clear();
+    }
 
     // The tree on disk is the tree on the shelf, for the shelves this folder
     // owns — the rule and its edge cases (a hand-moved shelf keeps its place,
@@ -553,6 +563,70 @@ async fn run_folder(
     relinks.retain(|(_, to)| !book_rows(&books).any(|b| b.path() == to.as_str()));
     let relinked = relinks.len();
 
+    // A planned tree — the folder sheet's *as new* or *merge* answer — owes a
+    // placement for EVERY file the walk found that the library already holds:
+    // a membership of the row it holds it in, never a second row, because one
+    // content is one identity and one identity is one row. Those files are
+    // exactly the ones the ledger's table answers with a Skip, so a tree
+    // promised as "its own shelf, its own tree" would otherwise hold only the
+    // new files — and a re-import of one folder, whose every file is known,
+    // would hold nothing at all.
+    //
+    // A merge asks before it places: a ROOT-rung file whose name the
+    // merged-into shelf holds is the compact sheet's per-file question —
+    // even when the row wearing the name is the row the file resolves to,
+    // because a reader who re-imports a folder to reconcile it is owed the
+    // three answers per file (one book / replace / as new), not a card that
+    // says nothing was new. Deeper rungs and files no name collides with
+    // join silently: new books in a merged folder are the default, not a case.
+    let mut replacements: Vec<(String, FoundFile)> = Vec::new();
+    let mut asks: Vec<ConflictAsk> = Vec::new();
+    if plan.rename.is_some() || plan.into.is_some() {
+        // Known content never reaches a planned run's add list: its placement
+        // is the membership below, and an add would either resolve to the
+        // same row twice or — in a copying folder — make a store copy nothing
+        // reads.
+        adds.retain(|f| !registry.contains_key(&f.fp));
+        let shelves_now = state.library.shelves.get_untracked();
+        for file in &found {
+            // The row the library holds this file in: by content identity
+            // first (the ledger's own answer), and by address second for the
+            // migrated row whose placeholder identity no measurement matched.
+            let known = registry
+                .get(&file.fp)
+                .map(|k| k.id.clone())
+                .or_else(|| {
+                    book_rows(&books)
+                        .find(|b| b.path() == file.path)
+                        .map(|b| b.id.clone())
+                });
+            let Some(row_id) = known else {
+                continue;
+            };
+            let at_root = folder.shelf_key(file).is_empty();
+            if let Some(target) = plan.into.as_deref().filter(|_| at_root) {
+                let arrival = Arrival::import(file.clone(), target.to_string(), None);
+                if let Some(existing_id) =
+                    library_core::conflict::collide(&books, &shelves_now, &arrival)
+                {
+                    let existing_name = find_row(&books, &existing_id)
+                        .map(|row| row.display_name())
+                        .unwrap_or_else(|| arrival.name.clone());
+                    asks.push(ConflictAsk {
+                        arrival,
+                        existing_id,
+                        existing_name,
+                        folder_merge: true,
+                        in_place: folder.opts.in_place,
+                        folder_id: Some(folder.id.clone()),
+                    });
+                    continue;
+                }
+            }
+            replacements.push((row_id, file.clone()));
+        }
+    }
+
     // A file at an address the library already holds IS that book, whatever the
     // two fingerprints say. The case this catches is a row migrated from the
     // previous schema: it carries a placeholder identity because nothing ever
@@ -575,16 +649,14 @@ async fn run_folder(
     };
     adds.retain(|f| seen.insert(f.fp));
 
-    // A run merged into a shelf the level already held — the folder sheet's
-    // MERGE answer — asks the level's own question about every root-level file
-    // it brings: a file whose NAME the shelf already holds is a question
-    // rather than a placement, and the compact sheet asks it (one book /
-    // replace / as new, one at a time or one answer for all). Everything else
-    // the folder brings is what the reader asked for by choosing merge, and
-    // goes in without being asked — new books are the default, not a case.
+    // The same question for the files the ledger has NOT seen — the merge's
+    // genuinely new arrivals, whose names the merged-into shelf may still
+    // hold: a collision here is the compact sheet's too (one book / replace /
+    // as new, one at a time or one answer for all). The known files were asked
+    // by the planned-tree pass above. Everything else goes in without being
+    // asked — new books are the default, not a case.
     // Subfolder files are never asked: their rungs are minted fresh under the
     // merged root, where nothing is standing to collide.
-    let mut asks: Vec<ConflictAsk> = Vec::new();
     if let Some(target) = plan.into.as_deref() {
         let shelves_now = state.library.shelves.get_untracked();
         adds.retain(|file| {
@@ -612,7 +684,12 @@ async fn run_folder(
         });
     }
 
-    if adds.is_empty() && relinked == 0 && healed == 0 && asks.is_empty() {
+    if adds.is_empty()
+        && relinked == 0
+        && healed == 0
+        && asks.is_empty()
+        && replacements.is_empty()
+    {
         // Nothing to do. A quiet run leaves no trace beyond the folder's own
         // "last scanned" stamp; an explicit import still owes the reader an
         // answer, which is a card saying nothing was new.
@@ -634,7 +711,8 @@ async fn run_folder(
         .iter()
         .map(|file| (id::next_id(now), file))
         .collect();
-    let expected = (pending.len() + relinked + healed) as u32;
+    let replaced = replacements.len();
+    let expected = (pending.len() + relinked + healed + replaced) as u32;
     if quiet {
         // The first card appears only now, so a focus rescan that found nothing
         // never raises one at all.
@@ -760,6 +838,37 @@ async fn run_folder(
             ledger::restore_deleted(&mut folder, &file.fp);
             placed += 1;
         }
+        // The planned tree's other half: the folder's books the library
+        // already held, as memberships of the rows it holds them in. The
+        // chain mints whatever rungs are not in the map yet — the whole tree
+        // of an *as new* run, nothing at all of a merge into shelves that
+        // stand — and the member guard below keeps a book that is already
+        // where it is being put from moving to the end of it.
+        for (row_id, file) in &replacements {
+            let key = folder.shelf_key(file);
+            let shelf_id = folder.shelf_chain_for(
+                &key,
+                |_| id::next_shelf_id(now),
+                |rung| match (rung.is_empty(), &planned_name) {
+                    (true, Some(name)) => name.clone(),
+                    _ => shelf_name(rung, &root),
+                },
+                |rung, id, name, parent| {
+                    new_shelves.push(Shelf {
+                        id: id.to_string(),
+                        name,
+                        kind: ShelfKind::Folder {
+                            folder_id: folder_id.clone(),
+                            rel: rel_of(rung),
+                        },
+                        books: Vec::new(),
+                        parent,
+                        manual_parent: merged,
+                    });
+                },
+            );
+            placements.push((row_id.clone(), shelf_id));
+        }
     });
 
     state.library.shelves.update(|shelves| {
@@ -798,7 +907,7 @@ async fn run_folder(
         conflict::raise(state, asks);
     }
 
-    let total = placed + (relink_count + healed) as u32;
+    let total = placed + (relink_count + healed + replaced) as u32;
     update_task(state, &task, move |t| {
         t.total = total;
         t.done = total;
