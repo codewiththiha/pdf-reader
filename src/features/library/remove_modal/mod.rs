@@ -49,6 +49,7 @@ use library_core::text::{human_size, plural};
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
+use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 use crate::components::settings::common::Row;
 use crate::services::library::{PurgeOpts, delete_shelf, purge_books};
 use crate::state::AppState;
@@ -372,7 +373,10 @@ fn Sheet(
                 />
             </header>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            // The heading is this sheet's own: it carries the cover of the book
+            // being removed, which the shared header has no slot for. The body and
+            // the button row are everybody's, and are the primitives'.
+            <SheetBody>
                 <div class="divide-y divide-line rounded-xl border border-line">
                     {many.then(|| {
                         view! {
@@ -503,9 +507,9 @@ fn Sheet(
                         </p>
                     }
                 })}
-            </div>
+            </SheetBody>
 
-            <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+            <SheetFooter>
                 <Button
                     on_click=move |_| sheet.open.set(false)
                     variant=ButtonVariant::Ghost
@@ -545,7 +549,7 @@ fn Sheet(
                     <Icon name=IconName::Close size=16 />
                     <span>{remove_label}</span>
                 </Button>
-            </footer>
+            </SheetFooter>
         </>
     }
 }

@@ -109,21 +109,19 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                 <MenuItem
                     label="List"
                     selected=Signal::derive(move || is_list.get())
+                    check=true
                     on_click=move || {
                         set_view(state, |v| v.layout = LibraryLayout::List);
                     }
-                >
-                    <Check when=Signal::derive(move || is_list.get()) />
-                </MenuItem>
+                />
                 <MenuItem
                     label="Grid"
                     selected=Signal::derive(move || !is_list.get())
+                    check=true
                     on_click=move || {
                         set_view(state, |v| v.layout = LibraryLayout::Grid);
                     }
-                >
-                    <Check when=Signal::derive(move || !is_list.get()) />
-                </MenuItem>
+                />
 
                 <div class="my-1.5"><Separator /></div>
                 <SectionLabel text="Columns" />
@@ -176,21 +174,19 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                 <MenuItem
                     label=CoverFit::Fit.label()
                     selected=Signal::derive(move || fit.get())
+                    check=true
                     on_click=move || {
                         set_view(state, |v| v.cover = CoverFit::Fit);
                     }
-                >
-                    <Check when=Signal::derive(move || fit.get()) />
-                </MenuItem>
+                />
                 <MenuItem
                     label=CoverFit::Crop.label()
                     selected=Signal::derive(move || !fit.get())
+                    check=true
                     on_click=move || {
                         set_view(state, |v| v.cover = CoverFit::Crop);
                     }
-                >
-                    <Check when=Signal::derive(move || !fit.get()) />
-                </MenuItem>
+                />
 
                 <div class="my-1.5"><Separator /></div>
                 <SectionLabel text="Sort by" />
@@ -232,28 +228,15 @@ pub(crate) fn ViewMenu(state: AppState) -> impl IntoView {
                             <MenuItem
                                 label=key.label().to_string()
                                 selected=Signal::derive(move || sort.get() == key)
+                                check=true
                                 on_click=move || {
                                     set_view(state, move |v| v.sort = key);
                                 }
-                            >
-                                <Check when=Signal::derive(move || sort.get() == key) />
-                            </MenuItem>
+                            />
                         }
                     })
                     .collect_view()}
             </MenuPopover>
         </div>
-    }
-}
-
-/// The trailing check a selected menu row carries. Its own component because the
-/// menu has nine rows that all want it, and a `Signal<bool>` is the only thing
-/// that differs between them.
-#[component]
-fn Check(when: Signal<bool>) -> impl IntoView {
-    view! {
-        <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
-            {move || when.get().then(|| view! { <Icon name=IconName::Check size=14 /> })}
-        </span>
     }
 }

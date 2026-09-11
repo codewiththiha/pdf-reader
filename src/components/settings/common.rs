@@ -119,25 +119,17 @@ disabled:cursor-not-allowed disabled:opacity-45"
                             // takes its own clone now that T is no longer Copy.
                             let v_selected = v.clone();
                             let v_for_click = v.clone();
-                            let v_for_check = v.clone();
                             let label = (*l).to_string();
                             view! {
                                 <MenuItem
                                     label=label
                                     selected=Signal::derive(move || value.get() == v_selected)
+                                    check=true
                                     on_click=move || {
                                         on_change.run(v_for_click.clone());
                                         open.set(false);
                                     }
-                                >
-                                    <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
-                                        {move || {
-                                            (value.get() == v_for_check).then(|| {
-                                                view! { <Icon name=IconName::Check size=14 /> }
-                                            })
-                                        }}
-                                    </span>
-                                </MenuItem>
+                                />
                             }
                         })
                         .collect_view()

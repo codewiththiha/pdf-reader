@@ -42,11 +42,9 @@
 
 use leptos::prelude::*;
 
-use app_chrome::icon::IconName;
-use app_chrome::icon_button::IconButton;
-
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::overlay::modal_shell::ModalShell;
+use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::features::library::conflict_modal::ChoiceRow;
 use crate::services::library::conflict::{self, ShelfAnswer};
 use crate::state::AppState;
@@ -100,7 +98,6 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                     library_core::conflict::next_shelf_name(shelves, None, &ask.incoming_name)
                 });
                 let heading = ask.incoming_name.clone();
-                let tooltip = heading.clone();
                 let subtitle = if mode_switch {
                     format!("Read in place as “{}”", ask.existing_name)
                 } else if own {
@@ -192,22 +189,13 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                 };
                 Some(view! {
                     <>
-                        <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
-                            <span class="min-w-0 flex-1">
-                                <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
-                                    {heading}
-                                </span>
-                                <span class="mt-0.5 block text-xs text-muted">{subtitle}</span>
-                            </span>
-                            <IconButton
-                                icon=IconName::Close
-                                title="Close"
-                                class="rounded-full bg-line/60 hover:bg-line".to_string()
-                                on_click=move || conflict::cancel_shelf(state)
-                            />
-                        </header>
+                        <SheetHeader
+                            heading=heading
+                            subtitle=subtitle
+                            on_close=Callback::new(move |_| conflict::cancel_shelf(state))
+                        />
 
-                        <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                        <SheetBody>
                             <p class="text-xs text-muted">{question}</p>
                             <div class="mt-3 divide-y divide-line rounded-xl border border-line">
                                 {if mode_switch {
@@ -277,9 +265,9 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                                         .into_any()
                                 }}
                             </div>
-                        </div>
+                        </SheetBody>
 
-                        <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+                        <SheetFooter>
                             <Button
                                 on_click=move |_| conflict::cancel_shelf(state)
                                 variant=ButtonVariant::Ghost
@@ -287,7 +275,7 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                             >
                                 <span>"Cancel"</span>
                             </Button>
-                        </footer>
+                        </SheetFooter>
                     </>
                 })
             }}

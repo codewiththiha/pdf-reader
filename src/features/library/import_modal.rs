@@ -23,6 +23,7 @@ use crate::components::primitives::controls::option_button::OptionButton;
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
+use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 use crate::components::settings::common::Row;
 use crate::services::library::{import_folder, pick_folder};
 use crate::state::{AppState, Toast};
@@ -119,7 +120,10 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         </div>
                     </header>
 
-                    <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                    // The heading is this sheet's own — a sentence with no
+                    // subtitle and a different rhythm from the six that ask a
+                    // question. The body and the button row are everybody's.
+                    <SheetBody>
                         // --- the folder ------------------------------------
                         <SectionLabel text="Folder" />
                         <div class="mb-4 flex items-start gap-2 rounded-xl border border-line px-3 py-2.5">
@@ -311,9 +315,9 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                 }
                             }}
                         </p>
-                    </div>
+                    </SheetBody>
 
-                    <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+                    <SheetFooter>
                         <Button
                             on_click=move |_| sheet.open.set(false)
                             variant=ButtonVariant::Ghost
@@ -339,7 +343,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                             <Icon name=IconName::Drop size=16 />
                             <span>"Import"</span>
                         </Button>
-                    </footer>
+                    </SheetFooter>
         </ModalShell>
     }
 }

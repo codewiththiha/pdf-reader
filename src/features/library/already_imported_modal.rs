@@ -24,11 +24,9 @@
 
 use leptos::prelude::*;
 
-use app_chrome::icon::IconName;
-use app_chrome::icon_button::IconButton;
-
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::overlay::modal_shell::ModalShell;
+use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::services::library::conflict;
 use crate::services::library::reveal_shelf;
 use crate::state::library::{AlreadyNote, NoteKind};
@@ -60,8 +58,7 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
         >
             {move || {
                 let AlreadyNote { name, kind, .. } = state.library.already_imported.get()?;
-                let tooltip = name.clone();
-                let sublabel = kind.sublabel();
+                let sublabel = kind.sublabel().to_string();
                 // Two sentences, one shelf light. The gate's is for a pick
                 // that never walked — a rung inside a tree the library reads
                 // in place; the report's is for a re-import that DID walk and
@@ -84,28 +81,15 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
                 };
                 Some(view! {
                     <>
-                        <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
-                            <span class="min-w-0 flex-1">
-                                <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
-                                    {name}
-                                </span>
-                                <span class="mt-0.5 block text-xs text-muted">
-                                    {sublabel}
-                                </span>
-                            </span>
-                            <IconButton
-                                icon=IconName::Close
-                                title="Close"
-                                class="rounded-full bg-line/60 hover:bg-line".to_string()
-                                on_click=move || conflict::close_already_imported(state)
-                            />
-                        </header>
-
-                        <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                        <SheetHeader
+                            heading=name
+                            subtitle=sublabel
+                            on_close=Callback::new(move |_| conflict::close_already_imported(state))
+                        />
+                        <SheetBody>
                             <p class="text-xs text-muted">{sentence}</p>
-                        </div>
-
-                        <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+                        </SheetBody>
+                        <SheetFooter>
                             <Button
                                 on_click=move |_| conflict::close_already_imported(state)
                                 variant=ButtonVariant::Primary
@@ -113,7 +97,7 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
                             >
                                 <span>"Show the shelf"</span>
                             </Button>
-                        </footer>
+                        </SheetFooter>
                     </>
                 })
             }}

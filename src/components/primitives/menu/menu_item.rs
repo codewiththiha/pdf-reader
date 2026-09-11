@@ -32,6 +32,16 @@ pub fn MenuItem(
     /// Selected/pressed state (checked rows, active options).
     #[prop(optional)]
     selected: Option<Signal<bool>>,
+    /// Draw the trailing check from `selected` instead of passing one in as a
+    /// child.
+    ///
+    /// Every checked row in the app wants the same accent mark in the same
+    /// trailing slot, and a row that took `selected` AND a child check derived
+    /// one predicate twice to say one thing — six times over in the shelf's view
+    /// menu alone, and once more as inline markup in the settings dropdown. The
+    /// row already holds the signal; this lets it answer for the mark too.
+    #[prop(default = false)]
+    check: bool,
     /// A muted second line under the label, for a row that has something to say
     /// about itself beyond its name. Opt-in and additive: a row without one
     /// renders exactly the single span it always did, so no existing menu moves.
@@ -106,6 +116,17 @@ pub fn MenuItem(
                 None => view! { <span>{label}</span> }.into_any(),
             }}
             {children.map(|c| c())}
+            {check.then(|| {
+                view! {
+                    <span class="ml-auto inline-flex w-4 shrink-0 justify-center text-accent">
+                        {move || {
+                            selected_sig
+                                .get()
+                                .then(|| view! { <Icon name=IconName::Check size=14 /> })
+                        }}
+                    </span>
+                }
+            })}
         </button>
     }
 }

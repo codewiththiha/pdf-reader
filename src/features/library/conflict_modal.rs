@@ -36,13 +36,12 @@
 
 use leptos::prelude::*;
 
-use app_chrome::icon::IconName;
-use app_chrome::icon_button::IconButton;
 use library_core::shelf::ALL_SHELF;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
+use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::services::library::conflict::{self, ConflictAsk, CoveredAnswer, FolderMergeAnswer};
 use crate::services::library::folder_label;
 use library_core::book::find_row;
@@ -229,7 +228,6 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
         )
     };
     let heading = info.incoming.clone();
-    let tooltip = heading.clone();
     let go_to_note = format!(
         "Add nothing — go to “{}” where it already is",
         info.existing_name
@@ -270,22 +268,13 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
 
     view! {
         <>
-            <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
-                <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
-                        {heading}
-                    </span>
-                    <span class="mt-0.5 block text-xs text-muted">{subtitle}</span>
-                </span>
-                <IconButton
-                    icon=IconName::Close
-                    title="Close"
-                    class="rounded-full bg-line/60 hover:bg-line".to_string()
-                    on_click=move || conflict::cancel(state)
-                />
-            </header>
+            <SheetHeader
+                heading=heading
+                subtitle=subtitle
+                on_close=Callback::new(move |_| conflict::cancel(state))
+            />
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            <SheetBody>
                 <p class="text-xs text-muted">{question}</p>
                 <div class="mt-3 divide-y divide-line rounded-xl border border-line">
                     {if import {
@@ -365,9 +354,9 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                             .into_any()
                     }}
                 </div>
-            </div>
+            </SheetBody>
 
-            <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+            <SheetFooter>
                 <Button
                     on_click=move |_| conflict::cancel(state)
                     variant=ButtonVariant::Ghost
@@ -375,7 +364,7 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                 >
                     <span>"Cancel"</span>
                 </Button>
-            </footer>
+            </SheetFooter>
         </>
     }
 }
@@ -421,7 +410,6 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
     let incoming = ask.arrival.name.clone();
     let existing = ask.existing_name.clone();
     let heading = incoming.clone();
-    let tooltip = heading.clone();
     let subtitle = if waiting > 0 {
         format!("Into “{existing}” · {} more waiting", waiting)
     } else {
@@ -466,22 +454,13 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
 
     view! {
         <>
-            <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
-                <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
-                        {heading}
-                    </span>
-                    <span class="mt-0.5 block text-xs text-muted">{subtitle}</span>
-                </span>
-                <IconButton
-                    icon=IconName::Close
-                    title="Close"
-                    class="rounded-full bg-line/60 hover:bg-line".to_string()
-                    on_click=move || conflict::cancel(state)
-                />
-            </header>
+            <SheetHeader
+                heading=heading
+                subtitle=subtitle
+                on_close=Callback::new(move |_| conflict::cancel(state))
+            />
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            <SheetBody>
                 <p class="text-xs text-muted">{question}</p>
                 <div class="mt-3 divide-y divide-line rounded-xl border border-line">
                     <ChoiceRow
@@ -536,9 +515,9 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                         </div>
                     }
                 })}
-            </div>
+            </SheetBody>
 
-            <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+            <SheetFooter>
                 <Button
                     on_click=move |_| conflict::cancel(state)
                     variant=ButtonVariant::Ghost
@@ -546,7 +525,7 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                 >
                     <span>"Cancel"</span>
                 </Button>
-            </footer>
+            </SheetFooter>
         </>
     }
 }
@@ -572,7 +551,6 @@ fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
         .with_untracked(|w| w.iter().filter(|each| each.covered).count());
     let incoming = ask.arrival.name.clone();
     let heading = incoming.clone();
-    let tooltip = heading.clone();
     let folder_name = ask
         .folder_id
         .as_deref()
@@ -609,22 +587,13 @@ fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
 
     view! {
         <>
-            <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
-                <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
-                        {heading}
-                    </span>
-                    <span class="mt-0.5 block text-xs text-muted">{subtitle}</span>
-                </span>
-                <IconButton
-                    icon=IconName::Close
-                    title="Close"
-                    class="rounded-full bg-line/60 hover:bg-line".to_string()
-                    on_click=move || conflict::cancel(state)
-                />
-            </header>
+            <SheetHeader
+                heading=heading
+                subtitle=subtitle
+                on_close=Callback::new(move |_| conflict::cancel(state))
+            />
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            <SheetBody>
                 <p class="text-xs text-muted">{question}</p>
                 <div class="mt-3 divide-y divide-line rounded-xl border border-line">
                     <ChoiceRow
@@ -664,9 +633,9 @@ fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                         </div>
                     }
                 })}
-            </div>
+            </SheetBody>
 
-            <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+            <SheetFooter>
                 <Button
                     on_click=move |_| conflict::cancel(state)
                     variant=ButtonVariant::Ghost
@@ -674,7 +643,7 @@ fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                 >
                     <span>"Cancel"</span>
                 </Button>
-            </footer>
+            </SheetFooter>
         </>
     }
 }
