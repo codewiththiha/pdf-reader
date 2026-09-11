@@ -124,7 +124,10 @@ pub fn move_many_to_shelf(
         // The common case — rows already unfiled, reordering among themselves
         // — screens clean by the rule's own reorder arm and reorders exactly
         // as before.
-        let (clean, conflicts) = conflict::screen(state, moved_arrivals(state, book_ids, &to, index));
+        let (clean, conflicts) = conflict::screen(
+            state,
+            moved_arrivals(state, book_ids, &to, index, from.as_deref()),
+        );
         let clean_ids = clean_move_ids(clean);
         if !clean_ids.is_empty() {
             state
@@ -137,8 +140,10 @@ pub fn move_many_to_shelf(
         return;
     }
 
-    let (clean, conflicts) =
-        conflict::screen(state, moved_arrivals(state, book_ids, &to, index));
+    let (clean, conflicts) = conflict::screen(
+        state,
+        moved_arrivals(state, book_ids, &to, index, from.as_deref()),
+    );
     let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {
@@ -166,37 +171,48 @@ pub fn move_many_to_shelf(
 }
 
 /// One arrival per row a hand is moving, each carrying the name the collision
-/// is asked about.
+/// is asked about and the level the hand lifted off.
 ///
 /// The name is read here rather than by the rule, because the rule is pure and
 /// holds no rows: a drag of four books is four arrivals, and a row that went
 /// between the lift and the drop is not one of them — an arrival with no row
 /// behind it is an arrival with nothing to place.
+///
+/// `from` is the departure the answers need: a merge that did not know where
+/// the row came from would file the survivor back on that shelf, and the book
+/// the reader just moved away would still be sitting where they moved it from.
+/// A filing passes none, because a second membership leaves every level as it
+/// was.
 fn moved_arrivals(
     state: AppState,
     row_ids: &[String],
     to: &str,
     index: Option<usize>,
+    from: Option<&str>,
 ) -> Vec<Arrival> {
     state.library.books.with_untracked(|rows| {
         row_ids
             .iter()
             .filter_map(|row_id| {
                 let row = find_row(rows, row_id)?;
-                Some(Arrival::moved(
+                let arrival = Arrival::moved(
                     row_id.clone(),
                     row.display_name(),
                     to.to_string(),
                     index,
-                ))
+                );
+                Some(match from {
+                    Some(from) => arrival.leaving(from),
+                    None => arrival,
+                })
             })
             .collect()
     })
 }
 
 /// The row ids of a screened clean half — the moves that may land now. The
-/// import half of a screen is [`super::import::land_file`]'s business instead;
-/// nothing in this module raises one.
+/// import half of a screen is [`super::import::land_stored_copy`]'s business
+/// instead; nothing in this module raises one.
 fn clean_move_ids(clean: Vec<Arrival>) -> Vec<String> {
     clean.into_iter().filter_map(|a| a.moving).collect()
 }
@@ -297,8 +313,10 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
             return;
         }
     }
-    let (clean, conflicts) =
-        conflict::screen(state, moved_arrivals(state, book_ids, ALL_SHELF, None));
+    let (clean, conflicts) = conflict::screen(
+        state,
+        moved_arrivals(state, book_ids, ALL_SHELF, None, Some(shelf_id)),
+    );
     let book_ids = clean_move_ids(clean);
     let mut moved = false;
     state.library.shelves.update(|shelves| {
@@ -1057,8 +1075,10 @@ pub fn file_many(state: AppState, book_ids: &[String], shelf_id: &str) {
     if book_ids.is_empty() {
         return;
     }
-    let (clean, conflicts) =
-        conflict::screen(state, moved_arrivals(state, book_ids, shelf_id, None));
+    let (clean, conflicts) = conflict::screen(
+        state,
+        moved_arrivals(state, book_ids, shelf_id, None, None),
+    );
     let book_ids = clean_move_ids(clean);
     if !book_ids.is_empty() {
         state.library.shelves.update(|shelves| {

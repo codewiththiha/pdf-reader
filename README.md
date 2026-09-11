@@ -294,13 +294,17 @@ there is no feedback loop between the label and the layout.
 ### Library
 
 The `/` route is a library, not a list of the last twenty things you opened. A book is an
-**address**: nothing is copied into the app unless you ask for it, and no in-app move ever touches
-the filesystem.
+**address** — a folder you imported read in place keeps its books at the paths they stand at, and a
+file you imported on its own is a copy the library stores under its own roof. No in-app move ever
+touches a file you own.
 
-- **Two ways to hold a book.** *Read in place* is the default and the only mode the app ever had —
-  the book is the path it was opened from, and the app never moves, renames or deletes it. *Copy
-  into the store* puts the bytes under the app's own data directory, so a book survives its source
-  folder being renamed or deleted, and keeps the source path as provenance for a relink.
+- **Two ways to hold a book.** *Read in place* is a folder import's default and the only mode the
+  app ever had — the book is the path it was opened from, and the app never moves, renames or
+  deletes it. *Copy into the store* puts the bytes under the app's own data directory, so a book
+  survives its source folder being renamed or deleted, and keeps the source path as provenance for
+  a relink. A file imported on its own — picked from the dialog or dropped on the library — is
+  always a store copy: there is no folder behind it to rescan or answer for it, and a copy is a
+  book the library owns outright, with its own highlights and its own place in it.
 - **Import a folder.** The sheet asks five questions and nothing else: which formats (as an include
   or an exclude list), how large a file has to be to count as a book, whether to read in place or
   copy, whether to watch for new books, and whether subfolders become shelves. Every answer is
@@ -428,16 +432,17 @@ the filesystem.
   `1_2` and so on, the counter a file manager appends, counted against that shelf's own names and
   promised on the row before you click; **Make link** puts a pointer on the shelf instead of a copy.
   A file has no book of its own yet, so none of these answers can cost you one. Home is a level like
-  any other and asks the same question of the books nobody has filed. One row is withheld when the
-  arriving file is the very file the library already reads: **Add as new** of it would be a second
-  book of one linked file, and the sheet offers the two answers that add no copy — go to the book you
-  have, or put a link here.
+  any other and asks the same question of the books nobody has filed. **Add as new** lands a copy
+  the library stores and owns — a book of its own bytes with its own highlights and its own place
+  in it, even when it is the very file the library already reads in place — so no row is ever
+  withheld: nothing a file's answers can do is a second door on one linked file.
 - **Dragging a book onto a shelf that has the name asks which book the shelf keeps.** Both sides are
   books you already have, so the three answers are the three things a reader can mean about them:
   **Merge** folds the one you dragged into the one that was there — the further place in it wins, so
   a merge never sends you backwards, the page count is the best either knew, names fill gaps rather
-  than overwrite, and the moved book's shelves and its highlights join the survivor instead of
-  leaving with it; **Replace** sends the book that was there out of the library and seats yours in
+  than overwrite, and the moved book's other shelves and its highlights join the survivor instead of
+  leaving with it, the shelf it was dragged OFF excepted, because that departure is the move you
+  made and a merge that put the survivor back there would be a move that never happened; **Replace** sends the book that was there out of the library and seats yours in
   its place, on every shelf it was filed on, and the row says how many highlights leave with it
   before you click; **As new** keeps both, yours under the next free name beside it. The two sheets
   are two different types in the code, so a file can never be offered a replace — and a move is
@@ -463,8 +468,19 @@ the filesystem.
   nothing collides with simply go in.
 - **Importing a file puts a book where you dropped it.** A file the library already holds somewhere
   else is not a reason for a shelf to stay empty: importing `notes.md` into a second folder gives
-  that folder its own book, with its own highlights and its own place in it, and the first folder
-  keeps the one it had. The same file imported twice onto ONE shelf is the collision above, and asks.
+  that folder its own book — a copy of its own, with its own highlights and its own place in it —
+  and the first folder keeps the one it had. The same file imported twice onto ONE shelf is the
+  collision above, and asks.
+- **Importing a file a read-at-place folder already holds asks before it copies.** The file stands
+  inside a folder the library reads where it is, and that folder's book for it is alive and
+  standing: a second linked row of one read-at-place file is the one duplicate the library never
+  makes, so the import asks — *import a copy here*, which stores the file as a book of its own on
+  the level you dropped on, or *show the imported one*, which adds nothing and lights the book the
+  folder holds, wherever in its tree it stands. A file whose folder never placed it is no question
+  and simply imports as a copy. And a file the folder's log remembers — removed, or moved out as a
+  copy that has since gone — is not a question either: the import spends the log and the book comes
+  back where the FOLDER holds it, in the name the shelf showed, lit up, because a book that
+  reappeared somewhere new is a book the reader cannot find.
 - **A link is a row, not a book.** It carries the name of the book it points at and nothing else —
   no file, no cover of its own, no page, no highlights, no second copy of a two-gigabyte PDF — and
   tapping it goes to that book wherever in the library it is filed and lights its card up. Because

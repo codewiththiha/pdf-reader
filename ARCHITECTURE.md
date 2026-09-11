@@ -378,6 +378,21 @@ behaviour you discover by pointing the app at a real folder.
   `store`, never `src`: repointing a stored book at its source would quietly turn "the app keeps
   its own copy" back into "the app reads your folder again".
 
+Which variant a book arrives as is the arrival's own fact. A folder import answers per its own
+`in_place` option; a LOOSE file — picked from the dialog or dropped on the library — is always the
+library's own stored copy (`import::land_stored_copy`, and the batch `run_files` lands), because a
+loose file has no folder to rescan it and no ledger to answer for it, and a linked row no ledger
+keeps is a row no rule can heal, tombstone or hand back. The copy takes the copy's own
+measurement as its identity, which leaves the SOURCE file's fingerprint free for any folder that
+reads it — the departure rule's arithmetic, on the import's side. One file is the question rather
+than the copy: a loose file that sits inside a folder the library READS IN PLACE, where the book
+that folder holds for it is alive and standing. A second linked row of one read-at-place file is
+the duplicate the folder rule never makes, so the drop asks the covered-file question
+(`conflict::CoveredAnswer`): the library's own stored copy on this level, which then still walks
+the level's name question, or the book the folder holds, gone to and lit. A file whose folder
+never placed it — new since the last walk, or outside the folder's filters — is no question and
+simply imports; the folder places its own linked book on the walk that finds it.
+
 The corollary runs through every layer. A shelf holds book *ids* and nothing else, so a drag
 between shelves edits an ordered list of ids and cannot touch a file the reader owns — which is
 what makes filing a read-in-place book safe by construction rather than by care.
@@ -510,7 +525,13 @@ that walks it, or the file dropped on a shelf by itself — spends the tombstone
 it, because the match is the fingerprint and not the address: a file removed here, moved across the
 disk and imported there is the file the log was written for. The row returns wearing the name the
 shelf showed, and the run reveals it when it lands, so a book that reappeared is a book the reader
-sees appear. A rescan, meanwhile, stays silent about the file, which is the log's whole point: the
+sees appear. WHERE it comes back is the log's answer and not the drop's, for a file an in-place tree
+holds: the shelf the log remembers, then the folder's mapped rung for the file's subfolder, then the
+folder's root shelf (`import::restore_covered_file`), because a book that came back should not come
+back somewhere new — and least of all on the level the file happened to be dropped on, which is a
+level the folder does not own. A log of a COPYING folder, or of a file that has since left the tree,
+has no folder place to come back to, and lands as the library's own copy on the level it was dropped
+on, in the name the log remembered. A rescan, meanwhile, stays silent about the file, which is the log's whole point: the
 removal was the reader's decision, a watchful folder does not overrule it, and only the reader's own
 import does. For a MOVED-OUT log this is the whole design coming around: the copy that left has the
 store's fingerprint, the original is free, and the import of the OS file brings the linked book back
@@ -529,8 +550,9 @@ that later dies is checked against the library at import time and spent like any
 
 ### When the level already holds the name
 
-A placement — a drag, a lift out to the root, a bulk filing, a loose-file import — whose NAME the
-level it is going to already holds is a question, not a skip. It used to be a skip, and the skip
+A placement — a drag, a lift out to the root, a bulk filing, a loose-file import of a file no
+read-at-place tree holds — whose NAME the level it is going to already holds is a question, not a
+skip. It used to be a skip, and the skip
 was the bug the sheet exists for: the placement resolved the arrival to the row the library already
 had, the level found that row already a member of itself, and nothing at all happened — which to
 the reader was a book disappearing into the shelf it was dropped on.
@@ -572,13 +594,14 @@ An **import** asks what to put on this level, and nothing it offers is destructi
   (`services::library::reveal` — its shelf, then its card, lit). It is the answer that means *I did
   not intend to add anything*, and it is what the old silence should have been.
 - **Add as new** places the arrival under the next free name (`conflict::next_name`, counted
-  against that level's own names and promised on the row before the click), as a second book of the
-  address marked `Book::independent`, so its highlights and its resume point are its own rather
-  than the first copy's. The row is withheld when the arrival sits at an address the library
-  already READS: a second row of one linked file is a duplicate of a read-at-place book, and the
-  sheet offers the two answers that add no copy — go to the book, or leave a pointer. Two files
-  that share a NAME but not bytes keep all three rows, because their as-new is a second book of
-  different content, not a second door on one file.
+  against that level's own names and promised on the row before the click) as the library's own
+  stored copy — and as a second book of the address marked `Book::independent` when the address is
+  one the library already reads, so its highlights and its resume point are its own rather than
+  the first copy's. Because a stored copy is a book of its own bytes and never a second door on
+  one linked file, no arrival has the row withheld. The compact folder-merge sheet below DOES
+  still withhold its *As new* from the very file a read-at-place row reads, because that as-new
+  lands as a LINKED row in the folder's own tree, and two linked rows of one file remain the
+  duplicate the library does not make.
 - **Make link** places a `Row::Link` instead of a copy: a row on this level with the book's name,
   no fingerprint, no page, no cover and no storage, which opens by revealing the book wherever it
   is filed. It is the answer for "I want it reachable from here" that used to be a second copy of a
@@ -592,7 +615,11 @@ it would orphan both:
   a page tie the deeper stream fraction, because a merge never sends a reader backwards), the page
   count is the best either row knew, names and authors fill gaps and never overwrite, the stamps
   keep the first join and the last read, a measurement beats a placeholder, and an address is dead
-  only when both rows say so. The moved row's shelves become the survivor's and then it goes —
+  only when both rows say so. The moved row's shelves become the survivor's — less the one level the
+  move DEPARTED, which the arrival carries as `Arrival::from` and a filing, which departs nothing,
+  carries as none: a merge that filed the survivor back on the shelf the book was lifted from would
+  leave the move visibly undone, and the reader would have to drag the survivor off a second time to
+  finish the first drag — and then it goes
   through `arrange::drop_row`, which is a removal without a tombstone, because the content stays in
   the library through the survivor and a tombstone for a fingerprint the library still holds is
   noise in a folder's restore menu — with one addition: when the survivor is the library's own

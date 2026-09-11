@@ -65,6 +65,17 @@ pub struct Arrival {
     pub file: Option<FoundFile>,
     /// The level the arrival is going to; [`ALL_SHELF`] for the root.
     pub shelf_id: String,
+    /// The level the arrival LEAVES, when it leaves one: a drag's source
+    /// shelf, or the shelf a lift-out takes a book off. `None` for an import
+    /// (no level is left), for a filing (a second membership is no departure
+    /// — the row stays where it was) and for a drag that began at the root,
+    /// which has no member list to leave. The answers that fold or dissolve
+    /// the moving row read it: the shelves the survivor takes over are the
+    /// ones the row KEEPS, and the level a move is leaving is not one of
+    /// them — a merge that filed the survivor back on the source would leave
+    /// the book the reader just moved away still sitting where they moved it
+    /// from, and the move would only look done after a second drag.
+    pub from: Option<String>,
     /// The slot the drop pointed at; `None` appends. Carried rather than
     /// re-derived because an arrival that had to ask lands later, when the
     /// level it was aimed at may have moved.
@@ -72,7 +83,8 @@ pub struct Arrival {
 }
 
 impl Arrival {
-    /// A file being imported onto a level.
+    /// A file being imported onto a level. An import leaves no level, so it
+    /// carries no [`Arrival::from`].
     pub fn import(file: FoundFile, shelf_id: impl Into<String>, index: Option<usize>) -> Self {
         let name = stem_of(&file.path);
         Self {
@@ -80,6 +92,7 @@ impl Arrival {
             moving: None,
             file: Some(file),
             shelf_id: shelf_id.into(),
+            from: None,
             index,
         }
     }
@@ -87,6 +100,9 @@ impl Arrival {
     /// A row being moved or filed onto a level. `name` is the row's own
     /// [`Row::display_name`], read by the caller because the caller is the one
     /// holding the row list.
+    ///
+    /// No [`Arrival::from`] yet: a filing leaves the row where it was, and a
+    /// move names the level it lifts off with [`Arrival::leaving`].
     pub fn moved(
         row_id: impl Into<String>,
         name: impl Into<String>,
@@ -98,8 +114,19 @@ impl Arrival {
             moving: Some(row_id.into()),
             file: None,
             shelf_id: shelf_id.into(),
+            from: None,
             index,
         }
+    }
+
+    /// Name the level this arrival leaves, which is what tells an answer that
+    /// dissolves the moving row — a merge, the sheet's one-book answer — that
+    /// the survivor does not inherit it. A drag names the shelf the hand
+    /// lifted off; a filing names none, because a second membership is not a
+    /// departure.
+    pub fn leaving(mut self, from: impl Into<String>) -> Self {
+        self.from = Some(from.into());
+        self
     }
 
     /// Whether this arrival is a file with no row of its own yet.
@@ -149,8 +176,13 @@ pub enum Answer {
 pub enum MoveAnswer {
     /// One book: the row already on the level survives with its id, its name
     /// and its memberships, and the moved row dissolves into it — the further
-    /// place in it wins, a name or an author fills a gap, the shelves and the
-    /// highlights of both end up on the survivor ([`crate::book::fold_books`]).
+    /// place in it wins, a name or an author fills a gap, the shelves the
+    /// moved row KEEPS and the highlights of both end up on the survivor
+    /// ([`crate::book::fold_books`]). The level the move departs
+    /// ([`Arrival::from`]) is the one shelf the survivor does not take over:
+    /// the departure is the move the reader made, and a fold that re-filed
+    /// the survivor there would leave the book visibly where it was lifted
+    /// from.
     Merge,
     /// The row already on the level goes, and the moved row takes its slot and
     /// every other shelf it was filed on.
@@ -489,6 +521,34 @@ mod tests {
         assert!(!moved.is_import());
         assert_eq!(moved.moving.as_deref(), Some("b1"));
         assert_eq!(moved.name, "Dune");
+    }
+
+    #[test]
+    fn a_move_names_the_level_it_leaves_and_nothing_else_does() {
+        // The departure is a fact the answers read: a merge inherits the
+        // shelves the moved row KEEPS, and the level the move lifts off is
+        // the one shelf it does not keep — a survivor filed back on it would
+        // be a book that never visibly moved.
+        let leaving = Arrival::moved("b1", "Dune", "s", None).leaving("t");
+        assert_eq!(leaving.from.as_deref(), Some("t"));
+        assert_eq!(
+            Arrival::moved("b1", "Dune", "s", None).from,
+            None,
+            "a filing names no departure: the row stays where it was"
+        );
+        assert_eq!(
+            Arrival::import(file("1.pdf"), "s", None).from,
+            None,
+            "and an import leaves no level at all"
+        );
+        // The departure changes nothing about the collision itself: the
+        // question is the name on the level the arrival is GOING to.
+        let rows = vec![titled("b1", "/books/1.pdf", "1"), titled("b2", "/books/2.pdf", "2")];
+        let shelves = vec![shelf("s", &["b1"]), shelf("t", &["b2"])];
+        assert_eq!(
+            collide(&rows, &shelves, &drag("b2", "1", "s").leaving("t")).as_deref(),
+            Some("b1")
+        );
     }
 
     #[test]

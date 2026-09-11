@@ -334,10 +334,16 @@ pub(crate) fn proceed_folder(
 
 /// Import files picked from the dialog or dropped on the library.
 ///
-/// Read in place, always: there is no folder to rescan and no structure to
-/// preserve, so a copy would cost disk and buy nothing. `target` is the shelf a
-/// drop landed on; `None` files onto no shelf, which leaves the books in "All"
-/// and nowhere else — the honest answer for a handful of loose files.
+/// The library's own copies: a loose file has no folder to rescan it and no
+/// structure to preserve, and a linked row no ledger answers for is a row no
+/// rule can keep honest — so the bytes go into the store, the row's identity
+/// is the copy's own measurement, and the source address stays provenance.
+/// A file an in-place folder's tree already holds is the exception that asks
+/// rather than copies: the folder answers for it, and the import becomes the
+/// covered question or, when the folder's log remembers the file, the book
+/// coming back in its folder's place (see [`run_files`]). `target` is the
+/// shelf a drop landed on; `None` files onto no shelf, which leaves the books
+/// in "All" and nowhere else — the honest answer for a handful of loose files.
 pub fn import_files(state: AppState, paths: Vec<String>, target: Option<String>) {
     if paths.is_empty() {
         return;
@@ -710,6 +716,7 @@ async fn run_folder(
                         folder_merge: true,
                         in_place: folder.opts.in_place,
                         folder_id: Some(folder.id.clone()),
+                        covered: false,
                     });
                     continue;
                 }
@@ -773,6 +780,7 @@ async fn run_folder(
                         folder_merge: true,
                         in_place: folder.opts.in_place,
                         folder_id: Some(folder.id.clone()),
+                        covered: false,
                     });
                     false
                 }
@@ -1210,9 +1218,22 @@ async fn copy_batch(
     Ok(copies)
 }
 
-/// Import loose files: measure them, then file them — except the ones whose
-/// content the target level already holds, which ask (see
+/// Import loose files: measure them, then answer each one by the ground it
+/// stands on — a file of a read-at-place folder is that folder's business
+/// first, and the rest land as the library's own stored copies, except the
+/// ones whose NAME the target level already holds, which ask (see
 /// [`crate::services::library::conflict`]).
+///
+/// A loose file has no folder to rescan it and no structure to preserve, and
+/// a linked row no ledger answers for is a row no rule can keep honest — so
+/// the import is a copy: the bytes go into the store, the row's identity is
+/// the copy's own measurement, and the source file's fingerprint stays free
+/// for any folder that reads it. The one file this does NOT copy silently is
+/// a file an in-place folder's tree already holds: that folder already
+/// answers for it, so the drop becomes the folder's own two-answer question
+/// — the library's copy here, or the folder's book lit where it stands — and
+/// a file the folder's log remembers removing or moving out comes BACK in its
+/// folder's place instead, the log spent by the explicit ask.
 async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Option<String>) {
     let checks = match wire::verify_paths(paths).await {
         Ok(checks) => checks,
@@ -1256,6 +1277,42 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // below, which dedupe against exactly those fingerprints.
     apply_checks(state, &checks);
 
+    let shelf_id = target
+        .clone()
+        .unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string());
+
+    // The read-at-place folder's answer, before the level's name question: a
+    // file an in-place tree holds is a file the library already has a book
+    // for, and what the drop means is the folder's to say — a logged book
+    // comes back where the folder holds it, a standing book asks the covered
+    // question, and only a file no tree answers for is an ordinary import.
+    let mut restored: Vec<String> = Vec::new();
+    let mut covered_asks: Vec<ConflictAsk> = Vec::new();
+    found.retain(|file| match covered_fate(state, file) {
+        CoveredFate::Ordinary => true,
+        CoveredFate::Restore { folder_id, stone } => {
+            restored.push(restore_covered_file(state, file, &folder_id, &stone));
+            false
+        }
+        CoveredFate::Ask { folder_id, row_id } => {
+            covered_asks.push(ConflictAsk {
+                arrival: Arrival::import(file.clone(), shelf_id.clone(), None),
+                existing_name: state.library.row_name(&row_id),
+                existing_id: row_id,
+                folder_merge: false,
+                in_place: true,
+                folder_id: Some(folder_id),
+                covered: true,
+            });
+            false
+        }
+    });
+    // The books that came back are on their shelf already; write them before
+    // the copies run, so a failure below cannot lose a restoration.
+    if !restored.is_empty() {
+        crate::storage::persist_library(state.library);
+    }
+
     // Every file whose NAME the target level already holds is a question
     // rather than a placement — the old rule resolved the file to the row the
     // library already had and skipped the placement, which to the reader was a
@@ -1264,54 +1321,131 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // one: the row the library already has simply gains this level as well,
     // which is a landing the reader can see and the one they asked for by
     // dropping here.
-    let shelf_id = target
-        .clone()
-        .unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string());
     let arrivals: Vec<Arrival> = found
         .iter()
         .map(|file| Arrival::import(file.clone(), shelf_id.clone(), None))
         .collect();
     let (clean, conflicts) = conflict::screen(state, arrivals);
-    // A represented file is a succeeded import as much as a landed one: the
-    // card says what the drop was worth, and the highlight below says where.
-    let placed = clean.len() as u32 + represented.len() as u32;
-    let waiting = conflicts.len() as u32;
-    // One persist for the batch rather than one per file: a drop of four
-    // hundred files is one write, and a reader who closes the window halfway
-    // through an import should find all of it or none of it.
-    let mut restored: Vec<String> = Vec::new();
+
+    // The clean half lands as the library's own copies: one batch for the
+    // whole drop rather than one copy per file, and one measurement pass over
+    // the copies that landed — a drop of four hundred files is one walk of
+    // the store and one write of the blob.
+    let now = now_ms();
+    let mut pending: Vec<(String, FoundFile, Option<String>, Option<usize>)> = Vec::new();
+    let mut stone_landings: Vec<String> = Vec::new();
     for arrival in &clean {
-        let Some(file) = arrival.file.as_ref() else {
+        let Some(file) = arrival.file.clone() else {
             continue;
         };
-        // A file some folder remembers removing comes back the same way it
-        // does in a folder run: wearing the name its shelf showed, with the
-        // removal lifted and the landing revealed below.
-        let stone = lift_stone_for(state, file);
-        let id = land_file(
-            state,
-            file,
-            stone.as_ref().and_then(|s| s.title.clone()),
-            &arrival.shelf_id,
-            arrival.index,
-        );
+        // A file some folder remembers removing comes back wearing the name
+        // its shelf showed, wherever it lands, and the removal is spent by
+        // the explicit ask. An IN-PLACE tree's log never reaches here — the
+        // folder's answer above owns those files — so what this lifts is a
+        // copying folder's log, or one whose file has since left the tree.
+        let stone = lift_stone_for(state, &file);
+        let title = stone.as_ref().and_then(|s| s.title.clone());
+        let book_id = id::next_id(now);
         if stone.is_some() {
-            restored.push(id);
+            stone_landings.push(book_id.clone());
         }
+        pending.push((book_id, file, title, arrival.index));
     }
-    if let Some(first) = restored.into_iter().next() {
-        super::reveal::reveal_book(state, &first);
-    } else if let Some(first) = represented.into_iter().next() {
-        super::reveal::reveal_book(state, &first);
+    let requests: Vec<(String, &FoundFile)> = pending
+        .iter()
+        .map(|(book_id, file, _, _)| (book_id.clone(), file))
+        .collect();
+    let copies = if requests.is_empty() {
+        HashMap::new()
+    } else {
+        match copy_batch(state, &task, &requests).await {
+            Ok(copies) => copies,
+            Err(message) => {
+                // The questions survive the failure: they are about the
+                // library rather than about the store, and every answer can
+                // still land — or fail — on its own terms.
+                let mut asks = covered_asks;
+                asks.extend(conflicts);
+                conflict::raise(state, asks);
+                return fail(state, &task, message, false);
+            }
+        }
+    };
+    // The copies' own measurements, in one pass: a stored row's identity is
+    // the copy's fingerprint and the source file's stays free — the departure
+    // rule's arithmetic on the import's side. A copy that cannot be measured
+    // leaves the pending flag, which the startup sweep finishes.
+    let stores: Vec<String> = pending
+        .iter()
+        .filter_map(|(book_id, _, _, _)| copies.get(book_id).cloned())
+        .collect();
+    let measured: HashMap<String, Fingerprint> = if stores.is_empty() {
+        HashMap::new()
+    } else {
+        wire::verify_paths(stores)
+            .await
+            .ok()
+            .map(|checks| {
+                checks
+                    .into_iter()
+                    .filter_map(|check| Some((check.path.clone(), check.fingerprint()?)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut landed = 0u32;
+    for (book_id, file, title, index) in pending {
+        // A per-file failure was the batch's own toast; a copy that did not
+        // land leaves no row behind.
+        let Some(store) = copies.get(&book_id) else {
+            continue;
+        };
+        mint_stored_row(
+            state,
+            book_id.clone(),
+            &file,
+            store.clone(),
+            title,
+            &shelf_id,
+            index,
+        );
+        adopt_copy_measurement(state, &book_id, measured.get(store).copied());
+        landed += 1;
     }
+    let stone_landings: Vec<String> = stone_landings
+        .into_iter()
+        .filter(|book_id| copies.contains_key(book_id))
+        .collect();
+    // A represented file is a succeeded import as much as a landed one: the
+    // card says what the drop was worth, and the highlight below says where.
+    let placed = landed
+        + (restored.len() + stone_landings.len()) as u32
+        + represented.len() as u32;
+    let waiting = (conflicts.len() + covered_asks.len()) as u32;
     // The landed rows may read from addresses the cover cache has no art for:
     // one ask for the batch rather than one per file.
     if placed > 0 {
         super::covers::backfill_missing(state);
     }
+    // One light for the books that CAME BACK — the folder's restorations
+    // first, then the landings a log was spent by, then the rows the logs
+    // named as represented: "it is back" is worth a highlight and no
+    // sentence.
+    let came_back = restored
+        .into_iter()
+        .chain(stone_landings)
+        .chain(represented)
+        .next();
+    if let Some(first) = came_back {
+        super::reveal::reveal_book(state, &first);
+    }
     // Raised after the clean half landed: the sheet counts the questions, and
     // a landing that shifted a member list is one the answers resolve against.
-    conflict::raise(state, conflicts);
+    // The covered questions go first: the folder's answer was asked first, in
+    // the walk's own order.
+    let mut asks = covered_asks;
+    asks.extend(conflicts);
+    conflict::raise(state, asks);
     crate::storage::persist_library(state.library);
     update_task(state, &task, move |t| {
         t.total = placed;
@@ -1319,6 +1453,153 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         t.waiting = waiting;
         t.finish();
     });
+}
+
+/// What the read-at-place folder this file stands in already says about a
+/// loose import of it.
+#[derive(Debug)]
+enum CoveredFate {
+    /// No in-place folder's tree holds this address: the file is an ordinary
+    /// import, and lands as the library's own copy through the level's name
+    /// question. A tree that covers the ground but never placed THIS file —
+    /// new since the last scan, or outside the folder's filters — answers
+    /// here too: the import is the library's copy, and the folder places its
+    /// own linked book on the walk that finds it, as it always would.
+    Ordinary,
+    /// A folder that holds the file has a log for it — a removal, or a
+    /// moved-out log whose copy has since died — and an explicit import
+    /// spends the log the way a folder walk does: the book comes back as the
+    /// folder's own linked book, in its folder's place, wearing the name the
+    /// shelf showed, and the run lights it up.
+    Restore { folder_id: String, stone: Tombstone },
+    /// The folder's book for this file is alive and standing: the import is
+    /// the covered question — the library's own stored copy on this level,
+    /// or the folder's book lit where it stands — because a second linked
+    /// row of one read-at-place file is the one thing the folder rule never
+    /// makes.
+    Ask { folder_id: String, row_id: String },
+}
+
+/// Ask the in-place folders what they hold for one loose file.
+///
+/// A living row at the file's very address answers first: it IS the folder's
+/// book — a linked row stays in its folder's tree, because every departure
+/// converts it — and an import of the file is the question, never a second
+/// linked instance beside it. The log answers second, and only a log no
+/// living row represents: a moved-out log BOUND to a living copy was spent
+/// by the `represented` check before this runs. The order is the rule rather
+/// than a preference — a restore that minted a linked row over a living one
+/// would be the duplicate the question exists to prevent.
+fn covered_fate(state: AppState, file: &FoundFile) -> CoveredFate {
+    // The in-place folders whose tree holds the file's address.
+    let covering: Vec<String> = state.library.folders.with_untracked(|folders| {
+        folders
+            .iter()
+            .filter(|f| f.opts.in_place && rel_under(&file.path, &f.root).is_some())
+            .map(|f| f.id.clone())
+            .collect()
+    });
+    if covering.is_empty() {
+        return CoveredFate::Ordinary;
+    }
+    let row_id = state.library.books.with_untracked(|rows| {
+        book_rows(rows)
+            .find(|b| b.path() == file.path)
+            .map(|b| b.id.clone())
+    });
+    if let Some(row_id) = row_id {
+        // The folder the sheet names is the one that PLACED the file; a tree
+        // whose ledger lost the fingerprint — the file changed since the walk
+        // that placed it — falls back to the first that covers the address.
+        let folder_id = state
+            .library
+            .folders
+            .with_untracked(|folders| {
+                covering
+                    .iter()
+                    .find(|id| {
+                        folders
+                            .iter()
+                            .any(|f| &f.id == *id && f.placed.contains(&file.fp))
+                    })
+                    .cloned()
+            })
+            .unwrap_or_else(|| covering[0].clone());
+        return CoveredFate::Ask { folder_id, row_id };
+    }
+    let stoned = state.library.folders.with_untracked(|folders| {
+        covering.iter().find_map(|id| {
+            folders
+                .iter()
+                .find(|f| &f.id == id)
+                .and_then(|f| ledger::find_tombstone(f, &file.fp).cloned())
+                .map(|stone| (id.clone(), stone))
+        })
+    });
+    match stoned {
+        Some((folder_id, stone)) => CoveredFate::Restore { folder_id, stone },
+        None => CoveredFate::Ordinary,
+    }
+}
+
+/// The write half of [`CoveredFate::Restore`]: the folder's book comes back
+/// the way a folder walk brings it back — a LINKED book at the file's
+/// address, wearing the name the shelf showed, on the folder's own ground —
+/// and the log is spent by the landing. Returns the row so the run can light
+/// it up.
+///
+/// The shelf is the one the log remembers when it still stands, then the
+/// folder's mapped rung for the file's subfolder, then the folder's root
+/// shelf: a book that came back should not come back somewhere new, and
+/// least of all on the level the file happened to be dropped on — the drop
+/// asked for a file the folder owns, and the folder's place is the answer.
+/// A folder with no shelf left at all leaves the book in the library unfiled,
+/// which is the restore menu's own fallback.
+fn restore_covered_file(
+    state: AppState,
+    file: &FoundFile,
+    folder_id: &str,
+    stone: &Tombstone,
+) -> String {
+    // The folder's two rungs for this file: the one its subfolder maps to,
+    // and the one at its root.
+    let (rung, root_rung) = state.library.folders.with_untracked(|folders| {
+        folders
+            .iter()
+            .find(|f| f.id == folder_id)
+            .map(|f| {
+                let rel = rel_under(&file.path, &f.root).unwrap_or_default();
+                let key = match rel.rsplit_once('/') {
+                    Some((dir, _)) if f.opts.groups => dir,
+                    _ => "",
+                };
+                (f.shelf_map.get(key).cloned(), f.shelf_map.get("").cloned())
+            })
+            .unwrap_or_default()
+    });
+    let target = state.library.shelves.with_untracked(|shelves| {
+        let standing = |id: &Option<String>| {
+            id.as_deref()
+                .filter(|sid| shelves.iter().any(|s| s.id == **sid))
+                .map(str::to_string)
+        };
+        standing(&stone.shelf_id)
+            .or_else(|| standing(&rung))
+            .or_else(|| standing(&root_rung))
+            .or_else(|| root_shelf_of(shelves, folder_id))
+    });
+    // The log comes out and the placement is marked in one write: a
+    // fingerprint the ledger skips with no book behind it is the one state a
+    // folder cannot recover from on its own. (`placed` kept the fingerprint
+    // through the removal and the departure alike; the mark is the guarantee.)
+    state.library.folders.update(|folders| {
+        if let Some(folder) = folders.iter_mut().find(|f| f.id == folder_id) {
+            ledger::restore_deleted(folder, &file.fp);
+            folder.mark_placed(file.fp);
+        }
+    });
+    let shelf_id = target.unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string());
+    land_file(state, file, stone.title.clone(), &shelf_id, None)
 }
 
 /// The removal a folder holds for this file, lifted — `None` when no folder
@@ -1348,22 +1629,25 @@ fn lift_stone_for(state: AppState, file: &FoundFile) -> Option<Tombstone> {
 
 /// Land one measured file as a book row on one level.
 ///
-/// The silent half of an import, and the half an answer to the collision sheet
-/// calls once it knows the name to use. `name` is the title the row is given:
-/// `None` leaves it without one, so the stem of its address is the name the
-/// shelf shows, which is the honest name for a file nobody has opened yet, and
-/// `Some` is the counter the sheet minted for a second book of one name.
+/// The landing of a file a FOLDER answers for: an in-place merge seating a
+/// file its own rung holds, and a restoration putting a logged book back in
+/// its folder's place. A loose import does not come through here — a file no
+/// folder answers for is the library's own stored copy
+/// ([`land_stored_copy`]), because a linked row no ledger keeps is a row no
+/// rescan can heal, tombstone or hand back. `name` is the title the row is
+/// given: `None` leaves it without one, so the stem of its address is the name
+/// the shelf shows, which is the honest name for a file nobody has opened yet,
+/// and `Some` is the name a log or a sheet gave it.
 ///
 /// A second row of an address the library already reads is a book of its own
 /// ([`Book::independent`]): its highlights live under a key carrying its id and
 /// its resume point is written by itself, which is what makes "add as new"
 /// mean something a reader can see rather than a second name for one book.
 ///
-/// The row is always a new one, named or not. The name is the sheet's *add as
-/// new* and the absence of one is a file the level had no book of that name
-/// for; either way the reader asked for a book HERE, and a resolve to the row
-/// another level holds would answer with nothing new on the level they dropped
-/// on — the vanishing the collision sheet exists to stop.
+/// The row is always a new one, named or not. Either way the reader asked for
+/// a book HERE, and a resolve to the row another level holds would answer
+/// with nothing new on the level they dropped on — the vanishing the
+/// collision sheet exists to stop.
 ///
 /// Writes no persist and queues no cover, because a caller that lands four
 /// hundred files owes ONE write and ONE cover ask — the queue re-derives its
@@ -1414,6 +1698,68 @@ pub(crate) fn mint_stored_row(
         shelf_id,
         index,
     )
+}
+
+/// Land one loose file as the library's own stored copy: the single-file form
+/// of the batch [`run_files`] lands, for the two answers that place a file
+/// after a question — the name sheet's *add as new* and the covered sheet's
+/// *import here*.
+///
+/// The copy is made BEFORE the row is promised — a failure to copy is a toast
+/// and a level left untouched, the one honest outcome for a file that could
+/// not be filed — and the id is minted now because the stored file is named
+/// after it. The row then takes the copy's own measurement as its identity
+/// ([`adopt_copy_measurement`]), which is what leaves the source file's
+/// fingerprint free for the folders that read it.
+pub(crate) fn land_stored_copy(
+    state: AppState,
+    file: FoundFile,
+    name: Option<String>,
+    shelf_id: String,
+    index: Option<usize>,
+) {
+    let book_id = id::next_id(now_ms());
+    let task = format!("import-{book_id}");
+    spawn_local(async move {
+        match wire::copy_one_to_store(&task, &file.path, &book_id).await {
+            Ok(store) => {
+                let measured = wire::verify_paths(vec![store.clone()])
+                    .await
+                    .ok()
+                    .and_then(|checks| checks.into_iter().next())
+                    .and_then(|check| check.fingerprint());
+                let placed =
+                    mint_stored_row(state, book_id, &file, store, name, &shelf_id, index);
+                adopt_copy_measurement(state, &placed, measured);
+                super::covers::backfill_missing(state);
+                crate::storage::persist_library(state.library);
+            }
+            Err(message) => state.ui.toast.set(Some(Toast::new(message))),
+        }
+    });
+}
+
+/// The copy's own measurement becomes the row's identity, and the source
+/// file's fingerprint is left free — the departure rule's arithmetic on the
+/// import's side. A stored book is the library's own instance, and an OS file
+/// that keeps its own fingerprint can still be placed by any folder that
+/// reads it, as its own linked book, instead of being answered away as
+/// "content the library holds" by a registry that only saw the store's copy
+/// of it. A copy that could not be measured leaves the pending flag rather
+/// than blocking the landing; the startup sweep re-measures the store path
+/// and finishes the job.
+fn adopt_copy_measurement(state: AppState, row_id: &str, measured: Option<Fingerprint>) {
+    state.library.books.update(|rows| {
+        if let Some(book) = book_rows_mut(rows).find(|b| b.id == row_id) {
+            match measured {
+                Some(fp) => {
+                    book.fp = fp;
+                    book.fp_pending = false;
+                }
+                None => book.fp_pending = true,
+            }
+        }
+    });
 }
 
 /// The row both landings mint.
@@ -1500,12 +1846,16 @@ fn write_folder(state: AppState, folder: WatchedFolder) {
 
 #[cfg(test)]
 mod tests {
-    use super::{claim_root, land_file, rel_of, shelf_name};
+    use super::{
+        CoveredFate, claim_root, covered_fate, land_file, rel_of, restore_covered_file, shelf_name,
+    };
     use crate::state::AppState;
     use leptos::prelude::*;
-    use library_core::book::Fingerprint;
+    use library_core::book::{Fingerprint, Origin};
+    use library_core::folder::{FolderOpts, Tombstone, WatchedFolder};
     use library_core::scan::FoundFile;
     use library_core::shelf::Shelf;
+    use reader_core::format::Format;
 
     /// A measured Markdown file: the cover queue skips anything that is not a
     /// PDF, so a host test that lands one never starts the wasm render chain.
@@ -1608,5 +1958,179 @@ mod tests {
         assert_eq!(rel_of(""), None);
         assert_eq!(rel_of("scifi").as_deref(), Some("scifi"));
         assert_eq!(rel_of("scifi/deep").as_deref(), Some("scifi/deep"));
+    }
+
+    // -------------------------------------------------------------------
+    // The read-at-place folder's answer to a loose file.
+    // -------------------------------------------------------------------
+
+    fn fp(n: u32) -> Fingerprint {
+        Fingerprint {
+            size: u64::from(n),
+            mtime_ms: u64::from(n),
+            head_hash: n,
+        }
+    }
+
+    /// An in-place folder that placed the given fingerprints, with the logs
+    /// it holds — the ledger half of a read-at-place import.
+    fn folder(id: &str, root: &str, placed: &[u32], ignored: Vec<Tombstone>) -> WatchedFolder {
+        WatchedFolder {
+            id: id.to_string(),
+            root: root.to_string(),
+            opts: FolderOpts::default(),
+            placed: placed.iter().copied().map(fp).collect(),
+            ignored,
+            shelf_map: Default::default(),
+            last_seen: Vec::new(),
+            scanned_ms: 0,
+        }
+    }
+
+    /// A removal's log for `n`, filed on `shelf` when it was filed on one.
+    fn stone(n: u32, path: &str, moved: bool, shelf: Option<&str>) -> Tombstone {
+        Tombstone {
+            fp: fp(n),
+            title: Some("Dune".to_string()),
+            format: Format::Markdown,
+            last_path: path.to_string(),
+            shelf_id: shelf.map(str::to_string),
+            removed_ms: 5,
+            moved,
+            returned_row: None,
+        }
+    }
+
+    #[test]
+    fn a_file_an_in_place_folder_holds_is_a_question_not_a_second_link() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let file = found("/books/dune.md", 7);
+        state.library.shelves.set(vec![plain("fs"), plain("s")]);
+        let mut one = folder("f1", "/books", &[7], Vec::new());
+        one.shelf_map.insert(String::new(), "fs".to_string());
+        state.library.folders.set(vec![one]);
+        // The folder's own book for the file, standing where the folder put
+        // it — the row an import of the same file must never duplicate.
+        let landed = land_file(state, &file, None, "fs", None);
+
+        match covered_fate(state, &file) {
+            CoveredFate::Ask { folder_id, row_id } => {
+                assert_eq!(folder_id, "f1", "the folder that placed the file is the one asked about");
+                assert_eq!(row_id, landed, "and the question names the book it holds");
+            }
+            other => panic!("expected the folder's question, got {other:?}"),
+        }
+
+        // A COPYING folder's tree is no cover: its books are the library's
+        // own copies, and the OS file stays an ordinary import.
+        let mut copying = folder("f2", "/books", &[7], Vec::new());
+        copying.opts.in_place = false;
+        state.library.folders.set(vec![copying]);
+        assert!(
+            matches!(covered_fate(state, &file), CoveredFate::Ordinary),
+            "a copying folder's tree asks nothing"
+        );
+    }
+
+    #[test]
+    fn a_file_a_folder_log_remembers_comes_back_to_the_folders_place() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let file = found("/books/scifi/dune.md", 7);
+        state.library.shelves.set(vec![plain("fs"), plain("sub"), plain("s")]);
+        let mut one = folder("f1", "/books", &[7], vec![stone(7, "/books/scifi/dune.md", false, Some("fs"))]);
+        one.shelf_map.insert(String::new(), "fs".to_string());
+        one.shelf_map.insert("scifi".to_string(), "sub".to_string());
+        state.library.folders.set(vec![one]);
+
+        let fate = covered_fate(state, &file);
+        assert!(
+            matches!(fate, CoveredFate::Restore { .. }),
+            "the log answers before any question: got {fate:?}"
+        );
+        let CoveredFate::Restore { folder_id, stone } = fate else {
+            unreachable!()
+        };
+
+        let id = restore_covered_file(state, &file, &folder_id, &stone);
+
+        let rows = state.library.books.get_untracked();
+        assert_eq!(rows.len(), 1, "the folder's book is back, and it is the only book");
+        let book = rows[0].book().expect("a book row");
+        assert_eq!(book.id, id);
+        assert_eq!(book.path(), "/books/scifi/dune.md", "linked — it is the folder's file again");
+        assert!(matches!(book.origin, Origin::Linked { .. }));
+        assert_eq!(book.title.as_deref(), Some("Dune"), "wearing the name the shelf showed");
+        let shelves = state.library.shelves.get_untracked();
+        let on = |sid: &str| {
+            shelves
+                .iter()
+                .find(|s| s.id == sid)
+                .map(|s| s.books.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            on("fs"),
+            vec![id],
+            "on the shelf the log remembers — not the one the file was dropped on"
+        );
+        assert!(on("sub").is_empty() && on("s").is_empty());
+        let folders = state.library.folders.get_untracked();
+        assert!(folders[0].ignored.is_empty(), "the log is spent by the landing");
+        assert!(
+            folders[0].placed.contains(&file.fp),
+            "and the folder still answers for the file, so no rescan doubles it"
+        );
+    }
+
+    #[test]
+    fn a_moved_out_log_with_no_copy_behind_it_brings_the_linked_book_back() {
+        // The move made a copy and the copy has since died (a merge folded
+        // it away): the log is unbound, and an import of the OS file is owed
+        // a real linked book in the folder's place rather than a highlight.
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let file = found("/books/dune.md", 7);
+        state.library.shelves.set(vec![plain("fs")]);
+        let mut one = folder("f1", "/books", &[7], vec![stone(7, "/books/dune.md", true, Some("fs"))]);
+        one.shelf_map.insert(String::new(), "fs".to_string());
+        state.library.folders.set(vec![one]);
+
+        match covered_fate(state, &file) {
+            CoveredFate::Restore { folder_id, stone } => {
+                assert_eq!(folder_id, "f1");
+                assert!(stone.moved, "the log it spends is the moved-out one");
+            }
+            other => panic!("expected the folder's book to come back, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_file_no_in_place_tree_answers_for_is_an_ordinary_import() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        state.library.shelves.set(vec![plain("fs")]);
+        let mut one = folder("f1", "/books", &[7], Vec::new());
+        one.shelf_map.insert(String::new(), "fs".to_string());
+        state.library.folders.set(vec![one]);
+
+        // Under the tree, but a file the folder never placed — new since the
+        // last walk, or outside its filters. No book to show and no log to
+        // spend: an ordinary import, and the folder places its own linked
+        // book on the walk that finds it.
+        let fresh = found("/books/new.md", 9);
+        assert!(matches!(covered_fate(state, &fresh), CoveredFate::Ordinary));
+        // And outside every tree altogether.
+        let outside = found("/elsewhere/notes.md", 8);
+        assert!(matches!(covered_fate(state, &outside), CoveredFate::Ordinary));
+        // A subdirectory spelling of the same fact: "/books2" is not inside
+        // "/books", however much the prefix looks like it.
+        let neighbour = found("/books2/dune.md", 7);
+        assert!(matches!(covered_fate(state, &neighbour), CoveredFate::Ordinary));
     }
 }

@@ -18,6 +18,13 @@
 //! leave with it — which is the promise-on-the-row idiom the rest of the sheet
 //! already keeps.
 //!
+//! One more shape wears this sheet's chrome without wearing its question: a
+//! loose import of a file that sits inside a folder the library reads in
+//! place asks about the FILE'S GROUND rather than the level's name — the
+//! library's own stored copy here, or the book the folder holds, lit — because
+//! a second link of one read-at-place file is the one thing the folder rule
+//! never makes.
+//!
 //! The service half — what a collision is, what each answer writes — is
 //! `crate::services::library::conflict` and the rule itself is
 //! `library_core::conflict`; this file is the ask.
@@ -36,7 +43,8 @@ use library_core::shelf::ALL_SHELF;
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::services::library::conflict::{self, ConflictAsk, FolderMergeAnswer};
+use crate::services::library::conflict::{self, ConflictAsk, CoveredAnswer, FolderMergeAnswer};
+use crate::services::library::folder_label;
 use library_core::book::find_row;
 use library_core::conflict::{Answer, MoveAnswer, next_name};
 use crate::state::AppState;
@@ -78,6 +86,14 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
                         view! { <FolderMergeSheet state=state ask=ask /> }.into_any(),
                     );
                 }
+                // A covered file's ask is about the file's own ground rather
+                // than the level's name, and its sheet is the two answers the
+                // read-at-place rule leaves.
+                if ask.covered {
+                    return Some(
+                        view! { <CoveredSheet state=state ask=ask /> }.into_any(),
+                    );
+                }
                 let info = Info::of(state, &ask);
                 Some(view! { <Sheet state=state info=info /> }.into_any())
             }}
@@ -94,14 +110,6 @@ struct Info {
     /// Whether the arrival is a file with no row of its own yet, which is the
     /// fact that decides which three rows the sheet offers.
     import: bool,
-    /// Whether the arriving file sits at an address the library already
-    /// READS. An *add as new* of that file would be a second row of one
-    /// linked file — a duplicate of a read-at-place book, which the library
-    /// does not make — so the sheet withholds the row and offers the two
-    /// answers that add no copy: go to the book, or leave a pointer. A
-    /// same-NAME arrival from a different file keeps all three: its *as new*
-    /// is a second book of different bytes, not a second door on one file.
-    twin_address: bool,
     /// The name already on the level, which *already imported* goes to and
     /// *make link* points at.
     existing_name: String,
@@ -150,14 +158,6 @@ impl Info {
             &ask.arrival.shelf_id,
             &ask.arrival.name,
         );
-        // An arrival at an address the library already reads is the same file
-        // the colliding row may be wearing: *add as new* of it is withheld
-        // below, because two rows of one linked file are a duplicate.
-        let twin_address = ask.arrival.file.as_ref().is_some_and(|file| {
-            rows.iter()
-                .filter_map(|row| row.book())
-                .any(|book| book.path() == file.path)
-        });
         // The row's OWN key, not its address: a book of its own keeps its
         // marks under a key of its id, and a count taken from the address would
         // promise a loss the removal cannot make.
@@ -185,7 +185,6 @@ impl Info {
         Self {
             incoming: ask.arrival.name.clone(),
             import: ask.arrival.is_import(),
-            twin_address,
             existing_name: ask.existing_name.clone(),
             marks,
             new_name,
@@ -207,15 +206,12 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
         format!("Already {}", info.where_line)
     };
     let import = info.import;
-    let twin_address = info.twin_address;
     let link_offer = info.link_offer;
-    let question = if import && twin_address {
-        format!(
-            "“{}” is already {} — the library reads this very file, and a file it reads in \
-             place is one book, never two. Go to the book you have, or put a link here.",
-            info.incoming, info.where_line
-        )
-    } else if import {
+    let question = if import {
+        // An import's *add as new* is a stored copy of the library's own — a
+        // book of its own bytes, whatever the level's twin reads — so no
+        // arrival ever has the row withheld: nothing a file's answers can do
+        // is a second door on one linked file.
         format!(
             "“{}” is already {}. Add a second book of its own, put a link here \
              instead, or go to the one you have.",
@@ -305,17 +301,13 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                                         conflict::answer(state, Answer::GoToExisting)
                                     })
                                 />
-                                {(!twin_address).then(move || {
-                                    view! {
-                                        <ChoiceRow
-                                            label="Add as new"
-                                            note=new_note.clone()
-                                            on_click=Callback::new(move |_| {
-                                                conflict::answer(state, Answer::AsNew)
-                                            })
-                                        />
-                                    }
-                                })}
+                                <ChoiceRow
+                                    label="Add as new"
+                                    note=new_note
+                                    on_click=Callback::new(move |_| {
+                                        conflict::answer(state, Answer::AsNew)
+                                    })
+                                />
                                 <ChoiceRow
                                     label="Make link"
                                     note=LINK_NOTE.to_string()
@@ -531,6 +523,145 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                             />
                         }
                     })}
+                </div>
+                {(waiting > 0).then(|| {
+                    let label = format!("Apply to all {}", waiting + 1);
+                    view! {
+                        <div class="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2">
+                            <span class="text-xs text-muted">{label}</span>
+                            <Switch
+                                checked=Signal::derive(move || apply_all.get())
+                                on_change=Callback::new(move |on| apply_all.set(on))
+                                title="Give every waiting question this same answer"
+                                    .to_string()
+                            />
+                        </div>
+                    }
+                })}
+            </div>
+
+            <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">
+                <Button
+                    on_click=move |_| conflict::cancel(state)
+                    variant=ButtonVariant::Ghost
+                    title="Leave the shelf as it is"
+                >
+                    <span>"Cancel"</span>
+                </Button>
+            </footer>
+        </>
+    }
+}
+
+/// The covered-file sheet: a loose import of a file that sits inside a
+/// folder the library reads in place, where the folder's book for it is
+/// alive and standing.
+///
+/// The folder's rule has already answered the questions a name collision
+/// would ask — a second linked row of one read-at-place file is a duplicate
+/// the library does not make — so what is left is two: the library's own
+/// stored copy on this level, a book of its own bytes with its own
+/// highlights and its own place in it, unbound from the folder's tree; or
+/// the book the folder holds, gone to and lit. The switch gives every other
+/// waiting file of the folder the same answer, because what one file of a
+/// folder says is usually what forty of it say.
+#[component]
+fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
+    let apply_all = RwSignal::new(false);
+    let waiting = state
+        .library
+        .conflict_waiting
+        .with_untracked(|w| w.iter().filter(|each| each.covered).count());
+    let incoming = ask.arrival.name.clone();
+    let heading = incoming.clone();
+    let tooltip = heading.clone();
+    let folder_name = ask
+        .folder_id
+        .as_deref()
+        .and_then(|folder_id| {
+            state.library.folders.with_untracked(|folders| {
+                folders
+                    .iter()
+                    .find(|f| f.id == folder_id)
+                    .map(|f| folder_label(&f.root))
+            })
+        })
+        .unwrap_or_else(|| "a folder read in place".to_string());
+    let book_name = ask.existing_name.clone();
+    let subtitle = if waiting > 0 {
+        format!("Inside “{folder_name}” · {waiting} more waiting")
+    } else {
+        format!("Inside “{folder_name}”")
+    };
+    let where_line = if ask.arrival.shelf_id == ALL_SHELF {
+        "in your library".to_string()
+    } else {
+        let name = state.library.shelves.with_untracked(|shelves| {
+            shelves
+                .iter()
+                .find(|s| s.id == ask.arrival.shelf_id)
+                .map(|s| s.name.clone())
+        });
+        match name {
+            Some(name) => format!("on “{name}”"),
+            None => "on this shelf".to_string(),
+        }
+    };
+    let question = format!(
+        "“{incoming}” is inside “{folder_name}”, a folder the library reads in place, and the \
+         library already holds the book it is. A folder read in place holds one book per file \
+         and never a second link — so import your own copy {where_line}, stored and owned by \
+         the library, or go to the book the folder holds."
+    );
+    let import_note = format!(
+        "Copy the file into the library — its own book {where_line}, with its own highlights \
+         and its own place in it"
+    );
+    let show_note =
+        format!("Add nothing — go to “{book_name}” inside “{folder_name}” and light it up");
+
+    view! {
+        <>
+            <header class="flex shrink-0 items-start gap-3 px-4 pb-3 pt-4">
+                <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-semibold text-ink" title=tooltip>
+                        {heading}
+                    </span>
+                    <span class="mt-0.5 block text-xs text-muted">{subtitle}</span>
+                </span>
+                <IconButton
+                    icon=IconName::Close
+                    title="Close"
+                    class="rounded-full bg-line/60 hover:bg-line".to_string()
+                    on_click=move || conflict::cancel(state)
+                />
+            </header>
+
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                <p class="text-xs text-muted">{question}</p>
+                <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+                    <ChoiceRow
+                        label="Import a copy here"
+                        note=import_note
+                        on_click=Callback::new(move |_| {
+                            conflict::answer_covered(
+                                state,
+                                CoveredAnswer::ImportHere,
+                                apply_all.get_untracked(),
+                            )
+                        })
+                    />
+                    <ChoiceRow
+                        label="Show the imported one"
+                        note=show_note
+                        on_click=Callback::new(move |_| {
+                            conflict::answer_covered(
+                                state,
+                                CoveredAnswer::GoToExisting,
+                                apply_all.get_untracked(),
+                            )
+                        })
+                    />
                 </div>
                 {(waiting > 0).then(|| {
                     let label = format!("Apply to all {}", waiting + 1);

@@ -18,8 +18,9 @@
 //! imported* places nothing and reveals the row that is already there
 //! — the answer that means "I did not intend to add anything", and the one
 //! that used to be a book silently vanishing into the shelf it was dropped on.
-//! *Add as new* places the arrival under the next free name, so both rows are
-//! books and each is a book of its own. *Make link* places a pointer row
+//! *Add as new* places the arrival under the next free name as the library's
+//! own stored copy, so both rows are books and each is a book of its own.
+//! *Make link* places a pointer row
 //! ([`library_core::book::Row::Link`]) instead of a copy: a row on this shelf
 //! that opens the book wherever it lives, holds no fingerprint, no resume
 //! point and no highlights, and is invisible to every content check the
@@ -29,7 +30,9 @@
 //! of them the level keeps. *Merge* folds the moved row into the one already
 //! here — the survivor keeps its id, its name and its memberships, and takes
 //! the further place in it, the gaps the other row can fill, its shelves and
-//! its highlights. *Replace* sends the row that was here out of the library and
+//! its highlights, less the one shelf the move DEPARTED: a merge that filed
+//! the survivor back on the level the book was lifted from would leave the
+//! move visibly undone. *Replace* sends the row that was here out of the library and
 //! seats the arrival in its slot and on every other shelf it was filed on. *As
 //! new* is the import's naming on a row that already exists: the moved row
 //! takes the next free name and lands beside the one it collided with.
@@ -38,6 +41,23 @@
 //! answers cannot destroy anything — the worst one can do is add a row. A
 //! move's Replace can, so its row says what goes before the click: the name of
 //! the row, and how many highlights leave with it.
+//!
+//! ## And a third question, about the file's own ground
+//!
+//! A loose import of a file that sits inside a folder the library READS IN
+//! PLACE is neither of the questions above: the level's names have not been
+//! consulted, and the arrival has no row — but the library already holds the
+//! book this file is, as the folder's own linked book, and a second linked
+//! row of one read-at-place file is the one thing the folder rule never
+//! makes. So the file asks its own two-answer question ([`CoveredAnswer`])
+//! BEFORE the name question: the library's own stored copy on this level
+//! (*import here*), or the book the folder holds, lit where it stands (*show
+//! the imported one*). A copy the reader chose still walks the level's names
+//! on the way in. A file whose folder never placed it — new since the last
+//! scan, or outside the folder's filters — is no question at all and simply
+//! imports; a file the folder's log remembers REMOVING is not a question
+//! either: the import spends the log and the book comes back in its folder's
+//! place (see `crate::services::library::import`).
 //!
 //! ## Two doors
 //!
@@ -107,8 +127,21 @@ pub struct ConflictAsk {
     pub in_place: bool,
     /// The watched folder whose ledger records the placement when the answer
     /// lands, so a later rescan stays quiet about the file and a removal that
-    /// was holding it out is spent.
+    /// was holding it out is spent. A covered-file ask carries the folder
+    /// whose tree holds the file instead, which is the folder its sheet names.
     pub folder_id: Option<String>,
+    /// Whether this ask is the covered-file question: a loose import of a file
+    /// that sits inside a folder the library READS IN PLACE, where the book
+    /// the folder holds for it is alive and standing. Its sheet is two answers
+    /// rather than three — the library's own stored copy on this level, or the
+    /// book the folder already holds, lit — because the third answer a name
+    /// collision offers, a second row of one linked file, is the one thing a
+    /// read-at-place folder can never have. It is a question about the FILE's
+    /// ground rather than about the level's name, so it is asked even on a
+    /// level that holds nothing of that name, and it is asked before the name
+    /// question: a copy the reader chose still meets the level's own names on
+    /// the way in.
+    pub covered: bool,
 }
 
 /// Split a batch into the arrivals that may land now and the questions the
@@ -133,6 +166,7 @@ pub fn screen(state: AppState, arrivals: Vec<Arrival>) -> (Vec<Arrival>, Vec<Con
                     folder_merge: false,
                     in_place: true,
                     folder_id: None,
+                    covered: false,
                 });
             }
             None => clean.push(arrival),
@@ -229,6 +263,16 @@ pub fn answer_move(state: AppState, answer: MoveAnswer) {
 /// afterwards would be a merge that deleted one side's highlights; then the
 /// rows fold, by [`fold_books`]; then the memberships the dissolving row held
 /// become the survivor's, and the row itself goes.
+///
+/// One membership is not inherited, and it is the level the arrival names as
+/// its departure: a drag from "t" onto "s" is a move OFF "t", so "t" is not
+/// one of the shelves the survivor takes over. Inheriting it would put the
+/// survivor on the shelf the reader just lifted the book from, which reads as
+/// a move that did not happen — the book is still there under the name it
+/// always had — and only a second drag of the survivor, which collides with
+/// nothing because it is already on the level it is dropped on, would take it
+/// off. A filing has no departure to honour, so it inherits every shelf the
+/// dissolved row held.
 fn merge(state: AppState, ask: &ConflictAsk) {
     let survivor = ask.existing_id.clone();
     let Some(gone_id) = ask.arrival.moving.clone() else {
@@ -268,6 +312,12 @@ fn merge(state: AppState, ask: &ConflictAsk) {
     let inherited: Vec<String> = memberships(state, &gone_id)
         .into_iter()
         .map(|(id, _)| id)
+        // The level the move left is the one shelf the survivor does NOT take
+        // over: the departure is the point of the move, and a merge that filed
+        // the survivor back on the source would leave the book visibly where
+        // the reader moved it from. A filing names no departure and inherits
+        // every shelf, which is what a second membership means.
+        .filter(|id| ask.arrival.from.as_deref() != Some(id.as_str()))
         .collect();
     state.library.shelves.update(|shelves| {
         for one in shelves.iter_mut() {
@@ -403,10 +453,10 @@ fn union_marks(base: &[GlossMark], extra: &[GlossMark]) -> Vec<GlossMark> {
 /// A moved row is renamed and then moved — the rename is what frees the
 /// collision, and a move that did not rename would ask the same question
 /// again on the way in. An imported file is landed under the minted name as
-/// its own row, and as a book of its own when the address is one the library
-/// already reads ([`library_core::book::Book::independent`]), so the second
-/// copy's highlights and its place in it are its own rather than the first
-/// one's.
+/// the library's own stored copy, and as a book of its own when the address
+/// is one the library already reads ([`library_core::book::Book::independent`]),
+/// so the second copy's highlights and its place in it are its own rather
+/// than the first one's.
 fn as_new(state: AppState, ask: &ConflictAsk) {
     let name = {
         let (rows, shelves) = state.library.snapshot_rows();
@@ -426,18 +476,17 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
             let Some(file) = ask.arrival.file.as_ref() else {
                 return;
             };
-            super::import::land_file(
+            // A file's as-new is the loose import's own landing under the
+            // minted name: a stored copy of the library's own, made before
+            // the row is promised. The copy carries the cover queue and the
+            // persist with it, the way every stored landing does.
+            super::import::land_stored_copy(
                 state,
-                file,
+                file.clone(),
                 Some(name),
-                &ask.arrival.shelf_id,
+                ask.arrival.shelf_id.clone(),
                 ask.arrival.index,
             );
-            // The row may read from an address the cover cache has no art
-            // for; `land_file` leaves the queue to its caller, and this is a
-            // landing of one. The persist is the caller's for the same reason.
-            super::covers::backfill_missing(state);
-            crate::storage::persist_library(state.library);
         }
     }
 }
@@ -849,6 +898,98 @@ fn settle_folder_ledger(state: AppState, ask: &ConflictAsk, fp: Fingerprint) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// The covered file's answers: a loose import from a read-at-place folder.
+// ---------------------------------------------------------------------------
+
+/// The two answers to the covered-file sheet: the library's own copy on this
+/// level, or the book the folder already holds.
+///
+/// Not a variant of [`Answer`] because it is not the name question: the
+/// level's names have not been consulted yet, and the file's own ground is
+/// what asks. A linked second instance is not among the answers and cannot
+/// be — the folder reads that file in place, and one OS file is one linked
+/// book, whichever shelf it is standing on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CoveredAnswer {
+    /// Import on this level anyway: the file is copied into the library's
+    /// store and lands as a book of its own — an instance the library owns,
+    /// not bound to the folder's OS tree, so none of the folder's read-at-
+    /// place rules apply to it. The landing still walks the level's name
+    /// question, because a stored copy is a row like any import.
+    ImportHere,
+    /// Place nothing: go to the folder's book and light it up, wherever in
+    /// the folder's tree it stands — the answer that means *I did not intend
+    /// to add anything*, which is what importing a file the library already
+    /// reads in place usually means.
+    GoToExisting,
+}
+
+/// One of the two buttons on the covered-file sheet.
+///
+/// `apply_all` is the switch beside them, with the compact folder-merge
+/// sheet's contract: checked, the answer is given to every covered question
+/// in the queue as well — a reader who dropped forty files of one folder
+/// knows after the first what the other thirty-nine are. A question that is
+/// NOT a covered one stops the drain: it belongs to another gesture and gets
+/// its own sheet.
+pub fn answer_covered(state: AppState, answer: CoveredAnswer, apply_all: bool) {
+    let Some(ask) = state.library.conflict.get_untracked() else {
+        return;
+    };
+    if !ask.covered {
+        return;
+    }
+    apply_covered(state, &ask, answer);
+    advance(state);
+    if !apply_all {
+        return;
+    }
+    while let Some(next) = state.library.conflict.get_untracked() {
+        if !next.covered {
+            break;
+        }
+        apply_covered(state, &next, answer);
+        advance(state);
+    }
+}
+
+/// One answer, applied: the folder's book lit, or the library's own copy on
+/// the way into the level.
+fn apply_covered(state: AppState, ask: &ConflictAsk, answer: CoveredAnswer) {
+    match answer {
+        CoveredAnswer::GoToExisting => super::reveal::reveal_book(state, &ask.existing_id),
+        CoveredAnswer::ImportHere => {
+            let Some(file) = ask.arrival.file.clone() else {
+                return;
+            };
+            // The copy the reader chose still meets the level's own names on
+            // the way in: a clean arrival copies now, and one whose name the
+            // level holds joins the queue behind this sheet as the question
+            // it always was. The copy itself is the import module's — made
+            // before the row is promised, measured as the row is minted.
+            let (clean, conflicts) = screen(
+                state,
+                vec![Arrival::import(
+                    file.clone(),
+                    ask.arrival.shelf_id.clone(),
+                    ask.arrival.index,
+                )],
+            );
+            if !clean.is_empty() {
+                super::import::land_stored_copy(
+                    state,
+                    file,
+                    None,
+                    ask.arrival.shelf_id.clone(),
+                    ask.arrival.index,
+                );
+            }
+            raise(state, conflicts);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1163,6 +1304,84 @@ mod tests {
             vec!["b1".to_string()],
             "and on every shelf the dissolved row held"
         );
+        assert!(!state.library.conflict_open.get_untracked());
+    }
+
+    #[test]
+    fn a_merge_after_a_move_leaves_the_level_the_book_departed() {
+        // The regression this guards: a drag from "t" onto "s" answered with
+        // merge used to file the survivor onto "t" — the very shelf the move
+        // departed — so the book looked like it had never moved, and a SECOND
+        // drag (which asks nothing, because the survivor is already on "s"
+        // and a row never collides with itself) was what finally took it off.
+        let (_owner, state) = library(
+            vec![
+                row_at("b1", "Dune", "/one/dune.md", 1, 12),
+                row_at("b2", "Dune", "/two/dune.md", 2, 240),
+            ],
+            vec![shelf("s", &["b1"]), shelf("t", &["b2"]), shelf("u", &["b2"])],
+        );
+        let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None).leaving("t"));
+        raise(state, vec![ask]);
+
+        answer_move(state, MoveAnswer::Merge);
+
+        let rows = state.library.books.get_untracked();
+        assert_eq!(rows.len(), 1, "two books became one");
+        let shelves = state.library.shelves.get_untracked();
+        let on = |id: &str| {
+            shelves
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.books.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            on("s"),
+            vec!["b1".to_string()],
+            "the survivor keeps the level it was asked about"
+        );
+        assert_eq!(
+            on("t"),
+            Vec::<String>::new(),
+            "and the level the move departed stays departed — that departure IS the move"
+        );
+        assert_eq!(
+            on("u"),
+            vec!["b1".to_string()],
+            "every OTHER shelf the dissolved row held still joins the survivor"
+        );
+    }
+
+    #[test]
+    fn the_covered_question_places_nothing_and_lights_the_folders_book() {
+        // A loose import of a file an in-place folder holds: the folder's
+        // book is the only book this file is, so the "show" answer writes no
+        // row and lights the one the folder has.
+        let (_owner, state) = library(
+            vec![row("b1", "Dune", "/books/dune.md", 1)],
+            vec![shelf("fs", &["b1"]), shelf("s", &[])],
+        );
+        let ask = ConflictAsk {
+            arrival: Arrival::import(file("dune", 1), "s", None),
+            existing_id: "b1".to_string(),
+            existing_name: "Dune".to_string(),
+            folder_merge: false,
+            in_place: true,
+            folder_id: Some("f1".to_string()),
+            covered: true,
+        };
+        raise(state, vec![ask]);
+
+        answer_covered(state, CoveredAnswer::GoToExisting, false);
+
+        assert_eq!(
+            state.library.books.get_untracked().len(),
+            1,
+            "no row was written"
+        );
+        let (id, _) = state.library.reveal.get_untracked().expect("a reveal");
+        assert_eq!(id, "b1", "and the light lands on the book the folder holds");
         assert!(!state.library.conflict_open.get_untracked());
     }
 

@@ -19,7 +19,8 @@
 //!   * [`remove_modal`] — what a removal costs, itemised
 //!   * [`conflict_modal`] — the shelf already holds that book: the
 //!     duplicate/replace/merge question, and the second ask a replace owes;
-//!     a folder merge's per-file asks wear its compact sheet
+//!     a folder merge's per-file asks wear its compact sheet, and a loose
+//!     file of a read-at-place folder wears the covered sheet's two answers
 //!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
 //!     folder question an import asks before its walk
 //!   * [`already_imported_modal`] — no question at all: a folder the library
