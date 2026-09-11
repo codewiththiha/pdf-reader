@@ -32,6 +32,8 @@
 //! the two never meet, because a pointer drag raises no DOM `dragstart` for the
 //! window to stand aside from.
 
+use std::time::Duration;
+
 pub mod commit;
 pub mod controller;
 pub mod effect;
@@ -46,7 +48,7 @@ pub mod target;
 /// on purpose: a reader crossing a shelf on the way to somewhere else rests over
 /// cards, and a fold that armed at the hold's tuning would offer a new shelf on
 /// every drag that happened to slow down over a second book.
-pub const FOLD_DWELL_MS: i32 = 650;
+pub const FOLD_DWELL: Duration = Duration::from_millis(650);
 
 /// How long the pointer must rest on a title-bar crumb before the held ghost
 /// sinks into it. The crumb is the only target that gets this, and the reason is
@@ -54,9 +56,9 @@ pub const FOLD_DWELL_MS: i32 = 650;
 /// is the one place where a full-size ghost hides the thing being aimed at.
 /// `crate::features::library::dnd::controller` gives the whole argument.
 ///
-/// Shorter than [`FOLD_DWELL_MS`] and deliberately so: the two are answers to
+/// Shorter than [`FOLD_DWELL`] and deliberately so: the two are answers to
 /// different questions and the reader asks them in order. "Is this where it
 /// lands" comes first and is answered by the sink; "release to make a shelf of
 /// these" is the second, rarer question, and offering it at the same moment would
 /// put two answers on the screen at once.
-pub const SINK_DWELL_MS: i32 = 420;
+pub const SINK_DWELL: Duration = Duration::from_millis(420);

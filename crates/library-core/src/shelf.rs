@@ -129,12 +129,81 @@ pub fn find<'a>(shelves: &'a [Shelf], id: &str) -> Option<&'a Shelf> {
     shelves.iter().find(|s| s.id == id)
 }
 
+/// Which level a shelf id names: `None` for the library's root (the pseudo
+/// shelf "All", which is not a shelf), and the shelf's own id for a real one.
+///
+/// Every surface that draws a level asks this question — "is this the root, so
+/// the row has no shelf to file into, no parent to fold under, no shelf menu to
+/// offer" — and each used to spell it `(id != ALL_SHELF)` or its negation, in
+/// twenty-odd places across fifteen files. A rule that is written by hand that
+/// many times is a rule one file can get wrong.
+pub fn level_of(shelf_id: &str) -> Option<&str> {
+    (shelf_id != ALL_SHELF).then_some(shelf_id)
+}
+
+/// [`level_of`], owning its answer. The state, the services and the drag hand
+/// the container id to code that takes an owned [`String`], and a caller that
+/// borrows it out of a local it then moves is a borrow that cannot outlive the
+/// call — so the owned form gets its own line here rather than a
+/// `.map(str::to_string)` at each of the doors that need one.
+pub fn level_of_owned(shelf_id: &str) -> Option<String> {
+    level_of(shelf_id).map(str::to_owned)
+}
+
+/// The rows that live at the root: the ones no shelf names as a member. Library
+/// order, unsorted — the same list [`members_of`] answers with for the root, and
+/// the reason a link filed on a shelf is not also shown here: a level's list is
+/// the level's, whatever kind of row it holds.
+pub fn rows_at_root<'a>(rows: &'a [crate::book::Row], shelves: &[Shelf]) -> Vec<&'a crate::book::Row> {
+    let filed: std::collections::HashSet<&str> = shelves
+        .iter()
+        .flat_map(|s| s.books.iter().map(String::as_str))
+        .collect();
+    rows.iter().filter(|row| !filed.contains(row.id())).collect()
+}
+
+/// The rows one level shows, in the order it shows them — the ONE definition
+/// both the grid and the list render, and the drag counts drop indices against.
+///
+/// A level is its member list, except the root, which is the rows nobody has
+/// filed (see [`rows_at_root`]). `Manual` is the order the reader dragged, at
+/// every level including the root, and [`crate::sort::sort_rows`] already answers
+/// it by doing nothing — so the rule here is one question only: did the reader
+/// ask for a real sort? Sorting a shelf's copy of the list under `Manual` would
+/// fight the order a drop just wrote, and NOT sorting it under a title sort would
+/// leave the view's own sort knob answering for the root alone.
+pub fn level_rows(
+    rows: &[crate::book::Row],
+    shelves: &[Shelf],
+    shelf_id: &str,
+    key: crate::sort::SortKey,
+    asc: bool,
+) -> Vec<crate::book::Row> {
+    let mut list = if level_of(shelf_id).is_none() {
+        rows_at_root(rows, shelves).into_iter().cloned().collect::<Vec<_>>()
+    } else {
+        members_of(rows, shelves, shelf_id)
+            .into_iter()
+            .filter_map(|id| crate::book::find_row(rows, id))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    if key != crate::sort::SortKey::Manual {
+        crate::sort::sort_rows(&mut list, key, asc);
+    }
+    list
+}
+
 /// The shelves filed directly inside `parent_id`, in the order the library
 /// stores them. `None` asks for the root level, which is what the page shows
 /// while it is drilled out of every shelf.
 ///
 /// Direct children only: a level is a page, and a view that flattened the whole
 /// subtree would be showing the reader shelves they have not opened.
+///
+/// Borrowed, not cloned: a caller that only reads names and parents walks the
+/// result, and one that needs owned shelves clones from here rather than
+/// making the rule pay for a `Vec<Shelf>` it may not use.
 pub fn children_of<'a>(shelves: &'a [Shelf], parent_id: Option<&str>) -> Vec<&'a Shelf> {
     shelves
         .iter()
@@ -264,6 +333,15 @@ pub fn place(members: &mut Vec<String>, id: &str, index: Option<usize>) {
 /// reads instead. A shelf answers with its member list; the root answers with
 /// the rows no shelf holds, because the root IS a level and this is its list.
 /// A shelf id that names no shelf and is not the root answers with nothing.
+/// A shelf's OWN member list, verbatim and in order: what a row's count, a
+/// drag's index and a nested render all read. The root has no such list — that
+/// is [`members_of`]'s question, and answering it here would let the two drift.
+pub fn shelf_members(shelves: &[Shelf], shelf_id: &str) -> Vec<String> {
+    find(shelves, shelf_id)
+        .map(|s| s.books.clone())
+        .unwrap_or_default()
+}
+
 pub fn members_of<'a>(
     rows: &'a [crate::book::Row],
     shelves: &'a [Shelf],
@@ -288,20 +366,34 @@ pub fn members_of<'a>(
         .collect()
 }
 
+/// The rows one level holds, resolved and in the order it holds them.
+///
+/// [`members_of`] answers "which ids"; this answers "which rows", and it is the
+/// one place that pairs the two — a collision check, a count, a name pool and a
+/// render all ask the same question, and each used to write its own
+/// `find_row`-per-member loop. A member naming no row is skipped rather than
+/// rendered as a hole.
+pub fn rows_of_level<'a>(
+    rows: &'a [crate::book::Row],
+    shelves: &[Shelf],
+    shelf_id: &str,
+) -> Vec<&'a crate::book::Row> {
+    members_of(rows, shelves, shelf_id)
+        .into_iter()
+        .filter_map(|id| crate::book::find_row(rows, id))
+        .collect()
+}
+
 /// The BOOK rows of one level, resolved: what a count, a content check and the
 /// cover queue all want, and never the links — a link has no fingerprint to
 /// check, no address to render art from and no page to count.
-///
-/// A member naming no row is skipped rather than rendered as a hole, which is
-/// [`crate::sort::ordered`]'s rule too.
 pub fn books_of<'a>(
     rows: &'a [crate::book::Row],
     shelves: &[Shelf],
     shelf_id: &str,
 ) -> Vec<&'a crate::book::Book> {
-    members_of(rows, shelves, shelf_id)
+    rows_of_level(rows, shelves, shelf_id)
         .into_iter()
-        .filter_map(|id| crate::book::find_row(rows, id))
         .filter_map(crate::book::Row::book)
         .collect()
 }
@@ -314,7 +406,7 @@ pub fn books_of<'a>(
 /// instruction about position; this is for a filing, which is not.
 pub fn shelf_add(shelf: &mut Shelf, book_id: &str) {
     if !shelf.books.iter().any(|member| member == book_id) {
-        shelf.books.push(book_id.to_string());
+        place(&mut shelf.books, book_id, None);
     }
 }
 
@@ -413,6 +505,7 @@ pub fn sanitize(shelves: &mut Vec<Shelf>) {
 #[cfg(test)]
 mod tests {
     use crate::book::{Book, Fingerprint, Origin, Row};
+    use crate::sort::SortKey;
     use reader_core::format::Format;
 
     fn book(id: &str, title: &str) -> Row {
@@ -850,5 +943,83 @@ mod tests {
         assert!(json.contains("\"parent\":\"s1\""), "{json}");
         let back: Shelf = serde_json::from_str(&json).unwrap();
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn all_is_a_level_but_not_a_shelf() {
+        assert_eq!(level_of(ALL_SHELF), None);
+        assert_eq!(level_of("s1"), Some("s1"));
+    }
+
+    #[test]
+    fn the_root_shows_what_no_shelf_names() {
+        let rows = vec![
+            book("b1", "Dune"),
+            book("b2", "Emma"),
+            Row::link("l1".into(), "Shortcut".into(), "b2".into(), 1),
+            Row::link("l2".into(), "Filed".into(), "b2".into(), 1),
+        ];
+        let shelves = vec![plain("s1", &["b1", "l2"])];
+        assert_eq!(
+            level_rows(&rows, &shelves, ALL_SHELF, SortKey::Manual, true)
+                .iter()
+                .map(|r| r.id())
+                .collect::<Vec<_>>(),
+            vec!["b2", "l1"],
+            "a filed book and a filed link both belong to the shelf that holds them"
+        );
+    }
+
+    #[test]
+    fn a_shelf_keeps_its_order_under_manual_and_sorts_under_a_real_key() {
+        // The two halves of the level's order rule, with rows whose titles are
+        // deliberately NOT in member order: `b2` is "Emma" and `b1` is "Dune",
+        // so a title sort must swap them and a miss that only compares list
+        // lengths would not see the difference.
+        let rows = vec![book("b1", "Dune"), book("b2", "Emma")];
+        let shelves = vec![plain("s1", &["b2", "b1"])];
+        assert_eq!(
+            level_rows(&rows, &shelves, "s1", SortKey::Manual, true)
+                .iter()
+                .map(|r| r.id())
+                .collect::<Vec<_>>(),
+            vec!["b2", "b1"],
+            "the shelf's own order is the order the reader dragged"
+        );
+        assert_eq!(
+            level_rows(&rows, &shelves, "s1", SortKey::Title, true)
+                .iter()
+                .map(|r| r.id())
+                .collect::<Vec<_>>(),
+            vec!["b1", "b2"],
+            "a sort the view asks for is answered here too, not only at the root"
+        );
+        // A shelf a search lands on still answers with its own list — the query
+        // is filtered by the caller, after this.
+        assert_eq!(shelf_members(&shelves, "s1"), vec!["b2", "b1"]);
+        assert_eq!(shelf_members(&shelves, ALL_SHELF), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_nested_shelf_is_its_parents_child_and_nobody_elses() {
+        let shelves = vec![
+            plain("s1", &[]),
+            nested("s2", "Sci-fi", "s1"),
+            nested("s3", "Space", "s2"),
+        ];
+        assert_eq!(
+            children_of(&shelves, level_of(ALL_SHELF))
+                .into_iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["s1"]
+        );
+        assert_eq!(
+            children_of(&shelves, level_of("s1"))
+                .into_iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["s2"]
+        );
     }
 }

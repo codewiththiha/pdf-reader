@@ -226,7 +226,10 @@ impl DocumentState {
 }
 
 /// Aspect used while page 1 is unmeasured or degenerate: a 3:4 portrait, the
-/// default every fixed-geometry surface historically fell back to.
+/// default every fixed-geometry surface historically fell back to. A document's
+/// own guess at a page, and deliberately NOT the library shelf's fallback — a
+/// card with no cover image stands in A4 (`library_core::view::A4_ASPECT`),
+/// because that is the frame the reader will see when the image arrives.
 pub const DEFAULT_PAGE_ASPECT: f64 = 0.75;
 
 /// Name shown when a document has neither a usable title nor a path (the

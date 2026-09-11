@@ -47,22 +47,13 @@ use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropT
 use crate::features::library::gestures::{ShelfItemPolicy, use_shelf_item};
 use crate::state::AppState;
 
-/// How many cells a plate has, and the most it fills. Two by two: a folder is
-/// recognised by what is inside it, and past four cells the plate is a mosaic
-/// nobody reads — the line under the name is the answer to "how much". Always
-/// four cells whatever the folder holds, so one book is one cover and three
-/// hatched quarters rather than one big rectangle that reads as a book card.
-///
-/// Shared with the fold preview a drag draws
-/// (`crate::features::library::dnd::layer`), because that preview is a promise
-/// about this plate and a promise drawn with a different number of cells is a
-/// promise about a folder the library does not have.
-pub(crate) const THUMB_CAP: usize = 4;
-
-/// The deepest plate the preview recurses to: the folder's own plate, the plates
-/// of the folders inside it, and the plates of the folders inside those. Deeper
-/// than that a cell is a few pixels across, and draws a folder glyph instead.
-const PLATE_DEPTH: usize = 2;
+/// How many cells a plate has, and the deepest it recurses: `library_core::view`
+/// answers both (see `PLATE_CELLS` and `PLATE_DEPTH` for the reasoning), and
+/// the fold preview a drag draws — `crate::features::library::dnd::layer` and
+/// `crate::features::library::dnd::effect` — reads the SAME numbers, because a
+/// promise drawn with a different count of cells is a promise about a folder the
+/// library does not have.
+pub(crate) use library_core::view::{PLATE_CELLS as THUMB_CAP, PLATE_DEPTH};
 
 #[component]
 pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
@@ -112,9 +103,10 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         let Some(folder_id) = watched_folder.clone() else {
             return false;
         };
-        state.library.folders.with(|folders| {
-            folders.iter().any(|f| f.id == folder_id && f.opts.watch)
-        })
+        state
+            .library
+            .folders
+            .with(|folders| crate::state::library::is_watched(folders, &folder_id))
     });
 
     let selecting = state.library.selecting;
@@ -159,7 +151,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     // shelf and nests the held folders inside it, unless doing that would close a
     // loop — which the session asks `library_core::shelf::can_nest` before the
     // pointer ever arrives, so a refused drop wears no ring.
-    let dom_id = format!("folder-{}", id);
+    let dom_id = crate::features::library::dnd::target::row_dom_id(DropTargetKind::Folder, &id);
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Folder, id.clone()),
         dom_id: dom_id.clone(),

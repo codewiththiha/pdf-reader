@@ -77,7 +77,6 @@
 //! intent, the ruler the panel measures itself with, and the chain it draws.
 //! This file is the bar and its crumbs.
 
-
 mod fold;
 mod panel;
 
@@ -86,7 +85,7 @@ use leptos::prelude::*;
 
 use app_chrome::hooks::use_resize_observer::observe_elements;
 use app_chrome::icon::{Icon, IconName};
-use library_core::shelf::{ALL_SHELF, Shelf, ancestors};
+use library_core::shelf::{self, ALL_SHELF, Shelf, ancestors};
 
 use crate::components::primitives::form::text_input::TextInput;
 use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
@@ -103,11 +102,9 @@ use panel::{EllipsisCrumb, HoverIntent};
 /// see the module docs.
 const SHOW_SHELF_CRUMB_MENU: bool = false;
 
-
 /// The element id of the root crumb, which stands for no shelf at all and so has
 /// no id of its own to be named after.
 const ALL_CRUMB_DOM_ID: &str = "crumb-all";
-
 
 /// One crumb: the level it stands for, what it is called right now, and whether
 /// the folder behind it is still watched.
@@ -126,13 +123,11 @@ struct Crumb {
     watched: bool,
 }
 
-
 /// The shelf the page is drilled into, or `None` at the root.
 fn current_shelf_id(state: AppState) -> Option<String> {
     let id = state.library.shelf.get_untracked();
-    (id != ALL_SHELF).then_some(id)
+    shelf::level_of_owned(&id)
 }
-
 
 /// The name a shelf has right now. Read when an action runs rather than when the
 /// crumb is built, so renaming the same shelf twice starts from what it is called
@@ -146,7 +141,6 @@ fn shelf_name_now(state: AppState, shelf_id: &str) -> String {
             .unwrap_or_default()
     })
 }
-
 
 /// The levels the page is drilled through, root first and ending with the one it is
 /// on. Empty at the root, where "Home" is the whole breadcrumb.
@@ -168,7 +162,7 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
             let of = |shelf: &Shelf| {
                 let watched = shelf.kind.folder_id().is_some_and(|folder_id| {
                     state.library.folders.with_untracked(|folders| {
-                        folders.iter().any(|f| f.id == folder_id && f.opts.watch)
+                        crate::state::library::is_watched(folders, folder_id)
                     })
                 });
                 Crumb {
@@ -186,11 +180,9 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Drop targets
 // ---------------------------------------------------------------------------
-
 
 /// The element id a crumb's box is read from.
 fn crumb_dom_id(shelf_id: &str) -> String {
@@ -220,7 +212,6 @@ fn register_crumb(ctrl: &DragController, shelf_id: &str) -> String {
     dom_id
 }
 
-
 /// What a crumb wears. The crumb that is not where you are reads as a way back and
 /// the one that is reads as a heading; a crumb under a drag adds the accent rule
 /// that says the held items are about to go there.
@@ -243,7 +234,6 @@ fn crumb_class(current: bool, hot: bool) -> String {
         format!("{base} {tone}")
     }
 }
-
 
 #[component]
 pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
@@ -397,7 +387,6 @@ pub(crate) fn Breadcrumb(state: AppState) -> impl IntoView {
     }
 }
 
-
 /// The root crumb, shown as "Home": the library's front door, and the name a
 /// reader gives the level that holds everything. Always a button, because it is
 /// the way back, and a target with an empty id — the library's spelling of "no
@@ -435,7 +424,6 @@ fn AllCrumb(state: AppState, ctrl: DragController) -> impl IntoView {
     }
 }
 
-
 /// A crumb that is not where you are: the chevron, the level's name, and the click
 /// that goes back to it.
 ///
@@ -468,7 +456,6 @@ fn LevelCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoV
     }
 }
 
-
 /// The shelf the page is on. Plain text while its popover is parked, but still a
 /// drop target: releasing a held book here files it onto the level the reader is
 /// already looking at, which is how a drag from inside a nested shelf lands back on
@@ -494,7 +481,6 @@ fn CurrentCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl Int
     }
         .into_any()
 }
-
 
 /// The current shelf's own popover: rename in place, or take the shelf apart.
 /// Parked behind [`SHOW_SHELF_CRUMB_MENU`]; see the module docs.
@@ -581,7 +567,6 @@ fn ShelfCrumbMenu(state: AppState, crumb: Crumb) -> impl IntoView {
         </div>
     }
 }
-
 
 /// The crumb while it is being renamed: the field that replaced the label.
 #[component]

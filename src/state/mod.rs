@@ -7,5 +7,5 @@ pub mod app;
 pub mod library;
 pub mod reader;
 
-pub use app::{AppearanceSignal, AppState, SidebarMode, Toast};
+pub use app::{AppearanceSignal, AppState, SidebarMode};
 pub use reader::{NO_DOCUMENT, ReaderState, TextureSignal};

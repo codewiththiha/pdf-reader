@@ -44,10 +44,11 @@ use library_core::scan::{FoundFile, store_dir};
 // on it: one declaration, and no contract test needed to prove the halves agree.
 use library_core::wire::{ImportPhase, ImportProgress, PathCheck, StoreRequest, StoreResult};
 
-/// The Tauri channel every progress beat is emitted on. The frontend's mirror
-/// of this name lives in `src/services/library/mod.rs`, which re-broadcasts it as
-/// window event so no component ever registers a Tauri listener of its own.
-pub const PROGRESS_EVENT: &str = "library://progress";
+/// The Tauri channel every progress beat is emitted on. Named here so this
+/// module reads as the emitter it is; the one declaration is
+/// `library_core::wire::PROGRESS_EVENT`, which the frontend's listener reads too,
+/// so the two halves cannot drift.
+pub use library_core::wire::PROGRESS_EVENT;
 
 /// How deep a walk descends. A tree deeper than this is either a loop this walk
 /// did not catch or a directory nobody meant to import; either way the answer

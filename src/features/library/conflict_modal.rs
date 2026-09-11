@@ -29,13 +29,13 @@
 
 use leptos::prelude::*;
 
-use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use library_core::shelf::ALL_SHELF;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_scrim::ModalScrim;
 use crate::services::library::conflict::{self, ConflictAsk};
 use library_core::book::find_row;
 use library_core::conflict::{Answer, MoveAnswer};
@@ -51,10 +51,6 @@ use crate::state::AppState;
 pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     let open = state.library.conflict_open;
     use_overlay_lane(open, OverlayPolicy::MODAL);
-    // A popover opened inside the sheet owns the press; the shared rule peels
-    // one layer at a time.
-    use_modal_escape(open);
-
     // A close that came from the lane registry or the Escape key wrote only the
     // boolean; the question and the ones waiting behind it go with it, so the
     // sheet can never reopen onto a question somebody already dismissed.
@@ -66,18 +62,13 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     });
 
     view! {
-        <Show when=move || open.get()>
-            <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| conflict::cancel(state)
-            >
-                {move || {
-                    let ask = state.library.conflict.get()?;
-                    let info = Info::of(state, &ask);
-                    Some(view! { <Sheet state=state info=info /> })
-                }}
-            </div>
-        </Show>
+        <ModalScrim open=open on_close=Callback::new(move |_| conflict::cancel(state))>
+            {move || {
+                let ask = state.library.conflict.get()?;
+                let info = Info::of(state, &ask);
+                Some(view! { <Sheet state=state info=info /> })
+            }}
+        </ModalScrim>
     }
 }
 

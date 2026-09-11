@@ -37,12 +37,10 @@
 //! offer the book back; a toast would promise a second mechanism and then have to
 //! expire.
 
-
 mod receipt;
 
 use leptos::prelude::*;
 
-use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::text::{human_size, plural};
@@ -50,6 +48,7 @@ use library_core::text::{human_size, plural};
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_scrim::ModalScrim;
 use crate::components::settings::common::Row;
 use crate::services::library::{PurgeOpts, delete_shelf, purge_books};
 use crate::state::AppState;
@@ -118,7 +117,6 @@ impl RemoveSheet {
     }
 }
 
-
 #[component]
 pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoView {
     use_overlay_lane(sheet.open, OverlayPolicy::MODAL);
@@ -129,8 +127,6 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
 
     // A popover opened inside the sheet owns the press; the shared rule peels
     // one layer at a time.
-    use_modal_escape(sheet.open);
-
     // Books and shelves removed by any other route while the sheet is open close
     // it, once neither half has anything left to talk about. Done in an effect
     // rather than in the view, because a view that writes a signal is a view that
@@ -159,41 +155,36 @@ pub(crate) fn RemoveBookModal(state: AppState, sheet: RemoveSheet) -> impl IntoV
     });
 
     view! {
-        <Show when=move || sheet.open.get()>
-            <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| sheet.open.set(false)
-            >
-                {move || {
-                    let ids = sheet.books.get();
-                    let shelf_ids = sheet.shelves.get();
-                    // Read here rather than inside the sheet, so flipping the
-                    // switch rebuilds the receipt and the sheet together: every
-                    // row, the store-copy switch and the button's own wording are
-                    // all answers about ONE set of books, and a sheet that
-                    // recomputed some of them and not others would be a receipt
-                    // disagreeing with itself.
-                    let cascade = sheet.cascade.get();
-                    let info = build_receipt(state, &ids, &shelf_ids, cascade)?;
-                    let cover_path = info
-                        .books
-                        .first()
-                        .map(|b| b.path().to_string())
-                        .unwrap_or_default();
-                    let alt = info.heading();
-                    Some(view! {
-                        <Sheet
-                            state=state
-                            sheet=sheet
-                            delete_copy=delete_copy
-                            info=info
-                            cover_path=cover_path
-                            alt=alt
-                        />
-                    })
-                }}
-            </div>
-        </Show>
+        <ModalScrim open=sheet.open>
+            {move || {
+                let ids = sheet.books.get();
+                let shelf_ids = sheet.shelves.get();
+                // Read here rather than inside the sheet, so flipping the
+                // switch rebuilds the receipt and the sheet together: every
+                // row, the store-copy switch and the button's own wording are
+                // all answers about ONE set of books, and a sheet that
+                // recomputed some of them and not others would be a receipt
+                // disagreeing with itself.
+                let cascade = sheet.cascade.get();
+                let info = build_receipt(state, &ids, &shelf_ids, cascade)?;
+                let cover_path = info
+                    .books
+                    .first()
+                    .map(|b| b.path().to_string())
+                    .unwrap_or_default();
+                let alt = info.heading();
+                Some(view! {
+                    <Sheet
+                        state=state
+                        sheet=sheet
+                        delete_copy=delete_copy
+                        info=info
+                        cover_path=cover_path
+                        alt=alt
+                    />
+                })
+            }}
+        </ModalScrim>
     }
 }
 

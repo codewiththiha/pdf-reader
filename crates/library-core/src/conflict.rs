@@ -40,7 +40,7 @@
 
 use std::collections::HashSet;
 
-use crate::book::{Row, duplicate_title, find_row, stem_of};
+use crate::book::{Row, duplicate_title, stem_of};
 use crate::scan::FoundFile;
 use crate::shelf::Shelf;
 
@@ -157,7 +157,7 @@ pub enum MoveAnswer {
 /// Whether two names are the same name. Case-insensitive and nothing else: a
 /// shelf is read by a person, and `Report` beside `report` is two rows of one
 /// name however the filesystem would have spelled them.
-pub fn same_name(a: &str, b: &str) -> bool {
+pub(crate) fn same_name(a: &str, b: &str) -> bool {
     a.trim().eq_ignore_ascii_case(b.trim())
 }
 
@@ -177,10 +177,9 @@ pub fn same_name(a: &str, b: &str) -> bool {
 ///   * names compare as [`same_name`], so a counter a previous answer minted
 ///     (`1_1`) is a different name from the one that arrives (`1`).
 pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> {
-    level_members(rows, shelves, &at.shelf_id)
+    crate::shelf::rows_of_level(rows, shelves, &at.shelf_id)
         .into_iter()
-        .find_map(|member| {
-            let row = find_row(rows, member)?;
+        .find_map(|row| {
             if row.is_link() || Some(row.id()) == at.moving.as_deref() {
                 return None;
             }
@@ -200,22 +199,11 @@ pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> 
 /// it mints survives [`crate::book::sanitize`]'s rule about titles that look
 /// like file names.
 pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) -> String {
-    let in_use: HashSet<String> = level_members(rows, shelves, shelf_id)
-        .iter()
-        .filter_map(|member| find_row(rows, member))
+    let in_use: HashSet<String> = crate::shelf::rows_of_level(rows, shelves, shelf_id)
+        .into_iter()
         .map(Row::display_name)
         .collect();
     duplicate_title(name, &in_use)
-}
-
-/// The ids of the rows one level holds — [`crate::shelf::members_of`], which
-/// is the one answer to that question rather than this module's own: a shelf's
-/// member list, and at the root the rows no shelf holds. A shelf id that names
-/// no shelf and is not the root answers with nothing, so an arrival aimed at a
-/// level that does not exist has nothing to collide with and the placement
-/// that follows is the caller's to refuse.
-fn level_members<'a>(rows: &'a [Row], shelves: &'a [Shelf], shelf_id: &str) -> Vec<&'a str> {
-    crate::shelf::members_of(rows, shelves, shelf_id)
 }
 
 #[cfg(test)]

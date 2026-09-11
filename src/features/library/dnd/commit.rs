@@ -15,7 +15,7 @@
 
 use leptos::prelude::*;
 
-use library_core::shelf::ALL_SHELF;
+use library_core::shelf::{self, ALL_SHELF};
 
 use super::controller::DragPayload;
 use super::effect::DropEffect;
@@ -38,10 +38,10 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
     // a flat row) belongs to the open level, and `None` at the root means "no
     // shelf": the library's own order has no member list to take a book off.
     let from = match payload.source.clone() {
-        Some(named) => (named != ALL_SHELF).then_some(named),
+        Some(named) => shelf::level_of_owned(named.as_str()),
         None => {
             let open = state.library.shelf.get_untracked();
-            (open != ALL_SHELF).then_some(open)
+            shelf::level_of_owned(&open)
         }
     };
 
@@ -147,8 +147,8 @@ fn insert_anchor(
     let container: Option<String> = match shelf {
         // A row that named its shelf. The root spells itself "all" and is the
         // library's own order rather than a member list.
-        Some(named) => (named != ALL_SHELF).then(|| named.to_string()),
-        None => (open != ALL_SHELF).then_some(open),
+        Some(named) => shelf::level_of_owned(named),
+        None => shelf::level_of_owned(&open),
     };
     let step = usize::from(after && reorder);
     match container {

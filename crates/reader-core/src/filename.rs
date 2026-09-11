@@ -5,6 +5,20 @@
 
 const MAX_TITLE_LEN: usize = 200;
 
+/// The `Err` both halves of the file dialog report for "the reader said no".
+///
+/// Both of them (`crates/pdf-engine/src/api/dialog.rs` and `src/services/library`,
+/// the library's own picker) call the same `__TAURI__.dialog.open`, and
+/// a caller has to be able to tell a cancel — a silent no-op, an answer — from
+/// a failure worth a toast. Two spellings of the word meant a caller could only
+/// hard-code one; the predicate is the other half of the same agreement.
+pub const CANCELLED: &str = "Open cancelled";
+
+/// Whether a dialog's `Err` is that marker and not a real failure.
+pub fn is_cancelled(message: &str) -> bool {
+    message == CANCELLED
+}
+
 /// The display name for the open document: a trustworthy `/Title`, else the
 /// file name derived from `path`, else `None`.
 pub fn display_name(title: Option<&str>, path: Option<&str>) -> Option<String> {

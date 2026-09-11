@@ -19,7 +19,6 @@
 //! The empty space of this level is a drop target too, registered here rather
 //! than per view because there is one scroll container and two layouts inside it.
 
-use std::collections::HashSet;
 use std::time::Duration;
 
 use leptos::prelude::*;
@@ -27,8 +26,7 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::by_id;
 use pdf_engine::types::DocStatus;
 use library_core::query;
-use library_core::shelf::{ALL_SHELF, Shelf, children_of};
-use library_core::sort::{self, SortKey};
+use library_core::shelf::{self, Shelf, children_of};
 use library_core::book::Row;
 
 use crate::components::primitives::feedback::CenteredLoader;
@@ -81,7 +79,7 @@ fn install_reveal(state: AppState) {
         let Some((book_id, nonce)) = state.library.reveal.get() else {
             return;
         };
-        let dom_id = format!("book-{book_id}");
+        let dom_id = crate::features::library::dnd::target::row_dom_id(DropTargetKind::Book, &book_id);
         let smooth = scroll_may_animate(state);
         request_animation_frame(move || {
             request_animation_frame(move || {
@@ -159,36 +157,23 @@ fn scroll_may_animate(state: AppState) -> bool {
 /// root searches the LIBRARY, because a search that could not see inside folders
 /// would miss silently, and the matches it shows are the ones asked for.
 pub(crate) fn visible(state: AppState) -> Vec<Row> {
+    // One read of each, in the order the steps use them: the level first, the
+    // query last. A second `query.get()` would let the filter run on terms
+    // newer than the list it filtered — a row can vanish from the level while
+    // the derive is between the two reads.
     let view = state.library.view.get();
     let shelf_id = state.library.shelf.get();
-    let rows = state.library.books.get();
-    let mut list = if shelf_id == ALL_SHELF {
-        let terms = state.library.query.get();
-        if query::is_active(&terms) {
-            rows
-        } else {
-            let filed: HashSet<String> = state.library.shelves.with(|shelves| {
-                shelves
-                    .iter()
-                    .flat_map(|s| s.books.iter().cloned())
-                    .collect()
-            });
-            rows.into_iter()
-                .filter(|r| !filed.contains(r.id()))
-                .collect()
-        }
-    } else {
-        let members = state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == shelf_id)
-                .map(|s| s.books.clone())
-                .unwrap_or_default()
-        });
-        sort::ordered(&rows, &members, SortKey::Manual, true)
-    };
-    sort::sort_rows(&mut list, view.sort, view.sort_asc);
-    query::filter(&list, &state.library.query.get())
+    let terms = state.library.query.get();
+    // Borrowed rather than cloned or written back: `level_rows` answers with the
+    // owned rows it picked out, so reading the signal by reference builds the
+    // whole level once, tracked, instead of copying the library's row list per
+    // render.
+    let list = state.library.books.with(|rows| {
+        state.library.shelves.with(|shelves| {
+            shelf::level_rows(rows, shelves, &shelf_id, view.sort, view.sort_asc)
+        })
+    });
+    query::filter(&list, &terms)
 }
 
 /// The folders the page shows at this level, in the order it shows them.
@@ -212,11 +197,11 @@ fn visible_folders(state: AppState) -> Vec<Shelf> {
     let terms = state.library.query.get();
     // "All" is not a shelf, so the root level is the shelves with no parent
     // rather than the shelves whose parent is named "all".
-    let parent = (at != ALL_SHELF).then_some(at.as_str());
+    let parent = shelf::level_of(&at);
     state.library.shelves.with(|shelves| {
         children_of(shelves, parent)
             .into_iter()
-            .filter(|s| s.id != ALL_SHELF)
+            .filter(|s| shelf::level_of(&s.id).is_some())
             .filter(|s| !query::is_active(&terms) || query::matches_terms(&s.name, &terms))
             .cloned()
             .collect()
@@ -275,7 +260,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
         if !order.get().is_empty() || !folders.get().is_empty() || !has_books.get() {
             return None;
         }
-        let searching = state.library.query.with(|q| !q.trim().is_empty());
+        let searching = state.library.query.with(|q| query::is_active(q));
         Some(if searching {
             "No books match this search.".to_string()
         } else {

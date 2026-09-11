@@ -27,12 +27,11 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 
 use crate::features::library::dnd::controller::{DragController, GhostTile};
-use crate::features::library::folder_card::THUMB_CAP;
-
-/// The most tiles the ghost fans out. The same cap a folder's plate has, so a
-/// drag of nine books looks like the shelf it is offering to make and not like a
-/// hand of cards; the count badge carries the rest.
-const GHOST_TILES: usize = 4;
+/// The most tiles the ghost fans out: the plate's own cap, from
+/// `library_core::view`, so a drag of nine books looks like the shelf it is
+/// offering to make and not like a hand of cards; the count badge carries the
+/// rest.
+const GHOST_TILES: usize = library_core::view::PLATE_CELLS;
 
 /// The overlay a live drag draws under the pointer.
 #[component]
@@ -141,7 +140,7 @@ fn FoldPlate(filled: usize) -> impl IntoView {
     view! {
         <div class="lib-drag-fold">
             <div class="folder-thumb-grid">
-                {(0..THUMB_CAP)
+                {(0..GHOST_TILES)
                     .map(|at| {
                         let next = at == filled;
                         let class = if at < filled {

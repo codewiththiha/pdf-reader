@@ -58,6 +58,14 @@ pub struct CoverImage {
 /// save; sharing the images makes those reads pointer copies.
 pub type CoverMap = std::collections::HashMap<String, Arc<CoverImage>>;
 
+/// Whether the folder is still being WATCHED (as opposed to merely present as
+/// the folder a shelf was cut from). The breathing dot on a shelf, the
+/// breadcrumb's live marker and the card's "may fill itself" note all ask this,
+/// and a rule about a flag on a row should not be written three times.
+pub fn is_watched(folders: &[WatchedFolder], folder_id: &str) -> bool {
+    folders.iter().any(|f| f.id == folder_id && f.opts.watch)
+}
+
 /// Bring the cover cache back inside its budget, and drop the covers of books
 /// that are no longer in the library.
 ///
@@ -247,14 +255,21 @@ pub struct LibraryState {
     /// book twice in a row re-triggers. Written by a "show it in its shelf"
     /// action, cleared by the shelf that scrolled to it.
     pub reveal: RwSignal<Option<(String, u64)>>,
-    /// Whether a long-press has put the shelf into multi-select. While it is on a
-    /// click toggles instead of opening, and the action bar owns the bottom-right
-    /// corner.
-    pub selecting: RwSignal<bool>,
     /// The selected book ids. A set rather than a list because toggling is the
     /// high-frequency operation and "is this one selected" is asked by every card
     /// on every repaint.
     pub selected: RwSignal<HashSet<String>>,
+    /// Whether the shelf is in multi-select: while it is on, a click toggles
+    /// instead of opening and the action bar owns the bottom-right corner.
+    ///
+    /// The set being non-empty, written with it and never on its own. It is a
+    /// stored signal rather than a derived one because the page's dismissal
+    /// wiring holds this shape and writes it to leave the mode — a derived flag
+    /// cannot be written — so the pairing is enforced where the set is written
+    /// (see `crate::features::library::selection::set_selected`), which is the
+    /// half that used to be forgotten: `toggle_selected` wrote only the set, so
+    /// the last card tapped off left a bar saying "0 selected" until Escape.
+    pub selecting: RwSignal<bool>,
     /// The name collision the sheet is asking about, waiting for the reader's
     /// answer. Raised by the services — a drop, a filing, an import — rather
     /// than by a component, which is why it lives here and not in a sheet's own
@@ -272,11 +287,15 @@ pub struct LibraryState {
     /// keep their answers and the ones not asked simply do not land.
     pub conflict_waiting: RwSignal<Vec<ConflictAsk>>,
     /// The pair of [`Self::conflict`] that the overlay lane and the Escape rule
-    /// can hold: the lane registry speaks in booleans. Every writer of the two
-    /// goes through the conflict service's `raise` and `cancel`, so while the
-    /// sheet is up they cannot drift; a lane arbitration that closes the sheet
-    /// behind its back leaves a payload nobody reads, and the next raise
-    /// replaces it.
+    /// can hold: the lane registry speaks in booleans.
+    ///
+    /// Stored, not derived, because the overlay lane holds exactly this shape
+    /// and closes a sheet by writing it (`use_overlay_lane`): a derived flag
+    /// cannot be written, so the lane's dismissal would land on deaf ears.
+    /// What keeps the pair honest is a door on each side — `conflict::raise`
+    /// opens and `conflict::cancel` closes — with the sheet's own effect
+    /// clearing the question when a close came from anywhere else, so a lane
+    /// that displaced the sheet cannot leave it owning the lane.
     pub conflict_open: RwSignal<bool>,
 }
 
@@ -296,31 +315,12 @@ impl Default for LibraryState {
             shelf: RwSignal::new(ALL_SHELF.to_string()),
             tasks: RwSignal::new(Vec::new()),
             reveal: RwSignal::new(None),
-            selecting: RwSignal::new(false),
             selected: RwSignal::new(HashSet::new()),
+            selecting: RwSignal::new(false),
             conflict: RwSignal::new(None),
             conflict_waiting: RwSignal::new(Vec::new()),
             conflict_open: RwSignal::new(false),
         }
-    }
-}
-
-/// Milliseconds since the epoch — the library's only clock here.
-///
-/// Off wasm the clock is inert rather than a panic: the wasm-bindgen stubs
-/// abort when called natively, and a stamp nobody persists is fine at zero.
-/// The ids minted from it stay unique regardless, on [`id`]'s own counter —
-/// which is what lets a host test make a link at all.
-///
-/// [`id`]: library_core::id
-fn now_ms() -> u64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as u64
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        0
     }
 }
 
@@ -364,12 +364,8 @@ impl LibraryState {
     /// library performs on a reader's behalf.
     pub fn rename_row(&self, row_id: &str, name: &str) {
         self.books.update(|rows| {
-            let Some(row) = library_core::book::find_row_mut(rows, row_id) else {
-                return;
-            };
-            match row {
-                Row::Book(b) => b.title = Some(name.to_string()),
-                Row::Link { name: own, .. } => *own = name.to_string(),
+            if let Some(row) = library_core::book::find_row_mut(rows, row_id) {
+                row.set_display_name(name);
             }
         });
     }
@@ -381,7 +377,7 @@ impl LibraryState {
     /// the book later does not rewrite it, because a link is a row the reader
     /// placed and not a view of another row.
     pub fn add_link(&self, name: &str, target: &str, shelf_id: &str) -> String {
-        let now = now_ms();
+        let now = crate::storage::now_ms();
         let link_id = id::next_id(now);
         let made = link_id.clone();
         self.books.update(|rows| {

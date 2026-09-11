@@ -26,7 +26,7 @@ use library_core::wire::StoreRequest;
 use super::conflict;
 use super::covers::prune_now;
 use crate::services::library as wire;
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// Move books: onto `to` at `index`, and off `from` when the two differ.
 ///
@@ -390,7 +390,7 @@ fn purge_one(state: AppState, row: &Row, opts: PurgeOpts) {
     let home = placed_by
         .as_deref()
         .and_then(|folder_id| folder_shelf_of(&shelves, folder_id, &book.id));
-    let entry = Tombstone::of(book, home, now_ms());
+    let entry = Tombstone::of(book, home, crate::storage::now_ms());
     let was_stored = book.origin.is_stored();
 
     state.library.books.update(|rows| {
@@ -581,15 +581,14 @@ pub fn new_shelf_in(state: AppState, parent: &str) -> String {
 /// level; "All" is not a shelf, so it is the root.
 pub fn create_shelf(state: AppState) -> String {
     let at = state.library.shelf.get_untracked();
-    let parent = (at != ALL_SHELF).then_some(at);
-    create_shelf_at(state, parent)
+    create_shelf_at(state, shelf::level_of_owned(&at))
 }
 
 /// The mint both "new shelf" doors share: one id, one empty virtual row at the
 /// level `parent` names, and the search tick that lands it on the frame it is
 /// made.
 fn create_shelf_at(state: AppState, parent: Option<String>) -> String {
-    let id = library_core::id::next_shelf_id(now_ms());
+    let id = library_core::id::next_shelf_id(crate::storage::now_ms());
     let made = id.clone();
     state.library.shelves.update(|shelves| {
         shelves.push(Shelf {
@@ -840,12 +839,11 @@ pub fn relink_book(state: AppState, book_id: String, path: String) {
     spawn_local(async move {
         let checks = match wire::verify_paths(vec![path.clone()]).await {
             Ok(checks) => checks,
-            Err(message) => return toast(state, message),
+            Err(message) => return state.toast(message),
         };
         let Some(fp) = checks.first().and_then(|c| c.fingerprint()) else {
-            return toast(
-                state,
-                "That file is not there any more. Pick the book's current location.".to_string(),
+            return state.toast(
+                "That file is not there any more. Pick the book's current location.",
             );
         };
         let origin = state.library.books.with_untracked(|rows| {
@@ -870,11 +868,11 @@ pub fn relink_book(state: AppState, book_id: String, path: String) {
                             let message = result
                                 .error
                                 .unwrap_or_else(|| "Could not copy that file.".to_string());
-                            return toast(state, message);
+                            return state.toast(message);
                         }
-                        None => return toast(state, "Could not copy that file.".to_string()),
+                        None => return state.toast("Could not copy that file.".to_string()),
                     },
-                    Err(message) => return toast(state, message),
+                    Err(message) => return state.toast(message),
                 }
             }
         };
@@ -918,31 +916,8 @@ pub fn relink_dialog(state: AppState, book_id: String) {
         match pdf_engine::api::pick_document().await {
             Ok(path) => relink_book(state, book_id, path),
             // A cancel is the reader changing their mind, not a failure.
-            Err(message) if message == "Open cancelled" => {}
-            Err(message) => toast(state, message),
+            Err(message) if reader_core::filename::is_cancelled(&message) => {}
+            Err(message) => state.toast(message),
         }
     });
-}
-
-/// Milliseconds since the epoch — the stamp on a tombstone and the counter a
-/// shelf id is minted from.
-///
-/// Off wasm the clock is inert rather than a panic, for the reason
-/// `crate::storage` gives: the wasm-bindgen stubs abort when called natively,
-/// and a stamp nobody persists is fine at zero. Ids stay unique regardless, on
-/// `library_core::id`'s own counter — which is what lets a host test remove a
-/// book at all.
-fn now_ms() -> u64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as u64
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        0
-    }
-}
-
-fn toast(state: AppState, message: String) {
-    state.ui.toast.set(Some(Toast::new(message)));
 }

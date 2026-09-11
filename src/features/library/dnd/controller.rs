@@ -20,19 +20,17 @@
 //! pointer handlers with it, and a drag whose release only that card could hear
 //! is a drag that never ends.
 
-use std::time::Duration;
-
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use library_core::book::{Row, find_row};
-use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
+use library_core::shelf::{self, ALL_SHELF, Shelf, can_nest};
 
 use super::effect::{
     Band, DropEffect, DropQuery, FoldPreview, drop_effect, fold_items, fold_preview,
 };
 use super::target::{DropTargetId, DropTargetKind, DropTargetRegistry};
-use super::{FOLD_DWELL_MS, SINK_DWELL_MS, commit};
+use super::{FOLD_DWELL, SINK_DWELL, commit};
 use crate::features::library::selection::exit_selection;
 use crate::state::AppState;
 
@@ -267,7 +265,7 @@ impl DragController {
                         this.sink.set(Some(spot));
                         this.sink_rect.set(Some(bounds));
                     },
-                    Duration::from_millis(SINK_DWELL_MS as u64),
+                    SINK_DWELL,
                 ) {
                     on_cleanup(move || sunk.clear());
                 }
@@ -298,7 +296,7 @@ impl DragController {
                     this.dwell.set(true);
                     this.refresh();
                 },
-                Duration::from_millis(FOLD_DWELL_MS as u64),
+                FOLD_DWELL,
             ) else {
                 return;
             };
@@ -617,8 +615,8 @@ impl DragController {
         // the container a grid card and a flat row both imply. `None` at the
         // root, where the library's own order is the member list.
         let row_shelf = match self.registry.entry_of(&target).and_then(|each| each.shelf) {
-            Some(named) => (named != ALL_SHELF).then_some(named),
-            None => (open != ALL_SHELF).then(|| open.clone()),
+            Some(named) => shelf::level_of_owned(named.as_str()),
+            None => shelf::level_of_owned(&open),
         };
         let target_id = match target.0 {
             DropTargetKind::Level if open == ALL_SHELF => String::new(),

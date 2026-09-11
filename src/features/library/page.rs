@@ -34,7 +34,7 @@ use crate::features::library::content::LibraryContent;
 use crate::features::library::context_menu::LibraryMenuHost;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::layer::DragLayer;
-use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
+use crate::features::library::import_modal::{ImportModal, ImportSheet};
 use crate::features::library::progress_dock::ProgressDock;
 use crate::features::library::remove_modal::{RemoveBookModal, RemoveSheet};
 use crate::features::library::titlebar_search::TitlebarSearch;
@@ -57,7 +57,7 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // The import sheet's handles, provided here so the three surfaces that can
     // open it (the add card, the empty state, a dropped folder) never have to
     // pass two signals through the grid to reach it.
-    let sheet = ImportSheet::provide();
+    let sheet = ImportSheet::provide(state);
     // The remove sheet's handles, for the same reason: a card and a list row both
     // ask, and neither should have to be told where the sheet lives.
     let remove_sheet = RemoveSheet::provide();
@@ -67,10 +67,6 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
     // own order lives — a menu row that says "select all" has to mean all of what
     // is on screen.
     LibraryMenuHost::provide();
-
-    // A picker that failed before the sheet could open has nowhere of its own to
-    // put the error, and the page owns the app's one toast slot.
-    Effect::new(move |_| drain_sheet_toasts(state, sheet));
 
     let left = move || {
         view! {

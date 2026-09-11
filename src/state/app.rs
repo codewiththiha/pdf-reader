@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use leptos::prelude::{Memo, RwSignal};
+use leptos::prelude::{Memo, RwSignal, Set};
 
 use crate::state::library::LibraryState;
 use crate::state::reader::ReaderState;
@@ -73,6 +73,24 @@ pub struct AppState {
     pub reader: ReaderState,
     pub library: LibraryState,
     pub ui: UiState,
+}
+
+impl AppState {
+    /// The app's one toast surface.
+    ///
+    /// A method rather than `state.ui.toast.set(Some(Toast::new(m)))` at every
+    /// call site: the slot is single, the id guard lives in `ToastHost`, and a
+    /// producer that writes the signal directly is one that can quietly build
+    /// its own queue beside the one the host renders.
+    pub fn toast(&self, message: impl Into<String>) {
+        self.ui.toast.set(Some(Toast::new(message)));
+    }
+
+    /// Take the toast down — the other half of the slot, and the reason a
+    /// caller does not reach into `ui.toast` to write `None` itself.
+    pub fn clear_toast(&self) {
+        self.ui.toast.set(None);
+    }
 }
 
 impl Default for AppState {

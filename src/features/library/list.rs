@@ -66,8 +66,7 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::{Book, Row};
 use library_core::query;
-use library_core::shelf::{ALL_SHELF, Shelf, children_of};
-use library_core::sort;
+use library_core::shelf::{self, Shelf, ALL_SHELF, children_of};
 use library_core::view::CoverFit;
 use reader_core::format::Format;
 
@@ -118,9 +117,14 @@ pub(crate) fn row_indent(depth: usize) -> String {
 
 /// How long a hold rests on a collapsed shelf row before the tree opens it: the
 /// way deeper is the way IN, and a reader carrying books should not have to put
-/// them down to knock. Longer than the fold's own dwell, because opening a level
-/// is a navigation the reader has to see happen before they aim into it.
-const AUTO_EXPAND_MS: u64 = 650;
+/// them down to knock.
+///
+/// LONGER than the drag's fold dwell
+/// (`crate::features::library::dnd::FOLD_DWELL`, 650 ms) on purpose: a row can
+/// be both, and opening a level is the rarer and slower question of the two.
+/// Equal values meant the two raced, and a reader who wanted a new shelf out of
+/// the hold got a navigation instead.
+const AUTO_EXPAND: Duration = Duration::from_millis(800);
 
 #[component]
 pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> impl IntoView {
@@ -142,11 +146,11 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
         let at = state.library.shelf.get();
         let terms = state.library.query.get();
         let parent = match &tree.root {
-            Some(root) => Some(root.clone()),
-            None => (at != ALL_SHELF).then_some(at),
+            Some(root) => Some(root.as_str()),
+            None => shelf::level_of(&at),
         };
         state.library.shelves.with(|shelves| {
-            children_of(shelves, parent.as_deref())
+            children_of(shelves, parent)
                 .into_iter()
                 .filter(|s| s.id != ALL_SHELF)
                 .filter(|s| query::matches_terms(&s.name, &terms))
@@ -210,13 +214,10 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     });
     let members_id = id.clone();
     let members = Signal::derive(move || {
-        state.library.shelves.with(|shelves| {
-            shelves
-                .iter()
-                .find(|s| s.id == members_id)
-                .map(|s| s.books.clone())
-                .unwrap_or_default()
-        })
+        state
+            .library
+            .shelves
+            .with(|shelves| library_core::shelf::shelf_members(shelves, &members_id))
     });
     let name_id = id.clone();
     let name = Signal::derive(move || {
@@ -266,7 +267,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                     set.insert(at);
                 });
             },
-            Duration::from_millis(AUTO_EXPAND_MS),
+            AUTO_EXPAND,
         )
         .ok();
         on_cleanup(move || {
@@ -280,7 +281,16 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     // library's when a query is open — so an unfolded shelf withholds its
     // members while the search is on: the doors stay, to show WHERE the matches
     // live, and the matches themselves are the flat list's alone.
-    let books = member_books(state, members);
+    let books_id = id.clone();
+    let books = Signal::derive(move || {
+        let shelf_id = books_id.clone();
+        let view = state.library.view.get();
+        state.library.books.with(|rows| {
+            state.library.shelves.with(|shelves| {
+                shelf::level_rows(rows, shelves, &shelf_id, view.sort, view.sort_asc)
+            })
+        })
+    });
     let searching = Signal::derive(move || state.library.query.with(|q| query::is_active(q)));
     let shown_books = Signal::derive(move || {
         if searching.get() {
@@ -428,7 +438,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 </span>
                 <Show when=move || !ctx.dense>
                     <span class="shrink-0 text-xs text-muted">
-                        {move || summary((members.with(|m| m.len()), kids.get().len()))}
+                        {move || summary((members.get().len(), kids.get().len()))}
                     </span>
                 </Show>
                 // Open drills the breadcrumb route; the row itself only unfolds.
@@ -464,11 +474,6 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
     }
 }
 
-/// The books on a shelf's member list, in the order the page shows books: the
-/// shelf's own order is the base and the view's sort rides over it — the same
-/// `library_core::sort::ordered` the page's own level runs in
-/// `crate::features::library::content::visible`, so an unfolded row and the
-/// page it mirrors cannot disagree about what comes first.
 /// The two kinds of row, as one erased view: a `For` needs one type and a link
 /// is not a book, so it cannot borrow a book's row.
 fn row_view(
@@ -490,27 +495,13 @@ fn row_view(
     }
 }
 
-fn member_books(state: AppState, members: Signal<Vec<String>>) -> Signal<Vec<Row>> {
-    Signal::derive(move || {
-        let ids = members.get();
-        let view = state.library.view.get();
-        state
-            .library
-            .books
-            .with(|books| sort::ordered(books, &ids, view.sort, view.sort_asc))
-    })
-}
-
 /// The list's last row: the same two sources the grid's add card offers, in the
 /// shape of a row rather than the shape of a cover.
 #[component]
 fn AddRow(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let anchor: NodeRef<html::Div> = NodeRef::new();
-    let target = Signal::derive(move || {
-        let id = state.library.shelf.get();
-        (id != ALL_SHELF).then_some(id)
-    });
+    let target = Signal::derive(move || shelf::level_of_owned(&state.library.shelf.get()));
     view! {
         <div node_ref=anchor class="relative">
             <button
@@ -624,7 +615,7 @@ fn ListRow(
     // the tree adds: the container that renders THIS row, so a drop inside an
     // expanded branch indexes the branch's own member list and not the flat
     // order the page is showing.
-    let dom_id = format!("book-{}", id);
+    let dom_id = crate::features::library::dnd::target::row_dom_id(DropTargetKind::Book, &id);
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Book, id.clone()),
         dom_id: dom_id.clone(),

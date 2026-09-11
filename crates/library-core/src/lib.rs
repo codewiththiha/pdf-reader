@@ -70,18 +70,24 @@ pub use book::{
     BOOKS_CAP, Book, Fingerprint, Origin, ReadPoint, Row, apply_check, book_rows, duplicate_title,
     find_row, fold_books, further_point, record_read, record_read_row, remove_row,
 };
-pub use conflict::{Answer, Arrival, MoveAnswer, collide, next_name, same_name};
+pub use conflict::{Answer, Arrival, MoveAnswer, collide, next_name};
 pub use folder::{FolderOpts, Tombstone, WatchedFolder};
 pub use ledger::{
     KnownBook, Recovered, ScanAction, diff_folder, find_tombstone, index_by_fp, prune_tombstones,
     recoverables, restore_deleted, tombstone,
 };
 pub use scan::{FoundFile, admits};
-pub use shelf::{ALL_SHELF, Shelf, ShelfKind, ancestors, can_nest, children_of, shelf_add};
+pub use shelf::{
+    ALL_SHELF, Shelf, ShelfKind, ancestors, can_nest, children_of, level_of, level_of_owned,
+    shelf_add,
+};
 pub use sort::{SortKey, sort_rows};
 pub use text::{human_age, human_size, plural};
-pub use view::{CoverFit, LibraryLayout, LibraryView};
+pub use view::{
+    CoverFit, LibraryLayout, LibraryView, A4_ASPECT, A4_ASPECT_CSS, COLUMNS_MAX, COLUMNS_MIN, PLATE_CELLS,
+    PLATE_DEPTH, cover_aspect,
+};
 pub use wire::{
-    Cover, GlossRow, ImportPhase, ImportProgress, LibrarySnapshot, PathCheck, SearchHit,
-    StoreRequest, StoreResult,
+    Cover, GlossRow, ImportPhase, ImportProgress, LibrarySnapshot, PathCheck, PROGRESS_EVENT,
+    SearchHit, StoreRequest, StoreResult,
 };

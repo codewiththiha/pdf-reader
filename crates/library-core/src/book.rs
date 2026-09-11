@@ -267,6 +267,24 @@ impl Row {
         }
     }
 
+    /// Name the row, as the reader typed it — the ONLY write a rename makes.
+    ///
+    /// Blank answers the empty `title` (a book falls back to its file name,
+    /// which is what `sanitize` records and what the collision rule compares
+    /// against); a link has no address to fall back to, so it keeps the name it
+    /// already carried rather than becoming an empty row on the shelf.
+    pub fn set_display_name(&mut self, name: &str) {
+        match self {
+            Row::Book(b) => b.title = Some(name.to_string()),
+            Row::Link { name: own, .. } => {
+                let named = !name.trim().is_empty();
+                if named {
+                    *own = name.to_string();
+                }
+            }
+        }
+    }
+
     pub fn is_link(&self) -> bool {
         matches!(self, Row::Link { .. })
     }
@@ -1754,6 +1772,34 @@ mod tests {
         assert_eq!(find_page(&books, "/books/zzz.pdf"), None);
         assert_eq!(find_fraction(&books, "/books/one.pdf"), Some(0.5));
         assert_eq!(find_by_path(&books, "/books/one.pdf").map(|b| b.id.as_str()), Some("a"));
+    }
+
+    #[test]
+    fn naming_a_row_is_one_rule_for_both_kinds() {
+        use reader_core::format::Format;
+        let mut book = Row::Book(Book::new(
+            "b1".into(),
+            Fingerprint {
+                size: 1,
+                mtime_ms: 1,
+                head_hash: 1,
+            },
+            Format::Pdf,
+            Origin::Linked {
+                src: "/books/dune.pdf".into(),
+            },
+            0,
+        ));
+        let mut link = Row::link("l1".into(), "Shortcut".into(), "b1".into(), 0);
+        book.set_display_name("  Dune  ");
+        link.set_display_name("The one beside the door");
+        assert_eq!(book.display_name(), "  Dune  ");
+        assert_eq!(link.display_name(), "The one beside the door");
+        // A blank answer is a book that wants its file name back, and a link
+        // that cannot have one: it keeps what it was called.
+        let mut named = link.clone();
+        named.set_display_name("   ");
+        assert_eq!(named.display_name(), "The one beside the door");
     }
 
     #[test]

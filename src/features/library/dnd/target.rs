@@ -55,6 +55,20 @@ pub enum DropTargetKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropTargetId(pub DropTargetKind, pub String);
 
+/// The id of the element a row of the library is drawn by: the drop target's
+/// box, the reveal's scroll destination and the node the hit-test resolves are
+/// all named from here, because six files used to write `"book-"` and
+/// `"folder-"` by hand and a rename in one of them is a drag that hits nothing.
+pub fn row_dom_id(kind: DropTargetKind, row_id: &str) -> String {
+    match kind {
+        DropTargetKind::Book => format!("book-{row_id}"),
+        DropTargetKind::Folder => format!("folder-{row_id}"),
+        // Crumbs name themselves (`crate::features::library::breadcrumb`), the
+        // level's space and the ellipsis have fixed ids: nothing here to derive.
+        _ => row_id.to_string(),
+    }
+}
+
 /// A target on the page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DropTargetEntry {

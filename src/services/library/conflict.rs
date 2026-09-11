@@ -133,6 +133,11 @@ pub fn raise(state: AppState, asks: Vec<ConflictAsk>) {
     state.library.conflict_waiting.update(|waiting| {
         waiting.extend(asks);
     });
+    // The flag goes up with the question, here and not at the call site: the
+    // lane registry and the Escape rule hold the boolean rather than the ask,
+    // and a sheet that was up without its flag would be one the lane could
+    // neither see nor close. Both halves are written by this one door so a
+    // raiser cannot write one of them.
     state.library.conflict.set(Some(first));
     state.library.conflict_open.set(true);
 }

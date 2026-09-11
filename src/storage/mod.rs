@@ -91,6 +91,25 @@ fn log_info(message: &str) {
     let _ = message;
 }
 
+/// Milliseconds since the Unix epoch — the stamp every persisted record in the
+/// app carries (a book's read, a shelf id, a tombstone, a scan).
+///
+/// One function rather than a `js_sys::Date::now()` per caller because the call
+/// is wasm-only: off the webview (host tests, and anything compiled for a
+/// non-wasm target) the wasm-bindgen stubs abort, so the clock answers `0`
+/// instead. Ids stay unique regardless — `library_core::id` keeps its own
+/// counter, which is what lets a host test mint rows and remove them.
+pub fn now_ms() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() as u64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0
+    }
+}
+
 /// The browser's own key-value store, and `None` wherever there is not one —
 /// which is every host test this crate runs, and the reason a save off wasm is
 /// a reported no-op rather than a panic.
@@ -185,7 +204,7 @@ pub fn load_library() -> LibraryBlob {
         return LibraryBlob::default();
     }
     let count = legacy.len();
-    let mut blob = migrate_v1(legacy, js_sys::Date::now() as u64);
+    let mut blob = migrate_v1(legacy, now_ms());
     sanitize_library(&mut blob);
     log_info(&format!("[storage] migrated {count} books from {LEGACY_KEY}"));
     blob

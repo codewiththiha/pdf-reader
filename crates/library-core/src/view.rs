@@ -15,6 +15,56 @@ use crate::sort::SortKey;
 /// The narrowest and widest fixed column counts the view menu offers. Between
 /// them the grid is legible on a 640 px window and on a maximised display;
 /// outside them a card is either a postage stamp or a poster.
+/// The aspect (width / height) a cover box falls back to when there is no
+/// image to measure, or the measured one is nonsense: A4 portrait, the page
+/// every document in the library was made to be read on — the same frame a
+/// link card stands in for a missing cover and the same ratio
+/// `styles/library.css` gives an empty `.book-cover`. One number, three
+/// surfaces. The reader keeps its own 3:4 for a page 1 not yet measured,
+/// because that fallback belongs to a document, not to a shelf.
+pub const A4_ASPECT: f64 = 210.0 / 297.0;
+
+/// The same ratio as the CSS `aspect-ratio` value the style attribute wants.
+pub const A4_ASPECT_CSS: &str = "210 / 297";
+
+/// The clamp a measured cover is kept inside, so a 4000×30 page cannot stretch
+/// one row of an otherwise even shelf into a banner.
+const ASPECT_MIN: f64 = 0.55;
+const ASPECT_MAX: f64 = 1.8;
+
+/// The one rule for "how tall should this card's cover box be": a real page's
+/// own ratio, clamped, and [`A4_ASPECT`] for anything unmeasured. Both layouts,
+/// the link rows and the drag ghost ask, and all of them used to write the
+/// numbers inline.
+pub fn cover_aspect(width: f64, height: f64) -> f64 {
+    if width > 0.0 && height > 0.0 {
+        (width / height).clamp(ASPECT_MIN, ASPECT_MAX)
+    } else {
+        A4_ASPECT
+    }
+}
+
+/// The measured ratio spelled as a CSS `aspect-ratio` value. Five decimals,
+/// because the exact ratio of a 612×792 page and the rounded one are two
+/// different pixel heights on a 400-pixel-tall card, and a shelf of cards whose
+/// bottom edges do not line up is the bug the clamp exists to stop.
+pub fn cover_aspect_css(width: f64, height: f64) -> String {
+    format!("{:.5} / 1", cover_aspect(width, height))
+}
+
+/// How many cells a folder's preview plate holds — and, because the preview is a
+/// promise about the plate, how many tiles a drag ghost fans out and how many
+/// covers a fold preview fills. Four, at every one of those three places, and
+/// one number rather than four that happen to agree today.
+pub const PLATE_CELLS: usize = 4;
+
+/// The deepest plate a preview recurses to: the folder's own, the plates of the
+/// folders inside it, and the plates of the folders inside those. Deeper than
+/// that a cell is a few pixels across, and draws a folder glyph instead.
+pub const PLATE_DEPTH: usize = 2;
+
+/// The smallest a grid's columns may be squeezed to, and the largest — the
+/// bounds the count control and the auto-fit report share.
 pub const COLUMNS_MIN: u8 = 2;
 pub const COLUMNS_MAX: u8 = 10;
 
@@ -359,5 +409,33 @@ mod tests {
     fn every_cover_and_layout_has_a_label() {
         assert_eq!(CoverFit::Fit.label(), "Fit");
         assert_eq!(CoverFit::Crop.label(), "Crop");
+    }
+}
+
+#[cfg(test)]
+mod aspect_tests {
+    use super::*;
+
+    #[test]
+    fn an_unmeasured_cover_stands_in_a4_not_in_the_pages_own_guess() {
+        assert_eq!(cover_aspect(0.0, 0.0), A4_ASPECT);
+        assert_eq!(cover_aspect(-612.0, 792.0), A4_ASPECT);
+        // The CSS spelling is a ratio the browser divides, not a float it
+        // parses — and `styles/library.css` writes the same `210 / 297` in five
+        // places (`.book-cover`, the add card, a row's plate, a receipt line,
+        // the drag ghost), so the literal is a contract across two languages.
+        let mut parts = A4_ASPECT_CSS.split('/').map(str::trim);
+        let w: f64 = parts.next().unwrap().parse().unwrap();
+        let h: f64 = parts.next().unwrap().parse().unwrap();
+        assert!((w / h - A4_ASPECT).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_measured_page_keeps_its_own_shape_within_the_clamp() {
+        assert_eq!(cover_aspect(600.0, 800.0), 0.75);
+        assert_eq!(cover_aspect(4000.0, 30.0), 1.8);
+        assert_eq!(cover_aspect(30.0, 4000.0), 0.55);
+        assert_eq!(cover_aspect_css(600.0, 800.0), "0.75000 / 1");
+        assert_eq!(cover_aspect_css(0.0, 0.0), "0.70707 / 1");
     }
 }

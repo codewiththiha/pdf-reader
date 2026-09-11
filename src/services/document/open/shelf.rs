@@ -22,9 +22,9 @@ use crate::state::AppState;
 /// "All" order — reading in place is the default, and a file opened from a dialog
 /// or a drop is not a file the app should copy anywhere.
 pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: ReadPoint) {
-    // Persist last path (the settings-watch effect writes localStorage
-    // automatically). Kept for schema stability; the library below is the real
-    // store.
+    // Persist last path, for the file dialog's start directory. The settings
+    // watch writes it out on its own debounce; the library below is the real
+    // store of what a reader has read.
     state
         .settings
         .update(|s| s.last_path = Some(path.to_string()));
@@ -33,19 +33,24 @@ pub(crate) fn record(state: AppState, path: &str, title: Option<String>, point: 
     // time an open reaches here. Read untracked: this is a write path, not a
     // view, and a subscription would only re-run it on somebody else's change.
     let author = state.reader.document.author.get_untracked();
-    let now = js_sys::Date::now() as u64;
+    let now = crate::storage::now_ms();
     // The row the reader opened by name — a card, a list row, the context
     // menu's Open — records against that row, so a book of its own keeps the
     // position its own reader reached instead of handing it to its twin at the
     // address. An open that arrived as nothing but an address (a drop, an
     // "open with", a dialog) has no row to name and follows the address.
     let book_id = state.reader.document.book_id.get_untracked();
-    let mut books = state.library.books.get_untracked();
-    let created = match book_id.as_deref() {
-        Some(book_id) => record_read_row(&mut books, book_id, path, title, author, point, now),
-        None => record_read(&mut books, path, title, author, point, now),
-    };
-    state.library.books.set(books);
+    let created = state
+        .library
+        .books
+        .try_update(|rows| match book_id.as_deref() {
+            Some(book_id) => record_read_row(rows, book_id, path, title, author, point, now),
+            None => record_read(rows, path, title, author, point, now),
+        })
+        // `Err` only when the reactive scope is already gone (the app closing),
+        // where a write has no reader; then nothing was created, which is the
+        // same answer as "the library already had this file".
+        .unwrap_or(None);
     crate::storage::persist_library(state.library);
 
     if let Some(book) = created {

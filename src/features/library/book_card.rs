@@ -48,7 +48,6 @@ use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::document;
 use crate::services::library::relink_dialog;
 use crate::state::AppState;
-use crate::state::reader::DEFAULT_PAGE_ASPECT;
 
 /// One book on the shelf.
 ///
@@ -86,23 +85,24 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // tell two books called "Report" apart; the address does.
     let path_hint = book.path().to_string();
 
-    // Aspect ratio (width / height) for the cover box, so a landscape plate stays
-    // landscape on the shelf. Clamped so a pathological page cannot break the
-    // grid; falls back to 3:4 portrait.
+    // The cover box's aspect (width / height), so a landscape plate stays
+    // landscape: `library_core::view::cover_aspect` owns the clamp and the
+    // fallback — an unmeasured cover stands in A4, the same frame a link card
+    // and the CSS's own `aspect-ratio` use, so a shelf of measured and unmeasured
+    // covers is one row of identical frames.
     let cover_path = path.clone();
-    let aspect = move || {
-        state.library.covers.with(|covers| {
-            covers
-                .get(&cover_path)
-                .map(|c| {
-                    if c.width > 0.0 && c.height > 0.0 {
-                        (c.width / c.height).clamp(0.55, 1.8)
-                    } else {
-                        DEFAULT_PAGE_ASPECT
-                    }
-                })
-                .unwrap_or(DEFAULT_PAGE_ASPECT)
-        })
+    // One read of the cover, and the CSS spelling of its ratio: the same rule
+    // the link card's empty cover uses (see `library_core::view::cover_aspect`).
+    let aspect_css = move || {
+        state
+            .library
+            .covers
+            .with(|covers| {
+                covers
+                    .get(&cover_path)
+                    .map(|c| library_core::view::cover_aspect_css(c.width, c.height))
+            })
+            .unwrap_or_else(|| library_core::view::cover_aspect_css(0.0, 0.0))
     };
 
     // The shelf's one press contract: a tap opens, a hold selects, a movement
@@ -151,7 +151,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // book's place in the level, and a rest here while holding two or more offers
     // to fold them into a new shelf beside it. Registered for the life of the
     // card, which is the life of its box on screen.
-    let dom_id = format!("book-{}", id);
+    let dom_id = crate::features::library::dnd::target::row_dom_id(DropTargetKind::Book, &id);
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Book, id.clone()),
         dom_id: dom_id.clone(),
@@ -225,11 +225,10 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                     class=("book-cover-crop", move || crop.get())
                     style:aspect-ratio=move || {
                         if crop.get() {
-                            // A4 portrait, so a shelf of mixed scans and exports
-                            // reads as one row of identical frames.
-                            "210 / 297".to_string()
+                            // Cropped frames are all one page: the crate's A4.
+                            library_core::view::A4_ASPECT_CSS.to_string()
                         } else {
-                            format!("{:.5} / 1", aspect())
+                            aspect_css()
                         }
                     }
                 >

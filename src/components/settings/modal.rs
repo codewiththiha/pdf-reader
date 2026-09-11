@@ -15,10 +15,10 @@ use crate::components::settings::common::{Tab, TabButton};
 use crate::components::settings::fonts::FontsTab;
 use crate::components::settings::layout::LayoutTab;
 use crate::components::settings::theme::ThemeTab;
-use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::IconName;
 use app_chrome::icon_button::IconButton;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_scrim::ModalScrim;
 use crate::state::AppState;
 
 #[component]
@@ -49,73 +49,69 @@ pub fn SettingsModal(
         other => other,
     });
     // A dropdown opened inside the modal owns the press; the shared rule
-    // defers to it and closes the modal only once nothing sits on top.
-    use_modal_escape(open);
+    // defers to it and closes the modal only once nothing sits on top — the
+    // scrim installs that rule for every sheet (see
+    // `crate::components::primitives::overlay::modal_scrim`).
     view! {
-        <Show when=move || open.get()>
+        <ModalScrim open=open>
             <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| open.set(false)
+                class="flex flex-col rounded-2xl border border-line bg-surface shadow-2xl"
+                style=format!("width:{width};height:{height}")
+                on:click=move |ev| ev.stop_propagation()
             >
-                <div
-                    class="flex flex-col rounded-2xl border border-line bg-surface shadow-2xl"
-                    style=format!("width:{width};height:{height}")
-                    on:click=move |ev| ev.stop_propagation()
-                >
-                    <div class="flex shrink-0 items-center gap-1 px-4 pb-2 pt-4">
+                <div class="flex shrink-0 items-center gap-1 px-4 pb-2 pt-4">
+                    <TabButton
+                        tab=tab
+                        active=shown
+                        t=Tab::Layout
+                        icon=IconName::Layout
+                        label="Layout"
+                    />
+                    <TabButton
+                        tab=tab
+                        active=shown
+                        t=Tab::Theme
+                        icon=IconName::Palette
+                        label="Theme"
+                    />
+                    <Show when=move || animations_on.get()>
                         <TabButton
                             tab=tab
                             active=shown
-                            t=Tab::Layout
-                            icon=IconName::Layout
-                            label="Layout"
+                            t=Tab::Animations
+                            icon=IconName::Motion
+                            label="Animations"
                         />
+                    </Show>
+                    <Show when=move || fonts_on.get()>
                         <TabButton
                             tab=tab
                             active=shown
-                            t=Tab::Theme
-                            icon=IconName::Palette
-                            label="Theme"
+                            t=Tab::Fonts
+                            icon=IconName::Type
+                            label="Fonts"
                         />
-                        <Show when=move || animations_on.get()>
-                            <TabButton
-                                tab=tab
-                                active=shown
-                                t=Tab::Animations
-                                icon=IconName::Motion
-                                label="Animations"
-                            />
-                        </Show>
-                        <Show when=move || fonts_on.get()>
-                            <TabButton
-                                tab=tab
-                                active=shown
-                                t=Tab::Fonts
-                                icon=IconName::Type
-                                label="Fonts"
-                            />
-                        </Show>
-                        <div class="ml-auto">
-                            <IconButton
-                                icon=IconName::Close
-                                title="Close"
-                                class="rounded-full bg-line/60 hover:bg-line".to_string()
-                                on_click=move || open.set(false)
-                            />
-                        </div>
-                    </div>
-                    <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
-                        {move || match shown.get() {
-                            Tab::Layout => view! { <LayoutTab state=state /> }.into_any(),
-                            Tab::Theme => view! { <ThemeTab state=state /> }.into_any(),
-                            Tab::Animations => {
-                                view! { <AnimationsTab state=state /> }.into_any()
-                            }
-                            Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
-                        }}
+                    </Show>
+                    <div class="ml-auto">
+                        <IconButton
+                            icon=IconName::Close
+                            title="Close"
+                            class="rounded-full bg-line/60 hover:bg-line".to_string()
+                            on_click=move || open.set(false)
+                        />
                     </div>
                 </div>
+                <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
+                    {move || match shown.get() {
+                        Tab::Layout => view! { <LayoutTab state=state /> }.into_any(),
+                        Tab::Theme => view! { <ThemeTab state=state /> }.into_any(),
+                        Tab::Animations => {
+                            view! { <AnimationsTab state=state /> }.into_any()
+                        }
+                        Tab::Fonts => view! { <FontsTab state=state /> }.into_any(),
+                    }}
+                </div>
             </div>
-        </Show>
+        </ModalScrim>
     }
 }

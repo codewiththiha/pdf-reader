@@ -26,7 +26,7 @@ use reflow_core::typography::TextSettings;
 // the rest are reached through their own module, which is the point of the
 // split.
 pub use ai::{AiSelectionState, SelectionDetail};
-pub use document::{DEFAULT_PAGE_ASPECT, DocumentState, NO_DOCUMENT, ReflowContent};
+pub use document::{DocumentState, NO_DOCUMENT, ReflowContent};
 pub use gloss::GlossState;
 pub use search::SearchState;
 pub use viewer::{Motion, ViewerSignals};

@@ -59,32 +59,54 @@ use crate::state::AppState;
 /// means: not "start selecting" and then a second gesture to select this one.
 ///
 /// The id is a book's or a shelf's; the set does not tell them apart and nothing
-/// below needs it to.
+/// below needs it to. Every write of the set goes through [`set_selected`], and
+/// the mode flag travels with it: the two are one fact told twice.
 pub(crate) fn enter_selection(state: AppState, item_id: &str) {
+    mark(state, item_id, true);
+}
+
+/// The ONE writer of the selection, and of the mode flag beside it. The two
+/// are one fact told twice — "selecting" is the set being non-empty — and as
+/// two writes they were a pair one writer could forget: `toggle_selected` used
+/// to write only the set, so the last card tapped off left a bar that said "0
+/// selected" until Escape. Written as a pair here rather than derived from the
+/// set because the mode has to stay a signal the dismissal wiring can write
+/// (see `crate::state::library::LibraryState::selecting`).
+pub(crate) fn set_selected(state: AppState, ids: HashSet<String>) {
+    let selecting = !ids.is_empty();
+    state.library.selected.set(ids);
+    state.library.selecting.set(selecting);
+}
+
+/// Add or drop one id and hand the whole set to [`set_selected`], so the flag
+/// travels with it.
+fn mark(state: AppState, item_id: &str, on: bool) {
     let id = item_id.to_string();
-    state.library.selecting.set(true);
-    state.library.selected.update(|selected| {
-        selected.insert(id);
+    let next = state.library.selected.with_untracked(|selected| {
+        let mut next = selected.clone();
+        if on {
+            next.insert(id.clone());
+        } else {
+            next.remove(&id);
+        }
+        next
     });
+    set_selected(state, next);
 }
 
 /// Leave selection and drop the set. Every exit goes through here — Done, Escape, a
 /// click on empty shelf, an action that consumed the selection, leaving the page —
 /// so there is one place that decides what "not selecting" means.
 pub(crate) fn exit_selection(state: AppState) {
-    state.library.selecting.set(false);
-    state.library.selected.set(HashSet::new());
+    set_selected(state, HashSet::new());
 }
 
 /// Toggle one card. The high-frequency operation, and the reason the set is a set:
 /// "is this one in it" is asked by every card on every repaint, and a list would
 /// answer it by walking.
 pub(crate) fn toggle_selected(state: AppState, item_id: &str) {
-    state.library.selected.update(|selected| {
-        if !selected.remove(item_id) {
-            selected.insert(item_id.to_string());
-        }
-    });
+    let on = !state.library.selected.with_untracked(|selected| selected.contains(item_id));
+    mark(state, item_id, on);
 }
 
 /// The selection as a list, in no particular order. Read untracked: every caller is
@@ -258,10 +280,10 @@ pub(crate) fn select_on_screen(state: AppState, order: ShelfOrder, folders: Fold
         .map(|row| row.id().to_string())
         .chain(folders.0.get_untracked().into_iter().map(|each| each.id))
         .collect();
-    state.library.selecting.set(true);
-    state.library.selected.update(|selected| {
-        selected.extend(on_screen);
-    });
+    // One door: the set becomes the on-screen ids and the mode comes with it
+    // ("*All* means everything I can see, replaced", not "added to whatever a
+    // previous selection held").
+    set_selected(state, on_screen.into_iter().collect());
 }
 
 /// The selection-mode wiring the page owns: the exit paths, and dropping the

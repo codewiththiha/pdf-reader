@@ -37,6 +37,6 @@ pub async fn pick_document() -> Result<String, String> {
     })?;
     match value.as_string() {
         Some(path) if !path.is_empty() => Ok(path),
-        _ => Err("Open cancelled".to_string()),
+        _ => Err(reader_core::filename::CANCELLED.to_string()),
     }
 }

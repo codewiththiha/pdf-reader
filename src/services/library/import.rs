@@ -57,7 +57,7 @@ use super::conflict;
 use super::{file_name, folder_label};
 use crate::services::library as wire;
 use crate::state::library::ImportTask;
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// Who asked for a folder run, which is what the tombstones mean.
 ///
@@ -84,26 +84,6 @@ fn task_id() -> String {
         js_sys::Date::now() as u64,
         SEQ.fetch_add(1, Ordering::Relaxed)
     )
-}
-
-/// Milliseconds since the epoch — the library's only clock. Stamps a book's
-/// `added_ms`, its id, and a folder's last scan.
-///
-/// Off wasm the clock is inert rather than a panic: the wasm-bindgen stubs abort
-/// when called natively, and a stamp nobody persists is fine at zero. The ids
-/// minted from it stay unique regardless, on [`id`]'s own counter — which is
-/// what lets a host test land a file at all.
-///
-/// [`id`]: library_core::id
-fn now_ms() -> u64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as u64
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        0
-    }
 }
 
 thread_local! {
@@ -195,7 +175,7 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
     }
     let toast = message.clone();
     update_task(state, task, move |t| t.fail(message));
-    state.ui.toast.set(Some(Toast::new(toast)));
+    state.toast(toast);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,10 +189,7 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     // its card is on the dock and its walk is the same tree. Racing it would
     // clobber its ledger write, so the second ask says so instead.
     let Some(claim) = claim_root(&root) else {
-        state.ui.toast.set(Some(Toast::new(format!(
-            "{} is already being imported.",
-            folder_label(&root)
-        ))));
+        state.toast(format!("{} is already being imported.", folder_label(&root)));
         return;
     };
     let task = task_id();
@@ -401,7 +378,7 @@ async fn run_folder(
         .find(|f| f.root == root)
         .cloned()
         .unwrap_or_else(|| WatchedFolder {
-            id: id::next_folder_id(now_ms()),
+            id: id::next_folder_id(crate::storage::now_ms()),
             root: root.clone(),
             opts: opts.clone(),
             placed: HashSet::new(),
@@ -546,7 +523,7 @@ async fn run_folder(
         // Nothing to do. A quiet run leaves no trace beyond the folder's own
         // "last scanned" stamp; an explicit import still owes the reader an
         // answer, which is a card saying nothing was new.
-        folder.scanned_ms = now_ms();
+        folder.scanned_ms = crate::storage::now_ms();
         write_folder(state, folder);
         if !quiet {
             update_task(state, &task, |t| t.finish());
@@ -554,7 +531,7 @@ async fn run_folder(
         return;
     }
 
-    let now = now_ms();
+    let now = crate::storage::now_ms();
     // Minted off the crate's own counter rather than the snapshot's length: two
     // watched folders rescan concurrently, and two tasks that both counted the
     // library as it was BEFORE their walks would mint the same id twice in the
@@ -755,7 +732,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
             );
         };
 
-        let now = now_ms();
+        let now = crate::storage::now_ms();
         let book_id = id::next_id(now);
         let origin = if opts.in_place {
             Origin::Linked {
@@ -893,7 +870,7 @@ async fn copy_batch(
             1 => format!("Could not copy {}", failures[0]),
             n => format!("Could not copy {n} files, starting with {}", failures[0]),
         };
-        state.ui.toast.set(Some(Toast::new(message)));
+        state.toast(message);
     }
     Ok(copies)
 }
@@ -987,7 +964,7 @@ pub fn land_file(
     shelf_id: &str,
     index: Option<usize>,
 ) -> String {
-    let now = now_ms();
+    let now = crate::storage::now_ms();
     let independent = state
         .library
         .books

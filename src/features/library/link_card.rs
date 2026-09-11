@@ -76,7 +76,7 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String) -> impl IntoVi
     let on_key = Rc::clone(&gestures.on_keydown);
     let aria_pressed = gestures.aria_pressed;
 
-    let dom_id = format!("book-{id}");
+    let dom_id = crate::features::library::dnd::target::row_dom_id(DropTargetKind::Book, &id);
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Book, id.clone()),
         dom_id: dom_id.clone(),
@@ -122,7 +122,7 @@ pub(crate) fn LinkCard(state: AppState, id: String, name: String) -> impl IntoVi
             on:keydown=move |ev: leptos::ev::KeyboardEvent| (on_key)(&ev)
         >
             <div class="book-cover-wrap">
-                <div class="book-cover" style:aspect-ratio="210 / 297">
+                <div class="book-cover" style:aspect-ratio=library_core::view::A4_ASPECT_CSS.to_string()>
                     <div class="book-cover-fallback">
                         <span>{plate_name.clone()}</span>
                     </div>
@@ -195,7 +195,7 @@ pub(crate) fn LinkRow(
     let on_key = Rc::clone(&gestures.on_keydown);
     let aria_pressed = gestures.aria_pressed;
 
-    let dom_id = format!("book-{id}");
+    let dom_id = crate::features::library::dnd::target::row_dom_id(DropTargetKind::Book, &id);
     drag.registry.register(DropTargetEntry {
         id: DropTargetId(DropTargetKind::Book, id.clone()),
         dom_id: dom_id.clone(),

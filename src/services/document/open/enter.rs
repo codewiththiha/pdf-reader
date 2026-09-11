@@ -165,6 +165,6 @@ pub(super) fn startup_scale(state: AppState, page_size: (f64, f64)) -> (FitMode,
 pub(super) fn enter_ready(state: AppState) {
     state.reader.document.error.set(None);
     state.reader.document.status.set(DocStatus::Ready);
-    state.ui.toast.set(None);
+    state.clear_toast();
     state.reader.search.reset();
 }

@@ -14,6 +14,14 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The Tauri event the shell's import commands emit progress beats on.
+///
+/// Declared here rather than in each half of the wire because a name only one
+/// side can see is a name the other side has to copy — and the copy is silent
+/// when it drifts: a listener on a channel nobody emits is simply never told
+/// anything, and the import dock keeps the last ring it was given.
+pub const PROGRESS_EVENT: &str = "library://progress";
+
 /// Which half of an import a progress beat belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

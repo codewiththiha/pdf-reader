@@ -35,7 +35,7 @@ use pdf_engine::api as engine;
 use pdf_engine::types::DocStatus;
 
 use library_core::book::{ReadPoint, resume_point};
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 use super::session;
 
@@ -85,13 +85,10 @@ pub fn open_dialog(state: AppState) {
         match engine::pick_document().await {
             Ok(path) => open_path(state, path),
             Err(msg) => {
-                if msg != "Open cancelled" {
+                if !reader_core::filename::is_cancelled(&msg) {
                     state.reader.document.error.set(Some(msg.clone()));
                     state.reader.document.status.set(DocStatus::Error);
-                    state.ui.toast.set(Some(Toast::new(format!(
-                        "Could not open document: {}",
-                        msg
-                    ))));
+                    state.toast(format!("Could not open document: {}", msg));
                 }
             }
         }
@@ -258,11 +255,5 @@ fn ready(
 fn fail(state: AppState, message: String) {
     state.reader.document.error.set(Some(message.clone()));
     state.reader.document.status.set(DocStatus::Error);
-    state
-        .ui
-        .toast
-        .set(Some(Toast::new(format!(
-            "Could not open document: {}",
-            message
-        ))));
+    state.toast(format!("Could not open document: {}", message));
 }

@@ -12,7 +12,6 @@
 
 use leptos::prelude::*;
 
-use app_chrome::floating::dismiss::use_modal_escape;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use library_core::folder::{FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
@@ -24,9 +23,10 @@ use crate::components::primitives::controls::option_button::OptionButton;
 use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::lanes::{OverlayPolicy, use_overlay_lane};
+use crate::components::primitives::overlay::modal_scrim::ModalScrim;
 use crate::components::settings::common::Row;
 use crate::services::library::{import_folder, pick_folder};
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// The sheet's two handles, provided by the library page: whether it is open and
 /// the folder it opens onto.
@@ -37,18 +37,20 @@ use crate::state::{AppState, Toast};
 /// every component between.
 #[derive(Clone, Copy)]
 pub(crate) struct ImportSheet {
+    /// The app's state, carried so the sheet's surfaces can report a failure
+    /// through the app's ONE toast slot instead of keeping a queue of their own.
+    state: AppState,
     pub open: RwSignal<bool>,
     pub root: RwSignal<Option<String>>,
-    toasts: RwSignal<Option<String>>,
 }
 
 impl ImportSheet {
     /// Create and provide the handles. Called once, by the page.
-    pub fn provide() -> Self {
+    pub fn provide(state: AppState) -> Self {
         let sheet = Self {
+            state,
             open: RwSignal::new(false),
             root: RwSignal::new(None),
-            toasts: RwSignal::new(None),
         };
         provide_context(sheet);
         sheet
@@ -63,18 +65,11 @@ impl ImportSheet {
     }
 
     /// Report a failure to open the sheet — a picker that could not run, on a
-    /// surface that has no toast host of its own.
+    /// surface that has no toast of its own. The app's slot is the one place a
+    /// message goes; a second queue here would be a second opinion about who
+    /// shows it.
     pub fn toast(&self, message: String) {
-        self.toasts.set(Some(message));
-    }
-}
-
-/// Raise anything the sheet collected while it was closed. Called by the page,
-/// which owns the app's one toast slot.
-pub(crate) fn drain_sheet_toasts(state: AppState, sheet: ImportSheet) {
-    if let Some(message) = sheet.toasts.get_untracked() {
-        sheet.toasts.set(None);
-        state.ui.toast.set(Some(Toast::new(message)));
+        self.state.toast(message);
     }
 }
 
@@ -88,9 +83,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     // folder usually wants it imported the same way as the first.
     let opts = RwSignal::new(FolderOpts::default());
 
-    // A popover opened inside the sheet owns the press; the shared rule peels
-    // one layer at a time.
-    use_modal_escape(sheet.open);
+    // (Escape is the scrim's rule: see `crate::components::primitives::overlay::modal_scrim`.)
 
     let in_place = Signal::derive(move || opts.with(|o| o.in_place));
     let watching = Signal::derive(move || opts.with(|o| o.watch));
@@ -109,12 +102,8 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     let path_open = RwSignal::new(false);
 
     view! {
-        <Show when=move || sheet.open.get()>
+        <ModalScrim open=sheet.open>
             <div
-                class="fixed inset-0 z-[var(--z-popover)] flex items-center justify-center bg-black/45 p-4"
-                on:click=move |_| sheet.open.set(false)
-            >
-                <div
                     class="flex max-h-[86vh] w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl"
                     style="width:min(92vw, 480px)"
                     on:click=move |ev| ev.stop_propagation()
@@ -355,8 +344,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         </Button>
                     </footer>
                 </div>
-            </div>
-        </Show>
+        </ModalScrim>
     }
 }
 

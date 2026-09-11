@@ -27,7 +27,9 @@
 //! edges, on a crumb or on the level's own space.
 
 use super::target::DropTargetKind;
-use crate::features::library::folder_card::THUMB_CAP;
+
+/// The most covers a plate — and so a fold preview — fills.
+const THUMB_CAP: usize = library_core::view::PLATE_CELLS;
 
 /// How many items the new shelf must hold before the drag offers to make it.
 ///

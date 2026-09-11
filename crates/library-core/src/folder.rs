@@ -104,6 +104,10 @@ impl FolderOpts {
 
     /// A size in bytes, as the sheet prints it. Whole KB drops the decimals so
     /// the control reads "30 KB" and not "30.0 KB".
+    /// NOT [`crate::text::human_size`], and deliberately: the dial's rows must
+    /// scan as one column of numbers in the SAME unit (`8 KB`, `16 KB` …
+    /// `512 KB`), where the size of a book's file is worth switching units for
+    /// (`1.5 MB`). Two rules, one line of reasoning each.
     pub fn min_size_label(&self) -> String {
         if self.min_size.is_multiple_of(1024) {
             format!("{} KB", self.min_size / 1024)
@@ -265,10 +269,6 @@ impl WatchedFolder {
     /// Whether a rescan may place this fingerprint. A tombstone wins over
     /// everything: the reader said no, and the file being unchanged since is
     /// not a new argument.
-    pub fn may_place(&self, fp: &Fingerprint) -> bool {
-        !self.is_ignored(fp)
-    }
-
     /// Remember what this scan saw, for the fingerprints this folder placed.
     ///
     /// Written on every scan, including one that changed nothing: the menu's
@@ -343,14 +343,22 @@ impl Tombstone {
 }
 
 /// Make a persisted folder list internally valid: drop rows with no id or no
-/// root, dedupe by root (first wins), clamp the size threshold into the range
-/// the sheet can produce, and empty a format set that would admit nothing.
-/// Idempotent.
+/// root, fold rows that name the same root onto the first of them, drop what is
+/// left that duplicates an id, clamp the size threshold into the range the sheet
+/// can produce, and empty a format set that would admit nothing. Idempotent.
+///
+/// Two keys, and they cannot collapse into one: a duplicate ROOT is two rows for
+/// one directory (the first one's ledger and options survive, because every
+/// writer looks a folder up by root), while a duplicate ID is a row the shelves
+/// still name — so both have to go, in that order, or a shelf left pointing at a
+/// dropped id loses its folder and `crate::blob::sanitize` drops the shelf with
+/// it.
 pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
-    let mut seen = HashSet::new();
-    folders.retain(|f| {
-        !f.id.trim().is_empty() && !f.root.trim().is_empty() && seen.insert(f.root.clone())
-    });
+    let mut seen_roots = HashSet::new();
+    folders.retain(|f| !f.id.trim().is_empty() && !f.root.trim().is_empty());
+    folders.retain(|f| seen_roots.insert(f.root.clone()));
+    let mut seen_ids = HashSet::new();
+    folders.retain(|f| seen_ids.insert(f.id.clone()));
     for f in folders.iter_mut() {
         f.opts.min_size = f
             .opts
@@ -469,16 +477,14 @@ mod tests {
     #[test]
     fn the_ledger_skips_what_it_placed_and_honours_a_tombstone() {
         let mut f = folder("/books");
-        assert!(f.may_place(&fp(1)));
+        assert!(!f.is_ignored(&fp(1)));
         f.mark_placed(fp(1));
         assert!(f.placed.contains(&fp(1)));
         // Placing is not a tombstone: the book is on a shelf, so a rescan
         // skips it through `placed`, and removing it later still has to stick.
-        assert!(f.may_place(&fp(1)));
         assert!(!f.is_ignored(&fp(1)));
         f.ignored.push(stone(1));
-        assert!(f.is_ignored(&fp(1)));
-        assert!(!f.may_place(&fp(1)), "a removal outranks everything");
+        assert!(f.is_ignored(&fp(1)), "a removal outranks everything");
     }
 
     #[test]
@@ -579,6 +585,20 @@ mod tests {
         sanitize(&mut folders);
         assert_eq!(folders.len(), 1);
         assert_eq!(folders[0].opts.min_size, MIN_SIZE_CEIL);
+    }
+
+    #[test]
+    fn two_rows_of_one_id_never_both_survive() {
+        // Shelves and `placed` sets name folder ids, so a blob that mints the
+        // same id twice for two DIFFERENT roots would strand one of them: the
+        // list has to keep one row per id as well as one per root.
+        let a = folder("/books");
+        let mut b = folder("/papers");
+        b.id = a.id.clone();
+        let mut folders = vec![a.clone(), b];
+        sanitize(&mut folders);
+        assert_eq!(folders.len(), 1, "one row per id");
+        assert_eq!(folders[0].root, a.root, "and it is the first one");
     }
 
     #[test]
