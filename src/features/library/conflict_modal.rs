@@ -94,6 +94,14 @@ struct Info {
     /// Whether the arrival is a file with no row of its own yet, which is the
     /// fact that decides which three rows the sheet offers.
     import: bool,
+    /// Whether the arriving file sits at an address the library already
+    /// READS. An *add as new* of that file would be a second row of one
+    /// linked file — a duplicate of a read-at-place book, which the library
+    /// does not make — so the sheet withholds the row and offers the two
+    /// answers that add no copy: go to the book, or leave a pointer. A
+    /// same-NAME arrival from a different file keeps all three: its *as new*
+    /// is a second book of different bytes, not a second door on one file.
+    twin_address: bool,
     /// The name already on the level, which *already imported* goes to and
     /// *make link* points at.
     existing_name: String,
@@ -135,6 +143,14 @@ impl Info {
             &ask.arrival.shelf_id,
             &ask.arrival.name,
         );
+        // An arrival at an address the library already reads is the same file
+        // the colliding row may be wearing: *add as new* of it is withheld
+        // below, because two rows of one linked file are a duplicate.
+        let twin_address = ask.arrival.file.as_ref().is_some_and(|file| {
+            rows.iter()
+                .filter_map(|row| row.book())
+                .any(|book| book.path() == file.path)
+        });
         // The row's OWN key, not its address: a book of its own keeps its
         // marks under a key of its id, and a count taken from the address would
         // promise a loss the removal cannot make.
@@ -150,6 +166,7 @@ impl Info {
         Self {
             incoming: ask.arrival.name.clone(),
             import: ask.arrival.is_import(),
+            twin_address,
             existing_name: ask.existing_name.clone(),
             marks,
             new_name,
@@ -170,7 +187,14 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
         format!("Already {}", info.where_line)
     };
     let import = info.import;
-    let question = if import {
+    let twin_address = info.twin_address;
+    let question = if import && twin_address {
+        format!(
+            "“{}” is already {} — the library reads this very file, and a file it reads in \
+             place is one book, never two. Go to the book you have, or put a link here.",
+            info.incoming, info.where_line
+        )
+    } else if import {
         format!(
             "“{}” is already {}. Add a second book of its own, put a link here \
              instead, or go to the one you have.",
@@ -249,13 +273,17 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                                         conflict::answer(state, Answer::GoToExisting)
                                     })
                                 />
-                                <ChoiceRow
-                                    label="Add as new"
-                                    note=new_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer(state, Answer::AsNew)
-                                    })
-                                />
+                                {(!twin_address).then(move || {
+                                    view! {
+                                        <ChoiceRow
+                                            label="Add as new"
+                                            note=new_note.clone()
+                                            on_click=Callback::new(move |_| {
+                                                conflict::answer(state, Answer::AsNew)
+                                            })
+                                        />
+                                    }
+                                })}
                                 <ChoiceRow
                                     label="Make link"
                                     note=LINK_NOTE.to_string()
@@ -359,11 +387,33 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
     } else {
         format!("Into “{existing}”")
     };
-    let question = format!(
-        "“{incoming}” is arriving, and “{existing}” is already on this shelf. \
-         Keep the one that is here, seat this file in its place, or keep both \
-         under a name of its own."
-    );
+    // The file arriving is the very file the row on the shelf reads — a
+    // re-import of a read-at-place folder's own book. *As new* of it would be
+    // a second row of one linked file, which the library does not make, so
+    // the sheet offers the two answers that add no copy. A different file
+    // wearing the same name keeps all three, and a STORED folder keeps all
+    // three too: its *as new* is a second copy in the store, a book of its
+    // own bytes rather than a second door on one file.
+    let twin = ask.in_place
+        && state.library.books.with_untracked(|rows| {
+            ask.arrival.file.as_ref().is_some_and(|file| {
+                find_row(rows, &ask.existing_id)
+                    .and_then(|row| row.book())
+                    .is_some_and(|book| book.path() == file.path)
+            })
+        });
+    let question = if twin {
+        format!(
+            "“{incoming}” is arriving, and “{existing}” on this shelf reads this very file. \
+             Keep the one that is here, or seat this file in its place."
+        )
+    } else {
+        format!(
+            "“{incoming}” is arriving, and “{existing}” is already on this shelf. \
+             Keep the one that is here, seat this file in its place, or keep both \
+             under a name of its own."
+        )
+    };
     let merge_note =
         format!("One book — “{existing}” stays, and takes this file's measurement");
     const REPLACE_NOTE: &str =
@@ -416,17 +466,21 @@ fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                             )
                         })
                     />
-                    <ChoiceRow
-                        label="As new"
-                        note=new_note
-                        on_click=Callback::new(move |_| {
-                            conflict::answer_folder_merge(
-                                state,
-                                FolderMergeAnswer::AsNew,
-                                apply_all.get_untracked(),
-                            )
-                        })
-                    />
+                    {(!twin).then(move || {
+                        view! {
+                            <ChoiceRow
+                                label="As new"
+                                note=new_note.clone()
+                                on_click=Callback::new(move |_| {
+                                    conflict::answer_folder_merge(
+                                        state,
+                                        FolderMergeAnswer::AsNew,
+                                        apply_all.get_untracked(),
+                                    )
+                                })
+                            />
+                        }
+                    })}
                 </div>
                 {(waiting > 0).then(|| {
                     let label = format!("Apply to all {}", waiting + 1);

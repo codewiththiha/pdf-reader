@@ -394,7 +394,10 @@ the filesystem.
 - **A watched folder can give a book back.** Its import menu keeps a tombstone per removal — the name
   the shelf showed, how long ago it went, how big it is — and offers the book back after measuring the
   file to check it is still there. An explicit restore ignores the folder's format and size filters,
-  because an explicit ask is an explicit choice. The same menu answers the other question without
+  because an explicit ask is an explicit choice. So does an explicit re-import of the same file, from
+  whichever side it comes: the log is spent, the book returns wearing the name the shelf showed, and
+  it is lit up where it lands — and until that ask, every rescan stays silent about the file, which
+  is what the log is for. The same menu answers the other question without
   walking anything: a book still inside the folder on disk but no longer on any shelf the folder owns
   is offered as a move, with two answers — file it here as well, which is a second membership and no
   second copy, or go and look at where it went, which closes the menu, moves the breadcrumb and lights
@@ -415,7 +418,10 @@ the filesystem.
   `1_2` and so on, the counter a file manager appends, counted against that shelf's own names and
   promised on the row before you click; **Make link** puts a pointer on the shelf instead of a copy.
   A file has no book of its own yet, so none of these answers can cost you one. Home is a level like
-  any other and asks the same question of the books nobody has filed.
+  any other and asks the same question of the books nobody has filed. One row is withheld when the
+  arriving file is the very file the library already reads: **Add as new** of it would be a second
+  book of one linked file, and the sheet offers the two answers that add no copy — go to the book you
+  have, or put a link here.
 - **Dragging a book onto a shelf that has the name asks which book the shelf keeps.** Both sides are
   books you already have, so the three answers are the three things a reader can mean about them:
   **Merge** folds the one you dragged into the one that was there — the further place in it wins, so
@@ -426,13 +432,22 @@ the filesystem.
   before you click; **As new** keeps both, yours under the next free name beside it. The two sheets
   are two different types in the code, so a move can never be offered a link, and a file can never
   be offered a replace.
+- **Importing a folder the library already reads in place does not ask — it tells.** The folder
+  itself, or any subfolder inside a tree the library reads where it stands, is one shelf already:
+  the import answers with an *already imported* note, and closing it goes to the shelf you meant
+  and lights it up. A linked folder cannot mint a second instance of itself, and a shelf of the
+  library's own copies can, so a stored folder still asks.
 - **Importing a FOLDER whose name the level already holds asks its own question**, before the walk
   rather than after it: **Add as new** imports it under the next free name (`Books_1`, promised on
-  the row); **Make link** imports nothing and leaves a pointer that lights the folder where it is
-  when you tap it; **Merge into it** files the folder's books onto the shelf that is here, and a
-  book whose name that shelf already holds is asked one by one on a compact sheet — Merge, Replace
-  or As new — with an apply-to-all switch for a reader who has seen enough of the folder to answer
-  for the rest. Books nothing collides with simply go in.
+  the row) — offered to a stored import only, since as new of a read-at-place folder is the second
+  instance the note above exists to prevent; **Make link** imports nothing and leaves a pointer
+  that lights the folder where it is when you tap it; **Merge into it** files the folder's books
+  onto the shelf that is here, and a book whose name a shelf already holds is asked one by one on
+  a compact sheet — Merge, Replace or As new — at every level of the tree that already stands, not
+  only the top, with an apply-to-all switch for a reader who has seen enough of the folder to
+  answer for the rest. As new is withheld when the arriving file is the very file the shelf's book
+  reads: two rows of one linked file are a duplicate, and the library does not make those. Books
+  nothing collides with simply go in.
 - **Importing a file puts a book where you dropped it.** A file the library already holds somewhere
   else is not a reason for a shelf to stay empty: importing `notes.md` into a second folder gives
   that folder its own book, with its own highlights and its own place in it, and the first folder

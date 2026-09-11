@@ -45,7 +45,7 @@ use library_core::book::{
     Book, Fingerprint, Origin, Row, add_book, apply_check, book_rows, book_rows_mut, find_row,
 };
 use library_core::conflict::Arrival;
-use library_core::folder::{FolderOpts, WatchedFolder};
+use library_core::folder::{FolderOpts, Tombstone, WatchedFolder};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
@@ -212,12 +212,22 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
 /// answer, and a run that ends on "Imported 0 books" with no sheet in between
 /// is the silent nothing the book collision used to be. A folder colliding
 /// with its OWN previous shelf asks too — the continuation is a choice rather
-/// than a surprise — and its ask carries which kind of question it is, so the
-/// sheet can word it as the continuation it is while offering the same three
-/// answers: an *as new* tree of one folder holds that folder's books as
-/// memberships of the rows the library holds, which is a second arrangement
-/// and never a second copy.
+/// than a surprise — UNLESS the library already reads that very folder in
+/// place: a linked folder cannot mint a second instance of itself, or of a
+/// subfolder inside its own tree, so re-picking one is answered before any
+/// sheet with "already imported" and a highlight of the shelf the reader
+/// meant (`covered_shelf`). The sheet then withholds the *as new* answer from
+/// a read-at-place arrival, because as new of a linked folder is exactly the
+/// second instance the gate exists to prevent; a stored arrival keeps all
+/// three answers, its copies being the library's own.
 pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
+    // The read-at-place gate: this folder — or a rung inside a tree the
+    // library reads in place — is already a shelf here, and the honest
+    // answer is a sentence and a highlight, never a second instance.
+    if let Some((shelf_id, name)) = covered_shelf(state, &root) {
+        conflict::raise_already_imported(state, shelf_id, name);
+        return;
+    }
     let incoming = folder_label(&root);
     let shelves = state.library.shelves.get_untracked();
     if let Some(existing_id) = library_core::conflict::collide_shelf(&shelves, None, &incoming) {
@@ -249,6 +259,49 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
         return;
     }
     proceed_folder(state, root, opts, RootPlan::default());
+}
+
+/// The standing shelf an in-place tree already holds for `root`, if any: the
+/// folder's own root shelf when `root` is a folder the library reads in
+/// place, or the rung shelf when `root` is a subfolder inside one.
+///
+/// The "already imported" gate answers only for READ-AT-PLACE trees: their
+/// shelves are the OS folders themselves, so a second import of the same
+/// ground is at best a no-op and at worst a duplicate of every book on it.
+/// Stored trees are never covered — a stored import is the library's own
+/// copy, and whether to make another is the reader's call, asked through the
+/// ordinary name question.
+fn covered_shelf(state: AppState, root: &str) -> Option<(String, String)> {
+    let folders = state.library.folders.get_untracked();
+    let shelves = state.library.shelves.get_untracked();
+    for folder in folders.iter().filter(|f| f.opts.in_place) {
+        let Some(rel) = rel_under(root, &folder.root) else {
+            continue;
+        };
+        let Some(shelf_id) = folder.shelf_map.get(&rel) else {
+            continue;
+        };
+        if let Some(shelf) = shelves.iter().find(|s| &s.id == shelf_id) {
+            return Some((shelf.id.clone(), shelf.name.clone()));
+        }
+    }
+    None
+}
+
+/// `root` as a rung key inside `base`'s tree: the empty key when the two are
+/// the same folder, the `/`-separated remainder when `root` sits inside
+/// `base`, and `None` when it does not. The remainder has to start on a
+/// directory edge, so `/books2` is never "inside" `/books`.
+fn rel_under(root: &str, base: &str) -> Option<String> {
+    fn norm(p: &str) -> String {
+        p.trim_end_matches(['/', '\\']).replace('\\', "/")
+    }
+    let (root, base) = (norm(root), norm(base));
+    if root == base {
+        return Some(String::new());
+    }
+    let rest = root.strip_prefix(base.as_str())?.strip_prefix('/')?;
+    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 /// Claim the root and start the run — the half of [`import_folder`] that is
@@ -572,13 +625,14 @@ async fn run_folder(
     // new files — and a re-import of one folder, whose every file is known,
     // would hold nothing at all.
     //
-    // A merge asks before it places: a ROOT-rung file whose name the
-    // merged-into shelf holds is the compact sheet's per-file question —
-    // even when the row wearing the name is the row the file resolves to,
-    // because a reader who re-imports a folder to reconcile it is owed the
-    // three answers per file (one book / replace / as new), not a card that
-    // says nothing was new. Deeper rungs and files no name collides with
-    // join silently: new books in a merged folder are the default, not a case.
+    // A merge asks before it places: a file whose name a STANDING rung holds
+    // — the root shelf the answer named, or any subfolder shelf a previous
+    // run mapped — is the compact sheet's per-file question, even when the
+    // row wearing the name is the row the file resolves to, because a reader
+    // who re-imports a folder to reconcile it is owed the three answers per
+    // file (one book / replace / as new) wherever the names meet, not a card
+    // that says nothing was new. Files no standing name collides with join
+    // silently: new books in a merged folder are the default, not a case.
     let mut replacements: Vec<(String, FoundFile)> = Vec::new();
     let mut asks: Vec<ConflictAsk> = Vec::new();
     if plan.rename.is_some() || plan.into.is_some() {
@@ -603,9 +657,16 @@ async fn run_folder(
             let Some(row_id) = known else {
                 continue;
             };
-            let at_root = folder.shelf_key(file).is_empty();
-            if let Some(target) = plan.into.as_deref().filter(|_| at_root) {
-                let arrival = Arrival::import(file.clone(), target.to_string(), None);
+            let key = folder.shelf_key(file);
+            let target = plan.into.as_deref().and_then(|into| {
+                if key.is_empty() {
+                    Some(into.to_string())
+                } else {
+                    folder.shelf_map.get(&key).cloned()
+                }
+            });
+            if let Some(target) = target {
+                let arrival = Arrival::import(file.clone(), target, None);
                 if let Some(existing_id) =
                     library_core::conflict::collide(&books, &shelves_now, &arrival)
                 {
@@ -650,20 +711,26 @@ async fn run_folder(
     adds.retain(|f| seen.insert(f.fp));
 
     // The same question for the files the ledger has NOT seen — the merge's
-    // genuinely new arrivals, whose names the merged-into shelf may still
-    // hold: a collision here is the compact sheet's too (one book / replace /
-    // as new, one at a time or one answer for all). The known files were asked
-    // by the planned-tree pass above. Everything else goes in without being
-    // asked — new books are the default, not a case.
-    // Subfolder files are never asked: their rungs are minted fresh under the
-    // merged root, where nothing is standing to collide.
-    if let Some(target) = plan.into.as_deref() {
+    // genuinely new arrivals, whose names a standing rung may still hold: a
+    // collision here is the compact sheet's too (one book / replace / as new,
+    // one at a time or one answer for all). The known files were asked by the
+    // planned-tree pass above. Everything else goes in without being asked —
+    // new books are the default, not a case. A new file inside a SUBFOLDER a
+    // previous run mapped is asked against that subfolder's shelf; a file in
+    // a rung being minted fresh has nothing standing to collide with.
+    if plan.into.is_some() {
         let shelves_now = state.library.shelves.get_untracked();
         adds.retain(|file| {
-            if !folder.shelf_key(file).is_empty() {
+            let key = folder.shelf_key(file);
+            let target = if key.is_empty() {
+                plan.into.clone()
+            } else {
+                folder.shelf_map.get(&key).cloned()
+            };
+            let Some(target) = target else {
                 return true;
-            }
-            let arrival = Arrival::import(file.clone(), target.to_string(), None);
+            };
+            let arrival = Arrival::import(file.clone(), target, None);
             match library_core::conflict::collide(&books, &shelves_now, &arrival) {
                 Some(existing_id) => {
                     let existing_name = find_row(&books, &existing_id)
@@ -742,6 +809,10 @@ async fn run_folder(
     let mut relink_count = 0usize;
     let mut new_shelves: Vec<Shelf> = Vec::new();
     let mut placements: Vec<(String, String)> = Vec::new();
+    // Books that landed over a removal this folder remembered: the run
+    // reveals the first of them at the end, because "it came back" is worth
+    // one highlight and no sentence.
+    let mut restored: Vec<String> = Vec::new();
     let in_place = folder.opts.in_place;
     let folder_id = folder.id.clone();
     let planned_name = plan.rename.clone();
@@ -785,14 +856,27 @@ async fn run_folder(
             };
             // Measured by the shell's walk, so this is a real fingerprint and
             // not a placeholder: nothing about this book is pending.
-            let book = Book::new(
+            //
+            // A file this folder remembers REMOVING is coming back on an
+            // explicit ask, and the reader should not notice it was ever
+            // gone: the row returns wearing the name the shelf showed, the
+            // placement below lifts the removal, and the run reveals the
+            // book at the end.
+            let stone = ledger::find_tombstone(&folder, &file.fp).cloned();
+            let mut book = Book::new(
                 book_id,
                 file.fp,
                 file.format().unwrap_or(Format::Pdf),
                 origin,
                 now,
             );
+            if let Some(title) = stone.as_ref().and_then(|s| s.title.clone()) {
+                book.title = Some(title);
+            }
             let placed_id = add_book(books, book);
+            if stone.is_some() {
+                restored.push(placed_id.clone());
+            }
             let key = folder.shelf_key(file);
             // The whole chain, not the leaf: importing "1" whose inside is "2",
             // "3" and four books has to produce "1" at the root with "2", "3" and
@@ -897,6 +981,13 @@ async fn run_folder(
     // arrives with dozens of books at once, and a plate of fallbacks is not a
     // shelf the reader can scan.
     super::covers::backfill_missing(state);
+
+    // A book that was removed and has just come back is revealed: the
+    // import succeeded by making it reappear where the folder holds it, and
+    // the highlight is how the reader is told so without a sentence.
+    if let Some(first) = restored.into_iter().next() {
+        super::reveal::reveal_book(state, &first);
+    }
 
     // The asks are raised after the clean half landed and the blob was
     // written: the sheet counts against the level as the landing left it, and
@@ -1126,11 +1217,28 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     // One persist for the batch rather than one per file: a drop of four
     // hundred files is one write, and a reader who closes the window halfway
     // through an import should find all of it or none of it.
+    let mut restored: Vec<String> = Vec::new();
     for arrival in &clean {
         let Some(file) = arrival.file.as_ref() else {
             continue;
         };
-        land_file(state, file, None, &arrival.shelf_id, arrival.index);
+        // A file some folder remembers removing comes back the same way it
+        // does in a folder run: wearing the name its shelf showed, with the
+        // removal lifted and the landing revealed below.
+        let stone = lift_stone_for(state, file);
+        let id = land_file(
+            state,
+            file,
+            stone.as_ref().and_then(|s| s.title.clone()),
+            &arrival.shelf_id,
+            arrival.index,
+        );
+        if stone.is_some() {
+            restored.push(id);
+        }
+    }
+    if let Some(first) = restored.into_iter().next() {
+        super::reveal::reveal_book(state, &first);
     }
     // The landed rows may read from addresses the cover cache has no art for:
     // one ask for the batch rather than one per file.
@@ -1147,6 +1255,31 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         t.waiting = waiting;
         t.finish();
     });
+}
+
+/// The removal a folder holds for this file, lifted — `None` when no folder
+/// remembers removing it.
+///
+/// The match is the FINGERPRINT, not the address: a file that was removed
+/// from a folder, moved across the disk by the OS or by hand, and dropped
+/// back into the library is the same file the log was written for, and an
+/// explicit import of it is the reader asking for that book again. The log
+/// that kept a watchful rescan from resurrecting the book is spent by the
+/// ask; what comes back is the book, in its old name, with a highlight.
+fn lift_stone_for(state: AppState, file: &FoundFile) -> Option<Tombstone> {
+    let owner = state.library.folders.with_untracked(|folders| {
+        folders
+            .iter()
+            .find(|f| ledger::find_tombstone(f, &file.fp).is_some())
+            .map(|f| f.id.clone())
+    })?;
+    let mut stone = None;
+    state.library.folders.update(|folders| {
+        if let Some(folder) = folders.iter_mut().find(|f| f.id == owner) {
+            stone = ledger::restore_deleted(folder, &file.fp);
+        }
+    });
+    stone
 }
 
 /// Land one measured file as a book row on one level.

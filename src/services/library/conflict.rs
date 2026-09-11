@@ -532,6 +532,30 @@ pub fn cancel_shelf(state: AppState) {
     state.library.shelf_conflict_open.set(false);
 }
 
+/// Tell the reader the folder they picked is already a shelf here, and light
+/// that shelf up when they acknowledge it.
+///
+/// Not a question: a folder the library reads in place cannot be imported
+/// twice — the second import would either duplicate every book in it or
+/// silently do nothing, and both read as broken. So the honest answer is a
+/// sentence and a highlight, and the reveal rides the modal's close rather
+/// than its open, because a light that burns its 1.6 seconds behind a modal
+/// nobody has dismissed is a light nobody sees.
+pub fn raise_already_imported(state: AppState, shelf_id: String, shelf_name: String) {
+    state
+        .library
+        .already_imported
+        .set(Some((shelf_id, shelf_name)));
+    state.library.already_imported_open.set(true);
+}
+
+/// Acknowledge the "already imported" note. The highlight is the modal's own
+/// close effect's job, so every way out — the button, the backdrop, Escape,
+/// the lane — ends on the shelf being lit.
+pub fn close_already_imported(state: AppState) {
+    state.library.already_imported_open.set(false);
+}
+
 // ---------------------------------------------------------------------------
 // The compact sheet's answers: one file of a merging folder, at a time.
 // ---------------------------------------------------------------------------
@@ -587,6 +611,24 @@ pub fn answer_folder_merge(state: AppState, answer: FolderMergeAnswer, apply_all
 fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAnswer) {
     let Some(file) = ask.arrival.file.clone() else {
         return;
+    };
+    // The sheet withholds *as new* from a file whose very address a
+    // read-at-place row already reads — a second row of one linked file is a
+    // duplicate, and the library does not make those — but apply-to-all can
+    // still carry the answer across to such a question, so the rule stands on
+    // the write side too. The twin's honest equivalent of "keep both" is
+    // "keep the one", which is the merge.
+    let answer = match answer {
+        FolderMergeAnswer::AsNew
+            if ask.in_place
+                && state.library.books.with_untracked(|rows| {
+                    find_by_id(rows, &ask.existing_id)
+                        .is_some_and(|b| b.path() == file.path)
+                }) =>
+        {
+            FolderMergeAnswer::Merge
+        }
+        other => other,
     };
     match answer {
         FolderMergeAnswer::Merge => {

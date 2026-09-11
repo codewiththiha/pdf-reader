@@ -487,6 +487,15 @@ there. And it takes the tombstone out without touching `placed`, which the impor
 when the book actually lands: a fingerprint the ledger skips with no book behind it is the one state a
 folder cannot recover from on its own.
 
+The log also gives a removed book its third way back: an explicit import of the FILE — a folder run
+that walks it, or the file dropped on a shelf by itself — spends the tombstone whichever folder wrote
+it, because the match is the fingerprint and not the address: a file removed here, moved across the
+disk and imported there is the file the log was written for. The row returns wearing the name the
+shelf showed, and the run reveals it when it lands, so a book that reappeared is a book the reader
+sees appear. A rescan, meanwhile, stays silent about the file, which is the log's whole point: the
+removal was the reader's decision, a watchful folder does not overrule it, and only the reader's own
+import does.
+
 ### When the level already holds the name
 
 A placement — a drag, a lift out to the root, a bulk filing, a loose-file import — whose NAME the
@@ -534,7 +543,11 @@ An **import** asks what to put on this level, and nothing it offers is destructi
 - **Add as new** places the arrival under the next free name (`conflict::next_name`, counted
   against that level's own names and promised on the row before the click), as a second book of the
   address marked `Book::independent`, so its highlights and its resume point are its own rather
-  than the first copy's.
+  than the first copy's. The row is withheld when the arrival sits at an address the library
+  already READS: a second row of one linked file is a duplicate of a read-at-place book, and the
+  sheet offers the two answers that add no copy — go to the book, or leave a pointer. Two files
+  that share a NAME but not bytes keep all three rows, because their as-new is a second book of
+  different content, not a second door on one file.
 - **Make link** places a `Row::Link` instead of a copy: a row on this level with the book's name,
   no fingerprint, no page, no cover and no storage, which opens by revealing the book wherever it
   is filed. It is the answer for "I want it reachable from here" that used to be a second copy of a
@@ -570,32 +583,53 @@ next onto the screen, and Cancel drops them, which is what Cancel has always mea
 "apply to all" and no queue bookkeeping beyond the list — with one exception, below, where the
 questions are forty files of one folder rather than forty gestures.
 
-A FOLDER has its own spelling of the question, asked before the walk rather than after it: an
-import whose name the root level already holds (`library_core::conflict::collide_shelf`, which
-counts the level's SHELF names and nothing else) raises the folder sheet, because two doors of one
-name on one level are two doors a reader cannot tell apart — which is what two books of one name
-are. Its answers are about the whole run rather than one placement: *Add as new* mints the folder's
-root under the next free counter (`next_shelf_name`) and imports into its own tree; *Make link*
-imports nothing and leaves a pointer row instead — a `Row::Link` whose target is a SHELF id, which
-the ids' first letters keep disjoint from a book's, and whose tap reveals the shelf it names
-(`services::library::reveal_shelf`: its level, then its card, lit); *Merge into it* maps the
-folder's root rung onto the shelf that is here — the folder's `shelf_map` carries the promise, so
-every later rescan keeps it — and every root-level file whose NAME that shelf already holds goes
-to the compact per-file sheet: Merge (the row stays and takes the file's measurement), Replace, or
-As new, one at a time or, behind the sheet's apply-to-all switch, one answer for the whole queue.
+A FOLDER has its own spelling of the question, asked before the walk rather than after it, and
+before the question a GATE that has no answers at all. The gate is about read-at-place: a shelf
+cut from a linked folder IS the OS folder, so one folder is one shelf and a second instance of it
+is a second door onto the same ground — every book on it duplicated. An import that picks a folder
+the library already reads in place, itself or any subfolder inside one of its trees
+(`import::covered_shelf`, which walks the in-place folders' `shelf_map` and nothing else),
+therefore never reaches a sheet: the "already imported" note
+(`features::library::already_imported_modal`) says what the pick already is, and closing it
+navigates to the shelf the reader meant and lights it, wherever in the tree it hangs. Stored trees
+never hit the gate — the library's own copies are the library's to make another of, and that is
+the question below.
+
+Past the gate, an import whose name the root level already holds
+(`library_core::conflict::collide_shelf`, which counts the level's SHELF names and nothing else)
+raises the folder sheet, because two doors of one name on one level are two doors a reader cannot
+tell apart — which is what two books of one name are. Its answers are about the whole run rather
+than one placement, and WHICH of them are on offer is the arrival's own fact: *Add as new* mints
+the folder's root under the next free counter (`next_shelf_name`) and imports into its own tree,
+and only a STORED arrival is offered it, because as new of a read-at-place folder is the second
+instance the gate exists to prevent. *Make link* imports nothing and leaves a pointer row instead
+— a `Row::Link` whose target is a SHELF id, which the ids' first letters keep disjoint from a
+book's, and whose tap reveals the shelf it names (`services::library::reveal_shelf`: its level,
+then its card, lit). *Merge into it* maps the folder's root rung onto the shelf that is here — the
+folder's `shelf_map` carries the promise, so every later rescan keeps it — and every file whose
+NAME a STANDING rung holds goes to the compact per-file sheet: the root shelf the answer named,
+and any subfolder shelf a previous run mapped, because a merge reuses the rungs it has rather than
+minting fresh ones, and screening only the root would leave a folder of three subfolders asked
+about one of them. The compact sheet's answers are Merge (the row stays and takes the file's
+measurement), Replace, or As new, one at a time or, behind the apply-to-all switch, one answer for
+the whole queue — and As new is withheld, here too, from a file whose very address a read-at-place
+row reads, with the rule kept on the write side as well (`apply_folder_merge` folds such an answer
+into Merge) because apply-to-all outruns the rows a single sheet showed.
+
 A file nothing collides with simply goes in: new books in a merged folder are the default, not a
 case — and "a file nothing collides with" is answered over EVERY file the walk found, not only the
 ones the ledger marked new: a planned tree (a merge's, or an *as new* one) owes a membership of the
 row the library holds for each file it already knows, because one content is one identity and one
 identity is one row, and a second shelf of one folder is a second arrangement rather than a second
-copy. A folder colliding with its OWN previous shelf asks too — a reader who picked a folder and
-clicked Import asked for an answer, and a run that ends on "Imported 0 books" with no sheet in
-between is the silent nothing the book collision used to be — and it gets the same three answers,
-worded as the continuation it is. Its merge is the reconcile a re-import asks for: every root-level
-file whose name the shelf holds goes to the compact per-file sheet — a file's OWN row included,
-which is what makes re-importing one folder a question per book rather than a shrug — and *Merge*
-there is the one-book answer that keeps everything as it is. A nesting still asks nothing at all,
-because a nesting writes a parent and not a membership.
+copy. A folder colliding with its OWN previous shelf asks too, when the library's copy of it is
+what collided — a reader who picked a folder and clicked Import asked for an answer, and a run
+that ends on "Imported 0 books" with no sheet in between is the silent nothing the book collision
+used to be — and it gets the same answers, worded as the continuation it is. Its merge is the
+reconcile a re-import asks for: every file whose name a standing rung holds goes to the compact
+per-file sheet — a file's OWN row included, which is what makes re-importing one folder a question
+per book rather than a shrug — and *Merge* there is the one-book answer that keeps everything as
+it is. A nesting still asks nothing at all, because a nesting writes a parent and not a
+membership.
 
 Nesting asks nothing at all, and that is the rule rather than an oversight: filing a folder inside
 another writes no membership, so nothing arrives on the parent's level for a name to collide with.

@@ -22,6 +22,8 @@
 //!     a folder merge's per-file asks wear its compact sheet
 //!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
 //!     folder question an import asks before its walk
+//!   * [`already_imported_modal`] — no question at all: a folder the library
+//!     already reads in place, named and lit up
 //!   * [`selection`] — the hold that starts a multi-select, and the bar that acts
 //!     on it
 //!   * [`context_menu`] — the right-click: one menu per kind of thing under the
@@ -47,6 +49,7 @@
 
 pub mod add_card;
 pub mod add_menu;
+pub mod already_imported_modal;
 pub mod book_card;
 pub mod breadcrumb;
 pub mod conflict_modal;

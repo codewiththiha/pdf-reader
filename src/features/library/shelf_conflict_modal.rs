@@ -12,10 +12,16 @@
 //!
 //! A folder colliding with its OWN previous shelf asks too — a re-import that
 //! ended on "Imported 0 books" with no sheet in between was the silent
-//! nothing this exists to stop — and gets the same three answers, worded as
-//! the continuation it is: the counter-named tree holds the folder's books as
-//! memberships of the rows the library already holds, and the merge is the
-//! reconcile a re-import asks for, its per-file questions asked one by one.
+//! nothing this exists to stop — and gets the same answers, worded as the
+//! continuation it is. With ONE gate in front of all of it: a folder the
+//! library already READS AT ITS PLACE — itself, or a subfolder inside its own
+//! tree — never reaches this sheet at all. A linked shelf is the OS folder,
+//! and one folder is one shelf; the import answers with the "already in the
+//! library" modal (`already_imported_modal`) and a highlight instead. A
+//! read-at-place arrival keeps this sheet only when a DIFFERENT folder holds
+//! the name, and then it offers two answers, not three — *as new* of a linked
+//! folder is the second instance the gate exists to prevent. A stored arrival
+//! keeps all three: its copies are the library's own.
 //!
 //! A drag never asks this: nesting a shelf writes a parent rather than a
 //! membership, so nothing arrives on a level for a name to collide with — the
@@ -61,6 +67,10 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                 // the rows the library already holds, which is a second
                 // arrangement and never a second copy.
                 let own = ask.own;
+                // A read-at-place import never offers *as new*: the folder's
+                // shelf is the OS folder, and a counter-named twin of it would
+                // be a second door onto the same ground.
+                let in_place = ask.opts.in_place;
                 // The name *as new* would mint, counted against the level's own
                 // shelves at the click — the row promises the counter rather
                 // than asking the reader to take "the next free name" on
@@ -81,6 +91,14 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                          import made. Continue the import into it, give it a shelf of the next \
                          free name, or leave a pointer here instead.",
                         ask.existing_name
+                    )
+                } else if in_place {
+                    format!(
+                        "You are importing the folder “{}”, and this level already has a shelf \
+                         called that. A folder read at its place cannot mint a second shelf of \
+                         itself — leave a pointer to the shelf that is here, or file the \
+                         folder's books into it.",
+                        ask.incoming_name
                     )
                 } else {
                     format!(
@@ -119,13 +137,17 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
                         <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
                             <p class="text-xs text-muted">{question}</p>
                             <div class="mt-3 divide-y divide-line rounded-xl border border-line">
-                                <ChoiceRow
-                                    label="Add as new"
-                                    note=new_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::AsNew)
-                                    })
-                                />
+                                {(!in_place).then(move || {
+                                    view! {
+                                        <ChoiceRow
+                                            label="Add as new"
+                                            note=new_note.clone()
+                                            on_click=Callback::new(move |_| {
+                                                conflict::answer_shelf(state, ShelfAnswer::AsNew)
+                                            })
+                                        />
+                                    }
+                                })}
                                 <ChoiceRow
                                     label="Make link"
                                     note=LINK_NOTE.to_string()
