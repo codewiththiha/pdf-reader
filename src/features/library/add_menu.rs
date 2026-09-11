@@ -151,6 +151,22 @@ fn from_directory(sheet: ImportSheet) {
     });
 }
 
+/// The shelf a pick made from here lands on: the level the reader is looking at,
+/// and nothing at the root — "All" is the library's own order, not a shelf to
+/// file onto, so a pick from there leaves its books unfiled and that is the
+/// honest answer for a handful of loose files.
+///
+/// One spelling for the two ways in, because the grid's add card and the list's
+/// add row are one door in two shapes: a pick from one that filed somewhere the
+/// other would not is a door that behaves differently depending on which layout
+/// the reader happens to be looking at.
+pub(crate) fn add_target(state: AppState) -> Signal<Option<String>> {
+    Signal::derive(move || {
+        let id = state.library.shelf.get();
+        (id != ALL_SHELF).then_some(id)
+    })
+}
+
 #[component]
 pub(crate) fn AddMenu(
     state: AppState,

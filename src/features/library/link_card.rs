@@ -172,7 +172,7 @@ pub(crate) fn LinkRow(
                     let at = remove_id.clone();
                     view! {
                         <button
-                            class="library-row-remove"
+                            class="library-row-action"
                             type="button"
                             title="Remove this link"
                             aria-label=format!("Remove the link to {}", name.clone())

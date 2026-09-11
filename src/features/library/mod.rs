@@ -6,7 +6,11 @@
 //!   * [`page`] — the route: the title bar's three slots, the modal hosts, and the
 //!     drag session with the layer that draws what it is holding
 //!   * [`content`] — the state the page is in (opening, failed, shelf) and the one
-//!     order every view below it renders
+//!     order every view below it renders, plus the one level query both densities
+//!     ask for their doors
+//!   * [`facts`] — the facts about a book a card and a row both paint, read back
+//!     out of the library by id rather than taken from a keyed prop that a content
+//!     change does not re-create
 //!   * [`grid`] / [`list`] / [`folder_card`] / [`book_card`] — the shelf itself
 //!   * [`gestures`] — the press contract every one of those items shares: one
 //!     wrapper's decision, the drag session's endpoints, the keyboard's halves
@@ -26,8 +30,8 @@
 //!     read-at-place folder asks when it is re-picked as copies
 //!   * [`already_imported_modal`] — no question at all: a folder the library
 //!     already reads in place, named and lit up
-//!   * [`selection`] — the hold that starts a multi-select, and the bar that acts
-//!     on it
+//!   * [`selection`] — the hold that starts a multi-select, the mark that says an
+//!     item is in it, and the bar that acts on the set
 //!   * [`context_menu`] — the right-click: one menu per kind of thing under the
 //!     pointer, and the one host every surface asks
 //!   * [`progress_dock`] — the run's ring, in the corner
@@ -59,6 +63,7 @@ pub mod content;
 pub mod context_menu;
 pub mod dnd;
 pub mod empty_state;
+pub mod facts;
 pub mod folder_card;
 pub mod gestures;
 pub mod grid;

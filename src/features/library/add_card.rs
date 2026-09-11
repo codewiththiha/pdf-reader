@@ -15,9 +15,8 @@ use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use library_core::shelf::ALL_SHELF;
 
-use crate::features::library::add_menu::AddMenu;
+use crate::features::library::add_menu::{AddMenu, add_target};
 use crate::state::AppState;
 
 #[component]
@@ -25,11 +24,9 @@ pub(crate) fn AddCard(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let anchor: NodeRef<html::Div> = NodeRef::new();
     // A pick made from inside a shelf files onto it; one made from the root has
-    // no shelf to file onto, and "All" is not a shelf.
-    let target = Signal::derive(move || {
-        let id = state.library.shelf.get();
-        (id != ALL_SHELF).then_some(id)
-    });
+    // no shelf to file onto. The rule is the add menu's, and the list's add row
+    // reads the same one.
+    let target = add_target(state);
 
     view! {
         <div class="book-card book-add" node_ref=anchor>

@@ -40,6 +40,7 @@ use library_core::shelf::ALL_SHELF;
 
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::controls::switch::Switch;
+use crate::components::primitives::menu::choice_row::ChoiceRow;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::services::library::conflict::{self, ConflictAsk, CoveredAnswer, FolderMergeAnswer};
@@ -366,25 +367,6 @@ fn Sheet(state: AppState, info: Info) -> impl IntoView {
                 </Button>
             </SheetFooter>
         </>
-    }
-}
-
-/// One of the three answers: the name of it, and the one line that says what it
-/// does. No icons — the rows are a sentence each, and a glyph beside a sentence
-/// is decoration the reader has to look past. Shared with the folder sheet,
-/// whose rows are the same shape of promise.
-#[component]
-pub(crate) fn ChoiceRow(label: &'static str, note: String, on_click: Callback<()>) -> impl IntoView {
-    view! {
-        <button
-            type="button"
-            class="flex w-full flex-col gap-0.5 px-3.5 py-2.5 text-left transition-colors \
-                   hover:bg-line focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            on:click=move |_| on_click.run(())
-        >
-            <span class="text-sm text-ink">{label}</span>
-            <span class="text-xs text-muted">{note}</span>
-        </button>
     }
 }
 

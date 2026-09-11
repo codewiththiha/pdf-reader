@@ -28,35 +28,18 @@
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use library_core::book::{Book, find_by_id};
+use library_core::book::Book;
 
 use crate::features::library::context_menu::MenuTarget;
 use crate::features::library::gestures::ShelfItemPolicy;
+use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 use crate::services::document;
 use crate::services::library::relink_dialog;
 use crate::state::AppState;
 use crate::state::reader::DEFAULT_PAGE_ASPECT;
-
-/// The facts about the book a card paints, read back out of the library by id
-/// on the frame they are asked for. One derive rather than one per field: they
-/// all move together (a relink rewrites the address AND the art it keys on),
-/// and a card that read six signals would subscribe six times to one list.
-#[derive(Clone)]
-struct CardFacts {
-    /// Where the book lives, on the line that has room for it and nothing
-    /// better to say. A card whose title came from the document gives the
-    /// reader no way to tell two books called "Report" apart; the address does.
-    /// It is also the key the cover cache answers to, which is why a relink
-    /// has to move it: the old address's art belongs to nobody afterwards.
-    path: String,
-    title: String,
-    author: Option<String>,
-    missing: bool,
-    progress: Option<f64>,
-    page_line: String,
-}
 
 /// One book on the shelf.
 ///
@@ -70,27 +53,12 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // as well as from the button.
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
 
-    // Selection is a page-wide mode, so every card asks the same signal rather
-    // than being told about itself.
-    let selecting = state.library.selecting;
 
     // The prop supplies the identity; everything that can move while the card
     // is mounted is read back by it. `None` is the beat between a removal and
     // the list catching up — the card paints its blanks and is gone next tick.
     let id = book.id.clone();
-    let facts_id = id.clone();
-    let facts = Signal::derive(move || {
-        state.library.books.with(|rows| {
-            find_by_id(rows, &facts_id).map(|b| CardFacts {
-                path: b.path().to_string(),
-                title: b.title(),
-                author: b.author(),
-                missing: b.missing,
-                progress: b.progress(),
-                page_line: library_core::text::page_line(b.page, b.num_pages),
-            })
-        })
-    });
+    let facts = book_facts(state, &id);
 
     // Aspect ratio (width / height) for the cover box, so a landscape plate stays
     // landscape on the shelf. Clamped so a pathological page cannot break the
@@ -186,19 +154,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                     // The set membership, printed on the cover while the shelf is
                     // choosing: an outline alone asks the reader to remember which
                     // cards they have already tapped.
-                    {move || {
-                        selecting.get().then(|| {
-                            view! {
-                                <span class="lib-check" aria-hidden="true">
-                                    {move || {
-                                        is_selected.get().then(|| {
-                                            view! { <Icon name=IconName::Check size=11 /> }
-                                        })
-                                    }}
-                                </span>
-                            }
-                        })
-                    }}
+                    <SelectionCheck state=state selected=is_selected />
                     {move || {
                         let Some(f) = facts.get() else {
                             return ().into_any();

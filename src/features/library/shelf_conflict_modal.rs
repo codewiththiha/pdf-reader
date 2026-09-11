@@ -45,7 +45,7 @@ use leptos::prelude::*;
 use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
-use crate::features::library::conflict_modal::ChoiceRow;
+use crate::components::primitives::menu::choice_row::ChoiceRow;
 use crate::services::library::conflict::{self, ShelfAnswer};
 use crate::state::AppState;
 

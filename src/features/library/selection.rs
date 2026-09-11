@@ -40,7 +40,7 @@ use leptos::prelude::*;
 
 use app_chrome::floating::dismiss::{DismissPolicy, DismissTrigger, use_dismiss};
 use app_chrome::floating::types::PlacementSide;
-use app_chrome::icon::IconName;
+use app_chrome::icon::{Icon, IconName};
 use library_core::shelf::{ALL_SHELF, Shelf, can_nest};
 
 use crate::components::primitives::controls::button::{Button, ButtonTone, ButtonVariant};
@@ -54,6 +54,37 @@ use crate::features::library::dnd::controller::DragPayload;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::library::{create_shelf_here, file_many, nest_many};
 use crate::state::AppState;
+
+/// The set-membership mark a cover, a folder's plate and a row's thumbnail all
+/// print while the shelf is choosing.
+///
+/// One component rather than one per density. The mark is the visible half of a
+/// selection — an outline alone asks the reader to remember which cards they have
+/// already tapped — and three copies of it were three places the check could
+/// drift from the set it marks, which is the one disagreement a reader would read
+/// as the app lying about what a click is about to act on.
+///
+/// `selected` is the item's own, passed in rather than read here: the shelf item's
+/// wiring already derives it from the same set, and a mark that read the set a
+/// second way could only ever agree with the outline by luck.
+#[component]
+pub(crate) fn SelectionCheck(state: AppState, selected: Signal<bool>) -> impl IntoView {
+    view! {
+        {move || {
+            state.library.selecting.get().then(|| {
+                view! {
+                    <span class="lib-check" aria-hidden="true">
+                        {move || {
+                            selected
+                                .get()
+                                .then(|| view! { <Icon name=IconName::Check size=11 /> })
+                        }}
+                    </span>
+                }
+            })
+        }}
+    }
+}
 
 /// Enter selection with the pressed card already in it, which is what a hold
 /// means: not "start selecting" and then a second gesture to select this one.

@@ -653,7 +653,11 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.library-row-remove {
+/* The row's trailing 22px button, named for what it IS rather than for the one
+   action it first carried: a shelf row's is "open shelf", and only a book row's
+   and a link row's is the removal's ✕. A class called `remove` on a button that
+   navigates is a class the next reader has to disbelieve. */
+.library-row-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -668,12 +672,12 @@
   cursor: pointer;
   transition: opacity 0.14s ease, color 0.14s ease, background 0.14s ease;
 }
-.library-row:hover .library-row-remove,
-.library-row:focus-visible .library-row-remove,
-.library-row-remove:focus-visible {
+.library-row:hover .library-row-action,
+.library-row:focus-visible .library-row-action,
+.library-row-action:focus-visible {
   opacity: 1;
 }
-.library-row-remove:hover {
+.library-row-action:hover {
   border-color: var(--color-line);
   background: var(--color-surface);
   color: var(--color-ink);

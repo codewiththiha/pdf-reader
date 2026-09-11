@@ -41,6 +41,7 @@ use library_core::text::plural;
 
 use crate::features::library::context_menu::MenuTarget;
 use crate::features::library::gestures::ShelfItemPolicy;
+use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 use crate::state::AppState;
 
@@ -102,9 +103,8 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         })
     });
 
-    let selecting = state.library.selecting;
     // The membership the plate's check mark paints from — the same set the
-    // shell's own selected class reads.
+    // shell's own selected class reads, and the one `SelectionCheck` marks.
     let is_selected = state.library.is_selected(&id);
 
     // The shelf's one press contract, the same wiring a book wears (see
@@ -141,19 +141,7 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         >
             <div class="folder-thumb-grid">
                 <Plate state=state shelf_id=id.clone() depth=0 />
-                {move || {
-                    selecting.get().then(|| {
-                        view! {
-                            <span class="lib-check" aria-hidden="true">
-                                {move || {
-                                    is_selected.get().then(|| {
-                                        view! { <Icon name=IconName::Check size=11 /> }
-                                    })
-                                }}
-                            </span>
-                        }
-                    })
-                }}
+                <SelectionCheck state=state selected=is_selected />
             </div>
             <div class="folder-meta">
                 <span class="folder-name" title=move || { name.get() }>

@@ -63,21 +63,23 @@ use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
-use library_core::book::{Book, Row, find_by_id};
+use library_core::book::{Book, Row};
 use library_core::query;
-use library_core::shelf::{ALL_SHELF, Shelf, children_of, find};
+use library_core::shelf::{Shelf, children_of, find};
 use library_core::sort;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
 
-use crate::features::library::add_menu::AddMenu;
-use crate::features::library::content::ShelfOrder;
+use crate::features::library::add_menu::{AddMenu, add_target};
+use crate::features::library::content::{ShelfOrder, level_folders};
 use crate::features::library::context_menu::MenuTarget;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::folder_card::summary;
 use crate::features::library::gestures::ShelfItemPolicy;
 use crate::features::library::link_card::LinkRow;
+use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
+use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
 use crate::services::document;
 use crate::state::AppState;
@@ -132,27 +134,12 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
     });
 
     // The shelves the tree's top level lists: the prop's root when a mount
-    // pinned one, else the level the page is on — the same level the grid's
-    // folders come from. An open query narrows the doors by name, with the same
-    // rule `crate::features::library::content::visible_folders` applies to the
-    // grid's; the books a search keeps arrive flat in `order`, and the rows
-    // below withhold their members while it is open, so a match is listed once.
-    let roots = Signal::derive(move || {
-        let at = state.library.shelf.get();
-        let terms = state.library.query.get();
-        let parent = match &tree.root {
-            Some(root) => Some(root.clone()),
-            None => (at != ALL_SHELF).then_some(at),
-        };
-        state.library.shelves.with(|shelves| {
-            children_of(shelves, parent.as_deref())
-                .into_iter()
-                .filter(|s| s.id != ALL_SHELF)
-                .filter(|s| query::matches_terms(&s.name, &terms))
-                .cloned()
-                .collect::<Vec<_>>()
-        })
-    });
+    // pinned one, else the level the page is on. One query for both densities —
+    // `crate::features::library::content::level_folders` is the grid's doors and
+    // this tree's, so a search cannot narrow one and not the other. The books a
+    // search keeps arrive flat in `order`, and the rows below withhold their
+    // members while it is open, so a match is listed once.
+    let roots = Signal::derive(move || level_folders(state, tree.root.clone()));
 
     view! {
         <div
@@ -360,7 +347,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
                 // Two gestures on one shelf because they are two questions:
                 // "show me inside it" and "take me to it".
                 <button
-                    class="library-row-remove"
+                    class="library-row-action"
                     type="button"
                     title="Open shelf"
                     aria-label=move || format!("Open the {} shelf", name.get())
@@ -433,10 +420,7 @@ fn member_books(state: AppState, members: Signal<Vec<String>>) -> Signal<Vec<Row
 fn AddRow(state: AppState) -> impl IntoView {
     let open = RwSignal::new(false);
     let anchor: NodeRef<html::Div> = NodeRef::new();
-    let target = Signal::derive(move || {
-        let id = state.library.shelf.get();
-        (id != ALL_SHELF).then_some(id)
-    });
+    let target = add_target(state);
     view! {
         <div node_ref=anchor class="relative">
             <button
@@ -454,23 +438,6 @@ fn AddRow(state: AppState) -> impl IntoView {
             <AddMenu state=state open=open anchor=anchor target=target />
         </div>
     }
-}
-
-/// The facts about a row that can move while it is mounted, read back out of
-/// the library by id on the frame they are asked for — the rule the tree rows
-/// and the folder card follow, and the one the grid's book card follows too.
-#[derive(Clone)]
-struct RowFacts {
-    /// The address, which is also the key the cover cache answers to: a
-    /// relink moves it, and the row's art has to move with it.
-    path: String,
-    title: String,
-    /// The author when the book has one and the resume point when it does
-    /// not: at this density there is room for one line of prose and the
-    /// reader gets to choose which by opening the book.
-    author_line: String,
-    missing: bool,
-    percent: Option<String>,
 }
 
 #[component]
@@ -501,29 +468,13 @@ fn ListRow(
     // `crate::features::library::shelf_item`).
     let remove_sheet = use_context::<RemoveSheet>();
 
-    // Selection is a page-wide mode, so every row asks the same signal rather
-    // than being told about itself.
-    let selecting = state.library.selecting;
 
     // The prop supplies the identity; everything that can move — a startup
     // measurement marking the book missing, a relink moving the address the
     // cover keys on, a rename, a fold merging a twin into it — is read back
     // by id, because a keyed row is not re-created when its content changes.
     let id = book.id.clone();
-    let facts_id = id.clone();
-    let facts = Signal::derive(move || {
-        state.library.books.with(|rows| {
-            find_by_id(rows, &facts_id).map(|b| RowFacts {
-                path: b.path().to_string(),
-                title: b.title(),
-                author_line: b
-                    .author()
-                    .unwrap_or_else(|| library_core::text::page_line(b.page, b.num_pages)),
-                missing: b.missing,
-                percent: b.progress().map(|p| format!("{:.0}%", p * 100.0)),
-            })
-        })
-    });
+    let facts = book_facts(state, &id);
     // The list has room for the format on every row, and at this density a reader
     // is scanning names rather than looking at art — so the kind of thing a row is
     // earns its place here in a way a chip on a cover would not. A row's format
@@ -596,19 +547,7 @@ fn ListRow(
                         class="library-row-cover"
                         class=("book-cover-crop", move || crop.get())
                     >
-                        {move || {
-                            selecting.get().then(|| {
-                                view! {
-                                    <span class="lib-check" aria-hidden="true">
-                                        {move || {
-                                            is_selected.get().then(|| {
-                                                view! { <Icon name=IconName::Check size=11 /> }
-                                            })
-                                        }}
-                                    </span>
-                                }
-                            })
-                        }}
+                        <SelectionCheck state=state selected=is_selected />
                         {move || {
                             let f = facts.get()?;
                             state
@@ -675,7 +614,7 @@ fn ListRow(
                 None
             } else {
                 Some(move || {
-                    facts.get().and_then(|f| f.percent).map(|p| {
+                    facts.get().and_then(|f| f.percent()).map(|p| {
                         view! {
                             <span class="shrink-0 text-xs tabular-nums text-muted">{p}</span>
                         }
@@ -687,7 +626,7 @@ fn ListRow(
                     let at = remove_id.clone();
                     view! {
                         <button
-                            class="library-row-remove"
+                            class="library-row-action"
                             type="button"
                             title="Remove from library"
                             aria-label="Remove from library"

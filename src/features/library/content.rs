@@ -166,7 +166,7 @@ fn scroll_may_animate(state: AppState) -> bool {
 /// than to each shelf's copy of it.
 ///
 /// At the root the level is the TOP of the library rather than a flattening of
-/// it: the books nobody has filed, beside the folders [`visible_folders`] puts
+/// it: the books nobody has filed, beside the folders [`level_folders`] puts
 /// there. A book inside a folder is that folder's to show, and showing it at the
 /// root as well was the same book on two levels at once — a flat shelf list and a
 /// nested one wearing one page. A query is the one exception: searching from the
@@ -204,33 +204,42 @@ pub(crate) fn visible(state: AppState) -> Vec<Row> {
     query::filter(&list, &state.library.query.get())
 }
 
-/// The folders the page shows at this level, in the order it shows them.
+/// The doors on one level: the shelves filed directly inside it, narrowed by an
+/// open query, in the order the library stores them.
 ///
-/// Two steps, and the same sequence as [`visible`]: the level narrows the list to
-/// the shelves filed directly inside it, and the query filters what is left — by
-/// name, through the same rule the books go through, so one text box is not two
-/// searches wearing one field.
+/// One answer for both densities, and the reason it is one is that a search which
+/// hid the matching folders in the grid and kept every one of them in the list
+/// would be two searches wearing one text box. The list's tree calls it per rung
+/// as well, so a branch narrows by the same rule its top level does.
 ///
-/// The query is read BEFORE the shelves and both are read inside the one derive,
-/// so a shelf created while a search is open re-runs the whole filter on the
-/// frame it lands: one invalidation covers both facts, and a fresh shelf can
+/// Two steps, and the same sequence as [`visible`]: the level narrows the list,
+/// and the query filters what is left — by name, through the same rule the books
+/// go through. The query is read BEFORE the shelves and both inside the one
+/// derive, so a shelf created while a search is open re-runs the whole filter on
+/// the frame it lands: one invalidation covers both facts, and a fresh shelf can
 /// never be memoised past the query it was born under.
+///
+/// `root` overrides the level the page is on, which is what a mount that pins a
+/// subtree does; `None` follows the route.
 ///
 /// The view's sort key is NOT applied. It sorts books (title, author, how far in
 /// they were read) and a shelf has none of those; folders render in the order the
 /// library stores them, which is the order the reader made them in and the order a
 /// drag between them can rewrite.
-fn visible_folders(state: AppState) -> Vec<Shelf> {
+pub(crate) fn level_folders(state: AppState, root: Option<String>) -> Vec<Shelf> {
     let at = state.library.shelf.get();
     let terms = state.library.query.get();
     // "All" is not a shelf, so the root level is the shelves with no parent
     // rather than the shelves whose parent is named "all".
-    let parent = (at != ALL_SHELF).then_some(at.as_str());
+    let parent = match root {
+        Some(pinned) => Some(pinned),
+        None => (at != ALL_SHELF).then_some(at),
+    };
     state.library.shelves.with(|shelves| {
-        children_of(shelves, parent)
+        children_of(shelves, parent.as_deref())
             .into_iter()
             .filter(|s| s.id != ALL_SHELF)
-            .filter(|s| !query::is_active(&terms) || query::matches_terms(&s.name, &terms))
+            .filter(|s| query::matches_terms(&s.name, &terms))
             .cloned()
             .collect()
     })
@@ -244,7 +253,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     // "nothing here" line below all agree about what is on screen.
     let order = Signal::derive(move || visible(state));
     provide_context(ShelfOrder(order));
-    let folders = Signal::derive(move || visible_folders(state));
+    let folders = Signal::derive(move || level_folders(state, None));
     provide_context(FolderOrder(folders));
     // The level's own empty space, registered before anything that sits in it:
     // the registry hit-tests in reverse, so the cards a shelf mounts after this
