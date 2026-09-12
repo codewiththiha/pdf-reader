@@ -379,7 +379,7 @@ fn TreeRow(state: AppState, shelf: Shelf, depth: usize, crop: Signal<bool>) -> i
 /// The books on a shelf's member list, in the order the page shows books: the
 /// shelf's own order is the base and the view's sort rides over it — the same
 /// `library_core::sort::ordered` the page's own level runs in
-/// `crate::features::library::content::visible`, so an unfolded row and the
+/// `crate::features::library::content::level_rows`, so an unfolded row and the
 /// page it mirrors cannot disagree about what comes first.
 /// The two kinds of row, as one erased view: a `For` needs one type and a link
 /// is not a book, so it cannot borrow a book's row.

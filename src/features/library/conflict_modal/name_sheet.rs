@@ -12,13 +12,13 @@ use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, Shee
 use crate::services::library::conflict;
 use crate::state::AppState;
 
-use super::info::Info;
+use super::info::NameSheetInfo;
 
 /// The sheet's body, split out so it takes the facts by value: the outer view
 /// answers "is there still a question?" on every run, and this one is built
 /// once per answer with an answer it can keep.
 #[component]
-pub(super) fn NameSheet(state: AppState, info: Info) -> impl IntoView {
+pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
     let subtitle = if info.waiting > 0 {
         format!("Already {} · {} more waiting", info.where_line, info.waiting)
     } else {

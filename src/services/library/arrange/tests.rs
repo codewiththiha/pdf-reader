@@ -421,7 +421,7 @@ mod tests {
         // here would spend the log on the row that just left, and from then on
         // every import of the OS file would light the copy up instead of
         // bringing the linked book home to the rung it belongs on.
-        move_row(state, "b1", "shelf2", None, true);
+        move_row(state, "b1", "shelf2", None, Departed::ThisGesture);
         assert!(!bound(state), "a departure is not a return");
         let filed = state.library.shelves.with_untracked(|shelves| {
             shelves[0].books.iter().any(|id| id == "b1")
@@ -430,7 +430,7 @@ mod tests {
 
         // The NEXT drag of the same row back is the return the bind exists for,
         // and it binds exactly as it always did.
-        move_row(state, "b1", "shelf2", None, false);
+        move_row(state, "b1", "shelf2", None, Departed::No);
         assert!(bound(state), "a later gesture binds the log to the row by name");
     }
 

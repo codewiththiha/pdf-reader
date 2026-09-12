@@ -21,7 +21,7 @@ use super::controller::DragPayload;
 use super::effect::DropEffect;
 use crate::services::library::{
     create_shelf_here, move_many_to_shelf, nest_many, nest_shelf, reorder_shelves_to_anchor,
-    unfile_books,
+    unfile_books, SeamSide,
 };
 use crate::state::AppState;
 
@@ -70,7 +70,12 @@ pub fn apply(state: AppState, effect: DropEffect, payload: DragPayload) {
             // Folders alone on a shelf row's edge: the same level, a new place
             // in it. The books' half cannot arrive here — the table sends a
             // mixed hold inside the folder instead — so this is the folders.
-            reorder_shelves_to_anchor(state, &payload.folders, &anchor_id, after);
+            let side = if after {
+                SeamSide::After
+            } else {
+                SeamSide::Before
+            };
+            reorder_shelves_to_anchor(state, &payload.folders, &anchor_id, side);
         }
         DropEffect::FileToShelf { shelf_id } if shelf_id.is_empty() => {
             // The root, which is a level and not a shelf. From inside a shelf

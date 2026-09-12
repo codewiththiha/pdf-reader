@@ -15,7 +15,7 @@ use library_core::shelf;
 use super::{advance, member_slot, minted_name, ConflictAsk};
 use crate::services::library::arrange::{
     converts_on_move_to, convert_to_stored, drop_row, memberships, move_row, purge_books,
-    unlist_row, write_moved_stones, PurgeOpts,
+    unlist_row, write_moved_stones, Departed, PurgeOpts,
 };
 use crate::services::library::covers;
 use crate::services::library::toast;
@@ -186,10 +186,10 @@ fn replace(state: AppState, ask: &ConflictAsk) {
             // A copy that failed leaves the row linked and writes no log, so
             // there is nothing for the seating to stand aside from either.
             let departed = match convert_to_stored(state, &moved_id).await {
-                Ok(()) => true,
+                Ok(()) => Departed::ThisGesture,
                 Err(message) => {
                     toast(state, message);
-                    false
+                    Departed::No
                 }
             };
             covers::backfill_missing(state);
@@ -197,7 +197,7 @@ fn replace(state: AppState, ask: &ConflictAsk) {
         });
         return;
     }
-    seat_replace(state, &moved_id, &shelf_id, index, &inherited, false);
+    seat_replace(state, &moved_id, &shelf_id, index, &inherited, Departed::No);
 }
 
 /// The seating half of a replace: the arrival takes the survivor's slot and
@@ -214,7 +214,7 @@ fn seat_replace(
     shelf_id: &str,
     index: Option<usize>,
     inherited: &[String],
-    departed: bool,
+    departed: Departed,
 ) {
     move_row(state, moved_id, shelf_id, index, departed);
     state.library.shelves.update(|shelves| {
@@ -305,14 +305,14 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
     match &ask.arrival.moving {
         Some(row_id) => {
             state.library.rename_row(row_id, &name);
-            // `false`: nothing has departed yet, and if the move turns out to
-            // be a departure its own gate says so on the way back in.
+            // `Departed::No`: nothing has departed yet, and if the move turns
+            // out to be a departure its own gate says so on the way back in.
             move_row(
                 state,
                 row_id,
                 &ask.arrival.shelf_id,
                 ask.arrival.index,
-                false,
+                Departed::No,
             );
         }
         None => {

@@ -68,7 +68,7 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
         >
             {move || {
                 let ask = state.library.shelf_conflict.ask.get()?;
-                let info = Info::of(state, &ask);
+                let info = ShelfAskInfo::of(state, &ask);
                 Some(view! { <ShelfSheet state=state info=info /> }.into_any())
             }}
         </ModalShell>
@@ -88,7 +88,7 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
 /// re-walks every book and every folder the library owns to answer a question
 /// nothing about the repaint changed. Read once per answer, here, and the body
 /// only builds.
-struct Info {
+struct ShelfAskInfo {
     heading: String,
     subtitle: String,
     question: String,
@@ -111,7 +111,7 @@ struct Info {
 const LINK_NOTE: &str = "A pointer row, not a second shelf: nothing is \
                          imported, and tapping it lights the folder where it is";
 
-impl Info {
+impl ShelfAskInfo {
     fn of(state: AppState, ask: &ShelfConflictAsk) -> Self {
         // A folder colliding with its OWN previous shelf is a continuation,
         // and the sheet WORDS it as one — but the answers are the arrival
@@ -218,8 +218,8 @@ impl Info {
 /// components of one name in one feature folder are two components a reader has
 /// to open both files to tell apart.
 #[component]
-fn ShelfSheet(state: AppState, info: Info) -> impl IntoView {
-    let Info {
+fn ShelfSheet(state: AppState, info: ShelfAskInfo) -> impl IntoView {
+    let ShelfAskInfo {
         heading,
         subtitle,
         question,

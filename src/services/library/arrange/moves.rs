@@ -195,6 +195,23 @@ fn clean_move_ids(clean: Vec<Arrival>) -> Vec<String> {
     clean.into_iter().filter_map(|a| a.moving).collect()
 }
 
+/// Whether the row became the library's own copy in THIS gesture.
+///
+/// The question the landing owes an answer to, and a value rather than a
+/// boolean at the call site: a departure writes a moved-out log, and the copy
+/// then lands — often on another shelf of the very folder it left. A landing
+/// that read `true` as "bind the log" would spend the log on the row that
+/// just wrote it, and the file could never come home again.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Departed {
+    /// This gesture converted the row: it lands WITHOUT binding the folder's
+    /// moved-out log — a departure is not a return.
+    ThisGesture,
+    /// Nothing converted here: a stored book landing on a shelf of the folder
+    /// it left is a return, and the log binds to it.
+    No,
+}
+
 /// Move ONE row onto one level, with no question asked: the silent half of a
 /// placement, and what the conflict sheet calls once an answer has been given.
 ///
@@ -213,7 +230,7 @@ pub fn move_row(
     row_id: &str,
     shelf_id: &str,
     index: Option<usize>,
-    departed: bool,
+    departed: Departed,
 ) {
     // The departure gate, for the one-row form: convert first, then run the
     // move again over the stored row, so the shelf writes below are the whole
@@ -226,7 +243,12 @@ pub fn move_row(
             shelf_id,
             move |rest, gone| {
                 if let Some(one) = rest.into_iter().next() {
-                    move_row(state, &one, &landed_on, index, gone.contains(&one));
+                    let departed = if gone.contains(&one) {
+                        Departed::ThisGesture
+                    } else {
+                        Departed::No
+                    };
+                    move_row(state, &one, &landed_on, index, departed);
                 }
             },
         ) {
@@ -254,7 +276,7 @@ pub fn move_row(
         }
     });
     crate::storage::persist_library(state.library);
-    if !departed {
+    if departed == Departed::No {
         bind_returned(state, row_id, shelf_id);
     }
 }

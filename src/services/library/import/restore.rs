@@ -15,13 +15,12 @@ use library_core::shelf::{self as shelves_ops};
 use reader_core::format::Format;
 
 use super::files::{found_from_check, land_file, settle_ledger};
-use super::tasks::{fail, finish_task, push_task, task_id};
+use super::tasks::{fail, finish_task, push_task, task_id, FailMode};
 use super::root_shelf_of;
 use crate::services::library::covers;
 use crate::services::library as wire;
 use crate::state::library::ImportTask;
 use crate::state::AppState;
-use crate::storage::persist_library;
 use crate::time::now_ms;
 
 /// The walked files a moved-out log already REPRESENTS, taken out of the
@@ -94,7 +93,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
     spawn_local(async move {
         let checks = match wire::verify_paths(vec![entry.last_path.clone()]).await {
             Ok(checks) => checks,
-            Err(message) => return fail(state, &task, message, false),
+            Err(message) => return fail(state, &task, message, FailMode::Toast),
         };
         let Some(found) = checks.first().and_then(found_from_check) else {
             return fail(
@@ -123,7 +122,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
                     },
                     measured,
                 ),
-                Err(message) => return fail(state, &task, message, false),
+                Err(message) => return fail(state, &task, message, FailMode::Toast),
             }
         };
 

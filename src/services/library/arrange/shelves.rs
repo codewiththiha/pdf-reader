@@ -14,7 +14,7 @@ use crate::time::now_ms;
 
 use library_core::id;
 
-use super::shelf_departure::{raise_departure, screen_shelf_moves};
+use super::shelf_departure::{raise_departure, screen_shelf_moves, SeamSide, ShelfSeam};
 
 /// Make a shelf the reader owns, and drill into it. Returns its id.
 ///
@@ -186,7 +186,7 @@ pub fn nest_many(state: AppState, folder_ids: &[String], parent: &str) {
 /// that kept its old place in the vec would keep its old place on the page. The
 /// anchor's index is re-found after every lift, because a removal above it
 /// shifts it, and one persist covers the batch.
-pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, after: bool) {
+pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, side: SeamSide) {
     if ids.is_empty() {
         return;
     }
@@ -203,7 +203,7 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
             parent,
             Some(ShelfSeam {
                 anchor_id: anchor.to_string(),
-                after,
+                side,
             }),
         );
     }
@@ -229,7 +229,11 @@ pub fn reorder_shelves_to_anchor(state: AppState, ids: &[String], anchor: &str, 
             if at < ai {
                 ai -= 1;
             }
-            shelves.insert(if after { ai + 1 } else { ai }, item);
+            let at = match side {
+                SeamSide::After => ai + 1,
+                SeamSide::Before => ai,
+            };
+            shelves.insert(at, item);
             moved = true;
         }
     });

@@ -49,7 +49,7 @@ use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::overlay::action_bar::ActionBar;
 use crate::components::primitives::floating::menu_popover::MenuPopover;
-use crate::features::library::content::{FolderOrder, ShelfOrder, visible};
+use crate::features::library::content::{FolderOrder, ShelfOrder, level_rows};
 use crate::features::library::dnd::controller::DragPayload;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::services::library::{create_shelf_here, file_many, nest_many};
@@ -216,7 +216,7 @@ pub(crate) fn payload_for(
 /// dropped: a search can narrow the level under a set that was picked before it,
 /// and a drag that silently lost a row would be a drag that removed one.
 fn in_page_order(state: AppState, ids: Vec<String>) -> Vec<String> {
-    let mut ordered: Vec<String> = visible(state)
+    let mut ordered: Vec<String> = level_rows(state)
         .into_iter()
         .map(|row| row.id().to_string())
         .filter(|id| ids.contains(id))

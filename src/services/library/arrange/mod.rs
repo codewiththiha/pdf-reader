@@ -73,7 +73,7 @@ pub use purge::{purge_books, PurgeOpts};
 pub use relink::relink_dialog;
 pub use shelf_departure::{
     answer_departure_return, cancel_departure, confirm_departure, DepartingShelf, ReturnPath,
-    ShelfDepartureAsk, ShelfReturn, ShelfSeam,
+    SeamSide, ShelfDepartureAsk, ShelfReturn, ShelfSeam,
 };
 pub use shelves::{
     create_shelf_and_enter, create_shelf_here, delete_shelf, memberships, nest_many, nest_shelf,
@@ -81,6 +81,7 @@ pub use shelves::{
 };
 
 pub(crate) use departure::{convert_to_stored, converts_on_move_to, write_moved_stones};
+pub(crate) use moves::Departed;
 pub(crate) use purge::{drop_row, unlist_row};
 
 use library_core::shelf::Shelf;

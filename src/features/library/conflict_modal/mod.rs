@@ -55,7 +55,7 @@ use crate::state::AppState;
 
 use covered::CoveredSheet;
 use folder_merge::FolderMergeSheet;
-use info::Info;
+use info::NameSheetInfo;
 use name_sheet::NameSheet;
 
 /// The sheet, mounted once by the library page.
@@ -103,7 +103,7 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
                         view! { <CoveredSheet state=state ask=ask /> }.into_any(),
                     );
                 }
-                let info = Info::of(state, &ask);
+                let info = NameSheetInfo::of(state, &ask);
                 Some(view! { <NameSheet state=state info=info /> }.into_any())
             }}
         </ModalShell>

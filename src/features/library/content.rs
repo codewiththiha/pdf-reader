@@ -169,7 +169,7 @@ fn scroll_may_animate(state: AppState) -> bool {
 /// nested one wearing one page. A query is the one exception: searching from the
 /// root searches the LIBRARY, because a search that could not see inside folders
 /// would miss silently, and the matches it shows are the ones asked for.
-pub(crate) fn visible(state: AppState) -> Vec<Row> {
+pub(crate) fn level_rows(state: AppState) -> Vec<Row> {
     let view = state.library.view.get();
     let shelf_id = state.library.shelf.get();
     let rows = state.library.books.get();
@@ -248,7 +248,7 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
     // these, and a card that derived its own order would be a second definition
     // of where a drop lands. One derived signal, so the grid, the list and the
     // "nothing here" line below all agree about what is on screen.
-    let order = Signal::derive(move || visible(state));
+    let order = Signal::derive(move || level_rows(state));
     provide_context(ShelfOrder(order));
     let folders = Signal::derive(move || level_folders(state, None));
     provide_context(FolderOrder(folders));
@@ -435,7 +435,7 @@ mod tests {
         );
         // "b" is filed, so it is the Fiction shelf's to show; showing it at the
         // root as well was the same book on two levels at once.
-        assert_eq!(ids(&visible(state)), vec!["a", "c"]);
+        assert_eq!(ids(&level_rows(state)), vec!["a", "c"]);
     }
 
     #[test]
@@ -446,7 +446,7 @@ mod tests {
         );
         state.library.shelf.set("s".to_string());
         assert_eq!(
-            ids(&visible(state)),
+            ids(&level_rows(state)),
             vec!["c", "a"],
             "the member list IS the order, not the library's"
         );
@@ -459,7 +459,7 @@ mod tests {
             vec![shelf("s", "Fiction", &["gone", "a"], None)],
         );
         state.library.shelf.set("s".to_string());
-        assert_eq!(ids(&visible(state)), vec!["a"]);
+        assert_eq!(ids(&level_rows(state)), vec!["a"]);
     }
 
     #[test]
@@ -472,7 +472,7 @@ mod tests {
         ];
         let (_owner, state) = library(rows, vec![shelf("s", "Fiction", &["l1", "a"], None)]);
         state.library.shelf.set("s".to_string());
-        assert_eq!(ids(&visible(state)), vec!["l1", "a"]);
+        assert_eq!(ids(&level_rows(state)), vec!["l1", "a"]);
     }
 
     #[test]
@@ -485,13 +485,13 @@ mod tests {
             v.sort = SortKey::Title;
             v.sort_asc = true;
         });
-        assert_eq!(ids(&visible(state)), vec!["a", "b", "c"]);
+        assert_eq!(ids(&level_rows(state)), vec!["a", "b", "c"]);
         // Clearing the query is not a re-sort: the shelf comes back exactly as
         // the reader left it, which is what makes a search safe to type into.
         state.library.query.set("dy".to_string());
-        assert_eq!(ids(&visible(state)), vec!["b"], "fuzzy, and still in order");
+        assert_eq!(ids(&level_rows(state)), vec!["b"], "fuzzy, and still in order");
         state.library.query.set(String::new());
-        assert_eq!(ids(&visible(state)), vec!["a", "b", "c"]);
+        assert_eq!(ids(&level_rows(state)), vec!["a", "b", "c"]);
     }
 
     #[test]
@@ -504,7 +504,7 @@ mod tests {
         // The one exception to "the root is the top of the library, not a
         // flattening of it": a search that could not see inside folders would
         // miss silently, and the matches it shows are the ones asked for.
-        assert_eq!(ids(&visible(state)), vec!["b"]);
+        assert_eq!(ids(&level_rows(state)), vec!["b"]);
     }
 
     #[test]
@@ -514,7 +514,7 @@ mod tests {
             vec![shelf("s", "Fiction", &[], None)],
         );
         state.library.shelf.set("s".to_string());
-        assert!(visible(state).is_empty());
+        assert!(level_rows(state).is_empty());
     }
 
     #[test]
@@ -524,7 +524,7 @@ mod tests {
         // Not the root's list: a drill into a shelf that was taken apart is a
         // level with nothing on it, and answering with the whole library would
         // be a page full of books the reader did not open.
-        assert!(visible(state).is_empty());
+        assert!(level_rows(state).is_empty());
     }
 
     // -----------------------------------------------------------------------

@@ -62,8 +62,19 @@ pub(super) fn finish_task(state: AppState, task: &str, total: u32, waiting: u32)
     });
 }
 
-pub(super) fn fail(state: AppState, task: &str, message: String, quiet: bool) {
-    if quiet {
+/// How a run's failure is delivered.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum FailMode {
+    /// A run the reader asked for: the card shows it and a toast says it.
+    Toast,
+    /// The window-focus rescan: one console line, where a bug report can find
+    /// it. A folder that cannot be read is not news the reader asked for, and
+    /// it fails again on the next focus.
+    ConsoleOnly,
+}
+
+pub(super) fn fail(state: AppState, task: &str, message: String, mode: FailMode) {
+    if mode == FailMode::ConsoleOnly {
         // A watched folder that cannot be read is not news the reader asked
         // for, and it fails again on the next focus. Say it once, on the
         // console, where a bug report can find it.

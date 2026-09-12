@@ -19,7 +19,7 @@ use crate::state::AppState;
 /// Everything the sheet prints, read once per answer — the remove receipt's
 /// rule: a `view!` body is a builder, not a place to compute, and a heading and
 /// two buttons that need the same name must not each derive their own.
-pub(super) struct Info {
+pub(super) struct NameSheetInfo {
     /// The name arriving — the heading.
     pub(super) incoming: String,
     /// Whether the arrival is a file with no row of its own yet, which is the
@@ -48,7 +48,7 @@ pub(super) struct Info {
     pub(super) link_offer: bool,
 }
 
-impl Info {
+impl NameSheetInfo {
     pub(super) fn of(state: AppState, ask: &ConflictAsk) -> Self {
         let where_line = if ask.arrival.shelf_id == ALL_SHELF {
             "in your library".to_string()

@@ -19,7 +19,7 @@ use reader_core::format::Format;
 use super::copy::{copy_batch, measure_stores};
 use super::gate::{run_fold, RootPlan};
 use super::restore::take_represented;
-use super::tasks::{fail, finish_task, push_task, update_task};
+use super::tasks::{fail, finish_task, push_task, update_task, FailMode};
 use super::{rel_of, shelf_name, Asked};
 use crate::services::library::conflict::{self, ConflictAsk};
 use crate::services::library::covers;
@@ -28,7 +28,6 @@ use crate::services::library::folder_label;
 use crate::services::library as wire;
 use crate::state::library::{ImportTask, NoteKind};
 use crate::state::AppState;
-use crate::storage::persist_library;
 use crate::time::now_ms;
 
 /// The shelf a found file belongs on: every rung between the folder's root shelf
@@ -819,9 +818,14 @@ pub(super) async fn run_folder(
     // and no write for a folder nothing changed in. An import owes an answer
     // either way.
     let quiet = asked == Asked::OnFocus;
+    let fail_mode = if quiet {
+        FailMode::ConsoleOnly
+    } else {
+        FailMode::Toast
+    };
     let mut found = match wire::scan_folder(&task, &root, &opts).await {
         Ok(found) => found,
-        Err(message) => return fail(state, &task, message, quiet),
+        Err(message) => return fail(state, &task, message, fail_mode),
     };
 
     // A snapshot, and only a snapshot: the ledger needs a consistent library to
@@ -910,7 +914,7 @@ pub(super) async fn run_folder(
     } else {
         match copy_batch(state, &task, &pending).await {
             Ok(copies) => copies,
-            Err(message) => return fail(state, &task, message, quiet),
+            Err(message) => return fail(state, &task, message, fail_mode),
         }
     };
     // The copy run's copies are measured in one pass before a row is promised:

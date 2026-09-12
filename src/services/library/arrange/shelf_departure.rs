@@ -19,12 +19,22 @@ use super::departure::convert_to_stored;
 use super::shelves::{nest_shelf, reorder_shelves_to_anchor};
 use crate::services::library::reveal;
 
+/// Which side of an anchor a sibling seam lands on. A value rather than a
+/// boolean, because "the drop was after" and "insert after the anchor" are
+/// one fact said at three call sites, and a bare `true` at one of them is a
+/// fact nobody can read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SeamSide {
+    Before,
+    After,
+}
+
 /// The sibling seam a shelf-row's edge named: the anchor the copies land
 /// beside, and which side of it. A filing has no seam and appends.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ShelfSeam {
     pub anchor_id: String,
-    pub after: bool,
+    pub side: SeamSide,
 }
 
 /// One read-at-place shelf a gesture is about to turn into the library's own
@@ -635,7 +645,7 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
     // the copies are virtual shelves now, so the screen inside sees nothing to
     // ask and the move lands as the membership edit it became.
     if let Some(seam) = &ask.seam {
-        reorder_shelves_to_anchor(state, &landed, &seam.anchor_id, seam.after);
+        reorder_shelves_to_anchor(state, &landed, &seam.anchor_id, seam.side);
     } else {
         for id in &landed {
             nest_shelf(state, id, level.as_deref());

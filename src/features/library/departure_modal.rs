@@ -65,7 +65,7 @@ pub(crate) fn ShelfDepartureModal(state: AppState) -> impl IntoView {
         >
             {move || {
                 let ask = state.library.shelf_departure.ask.get()?;
-                let info = Info::of(&ask);
+                let info = DepartureInfo::of(&ask);
                 Some(view! { <DepartureSheet state=state info=info /> }.into_any())
             }}
         </ModalShell>
@@ -77,7 +77,7 @@ pub(crate) fn ShelfDepartureModal(state: AppState) -> impl IntoView {
 /// The folder sheet's rule: a `view!` body is a builder, not a place to
 /// compute. The sentences are built here, per answer of the ask, and the body
 /// only builds views out of them.
-struct Info {
+struct DepartureInfo {
     heading: String,
     subtitle: String,
     /// One sentence per departing shelf: what it is called, which folder reads
@@ -95,7 +95,7 @@ struct Info {
     return_label: &'static str,
 }
 
-impl Info {
+impl DepartureInfo {
     fn of(ask: &ShelfDepartureAsk) -> Self {
         let one = ask.departing.len() == 1;
         let heading = match ask.departing.first() {
@@ -185,8 +185,8 @@ impl Info {
 }
 
 #[component]
-fn DepartureSheet(state: AppState, info: Info) -> impl IntoView {
-    let Info {
+fn DepartureSheet(state: AppState, info: DepartureInfo) -> impl IntoView {
+    let DepartureInfo {
         heading,
         subtitle,
         lines,

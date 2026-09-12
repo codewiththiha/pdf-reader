@@ -14,6 +14,15 @@
 //!   * the two native pickers, filtered to the format registry's own extension
 //!     list.
 //!
+//! ## The verb convention
+//!
+//! A function that splits a batch into the half that may land now and the
+//! half that owes a question is a `screen_*` — [`conflict::screen`], the
+//! shelf-move departure's screen, the import's merge screen. The answer is
+//! always a `(clean, asked)` pair, and the asked half always goes to a sheet
+//! rather than being dropped: a screen that silently discarded its second
+//! half is the vanishing placement the sheets exist to stop.
+//!
 //! The deciding is NOT here. Which files a scan adds, where they land and what
 //! a rescan skips is `library_core`'s ledger; [`import`] runs it against the
 //! shell's answers and writes the result to the library state, [`arrange`]
@@ -35,7 +44,7 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    PurgeOpts, also_show, answer_departure_return, cancel_departure, confirm_departure,
+    PurgeOpts, SeamSide, also_show, answer_departure_return, cancel_departure, confirm_departure,
     create_shelf_and_enter, create_shelf_here, delete_shelf, file_many, memberships,
     move_many_to_shelf, nest_many, nest_shelf, purge_books, relink_dialog, rename_shelf,
     reorder_shelves_to_anchor, unfile_books,

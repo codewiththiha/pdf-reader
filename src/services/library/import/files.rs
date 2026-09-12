@@ -20,7 +20,7 @@ use reader_core::format::{Format, is_supported_path};
 
 use super::copy::{copy_batch, measure_stores};
 use super::restore::{covered_fate, lift_stone_for, restore_covered_file, take_represented, CoveredFate};
-use super::tasks::{fail, finish_task, push_task, task_id};
+use super::tasks::{fail, finish_task, push_task, task_id, FailMode};
 use super::verify::apply_checks;
 use crate::services::library::conflict::{self, ConflictAsk};
 use crate::services::library::covers;
@@ -29,7 +29,6 @@ use crate::services::library::{file_name, toast};
 use crate::services::library as wire;
 use crate::state::library::ImportTask;
 use crate::state::AppState;
-use crate::storage::persist_library;
 use crate::time::now_ms;
 
 /// Import files picked from the dialog or dropped on the library.
@@ -115,7 +114,7 @@ fn screen_files(
 async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Option<String>) {
     let checks = match wire::verify_paths(paths).await {
         Ok(checks) => checks,
-        Err(message) => return fail(state, &task, message, false),
+        Err(message) => return fail(state, &task, message, FailMode::Toast),
     };
     let mut found: Vec<FoundFile> = checks.iter().filter_map(found_from_check).collect();
     // A file some folder's log says is REPRESENTED by a returned stored copy
@@ -202,7 +201,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
                 let mut asks = covered_asks;
                 asks.extend(conflicts);
                 conflict::raise(state, asks);
-                return fail(state, &task, message, false);
+                return fail(state, &task, message, FailMode::Toast);
             }
         }
     };
