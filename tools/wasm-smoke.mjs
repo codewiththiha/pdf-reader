@@ -66,13 +66,22 @@ const library = {
   folders: [{ id: 'f1', root: '/home/demo/books', opts: { watch: true } }],
 };
 
-const covers = {
-  '/home/demo/books/dune.pdf': {
-    dataUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
-    width: 120,
-    height: 160,
-  },
+// One per book, and that is deliberate. A cover the library does not hold is a
+// cover the shelf renders, and rendering one is the TS engine plus a canvas
+// paint — neither of which a jsdom stand-in has, and neither of which is what
+// this check is asking. It is asking whether the app MOUNTS: whether the first
+// frame builds a shelf. Seeding every book's art is what keeps the answer about
+// the mount instead of about a cover queue with no engine behind it.
+const cover = {
+  dataUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+  width: 120,
+  height: 160,
 };
+const covers = Object.fromEntries(
+  ['/home/demo/books/dune.pdf', '/home/demo/books/neuromancer.pdf', '/home/demo/books/gone.pdf'].map(
+    (path) => [path, cover],
+  ),
+);
 
 // Settings are deliberately NOT seeded: the defaults path is the one a fresh
 // install takes, and every added field must survive an old stored blob —
@@ -144,6 +153,19 @@ window.HTMLElement.prototype.scrollIntoView ??= function scrollIntoView() {};
 window.fetch ??= () =>
   Promise.resolve(new Response('', { status: 404, statusText: 'Not Found' }));
 window.Response ??= Response;
+// No media queries in jsdom, and the app asks the window one: a query answered
+// "no" is a query a webview would have answered, and the alternative is a
+// TypeError on the first frame — a fact about the stand-in, not about the app.
+window.matchMedia ??= (query) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addListener() {},
+  removeListener() {},
+  addEventListener() {},
+  removeEventListener() {},
+  dispatchEvent: () => false,
+});
 
 if (WITH_TAURI) {
   // The shell, stubbed at the contract the frontend declares in
@@ -190,13 +212,28 @@ if (WITH_TAURI) {
 
 // The bundle reaches for these as bare globals, the way it would off
 // window.* in the webview.
-globalThis.window = window;
-globalThis.document = window.document;
-globalThis.navigator = window.navigator;
-globalThis.location = window.location;
-globalThis.localStorage = window.localStorage;
-globalThis.sessionStorage = window.sessionStorage;
-globalThis.history = window.history;
+//
+// Defined rather than assigned, because Node has grown several of them as
+// getter-only accessors of its own — `navigator` since 21 — and an assignment
+// to one throws in a module, which is strict. The throw has nothing to do with
+// the app and everything to do with the runner, and it kills the check before
+// the bundle is even required.
+const defineGlobal = (name, value) => {
+  Object.defineProperty(globalThis, name, {
+    value,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  });
+};
+
+defineGlobal('window', window);
+defineGlobal('document', window.document);
+defineGlobal('navigator', window.navigator);
+defineGlobal('location', window.location);
+defineGlobal('localStorage', window.localStorage);
+defineGlobal('sessionStorage', window.sessionStorage);
+defineGlobal('history', window.history);
 for (const name of [
   'Node',
   'Element',
@@ -232,8 +269,51 @@ for (const name of [
   'URL',
   'URLSearchParams',
 ]) {
-  if (name in window) globalThis[name] = window[name];
+  if (name in window) defineGlobal(name, window[name]);
 }
+
+// And then everything else the window owns that Node's global does not, because
+// the list above is a list a hand keeps and the bundle asks for more of it with
+// every web-sys feature it turns on. `in` rather than an own-property read: a
+// global Node already has is Node's, and replacing its timers or its console
+// with jsdom's would change the runner under the check.
+for (const name of Object.getOwnPropertyNames(window)) {
+  if (name === 'globalThis' || name in globalThis) continue;
+  const descriptor = Object.getOwnPropertyDescriptor(window, name);
+  if (!descriptor) continue;
+  let value;
+  try {
+    value = descriptor.get ? descriptor.get.call(window) : descriptor.value;
+  } catch {
+    continue; // a getter that needs a real webview: nothing to stand in for
+  }
+  if (value === undefined) continue;
+  try {
+    defineGlobal(name, value);
+  } catch {
+    // The runner owns it and will not let go. Its own answer stays.
+  }
+}
+
+// Two things a copy cannot give, and both are about the same fact: inside the
+// bundle, `window` is not a variable but the global object. `web_sys::window()`
+// is `js_sys::global().dyn_into::<Window>()`, which the glue spells as
+// `globalThis instanceof Window`, and the app's first frame reaches a document
+// through it — so a global that is not a Window is a panic before a single view
+// is built, which is a fact about the runner and not about the app.
+for (const name of ['addEventListener', 'removeEventListener', 'dispatchEvent']) {
+  if (typeof window[name] === 'function') defineGlobal(name, window[name].bind(window));
+}
+const RealWindow = window.Window;
+defineGlobal('Window', function Window() {
+  throw new TypeError("Failed to construct 'Window': Illegal constructor");
+});
+Object.defineProperty(globalThis.Window, Symbol.hasInstance, {
+  configurable: true,
+  value: (instance) =>
+    instance === globalThis ||
+    Function.prototype[Symbol.hasInstance].call(RealWindow, instance),
+});
 
 window.localStorage.setItem('pdfreader.library.v3', JSON.stringify(library));
 window.localStorage.setItem('pdfreader.covers.v1', JSON.stringify(covers));

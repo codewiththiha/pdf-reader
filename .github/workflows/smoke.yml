@@ -23,25 +23,20 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Pinned rather than left to the runner's default: the harness stands
+      # jsdom in for the webview, and which globals Node already owns — and
+      # whether it owns them as a getter an assignment cannot replace — is a
+      # property of its version.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Build the wasm bundle
         run: cargo build --target wasm32-unknown-unknown --bin pdf-reader
 
       - name: Read the wasm-bindgen version out of Cargo.lock
         run: |
-          VER="$(grep -A1 '^name = "wasm-bindgen"
-
-      - name: Bind the bundle for Node
-        run: wasm-bindgen --target nodejs --out-dir smoke target/wasm32-unknown-unknown/debug/pdf-reader.wasm
-
-      - name: Install jsdom
-        run: npm install --no-save --no-package-lock jsdom
-
-      - name: Mount as a plain browser
-        run: node tools/wasm-smoke.mjs
-
-      - name: Mount against a stubbed shell
-        run: SMOKE_TAURI=1 node tools/wasm-smoke.mjs
- Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
+          VER="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
           test -n "$VER"
           echo "WB_VER=$VER" >> "$GITHUB_ENV"
 
@@ -60,10 +55,16 @@ jobs:
           "$HOME/wb-bin/bin/wasm-bindgen" --version
 
       - name: Bind the bundle for Node
-        run: wasm-bindgen --target nodejs --out-dir smoke target/wasm32-unknown-unknown/debug/pdf-reader.wasm
+        run: |
+          wasm-bindgen --target nodejs --out-dir smoke target/wasm32-unknown-unknown/debug/pdf-reader.wasm
+          # The repo is an ES module and the nodejs glue is CommonJS, so the
+          # directory it lands in says which of the two it is: without this,
+          # `require` reads the glue as a module and it dies on its own
+          # `exports` before a line of the app has run.
+          printf '{"type":"commonjs"}\n' > smoke/package.json
 
       - name: Install jsdom
-        run: npm install --no-save jsdom
+        run: npm install --no-save --no-package-lock jsdom
 
       - name: Mount as a plain browser
         run: node tools/wasm-smoke.mjs
