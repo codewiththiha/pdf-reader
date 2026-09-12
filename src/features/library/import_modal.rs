@@ -11,13 +11,15 @@
 //! than disables, because a switch that cannot be turned on is noise.
 //!
 //! One ground the watch switch is NOT the reader's to set, and it disables rather
-//! than hides: ground a watched read-at-place tree already covers — the folder
-//! itself re-picked, or a rung of it — is watched, and an import of it is the
-//! reader asking for its books again rather than asking the library to stop
-//! looking. The switch locks on and says why, because the alternative is a sheet
-//! whose defaults quietly un-track a folder by importing it. Turning a watch off
-//! is the shelf's own right-click, which asks nothing of a walk
-//! (`crate::services::library::set_folder_watch`).
+//! than hides: ground a watched read-at-place tree already covers AND still
+//! stands in — the folder itself re-picked, or a rung of it — is watched, and an
+//! import of it is the reader asking for its books again rather than asking the
+//! library to stop looking. The switch locks on and says why, because the
+//! alternative is a sheet whose defaults quietly un-track a folder by importing
+//! it. A folder whose shelves the reader took apart does not lock: its watch is
+//! one nobody can see, and an import of its ground with the switch off is how it
+//! ends. Turning a watch off is the shelf's own right-click, which asks nothing
+//! of a walk (`crate::services::library::set_folder_watch`).
 //!
 //! The lock is the READ-AT-PLACE ground's, and only while the run stays
 //! read-at-place: a folder imported as copies is a different mode, whose watch
@@ -418,15 +420,19 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
 }
 
 /// Whether ground a watched read-at-place tree already covers is what the sheet
-/// is pointed at: the folder itself, or a rung inside one. One question with the
+/// is pointed at: the folder itself, or a rung inside one — and the tree still
+/// STANDS, because a folder whose shelves the reader took apart is a watch
+/// nobody can see, and its ground is the sheet's again. One question with the
 /// folder run's own lock on the other side of it (`import::folder::resolve_folder`),
 /// answered by the same function so the sheet and the ledger cannot disagree
 /// about which imports are locked.
 fn ground_is_watched(state: AppState, root: &str) -> bool {
-    state
-        .library
-        .folders
-        .with_untracked(|folders| watching_over(folders, root).is_some())
+    state.library.folders.with_untracked(|folders| {
+        state
+            .library
+            .shelves
+            .with_untracked(|shelves| watching_over(folders, shelves, root).is_some())
+    })
 }
 
 /// One format's checkbox row. Its own component because the rows are built from

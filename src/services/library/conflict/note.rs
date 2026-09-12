@@ -1,6 +1,6 @@
 //! Not a question — an answer: a folder the library already reads in place is
 //! named, and closing the note lights its shelf up. One raiser for the note's
-//! three sentences; [`NoteKind`] is the difference between them.
+//! two sentences; [`NoteKind`] is the difference between them.
 //!
 //! [`NoteKind`]: crate::state::library::NoteKind
 
@@ -14,19 +14,21 @@ use crate::state::AppState;
 ///
 /// Not a question: a folder the library reads in place cannot be imported
 /// twice — the second import would either duplicate every book in it or
-/// silently do nothing, and both read as broken. So the honest answer is a
-/// sentence and a highlight, and the reveal rides the modal's close rather
+/// silently do nothing, and both read as broken. So the ground is reconciled
+/// instead (the covering tree's walk, on the reader's own ask), and the note
+/// is what a walk that found every book already standing owes the reader: a
+/// sentence and a highlight, with the reveal riding the modal's close rather
 /// than its open, because a light that burns its 1.6 seconds behind a modal
 /// nobody has dismissed is a light nobody sees.
 ///
 /// One raiser for the note's sentences, because they are one act with one
-/// difference and [`NoteKind`] is that difference: [`NoteKind::Gated`] is the
-/// gate, said before any walk ran, [`NoteKind::NothingNew`] is the report of a
-/// re-import walk that reconciled the tree and found every book already
-/// standing, and [`NoteKind::Returned`] is the fold's report — the import put
-/// a shelf back inside the family its directory names, and the note names the
-/// shelf that went home. Raisers that differed by a boolean were that many
-/// places to keep in step about which sentence the reader was owed.
+/// difference and [`NoteKind`] is that difference: [`NoteKind::NothingNew`]
+/// is the report of a re-import walk that reconciled the tree — its root or
+/// any rung of it — and found every book already standing, and
+/// [`NoteKind::Returned`] is the fold's report — the import put a shelf back
+/// inside the family its directory names, and the note names the shelf that
+/// went home. Raisers that differed by a boolean were that many places to
+/// keep in step about which sentence the reader was owed.
 pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKind) {
     state.library.already_imported.raise(AlreadyNote {
         shelf_id,

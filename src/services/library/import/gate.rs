@@ -18,7 +18,7 @@ use super::tasks::{finish_task, push_task, task_id};
 use super::{rel_of, root_shelf_of, shelf_name, Asked};
 use crate::services::library::conflict;
 use crate::services::library::folder_label;
-use crate::state::library::{ImportTask, NoteKind};
+use crate::state::library::ImportTask;
 use crate::state::AppState;
 use crate::time::now_ms;
 
@@ -33,10 +33,13 @@ use crate::time::now_ms;
 ///   * `into` — the *merge* answer's shelf: the folder's root rung IS the
 ///     shelf the level already held, and every file the walk finds at the
 ///     root files into it;
-///   * `continuation` — the root shelf an already-imported read-at-place
-///     re-pick names, and the note a walk that found NOTHING new owes the
-///     reader after the fact: the reconciliation ran, every book was already
-///     here, and the shelf lights up when the note closes. A run that found
+///   * `continuation` — the shelf an already-imported read-at-place re-pick
+///     names: the tree's root shelf for its own root, the rung's shelf for a
+///     rung of it. It is the shelf the run LIGHTS when the walk found
+///     something — the reader picked that ground and that ground is what
+///     answers — and the note a walk that found NOTHING new owes the reader
+///     after the fact: the reconciliation ran, every book was already here,
+///     and the shelf lights up when the note closes. A run that found
 ///     something answers with the landing and the card instead, and a rescan
 ///     never carries one.
 ///   * `fold` — the family tree and the rung key this run's folder goes back
@@ -76,16 +79,19 @@ pub(crate) struct RootPlan {
 /// OS folder, so which tree the pick belongs to is a question about the
 /// ground and not about where the reader happens to be standing:
 ///
-///   * a RUNG the family already holds — the folder itself or a subfolder of
-///     a tree the library reads in place — cannot mint a second instance, so
-///     it is answered before any sheet with "already imported" and a
-///     highlight of the shelf the reader meant;
-///   * the tree's OWN root, re-picked, is a reconciliation: the walk runs,
-///     new files join the tree as linked books, the logs a removal or a
-///     departure wrote are spent by their books coming back, and only a walk
-///     that found NOTHING raises the note — and a tree that is itself a
-///     member standing outside another goes back inside it on the run's
-///     answer, because an import of a folder is the reader wanting it home;
+///   * ground the family already holds — the tree's OWN root re-picked, or
+///     any RUNG of a tree the library reads in place — cannot mint a second
+///     instance, and is not a bare sentence either: it is a RECONCILIATION.
+///     The covering tree's walk runs on the reader's own ask — new files join
+///     the tree as linked books, the logs a removal or a departure wrote are
+///     spent by their books coming back — on the TREE's ledger, where a rung
+///     has no second door to mint, and the shelf the pick named is the shelf
+///     that lights up. Only a walk that found NOTHING raises the note, and a
+///     tree that is itself a member standing outside another goes back inside
+///     it on the run's answer, because an import of a folder is the reader
+///     wanting it home. A book removed inside a rung comes back on a re-pick
+///     of the rung exactly as on a re-pick of the root: both are the reader
+///     asking the tree for its books again;
 ///   * a rung the family's ledger names but no shelf wears — deleted, or
 ///     departed as a copy — imports BACK INTO THE FAMILY: the walk runs on
 ///     the pick's own ledger, and the run's last act folds the shelf it
@@ -108,33 +114,33 @@ pub(crate) struct RootPlan {
 /// instance the gate exists to prevent.
 pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     if opts.in_place {
-        if let Some((rel, shelf_id, shelf_name)) = covered_shelf(state, &root) {
-            if !rel.is_empty() {
-                // Ground a family tree already holds: a sentence and a
-                // highlight, because a second instance of it is a second door
-                // on one folder.
-                conflict::raise_note(state, shelf_id, shelf_name, NoteKind::Gated);
-                return;
-            }
-            // The tree's OWN root re-picked: the continuation walk. And a
-            // tree standing outside a family that could hold it goes home on
-            // the run's answer — the same fold the subfolder pick below gets
-            // from the gate, promised here rather than asked, because the
-            // reader just said which folder they meant.
+        if let Some(covered) = covered_shelf(state, &root) {
+            // Ground a family tree already holds — its own root re-picked, or
+            // a rung of it — is one reconciliation on the covering tree: the
+            // walk runs on the reader's ask, on the TREE's ledger and root, so
+            // a rung cannot mint a second instance of itself, new files join
+            // the tree, and the books a removal logged come back wherever in
+            // the tree they stood. The continuation names the shelf the pick
+            // meant: it is the light when the walk found something and the
+            // note's subject when it did not. And a tree standing outside a
+            // family that could hold it goes home on the run's answer — the
+            // same fold a subfolder pick gets from the gate below, promised
+            // here rather than asked, because the reader just said which
+            // folder they meant.
             let folders = state.library.folders.get_untracked();
             let fold = folders
                 .iter()
-                .find(|f| f.root == root)
+                .find(|f| f.root == covered.tree_root)
                 .and_then(|f| {
                     let shelves = state.library.shelves.get_untracked();
                     shelves_ops::family_for(&folders, &shelves, &f.root)
                 });
             proceed_folder(
                 state,
-                root,
+                covered.tree_root,
                 opts,
                 RootPlan {
-                    continuation: Some((shelf_id, shelf_name)),
+                    continuation: Some((covered.shelf_id, covered.shelf_name)),
                     fold,
                     ..Default::default()
                 },
@@ -198,11 +204,34 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
     proceed_folder(state, root, opts, RootPlan::default());
 }
 
-/// The standing shelf an in-place tree already holds for `root`, if any, as
-/// `(rel, shelf id, shelf name)`: `rel` empty when `root` IS a folder the
-/// library reads in place, the rung's key when `root` is a subfolder inside
-/// one — and the empty key wins when two in-place trees nest, because a
-/// folder's own tree answers for it before a tree it stands inside.
+/// The standing shelf an in-place tree already holds for `root`, if any: the
+/// shelf the pick meant, and the tree whose ground answers for it.
+///
+/// A value rather than a tuple at the call site: the gate's covered branch
+/// reconciles on `tree_root` and lights `shelf_id`, and a third string beside
+/// those two is a second guessing about which is which.
+pub(super) struct Covered {
+    /// The shelf the pick meant: the tree's root shelf for its own root, the
+    /// rung's shelf for a rung inside it.
+    pub shelf_id: String,
+    pub shelf_name: String,
+    /// The root of the tree that covers the ground — the walk the re-pick
+    /// owes runs on THIS ledger, whichever rung of it the reader picked.
+    pub tree_root: String,
+}
+
+/// [`covered_of`] over the live lists.
+pub(super) fn covered_shelf(state: AppState, root: &str) -> Option<Covered> {
+    let folders = state.library.folders.get_untracked();
+    let shelves = state.library.shelves.get_untracked();
+    covered_of(&folders, &shelves, root)
+}
+
+/// The standing shelf an in-place tree already holds for `root`, if any:
+/// `root` IS a folder the library reads in place, or a subfolder inside one.
+/// A folder's own tree answers for it before a tree it stands inside — the
+/// empty rung wins — because the folder's own root shelf is the door the
+/// reader meant.
 ///
 /// The gate answers only for READ-AT-PLACE trees: their shelves are the OS
 /// folders themselves, so a second import of the same ground is at best a
@@ -210,10 +239,17 @@ pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
 /// never covered — a stored import is the library's own copy, and whether to
 /// make another is the reader's call, asked through the ordinary name
 /// question.
-pub(super) fn covered_shelf(state: AppState, root: &str) -> Option<(String, String, String)> {
-    let folders = state.library.folders.get_untracked();
-    let shelves = state.library.shelves.get_untracked();
-    let mut rung: Option<(String, String, String)> = None;
+///
+/// Pure over the two lists so a host test can name the case it is asserting:
+/// the covered answer is what turns a re-pick into a reconciliation instead
+/// of a second tree, and the turning has to be a table rather than a re-import
+/// of a real folder read back through the note it raised.
+pub(super) fn covered_of(
+    folders: &[WatchedFolder],
+    shelves: &[Shelf],
+    root: &str,
+) -> Option<Covered> {
+    let mut rung: Option<Covered> = None;
     for folder in folders.iter().filter(|f| f.opts.in_place) {
         let Some(rel) = rel_under(root, &folder.root) else {
             continue;
@@ -221,12 +257,17 @@ pub(super) fn covered_shelf(state: AppState, root: &str) -> Option<(String, Stri
         let Some(shelf_id) = folder.shelf_map.get(&rel) else {
             continue;
         };
-        if let Some(shelf) = shelves_ops::find(&shelves, shelf_id) {
+        if let Some(shelf) = shelves_ops::find(shelves, shelf_id) {
+            let covered = Covered {
+                shelf_id: shelf.id.clone(),
+                shelf_name: shelf.name.clone(),
+                tree_root: folder.root.clone(),
+            };
             if rel.is_empty() {
-                return Some((rel, shelf.id.clone(), shelf.name.clone()));
+                return Some(covered);
             }
             if rung.is_none() {
-                rung = Some((rel, shelf.id.clone(), shelf.name.clone()));
+                rung = Some(covered);
             }
         }
     }

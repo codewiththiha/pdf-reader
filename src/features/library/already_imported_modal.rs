@@ -9,15 +9,21 @@
 //! library, and closing it navigates to the shelf the reader meant and lights
 //! it up, wherever in the tree it hangs.
 //!
-//! The note has a second sentence, and it is earned rather than gated: a
-//! re-import of the tree's OWN root runs the reconciliation walk first — new
-//! files join the tree, logged books come back — and only a walk that found
-//! nothing new raises this modal, to say so and light the shelf.
+//! The note is earned rather than gated, and it is never the whole of the
+//! answer: a re-import of ground the library reads — the tree's OWN root or
+//! any rung of it — runs the reconciliation walk FIRST, on the reader's own
+//! ask. New files join the tree, the books a removal or a departure logged
+//! come back, and only a walk that found nothing new raises this modal, to
+//! say so and light the shelf the pick named. A rung re-picked is the tree's
+//! ground as much as its root is, so a book deleted inside a nested folder
+//! comes back on a re-import of the nested folder exactly as on a re-import
+//! of the root — the walk that answers is the tree's, and its ledger is the
+//! one the removal wrote to.
 //!
-//! And a third, which is the FOLD's report: an import that found a folder
-//! standing outside the family its directory names — a rung removed and
-//! imported on its own, a departure's original asked back — put it back on
-//! the rung the disk names instead of asking about it, folded the folder
+//! And a second sentence, which is the FOLD's report: an import that found a
+//! folder standing outside the family its directory names — a rung removed
+//! and imported on its own, a departure's original asked back — put it back
+//! on the rung the disk names instead of asking about it, folded the folder
 //! that was reading it into the tree, and names here the shelf that went
 //! home. An import is an ask, and a member outside its family is an ask
 //! answered.
@@ -67,23 +73,16 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
             {move || {
                 let AlreadyNote { name, kind, .. } = state.library.already_imported.ask.get()?;
                 let sublabel = kind.sublabel().to_string();
-                // Three sentences, one shelf light. The gate's is for a pick
-                // that never walked — a rung inside a tree the library reads
-                // in place; the report's is for a re-import that DID walk and
-                // found every book already standing; the fold's is for an
-                // import that put a shelf back inside the family its
-                // directory names, and the light lands where it stands now.
+                // Two sentences, one shelf light. The report's is for a
+                // re-pick of ground the library reads in place — the tree's
+                // root or a rung of it — that DID walk and found every book
+                // already standing; the fold's is for an import that put a
+                // shelf back inside the family its directory names, and the
+                // light lands where it stands now.
                 let sentence = match &kind {
                     NoteKind::NothingNew => {
                         "The import walked the folder again and found nothing new — every \
                          book is already on the shelf. The shelf lights up when you close \
-                         this."
-                            .to_string()
-                    }
-                    NoteKind::Gated => {
-                        "The library already reads this folder in place — one folder, one \
-                         shelf, so nothing was imported. If you picked a subfolder, the \
-                         light is on its shelf inside the tree. It lights up when you close \
                          this."
                             .to_string()
                     }

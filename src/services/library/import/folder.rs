@@ -144,10 +144,12 @@ struct Snapshot<'a> {
 /// history for any rule to misread.
 ///
 /// The options are the sheet's, except the watch on ground a watched tree
-/// already covers: that one belongs to the folder, and the shelf's menu is where
-/// a hand turns it off (`crate::services::library::set_folder_watch`).
+/// already covers and still stands in: that one belongs to the folder, and the
+/// shelf's menu is where a hand turns it off
+/// (`crate::services::library::set_folder_watch`).
 pub(super) fn resolve_folder(
     folders: &[WatchedFolder],
+    shelves: &[Shelf],
     root: &str,
     opts: FolderOpts,
     plan: &RootPlan,
@@ -165,18 +167,22 @@ pub(super) fn resolve_folder(
     });
     // The sheet's answers are this import's truth, and the next scan's — with
     // one answer the ground has already given. A watched read-at-place tree
-    // stays watched through an import of itself or of a rung of itself, because
-    // an import of a folder is the reader asking for its books again and not
-    // asking the library to stop looking. The sheet locks its own switch on that
-    // ground and this is the same rule behind it, so the two cannot drift: an
-    // import that arrived with the defaults — whose watch is off — would
-    // otherwise un-track the tree it was importing, as a side effect no reader
-    // asked for and none could see happen.
+    // that still STANDS stays watched through an import of itself or of a rung
+    // of itself, because an import of a folder is the reader asking for its
+    // books again and not asking the library to stop looking. The sheet locks
+    // its own switch on that ground and this is the same rule behind it, so the
+    // two cannot drift: an import that arrived with the defaults — whose watch
+    // is off — would otherwise un-track the tree it was importing, as a side
+    // effect no reader asked for and none could see happen. A tree whose
+    // shelves the reader took apart is not standing, and its ground is the
+    // sheet's: the lock is for a watch the reader can see, and an import of an
+    // invisible one with the switch off is how it ends.
     //
     // A run that COPIES is exempt, and the exemption is the sheet's own: the
     // watch is not offered beside a copy, so there is no locked switch here to
     // honour, and a watched copy would be a folder no surface can turn off.
-    let ground_is_watched = opts.in_place && folder_ops::watching_over(folders, root).is_some();
+    let ground_is_watched =
+        opts.in_place && folder_ops::watching_over(folders, shelves, root).is_some();
     folder.opts = opts;
     if ground_is_watched {
         folder.opts.watch = true;
@@ -854,8 +860,9 @@ pub(super) async fn run_folder(
     // running is not overwritten by one.
     let mut books = state.library.books.get_untracked();
     let folders = state.library.folders.get_untracked();
+    let shelves_now = state.library.shelves.get_untracked();
 
-    let mut folder = resolve_folder(&folders, &root, opts, &plan);
+    let mut folder = resolve_folder(&folders, &shelves_now, &root, opts, &plan);
     rehang(state, &folder.id);
 
     // The diff stage: what the walk owes, decided against the snapshot.
@@ -870,10 +877,10 @@ pub(super) async fn run_folder(
     {
         // Nothing to do. A quiet run leaves no trace beyond the folder's own
         // "last scanned" stamp; an explicit import still owes the reader an
-        // answer, which is a card saying nothing was new — and a re-pick of a
-        // tree the library already reads in place owes the note as well, the
-        // gate's old sentence earned now by a walk that found every book
-        // already standing.
+        // answer, which is a card saying nothing was new — and a re-pick of
+        // ground the library already reads in place, the tree's root or any
+        // rung of it, owes the note as well: a sentence earned by a walk that
+        // found every book already standing.
         //
         // One shape of "nothing new" is not the note's, and it is an ANSWER
         // rather than a question: a member of this tree is standing OUTSIDE
@@ -990,13 +997,17 @@ pub(super) async fn run_folder(
             .and_then(|folder| run_fold(state, &plan, &folder, root_rung.as_deref(), &found))
     };
 
-    // What a FOLDER import reveals is the folder: the run's own root shelf,
-    // lit on the level that holds it — the reader stays outside, where the
-    // folder is visible, because a folder import is about a folder. Going
-    // inside and lighting a book is what a FILE import does (`run_files`),
-    // and a folder's books are not the folder. A fold gets the sentence
-    // instead of the bare light: the note says the shelf went home, and its
-    // highlight rides the note's close like every note's.
+    // What a FOLDER import reveals is the folder: the shelf the reader's pick
+    // named, lit on the level that holds it — the reader stays outside, where
+    // the folder is visible, because a folder import is about a folder. For a
+    // re-pick of ground the library already reads that is the continuation's
+    // shelf — the tree's root for its root, the RUNG for a rung, because the
+    // rung is the ground the reader asked about even though the walk that
+    // answered ran on the whole tree — and for a first import it is the run's
+    // own root shelf. Going inside and lighting a book is what a FILE import
+    // does (`run_files`), and a folder's books are not the folder. A fold gets
+    // the sentence instead of the bare light: the note says the shelf went
+    // home, and its highlight rides the note's close like every note's.
     let represented_count = walk.represented.len() as u32;
     if !quiet {
         match folded {
@@ -1004,8 +1015,13 @@ pub(super) async fn run_folder(
                 conflict::raise_note(state, shelf_id, name, NoteKind::Returned)
             }
             None => {
-                if let Some(rung) = &root_rung {
-                    reveal::reveal_shelf(state, rung);
+                let light = plan
+                    .continuation
+                    .as_ref()
+                    .map(|(shelf_id, _)| shelf_id.clone())
+                    .or_else(|| root_rung.clone());
+                if let Some(shelf_id) = light {
+                    reveal::reveal_shelf(state, &shelf_id);
                 }
             }
         }

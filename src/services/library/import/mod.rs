@@ -55,7 +55,7 @@
 //! | --- | --- |
 //! | [`tasks`] | the dock's cards: one run's id, and the lifecycle of the card reporting it |
 //! | [`claim`] | one walk per root: the claim that keeps two runs off one ledger, and the ask that waits a rescan out |
-//! | [`gate`] | the read-at-place arrival, before any walk: already imported, a continuation, a fold — and the run's [`gate::RootPlan`] |
+//! | [`gate`] | the read-at-place arrival: covered ground is the covering tree's reconciliation, a rung no shelf wears is a fold, and anything else is the level's name question — and the run's [`gate::RootPlan`] |
 //! | [`folder`] | the folder run itself: scan, diff, copy, land, in one write |
 //! | [`files`] | the loose-file run, and the single-file landings every sheet's answer rides |
 //! | [`verify`] | the startup measurement, the focus rescan, and the watch a hand turns |

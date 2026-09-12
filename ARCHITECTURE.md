@@ -712,18 +712,18 @@ ground rather than about the level the reader happens to be standing on. The gat
 answers for READ-AT-PLACE picks alone; a stored pick walks straight to the level's name question,
 its copies being the library's own second instance, unrelated to any tree:
 
-- A RUNG inside a tree the library reads in place — a subfolder of an imported folder — never
-  reaches a sheet: the "already imported" note
-  (`features::library::already_imported_modal`) says what the pick already is, and closing it
-  navigates to the shelf the reader meant and lights it, wherever in the tree it hangs.
-- The tree's OWN root, re-picked read at its place, is not a note and not a sheet but a
-  RECONCILIATION: the walk runs as the explicit import it is, new files join the tree as linked
-  books, the logs a removal or a departure wrote are spent by their books coming back — and only
-  a walk that found nothing new raises the note, saying the sentence the gate used to say up
-  front and lighting the shelf. What a FOLDER import reveals is the folder: the walk ends on its
-  root shelf lit on the level that holds it — the reader stays outside, where the folder is
-  visible — while a FILE import reveals the book (`run_files`). Going inside the tree and
-  lighting a book in it would be reporting the folder's contents as the folder.
+- Ground the library already reads in place — the tree's OWN root re-picked, or any RUNG inside
+  it — is not a note and not a sheet but a RECONCILIATION: the covering tree's walk runs as the
+  explicit import it is, on the tree's own ledger and root, so a rung cannot mint a second
+  instance of itself. New files join the tree as linked books, the logs a removal or a departure
+  wrote are spent by their books coming back — wherever in the tree they stood, a book deleted
+  inside a nested folder returns on a re-pick of the nested folder exactly as on a re-pick of
+  the root — and only a walk that found nothing new raises the note
+  (`features::library::already_imported_modal`), saying so and lighting the shelf. What a FOLDER
+  import reveals is the folder: the walk ends on the shelf the pick named — the tree's root
+  shelf for its root, the rung's own shelf for a rung — lit on the level that holds it, while a
+  FILE import reveals the book (`run_files`). Going inside the tree and lighting a book in it
+  would be reporting the folder's contents as the folder.
 - A pick whose rung the family's ledger names but no shelf wears — removed, or departed as a
   copy — imports BACK INTO THE FAMILY: the walk runs on the pick's own ledger — where the
   departed books' logs are, to be spent — and the run's last act folds the shelf it minted onto
@@ -746,10 +746,13 @@ because its books are the files themselves.
 
 The watch itself has two doors and one lock. The import sheet's switch is the first door, and it is
 the only one that can set a watch on ground the library has not seen. Ground a watched read-at-place
-tree ALREADY covers — the folder re-picked, or a rung of it — is watched, and there the switch is
-locked on and says why (`library_core::folder::watching_over`): an import of a folder is the reader
-asking for its books again, not asking the library to stop looking, and a sheet whose defaults are
-"not watched" would otherwise un-track a folder by importing it. The folder run reads the same
+tree ALREADY covers AND still stands in — the folder re-picked, or a rung of it — is watched, and
+there the switch is locked on and says why (`library_core::folder::watching_over`): an import of a
+folder is the reader asking for its books again, not asking the library to stop looking, and a sheet
+whose defaults are "not watched" would otherwise un-track a folder by importing it. A folder whose
+shelves the reader took apart holds no lock — the row keeps watching, because a shelf comes back
+when the folder next places a book, but a watch nobody can see is not one the sheet may enforce,
+and an import of its ground with the switch off is how it ends. The folder run reads the same
 function before it writes the sheet's answers over a standing ledger, so a route that never passed
 the sheet cannot do it either — and a run that COPIES is exempt, because the sheet does not offer the
 watch beside a copy, so there is no lock to honour and a watched copy would be a folder with no door

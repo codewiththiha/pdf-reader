@@ -163,20 +163,34 @@ fn folder_in_mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedF
     }
 }
 
+/// A shelf of folder `id`'s tree: what makes the folder one the reader can
+/// still see, which is the standing half of the watch lock's condition.
+fn standing(shelf_id: &str, folder_id: &str) -> Shelf {
+    library_core::testkit::folder_shelf(shelf_id, shelf_id, folder_id, None, &[], None)
+}
+
 #[test]
 fn an_import_of_a_watched_folder_does_not_un_watch_it() {
     let folders = vec![folder_in_mode("f1", "/books", true, true)];
+    let shelves = vec![standing("s1", "f1")];
     // The sheet locks its own switch on this ground, and the routes that never
     // pass the sheet answer the same way: a folder dropped on the window wears
     // the defaults, whose watch is off, and an import that un-tracked the tree
     // it was importing would be a side effect no reader asked for.
-    let reimported = resolve_folder(&folders, "/books", FolderOpts::default(), &RootPlan::default());
+    let reimported = resolve_folder(
+        &folders,
+        &shelves,
+        "/books",
+        FolderOpts::default(),
+        &RootPlan::default(),
+    );
     assert!(reimported.opts.watch, "the tree's own root, re-picked");
     assert_eq!(reimported.id, "f1", "and it is still the same ledger row");
     // A rung of the tree is the tree's ground, and its run mints a row of its
     // own — which the fold at the end of that run retires into the tree.
     let rung = resolve_folder(
         &folders,
+        &shelves,
         "/books/scifi",
         FolderOpts::default(),
         &RootPlan::default(),
@@ -185,12 +199,53 @@ fn an_import_of_a_watched_folder_does_not_un_watch_it() {
 }
 
 #[test]
+fn a_watched_folder_no_shelf_of_stands_holds_no_lock() {
+    // The shape taking a folder's shelf apart leaves behind: the row keeps
+    // watching, but there is nothing on screen the lock could be about — so
+    // the ground is the sheet's, and an import of it with the switch off is
+    // how the invisible watch ends rather than a switch stuck for good.
+    let folders = vec![folder_in_mode("f1", "/books", true, true)];
+    let resolved = resolve_folder(
+        &folders,
+        &[],
+        "/books",
+        FolderOpts::default(),
+        &RootPlan::default(),
+    );
+    assert_eq!(resolved.id, "f1", "the ledger row is still the one standing");
+    assert!(
+        !resolved.opts.watch,
+        "the sheet's answer lands on a folder nothing can see"
+    );
+    // And the same ground with the switch ON re-watches it: the sheet is the
+    // reader's again in both directions.
+    let asked = resolve_folder(
+        &folders,
+        &[],
+        "/books",
+        FolderOpts {
+            watch: true,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(asked.opts.watch);
+}
+
+#[test]
 fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
     // An unwatched read-at-place folder: the switch is the reader's, in both
     // directions, and the shelf's own menu is the other hand that sets it.
-    let off = resolve_folder(&[], "/books", FolderOpts::default(), &RootPlan::default());
+    let off = resolve_folder(
+        &[],
+        &[],
+        "/books",
+        FolderOpts::default(),
+        &RootPlan::default(),
+    );
     assert!(!off.opts.watch);
     let asked = resolve_folder(
+        &[],
         &[],
         "/books",
         FolderOpts {
@@ -200,9 +255,10 @@ fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
         &RootPlan::default(),
     );
     assert!(asked.opts.watch, "a first import is watched because the sheet said so");
-    let standing = vec![folder_in_mode("f1", "/books", true, false)];
+    let standing_folder = vec![folder_in_mode("f1", "/books", true, false)];
     let again = resolve_folder(
-        &standing,
+        &standing_folder,
+        &[standing("s1", "f1")],
         "/books",
         FolderOpts {
             watch: true,
@@ -216,6 +272,7 @@ fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
     let copying = vec![folder_in_mode("f2", "/copies", false, true)];
     let resolved = resolve_folder(
         &copying,
+        &[standing("s2", "f2")],
         "/copies",
         FolderOpts {
             in_place: false,
@@ -227,10 +284,13 @@ fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
     assert!(!resolved.opts.watch);
     // The exemption's own case: a watched read-at-place tree, re-imported as
     // copies. The watch belongs to the mode the reader is leaving, and a
-    // watched copy would be a folder no surface offers a way to turn off.
+    // watched copy would be a folder no surface offers a way to turn off. The
+    // tree stands, so this is the copies exemption answering and not the
+    // standing rule.
     let watched = vec![folder_in_mode("f3", "/books", true, true)];
     let copies = resolve_folder(
         &watched,
+        &[standing("s3", "f3")],
         "/books",
         FolderOpts {
             in_place: false,
@@ -1006,17 +1066,24 @@ fn the_gate_answers_by_the_rung_the_pick_names() {
     state.library.folders.set(vec![one]);
     state.library.shelves.set(vec![plain("fs"), plain("sub")]);
 
-    // The tree's own root: the empty rung, which is the continuation's
-    // shape — a walk, and the note only if the walk finds nothing.
-    let (rel, id, name) = covered_shelf(state, "/books").expect("covered");
-    assert_eq!(rel, "");
-    assert_eq!(id, "fs");
-    assert_eq!(name, "fs");
+    // The tree's own root: the continuation's shape — a walk on the tree's
+    // own ledger, the root shelf as the light, and the note only if the walk
+    // finds nothing.
+    let covered = covered_shelf(state, "/books").expect("covered");
+    assert_eq!(covered.shelf_id, "fs");
+    assert_eq!(covered.shelf_name, "fs");
+    assert_eq!(covered.tree_root, "/books");
 
-    // A rung inside the tree: the note's shape, lit on the rung itself.
-    let (rel, id, _) = covered_shelf(state, "/books/scifi").expect("covered");
-    assert_eq!(rel, "scifi");
-    assert_eq!(id, "sub");
+    // A rung inside the tree: the SAME shape — the walk runs on the covering
+    // tree, so a book a removal logged inside the rung comes back on a
+    // re-pick of the rung — and the light is the rung's own shelf, because
+    // the rung is the ground the reader asked about.
+    let covered = covered_shelf(state, "/books/scifi").expect("covered");
+    assert_eq!(covered.shelf_id, "sub");
+    assert_eq!(
+        covered.tree_root, "/books",
+        "the reconciliation is the covering tree's, not a second door on the rung"
+    );
 
     // Ground no in-place tree holds is no gate at all.
     assert!(covered_shelf(state, "/other").is_none());
@@ -1056,9 +1123,12 @@ fn a_folder_own_tree_answers_for_it_before_a_tree_it_stands_inside() {
         .shelves
         .set(vec![plain("fs"), plain("outersub"), plain("sub")]);
 
-    let (rel, id, _) = covered_shelf(state, "/books/scifi").expect("covered");
-    assert_eq!(rel, "", "the folder's own tree is the empty rung");
-    assert_eq!(id, "sub", "and its own root shelf is the light");
+    let covered = covered_shelf(state, "/books/scifi").expect("covered");
+    assert_eq!(
+        covered.tree_root, "/books/scifi",
+        "the folder's own tree answers for it"
+    );
+    assert_eq!(covered.shelf_id, "sub", "and its own root shelf is the light");
 }
 
 #[test]

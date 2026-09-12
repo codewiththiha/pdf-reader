@@ -491,10 +491,13 @@ touches a file you own.
   about them is a question. What a FOLDER import lights is the FOLDER: you stay on the level
   that holds it and its card lights up — only a file import goes to a book and lights that.
   Only a walk that found nothing new says so: the *already imported* note, which lights the
-  shelf when you close it. Picking a SUBFOLDER of a tree the library reads in place still gets
-  that note without a walk — a linked folder cannot mint a second instance of itself, or of a
-  rung inside its own tree — and a shelf of the library's own copies can, so a stored folder
-  still asks the name question.
+  shelf when you close it. Picking a SUBFOLDER of a tree the library reads in place is the same
+  reconciliation, not a sentence that skips it: the tree's walk runs on the tree's ledger — a
+  linked folder cannot mint a second instance of itself, or of a rung inside its own tree — so
+  a book you removed inside the nested folder comes back on a re-import of the nested folder
+  exactly as on a re-import of the root, and the light lands on the rung you picked. A shelf of
+  the library's own copies can mint another of anything, so a stored folder still asks the name
+  question.
 - **A folder you import back goes home to its family.** Picking a folder whose directory stands
   inside a tree the library reads in place, when the tree no longer holds a shelf for it — you
   removed the rung, or it left as a copy — imports it back INTO that tree: the walk runs on the

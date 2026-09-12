@@ -214,17 +214,15 @@ pub struct Reveal {
     pub nonce: u64,
 }
 
-/// Which sentence the "already a shelf here" note says. All three are a
-/// report and a highlight — the import that could have asked a question put
-/// the shelf back instead, and the note is how the reader is told.
+/// Which sentence the "already a shelf here" note says. Both are a report and
+/// a highlight — the import that could have asked a question put the shelf
+/// back instead, or walked ground it already read and found every book
+/// standing, and the note is how the reader is told.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NoteKind {
-    /// The gate's: a rung inside a tree the library reads in place, said BEFORE
-    /// any walk ran, because a linked shelf IS the OS folder and there is no
-    /// second instance of it to make.
-    Gated,
-    /// The report's: a re-import of the tree's own root DID walk and reconcile,
-    /// and found nothing new — every book already stood and no log came back.
+    /// The report's: a re-import of ground the library already reads in place
+    /// — the tree's own root or any rung of it — DID walk and reconcile, and
+    /// found nothing new: every book already stood and no log came back.
     NothingNew,
     /// The fold's: the import put a shelf BACK — the picked folder into the
     /// family its ground names, or a member an outer tree's walk found
@@ -239,7 +237,6 @@ impl NoteKind {
     /// The line under the note's heading.
     pub fn sublabel(&self) -> &'static str {
         match self {
-            NoteKind::Gated => "Already in the library",
             NoteKind::NothingNew => "Nothing new to import",
             NoteKind::Returned => "Back where its folder names",
         }
