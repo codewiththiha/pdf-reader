@@ -41,7 +41,7 @@ use crate::features::library::selection::{
 use crate::services::document;
 use crate::services::library::{
     create_shelf_and_enter, delete_shelf, path_of_row, path_of_shelf, relink_dialog,
-    reveal_in_folder,
+    reveal_in_folder, set_folder_watch, shelf_watch, ShelfWatch,
 };
 use crate::state::AppState;
 
@@ -254,12 +254,27 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
 /// and the one place a shelf is subdivided from where it stands: the new shelf is
 /// filed inside the one that was asked, whichever level the page is on, because
 /// "new shelf" on a folder is an answer about that folder and not about the page.
+///
+/// It is also the one place a folder's WATCH is turned on and off, and the reason
+/// it lives here rather than on the import sheet is the sheet's own lock: ground a
+/// watched tree already covers is not the sheet's to un-watch, because an import of
+/// a folder is a question about its books and not about whether the library keeps
+/// looking at it. So the switch that can only be set once — at the import that made
+/// the folder — has its answer changed here, from any rung of the tree, by a hand
+/// that means it.
 #[component]
 fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView {
     // The directory this shelf represents, when it represents one: the ground
     // its watched folder's tree cut it from. A shelf the reader owns has no
     // ground and gets no row.
     let reveal = path_of_shelf(state, &id);
+    // The watch this shelf's ground answers for, when it answers for one: a
+    // shelf of a folder the library reads in place, at its root or at any rung
+    // of its tree, and a shelf a hand made inside one. The flag is the FOLDER's,
+    // so every one of them offers the same row — and the row says which folder
+    // it is about, so a reader three shelves deep is TOLD that the whole tree
+    // stopped being watched rather than finding out at the next focus.
+    let watch: Option<ShelfWatch> = shelf_watch(state, &id);
     let open_id = id.clone();
     let select_id = id.clone();
     let inside_id = id.clone();
@@ -291,6 +306,40 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                         on_click=move || {
                             close.run(());
                             reveal_in_folder(state, path.clone());
+                        }
+                    />
+                }
+            })}
+            {watch.map(|watch| {
+                let folder_id = watch.folder_id.clone();
+                let folder_name = watch.label.clone();
+                let on = watch.on;
+                let (icon, label) = if on {
+                    (IconName::EyeOff, "Stop watching for new books")
+                } else {
+                    (IconName::Eye, "Watch for new books")
+                };
+                let label = label.to_string();
+                // The second line is what says the flag is the FOLDER's: from a
+                // rung three shelves deep, "stop watching" is a sentence about a
+                // tree the reader is not looking at, and naming it is the
+                // difference between a toggle and a surprise.
+                let sublabel = format!("The whole “{folder_name}” folder");
+                let title = if on {
+                    "Stop checking this folder; the books already here stay"
+                } else {
+                    "Check this folder for new books when the app opens or you come back to it"
+                }
+                .to_string();
+                view! {
+                    <MenuItem
+                        icon=icon
+                        label=label
+                        sublabel=sublabel
+                        title=title
+                        on_click=move || {
+                            close.run(());
+                            set_folder_watch(state, &folder_id, !on);
                         }
                     />
                 }

@@ -32,6 +32,14 @@
 //!     merged import's rungs and a COPYING folder's shelves, which a hand may
 //!     take and keep. Virtual shelves are the reader's own and no scan ever
 //!     rearranges them.
+//!   * **an ask outranks a rescan.** A focus rescan is a walk the app started
+//!     for itself, and on a watched library it is in flight constantly —
+//!     including at the moment a picker closes, because a native dialog handing
+//!     the window back is a focus event like any other. An import that found its
+//!     own root being walked therefore waits out the walk rather than being
+//!     refused by it ([`claim::when_root_is_free`]): the rescan honours the
+//!     tombstones a removal wrote, which is its whole job, and the run that
+//!     lifts them is the reader's.
 //!   * **an ask outranks a removal.** The tombstones a removal writes are an
 //!     answer to the passive rescan — "stay quiet about this file" — and not to
 //!     the reader picking the same folder again a week later. [`Asked::Explicitly`]
@@ -46,11 +54,11 @@
 //! | module | the question |
 //! | --- | --- |
 //! | [`tasks`] | the dock's cards: one run's id, and the lifecycle of the card reporting it |
-//! | [`claim`] | one walk per root: the claim that keeps two runs off one ledger |
+//! | [`claim`] | one walk per root: the claim that keeps two runs off one ledger, and the ask that waits a rescan out |
 //! | [`gate`] | the read-at-place arrival, before any walk: already imported, a continuation, a fold — and the run's [`gate::RootPlan`] |
 //! | [`folder`] | the folder run itself: scan, diff, copy, land, in one write |
 //! | [`files`] | the loose-file run, and the single-file landings every sheet's answer rides |
-//! | [`verify`] | the startup measurement and the focus rescan |
+//! | [`verify`] | the startup measurement, the focus rescan, and the watch a hand turns |
 //! | [`restore`] | the books a folder's own log gives back, and the files a log REPRESENTS |
 //! | [`copy`] | the store batch and its per-file failure sentence |
 //! | [`replace`] | the sheet's *replace*: the sweep out and the walk back in |
@@ -78,7 +86,9 @@ pub use gate::import_folder;
 pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;
 pub use tasks::dismiss_task;
-pub use verify::{rescan_watched, verify_library, verify_one};
+pub use verify::{
+    rescan_watched, set_folder_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
+};
 
 pub(crate) use files::{land_stored_copy, land_stored_copy_settling, settle_ledger};
 pub(crate) use gate::{proceed_folder, reclaim_rung, RootPlan};

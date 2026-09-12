@@ -52,6 +52,14 @@ pub enum IconName {
     /// wears a line across it because that one opens a book; this one is the
     /// directory itself, and the two rows sit in the same menu.
     Folder,
+    /// An open eye — the row that turns a folder's watch ON: the library looking
+    /// at a directory, which is the whole of what watching one is. A pair with
+    /// [`IconName::EyeOff`] rather than one glyph on a label that flips, because
+    /// the row names the action and not the state, and the two actions are
+    /// opposites.
+    Eye,
+    /// The same eye, struck through — the row that turns a folder's watch OFF.
+    EyeOff,
     Settings,
     Layout,
     /// The settings tab for the reflowable formats' typography.
@@ -87,6 +95,8 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Close => ("0 0 24 24", "<path d='M18 6 6 18M6 6l12 12'/>"),
         IconName::Link => ("0 0 24 24", "<path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/>"),
         IconName::Folder => ("0 0 24 24", "<path d='M2 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/>"),
+        IconName::Eye => ("0 0 24 24", "<path d='M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0'/><circle cx='12' cy='12' r='3'/>"),
+        IconName::EyeOff => ("0 0 24 24", "<path d='M10.73 5.08A10.75 10.75 0 0 1 12 5a10.75 10.75 0 0 1 9.94 6.65 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-4.43 5.14'/><path d='M6.61 6.61A10.75 10.75 0 0 0 2.06 11.65a1 1 0 0 0 0 .7 10.75 10.75 0 0 0 15.31 5.04'/><path d='M14.12 14.12a3 3 0 1 1-4.24-4.24'/><path d='m2 2 20 20'/>"),
         IconName::Check => ("0 0 24 24", "<path d='M20 6 9 17l-5-5'/>"),
         IconName::SinglePage => ("0 0 24 24", "<rect x='4' y='3' width='16' height='18' rx='2'/><path d='M4 9h16'/>"),
         IconName::DualPage => ("0 0 24 24", "<rect x='3' y='4' width='8.5' height='16' rx='1.5'/><rect x='12.5' y='4' width='8.5' height='16' rx='1.5'/>"),

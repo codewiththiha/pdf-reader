@@ -1,7 +1,8 @@
 //! The sheet's *replace*: the books the standing shelf holds leave the
 //! library through the removal's own sweep, and the arriving folder's copies
-//! take the shelf — with the root's claim asked FIRST, so a walk already in
-//! flight refuses the run before anything is removed.
+//! take the shelf — with the root's claim asked FIRST, so a run the reader
+//! already started refuses the answer before anything is removed, and a
+//! rescan walking the same tree is waited out before anything is removed.
 
 use std::collections::HashSet;
 
@@ -12,7 +13,7 @@ use library_core::folder::FolderOpts;
 use library_core::ledger;
 use library_core::shelf::{self as shelves_ops};
 
-use super::claim::{already_importing, root_is_claimed};
+use super::claim::{already_importing, when_root_is_free};
 use super::gate::{proceed_folder, RootPlan};
 use crate::services::library::arrange::{self, PurgeOpts};
 use crate::state::AppState;
@@ -24,19 +25,33 @@ use crate::state::AppState;
 /// walk filing into it as the merge's plan does.
 ///
 /// The claim is asked FIRST, the ordering `replace_folder_with_copies` gives
-/// for the tree's own replace: a walk already in flight refuses the run
-/// before anything is removed, because a removal no import re-lands is the
-/// one outcome this ordering exists to prevent.
+/// for the tree's own replace: a run the reader already started refuses the
+/// answer before anything is removed, and a rescan walking the same tree is
+/// waited out before anything is removed, because a removal no import
+/// re-lands is the one outcome this ordering exists to prevent. The sweep and
+/// the walk that follows it are one synchronous step inside the start, so
+/// nothing can land between the two.
 pub(crate) fn replace_shelf_with_folder(
     state: AppState,
     root: String,
     opts: FolderOpts,
     existing_id: String,
 ) {
-    if root_is_claimed(&root) {
+    let walking = root.clone();
+    if !when_root_is_free(&root, move || {
+        sweep_and_walk_into(state, walking, opts, existing_id)
+    }) {
         already_importing(state, &root);
-        return;
     }
+}
+
+/// The replace's own two steps, in the order that makes them one answer.
+fn sweep_and_walk_into(
+    state: AppState,
+    root: String,
+    opts: FolderOpts,
+    existing_id: String,
+) {
     let doomed: Vec<String> = {
         let (rows, shelves) = state.library.snapshot_rows();
         shelves_ops::members_of(&rows, &shelves, &existing_id)
@@ -98,16 +113,21 @@ pub(crate) fn purge_folder_linked_books(state: AppState, root: &str) {
 ///
 /// The claim is asked FIRST, and the check and the claim run in one
 /// synchronous step (the webview is single-threaded, and nothing awaits
-/// between them): a walk already in flight — a focus rescan of this very
-/// folder is the realistic one — refuses the run with the sentence the
-/// double-import always gets, and the purge simply does not happen. A
-/// removal no import re-lands is the one outcome this ordering exists to
-/// prevent.
+/// between them): a run the reader already started refuses the answer with
+/// the sentence the double-import always gets, and the purge simply does not
+/// happen. A removal no import re-lands is the one outcome this ordering
+/// exists to prevent.
+///
+/// A focus rescan of this very folder is the realistic other holder, and it is
+/// waited out rather than refused: the purge and the walk that re-lands it run
+/// together on the rescan's release, which is the same guarantee the refusal
+/// was there for and an answer the reader gets instead of a sentence.
 pub(crate) fn replace_folder_with_copies(state: AppState, root: String, opts: FolderOpts) {
-    if root_is_claimed(&root) {
+    let walking = root.clone();
+    if !when_root_is_free(&root, move || {
+        purge_folder_linked_books(state, &walking);
+        proceed_folder(state, walking, opts, RootPlan::default());
+    }) {
         already_importing(state, &root);
-        return;
     }
-    purge_folder_linked_books(state, &root);
-    proceed_folder(state, root, opts, RootPlan::default());
 }

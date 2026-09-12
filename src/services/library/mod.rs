@@ -52,8 +52,8 @@ pub use arrange::{
 pub use covers::backfill_missing;
 pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
-    dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book, verify_library,
-    verify_one,
+    dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book,
+    set_folder_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
 };
 
 /// The last segment of a path, on either separator, with no trailing separator.
@@ -94,6 +94,8 @@ mod tests {
     }
 }
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use wasm_bindgen::JsValue;
@@ -106,6 +108,7 @@ use library_core::wire::{ImportProgress, PathCheck, StoreRequest, StoreResult};
 use leptos::prelude::*;
 
 use crate::state::{AppState, Toast};
+use crate::time::now_ms;
 
 pub use crate::events::IMPORT_PROGRESS_EVENT;
 
@@ -348,6 +351,39 @@ struct Options {
     default_path: Option<String>,
 }
 
+/// Whether one of the app's own native pickers is up, and the stamp of the last
+/// one that closed.
+///
+/// A picker is the one focus event the window gets that the app caused itself:
+/// a native dialog takes the window's place and hands it back, and the handback
+/// is a `tauri://focus` like any other. Which matters because the listener that
+/// event reaches answers with a walk of every watched folder — a walk of the
+/// very ground the dialog was opened to pick, started one tick before the import
+/// that was going to walk it properly.
+static PICKER_OPEN: AtomicBool = AtomicBool::new(false);
+static PICKER_CLOSED: AtomicU64 = AtomicU64::new(0);
+
+/// How long after a picker closes its focus still counts as the picker's. The
+/// handback and the dialog's answer are two messages on their way to the same
+/// thread, and the grace is the room they need to arrive in either order.
+const PICKER_GRACE_MS: u64 = 1_000;
+
+/// Whether the window's current focus is the app's own picker handing it back.
+///
+/// The rescan's one guard against walking a folder the reader is about to
+/// import by name — see `import::verify::run_watched`. Only the WALK waits for a
+/// focus that means it; the measure pass, which is what marks a book `missing`
+/// when its file died while a dialog was up, runs on every focus whatever.
+pub(crate) fn picker_focus() -> bool {
+    if PICKER_OPEN.load(Ordering::Relaxed) {
+        return true;
+    }
+    let closed = PICKER_CLOSED.load(Ordering::Relaxed);
+    // No stamp, no answer: off wasm the clock is inert at zero, and reading a
+    // zero stamp as "closed this instant" would be a rescan that never runs.
+    closed != 0 && now_ms().saturating_sub(closed) < PICKER_GRACE_MS
+}
+
 /// One `__TAURI__.dialog.open` call. Returns `None` on cancel.
 async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
     if !tauri_bridge::has_tauri() {
@@ -375,9 +411,14 @@ async fn pick(options: Options) -> Result<Option<Vec<String>>, String> {
         set(&opts, "filters", &filters);
     }
 
-    let value = tauri_bridge::open(opts)
-        .await
-        .map_err(|e| format!("Dialog failed: {}", describe(e)))?;
+    // Stamped around the await and not around the whole function: the dialog is
+    // the only part of this that takes the window's focus away, and a picker
+    // that failed to open never took it and so never owes one back.
+    PICKER_OPEN.store(true, Ordering::Relaxed);
+    let opened = tauri_bridge::open(opts).await;
+    PICKER_OPEN.store(false, Ordering::Relaxed);
+    PICKER_CLOSED.store(now_ms(), Ordering::Relaxed);
+    let value = opened.map_err(|e| format!("Dialog failed: {}", describe(e)))?;
     if value.is_null() || value.is_undefined() {
         return Ok(None);
     }

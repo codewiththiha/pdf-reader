@@ -473,6 +473,35 @@ pub fn find_mut<'a>(folders: &'a mut [WatchedFolder], id: &str) -> Option<&'a mu
     folders.iter_mut().find(|f| f.id == id)
 }
 
+/// The watched read-at-place tree whose ground covers `ground`, when one does.
+///
+/// One question with two askers, and the two are the reason it lives here rather
+/// than in either of them: the import sheet asks it before offering the watch
+/// switch, and a folder run asks it before writing the sheet's answers over a
+/// standing ledger. Ground a tree already watches is watched, and an import of it
+/// is the reader asking for its books again rather than asking the library to
+/// stop looking — so the switch is not the reader's to set on that ground, and a
+/// run that let a stale `false` through would un-track a folder by importing it.
+/// Turning the watch off is the shelf's own menu, which asks nothing of a walk.
+///
+/// The DEEPEST covering tree answers, because a nested read-at-place import is
+/// the closer family — [`crate::shelf::family_for`]'s own rule for a fold. The
+/// folder itself is its own deepest cover, which is what makes a re-pick of a
+/// watched root the case the sheet locks on.
+///
+/// `None` when no read-at-place tree covers the ground, or the covering tree is
+/// not watched: an unwatched folder's switch is the reader's, here and on the
+/// menu. A COPYING folder is never an answer, because the sheet does not offer
+/// the watch beside a copy either — the two switches are nested in the sheet and
+/// nested here, so the ground the sheet can ask about is the ground this names.
+pub fn watching_over<'a>(folders: &'a [WatchedFolder], ground: &str) -> Option<&'a WatchedFolder> {
+    folders
+        .iter()
+        .filter(|f| f.opts.in_place && f.opts.watch)
+        .filter(|f| rel_under(ground, &f.root).is_some())
+        .max_by_key(|f| f.root.trim_end_matches(['/', '\\']).chars().count())
+}
+
 /// Make a persisted folder list internally valid: drop rows with no id or no
 /// root, dedupe by root (first wins), clamp the size threshold into the range
 /// the sheet can produce, and empty a format set that would admit nothing.
@@ -865,5 +894,65 @@ mod tests {
         assert!(find(&folders, "gone").is_none());
         find_mut(&mut folders, "f2").unwrap().opts.watch = true;
         assert!(find(&folders, "f2").is_some_and(|f| f.opts.watch));
+    }
+
+    /// A folder with the two mode switches set explicitly: the fixture the
+    /// watch-cover rule is asked about, where the default fixture's `false`
+    /// watch would answer every case the same way.
+    fn mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
+        WatchedFolder {
+            id: id.into(),
+            opts: FolderOpts {
+                in_place,
+                watch,
+                ..FolderOpts::default()
+            },
+            ..folder(root)
+        }
+    }
+
+    #[test]
+    fn the_watch_a_folder_already_holds_is_not_the_sheets_to_take_off() {
+        let folders = vec![mode("f1", "/books", true, true)];
+        // The tree's own root, re-picked: the case the sheet locks on.
+        assert_eq!(watching_over(&folders, "/books").map(|f| f.id.as_str()), Some("f1"));
+        // And a rung of it: importing a subfolder of a watched tree joins the
+        // watch the tree holds rather than starting a second opinion about it.
+        assert_eq!(
+            watching_over(&folders, "/books/scifi").map(|f| f.id.as_str()),
+            Some("f1")
+        );
+        // A trailing separator is the same directory, and a name that merely
+        // starts with the root is not inside it — `rel_under`'s directory edge.
+        assert!(watching_over(&folders, "/books/").is_some());
+        assert!(watching_over(&folders, "/bookshelf").is_none());
+        assert!(watching_over(&folders, "/other").is_none());
+    }
+
+    #[test]
+    fn only_a_watched_read_at_place_tree_covers_ground() {
+        // An unwatched tree leaves the switch to the reader...
+        assert!(watching_over(&[mode("f1", "/books", true, false)], "/books").is_none());
+        // ...and so does a copying one, whatever its watch says: the sheet does
+        // not offer the watch beside a copy, so it has no lock to honour there.
+        assert!(watching_over(&[mode("f2", "/books", false, true)], "/books").is_none());
+    }
+
+    #[test]
+    fn the_deeper_of_two_watched_trees_answers_for_a_rung() {
+        let folders = vec![
+            mode("outer", "/books", true, true),
+            mode("inner", "/books/scifi", true, true),
+        ];
+        assert_eq!(
+            watching_over(&folders, "/books/scifi/deep").map(|f| f.id.as_str()),
+            Some("inner"),
+            "the nested import is the closer family"
+        );
+        assert_eq!(
+            watching_over(&folders, "/books/poetry").map(|f| f.id.as_str()),
+            Some("outer"),
+            "and the outer tree still answers for the ground only it covers"
+        );
     }
 }

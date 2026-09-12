@@ -1,10 +1,13 @@
-use super::claim::claim_root;
+use std::cell::Cell;
+use std::rc::Rc;
+
+use super::claim::{claim_root, root_is_claimed, when_root_is_free};
 use super::files::land_file;
-use super::folder::{mint_walked_row, Landing, Minted};
+use super::folder::{mint_walked_row, resolve_folder, Landing, Minted};
 use super::gate::{covered_shelf, displaced_member, reclaim_rung, run_fold, RootPlan};
 use super::replace::{purge_folder_linked_books, replace_rows_of_tree};
 use super::restore::{covered_fate, restore_covered_file, CoveredFate};
-use super::{rel_of, shelf_name};
+use super::{rel_of, shelf_name, Asked};
 use crate::state::AppState;
 use leptos::prelude::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
@@ -81,21 +84,163 @@ fn a_file_lands_as_its_own_row_on_the_level_it_was_dropped_on() {
 
 #[test]
 fn one_root_is_one_run_at_a_time() {
-    let first = claim_root("/books");
+    let first = claim_root("/books", Asked::Explicitly);
     assert!(first.is_some());
     assert!(
-        claim_root("/books").is_none(),
+        claim_root("/books", Asked::Explicitly).is_none(),
         "a second walk of the same tree is refused while the first is live"
     );
     assert!(
-        claim_root("/other").is_some(),
+        claim_root("/other", Asked::Explicitly).is_some(),
         "a different folder is a different run"
     );
     drop(first);
     assert!(
-        claim_root("/books").is_some(),
+        claim_root("/books", Asked::Explicitly).is_some(),
         "and the release is the run ending, whatever ended it"
     );
+}
+
+#[test]
+fn an_ask_waits_out_the_rescan_walking_its_folder() {
+    // The shape a watched folder's re-import used to break on: a picker closing
+    // is a focus event, a focus event walks every watched folder, and the
+    // import the picker was opened for arrives to find its own root claimed.
+    // Refusing it there is a re-import that returns nothing at all, because the
+    // run that was refused is the only one that lifts a tombstone.
+    let started = Rc::new(Cell::new(false));
+    let walked = started.clone();
+    let rescan = claim_root("/queue", Asked::OnFocus);
+    assert!(rescan.is_some());
+    assert!(
+        when_root_is_free("/queue", move || walked.set(true)),
+        "a rescan in flight is waited out rather than answered with a refusal"
+    );
+    assert!(
+        root_is_claimed("/queue"),
+        "and the wait counts as a run of this root, so a fold stands aside for it"
+    );
+    assert!(
+        !started.get(),
+        "waiting is waiting: the ask does not walk over the run in flight"
+    );
+    assert!(
+        !when_root_is_free("/queue", || {}),
+        "a second ask behind the first is refused, and does not replace it"
+    );
+    drop(rescan);
+    assert!(
+        started.get(),
+        "the rescan's release is what starts the ask, on the ledger it wrote back"
+    );
+}
+
+#[test]
+fn a_run_the_reader_started_is_the_one_an_ask_is_refused_by() {
+    let mine = claim_root("/taken", Asked::Explicitly);
+    assert!(mine.is_some());
+    assert!(
+        !when_root_is_free("/taken", || {}),
+        "a second import of one folder is the refusal the sentence is for"
+    );
+    drop(mine);
+    assert!(
+        when_root_is_free("/taken", || {}),
+        "and a free root runs the start at once, with nothing queued"
+    );
+}
+
+/// A read-at-place folder with the two mode switches set: the fixture the watch
+/// lock is asked about, where [`folder`]'s defaults answer every case the same.
+fn folder_in_mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
+    WatchedFolder {
+        opts: FolderOpts {
+            in_place,
+            watch,
+            ..FolderOpts::default()
+        },
+        ..folder(id, root, &[], Vec::new())
+    }
+}
+
+#[test]
+fn an_import_of_a_watched_folder_does_not_un_watch_it() {
+    let folders = vec![folder_in_mode("f1", "/books", true, true)];
+    // The sheet locks its own switch on this ground, and the routes that never
+    // pass the sheet answer the same way: a folder dropped on the window wears
+    // the defaults, whose watch is off, and an import that un-tracked the tree
+    // it was importing would be a side effect no reader asked for.
+    let reimported = resolve_folder(&folders, "/books", FolderOpts::default(), &RootPlan::default());
+    assert!(reimported.opts.watch, "the tree's own root, re-picked");
+    assert_eq!(reimported.id, "f1", "and it is still the same ledger row");
+    // A rung of the tree is the tree's ground, and its run mints a row of its
+    // own — which the fold at the end of that run retires into the tree.
+    let rung = resolve_folder(
+        &folders,
+        "/books/scifi",
+        FolderOpts::default(),
+        &RootPlan::default(),
+    );
+    assert!(rung.opts.watch, "a subfolder of a watched tree joins the watch");
+}
+
+#[test]
+fn the_watch_on_ground_nothing_watches_is_the_sheets_to_set() {
+    // An unwatched read-at-place folder: the switch is the reader's, in both
+    // directions, and the shelf's own menu is the other hand that sets it.
+    let off = resolve_folder(&[], "/books", FolderOpts::default(), &RootPlan::default());
+    assert!(!off.opts.watch);
+    let asked = resolve_folder(
+        &[],
+        "/books",
+        FolderOpts {
+            watch: true,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(asked.opts.watch, "a first import is watched because the sheet said so");
+    let standing = vec![folder_in_mode("f1", "/books", true, false)];
+    let again = resolve_folder(
+        &standing,
+        "/books",
+        FolderOpts {
+            watch: true,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(again.opts.watch, "and a re-import can turn a watch on");
+    // A COPYING folder's watch is nobody's lock: the sheet does not offer the
+    // watch beside a copy, so there is no locked switch for a run to honour.
+    let copying = vec![folder_in_mode("f2", "/copies", false, true)];
+    let resolved = resolve_folder(
+        &copying,
+        "/copies",
+        FolderOpts {
+            in_place: false,
+            watch: false,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(!resolved.opts.watch);
+    // The exemption's own case: a watched read-at-place tree, re-imported as
+    // copies. The watch belongs to the mode the reader is leaving, and a
+    // watched copy would be a folder no surface offers a way to turn off.
+    let watched = vec![folder_in_mode("f3", "/books", true, true)];
+    let copies = resolve_folder(
+        &watched,
+        "/books",
+        FolderOpts {
+            in_place: false,
+            watch: false,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(!copies.opts.watch, "a copies run is a different mode, not this folder watched harder");
+    assert!(!copies.opts.in_place);
 }
 
 #[test]

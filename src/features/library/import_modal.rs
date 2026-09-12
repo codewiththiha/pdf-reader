@@ -9,12 +9,28 @@
 //! own file from the moment it lands, and rescanning the source afterwards would
 //! be a second opinion about a book that already exists. The row hides rather
 //! than disables, because a switch that cannot be turned on is noise.
+//!
+//! One ground the watch switch is NOT the reader's to set, and it disables rather
+//! than hides: ground a watched read-at-place tree already covers — the folder
+//! itself re-picked, or a rung of it — is watched, and an import of it is the
+//! reader asking for its books again rather than asking the library to stop
+//! looking. The switch locks on and says why, because the alternative is a sheet
+//! whose defaults quietly un-track a folder by importing it. Turning a watch off
+//! is the shelf's own right-click, which asks nothing of a walk
+//! (`crate::services::library::set_folder_watch`).
+//!
+//! The lock is the READ-AT-PLACE ground's, and only while the run stays
+//! read-at-place: a folder imported as copies is a different mode, whose watch
+//! the sheet has already taken off with the switch it hides, and leaving a copy
+//! watched would be a folder nothing can turn off any more — the shelf's menu
+//! answers for read-at-place ground, because that is the only ground the sheet
+//! offers the watch on.
 
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
-use library_core::folder::{FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
+use library_core::folder::{watching_over, FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
 use library_core::scan::selectable_formats;
 use reader_core::format::Format;
 
@@ -88,6 +104,21 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
 
     let in_place = Signal::derive(move || opts.with(|o| o.in_place));
     let watching = Signal::derive(move || opts.with(|o| o.watch));
+    // Ground a watched read-at-place tree already covers, where the watch is the
+    // folder's answer and not the sheet's question. Read on the OPEN as well as
+    // on the root: the root survives the sheet closing, so a folder whose watch
+    // the reader turned off from its own menu in between would be answered from
+    // the last look this sheet took at the ledger.
+    let watch_locked = Signal::derive(move || {
+        sheet.open.get()
+            && sheet
+                .root
+                .get()
+                .is_some_and(|root| ground_is_watched(state, &root))
+    });
+    // What the switch shows, which is the value that lands: a locked watch is on
+    // whatever the options signal was left holding by the last folder imported.
+    let watching_on = Signal::derive(move || watching.get() || watch_locked.get());
     let include = Signal::derive(move || opts.with(|o| o.include_selected));
     let grouped = Signal::derive(move || opts.with(|o| o.groups));
     let min_size = Signal::derive(move || opts.with(|o| o.min_size));
@@ -249,7 +280,12 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                             o.in_place = on;
                                             // Watching a copy is a question the
                                             // sheet does not ask, so turning the
-                                            // mode off takes the answer with it.
+                                            // mode off takes the answer with it —
+                                            // a lock included, because the lock is
+                                            // about ground the library READS, and
+                                            // a run that copies instead is a
+                                            // different mode rather than the same
+                                            // folder watched harder.
                                             if !on {
                                                 o.watch = false;
                                             }
@@ -266,16 +302,41 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                                 "Watch for new books"
                                             </span>
                                             <span class="mt-0.5 block text-xs text-muted">
-                                                "Checks for new books when the app opens or you come back to it."
+                                                {move || {
+                                                    if watch_locked.get() {
+                                                        "This folder is already watched. Right-click \
+                                                         its shelf to stop."
+                                                            .to_string()
+                                                    } else {
+                                                        "Checks for new books when the app opens or \
+                                                         you come back to it."
+                                                            .to_string()
+                                                    }
+                                                }}
                                             </span>
                                         </div>
-                                        <Switch
-                                            checked=watching
-                                            on_change=Callback::new(move |on| {
-                                                opts.update(|o| o.watch = on);
-                                            })
-                                            title="Watch for new books".to_string()
-                                        />
+                                        // Rebuilt rather than reactive inside:
+                                        // the row's title is a `String` prop, and
+                                        // a lock that changed is a switch with a
+                                        // different sentence on it.
+                                        {move || {
+                                            let locked = watch_locked.get();
+                                            let title = if locked {
+                                                "Already watched — the shelf's own menu turns it off"
+                                            } else {
+                                                "Watch for new books"
+                                            };
+                                            view! {
+                                                <Switch
+                                                    checked=watching_on
+                                                    on_change=Callback::new(move |on| {
+                                                        opts.update(|o| o.watch = on);
+                                                    })
+                                                    disabled=watch_locked
+                                                    title=title.to_string()
+                                                />
+                                            }
+                                        }}
                                     </div>
                                 </div>
                             </Show>
@@ -327,12 +388,20 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         </Button>
                         <Button
                             on_click=move |_| {
-                                let (Some(root), options) = (
+                                let (Some(root), mut options) = (
                                     sheet.root.get_untracked(),
                                     opts.get_untracked(),
                                 ) else {
                                     return;
                                 };
+                                // The value that lands is the value the switch
+                                // showed: on ground a watched tree covers the
+                                // switch is locked ON and the options signal may
+                                // still be holding the last folder's `false`, so
+                                // the lock writes what the reader was looking at.
+                                if options.in_place && watch_locked.get_untracked() {
+                                    options.watch = true;
+                                }
                                 sheet.open.set(false);
                                 import_folder(state, root, options);
                             }
@@ -346,6 +415,18 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                     </SheetFooter>
         </ModalShell>
     }
+}
+
+/// Whether ground a watched read-at-place tree already covers is what the sheet
+/// is pointed at: the folder itself, or a rung inside one. One question with the
+/// folder run's own lock on the other side of it (`import::folder::resolve_folder`),
+/// answered by the same function so the sheet and the ledger cannot disagree
+/// about which imports are locked.
+fn ground_is_watched(state: AppState, root: &str) -> bool {
+    state
+        .library
+        .folders
+        .with_untracked(|folders| watching_over(folders, root).is_some())
 }
 
 /// One format's checkbox row. Its own component because the rows are built from

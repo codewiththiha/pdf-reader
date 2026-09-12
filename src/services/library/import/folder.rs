@@ -9,7 +9,7 @@ use leptos::prelude::*;
 
 use library_core::book::{add_book, book_rows, book_rows_mut, Book, Fingerprint, Origin, Row};
 use library_core::conflict::Arrival;
-use library_core::folder::{FolderOpts, WatchedFolder};
+use library_core::folder::{self as folder_ops, FolderOpts, WatchedFolder};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
@@ -142,7 +142,11 @@ struct Snapshot<'a> {
 /// reader would otherwise get back every book they deleted last week. A folder
 /// the library has never seen is minted here, and a minted row carries no
 /// history for any rule to misread.
-fn resolve_folder(
+///
+/// The options are the sheet's, except the watch on ground a watched tree
+/// already covers: that one belongs to the folder, and the shelf's menu is where
+/// a hand turns it off (`crate::services::library::set_folder_watch`).
+pub(super) fn resolve_folder(
     folders: &[WatchedFolder],
     root: &str,
     opts: FolderOpts,
@@ -159,8 +163,24 @@ fn resolve_folder(
         last_seen: Vec::new(),
         scanned_ms: 0,
     });
-    // The sheet's answers are this import's truth, and the next scan's.
+    // The sheet's answers are this import's truth, and the next scan's — with
+    // one answer the ground has already given. A watched read-at-place tree
+    // stays watched through an import of itself or of a rung of itself, because
+    // an import of a folder is the reader asking for its books again and not
+    // asking the library to stop looking. The sheet locks its own switch on that
+    // ground and this is the same rule behind it, so the two cannot drift: an
+    // import that arrived with the defaults — whose watch is off — would
+    // otherwise un-track the tree it was importing, as a side effect no reader
+    // asked for and none could see happen.
+    //
+    // A run that COPIES is exempt, and the exemption is the sheet's own: the
+    // watch is not offered beside a copy, so there is no locked switch here to
+    // honour, and a watched copy would be a folder no surface can turn off.
+    let ground_is_watched = opts.in_place && folder_ops::watching_over(folders, root).is_some();
     folder.opts = opts;
+    if ground_is_watched {
+        folder.opts.watch = true;
+    }
     // A merge files into the shelf the level already held: the folder's root
     // rung is that shelf, and the map is the one place the walk, the chain
     // minting and every later rescan read the answer from — which is what makes

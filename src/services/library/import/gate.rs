@@ -12,9 +12,9 @@ use library_core::id;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
-use super::claim::{already_importing, claim_root, root_is_claimed};
+use super::claim::{already_importing, claim_root, root_is_claimed, when_root_is_free};
 use super::folder::run_folder;
-use super::tasks::{push_task, task_id};
+use super::tasks::{finish_task, push_task, task_id};
 use super::{rel_of, root_shelf_of, shelf_name, Asked};
 use crate::services::library::conflict;
 use crate::services::library::folder_label;
@@ -498,9 +498,12 @@ pub(crate) fn reclaim_rung(
     true
 }
 
-/// Claim the root and start the run — the half of [`import_folder`] that is
-/// the same whatever the folder sheet decided, and the half its answers call
-/// directly.
+/// Put the run in motion — the half of [`import_folder`] that is the same
+/// whatever the folder sheet decided, and the half its answers call directly.
+///
+/// The reader's card goes up here, on the click that asked. The walk starts
+/// here too, unless a rescan is walking this very root, in which case it starts
+/// on that rescan's release — one walk per root, and an ask that outranks it.
 pub(crate) fn proceed_folder(
     state: AppState,
     root: String,
@@ -509,15 +512,47 @@ pub(crate) fn proceed_folder(
 ) {
     // A folder already being imported is an import already answering this ask:
     // its card is on the dock and its walk is the same tree. Racing it would
-    // clobber its ledger write, so the second ask says so instead.
-    let Some(claim) = claim_root(&root) else {
+    // clobber its ledger write, so the second ask says so instead. A RESCAN of
+    // the same tree is not a second ask and is not refused — an ask outranks it,
+    // and the run waits out the walk the app started for itself rather than
+    // losing the one that lifts a tombstone. `when_root_is_free` owns that rule.
+    let task = task_id();
+    let card = task.clone();
+    let walking = root.clone();
+    if !when_root_is_free(&root, move || {
+        start_folder_run(state, walking, opts, plan, card)
+    }) {
         already_importing(state, &root);
         return;
+    }
+    // The card goes up whether the walk started now or is waiting for a rescan
+    // to finish: the reader clicked Import, and a dock with nothing on it while
+    // a folder is being walked is a dock that says the click did nothing.
+    push_task(state, ImportTask::new(task, folder_label(&root)));
+}
+
+/// Claim the root and start the walk. One shape for the two starts an import
+/// has — the click that found the root free, and the release of the rescan that
+/// was walking it when the click arrived — because the two owe the same run and
+/// the same card, and a second spelling is a second place to forget the claim.
+fn start_folder_run(
+    state: AppState,
+    root: String,
+    opts: FolderOpts,
+    plan: RootPlan,
+    task: String,
+) {
+    let Some(claim) = claim_root(&root, Asked::Explicitly) else {
+        // The root went to a run of its own between a rescan's release and this
+        // start, which the single thread leaves no room for — but the card is
+        // already up, so the card is closed rather than left counting a walk
+        // that never started.
+        finish_task(state, &task, 0, 0);
+        return;
     };
-    let task = task_id();
-    push_task(state, ImportTask::new(task.clone(), folder_label(&root)));
     spawn_local(async move {
-        // Held for the whole run: the drop is the release, on every exit path.
+        // Held for the whole run: the drop is the release, on every exit path,
+        // and the release is what hands the root to an ask queued behind it.
         let _claim = claim;
         run_folder(state, task, root, opts, Asked::Explicitly, plan).await;
     });

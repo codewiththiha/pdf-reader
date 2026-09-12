@@ -744,6 +744,24 @@ its copies being the library's own second instance, unrelated to any tree:
 A read-at-place tree has no *as new* and needs no *replace*: its re-import is a merge by nature,
 because its books are the files themselves.
 
+The watch itself has two doors and one lock. The import sheet's switch is the first door, and it is
+the only one that can set a watch on ground the library has not seen. Ground a watched read-at-place
+tree ALREADY covers — the folder re-picked, or a rung of it — is watched, and there the switch is
+locked on and says why (`library_core::folder::watching_over`): an import of a folder is the reader
+asking for its books again, not asking the library to stop looking, and a sheet whose defaults are
+"not watched" would otherwise un-track a folder by importing it. The folder run reads the same
+function before it writes the sheet's answers over a standing ledger, so a route that never passed
+the sheet cannot do it either — and a run that COPIES is exempt, because the sheet does not offer the
+watch beside a copy, so there is no lock to honour and a watched copy would be a folder with no door
+left on it. The second door is the shelf's own right-click, which is where a watch is turned off
+(`services::library::set_folder_watch`): the flag is the FOLDER's, one answer about one ground, so
+the folder's root shelf and every rung of its tree ask the same question, and so does a shelf the
+reader made inside that tree — the row names the folder it is about, because "stop watching" from
+three shelves deep is a sentence about a tree the reader is not looking at. Turning it on owes a
+walk and gets the rescan's, quietly: a hand that just asked the library to look at a folder should
+not wait for a focus to see what it finds, and the rescan's table is the one that honours a
+tombstone, so a watch turned on is not an ask for the books the reader took out.
+
 A STORED arrival's question is the level's name alone, and its three answers are the level's own:
 *Show it* imports nothing and goes and looks — the shelf that is here lit where it stands, the
 folder spelling of the book sheet's *already imported*. *Replace* sends the books the shelf that
@@ -819,7 +837,15 @@ The split is IO on one side and decisions on the other, and the wire between the
   `StoreRequest`, `StoreResult`). Both sides depend on `library-core`, so there is one declaration
   and no contract test needed to prove the halves agree — which is an improvement on the AI chunk
   envelope, written twice and held together by a test.
-- `services::library::import` runs the ledger and writes the answer. Nothing is committed until the
+- `services::library::import` runs the ledger and writes the answer. One walk per root, claimed
+  synchronously and released by the run's own drop (`import::claim`), and **an ask outranks a
+  rescan**: an import that finds its root being walked by a focus rescan waits out that walk rather
+  than being refused by it, because the rescan honours the tombstones a removal wrote — which is its
+  whole job — and the run that lifts them is the reader's. Waiting rather than cancelling, since the
+  rescan's write is the ledger the import reads. A focus the app's own picker caused does not start
+  a walk at all (`services::library::picker_focus`): a native dialog handing the window back is a
+  focus event like any other, and the import it hands back with is a better walk of the same ground.
+  Nothing is committed until the
   whole answer is known: the scan, the diff and the copies all run against local copies of the
   three lists, and the state is set once. A shelf that filled in file by file would repaint per
   file, and a failure half way through would leave the library holding books whose bytes never

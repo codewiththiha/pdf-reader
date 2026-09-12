@@ -151,10 +151,11 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
         }
         ShelfAnswer::Replace => {
             // The folder's OWN read-at-place tree is the import module's own
-            // sweep: the root's claim first, so a walk already in flight
-            // refuses the answer BEFORE anything is removed, then the linked
-            // books go and the copy walk spends the logs it wrote. Any other
-            // shelf — a stored folder's, a reader's own — is the removal's
+            // sweep: the root's claim first, so a run the reader already started
+            // refuses the answer BEFORE anything is removed and a rescan walking
+            // the same tree is waited out before anything is removed, then the
+            // linked books go and the copy walk spends the logs it wrote. Any
+            // other shelf — a stored folder's, a reader's own — is the removal's
             // receipt over the shelf's members and the copies filing into it.
             let own_in_place = ask.own
                 && state.library.folders.with_untracked(|folders| {
