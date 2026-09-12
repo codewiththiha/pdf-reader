@@ -432,7 +432,7 @@ put it while the clean half of the gesture — the books and the virtual shelves
 carried — keeps the landing it already had.
 
 The sheet has a third answer when the drop landed inside the mover's FAMILY — a rung of an
-in-place tree whose root covers the ground the mover stands on (`arrange::target_is_family`) —
+in-place tree whose root covers the ground the mover stands on (`arrange::shelf_departure::target_is_family`) —
 because a read-at-place shelf lives on the seat its directory stands on, so a move inside the
 tree it belongs to never has to cost a copy. *Put it back in its place* returns every mover that
 has a way home (`arrange::ReturnPath`): a displaced folder — one removed and imported on its own,
