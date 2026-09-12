@@ -7,11 +7,11 @@ use leptos::prelude::*;
 use library_core::book::find_row;
 use library_core::conflict::next_name;
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::controls::switch::Switch;
 use crate::components::primitives::menu::choice_row::ChoiceRow;
-use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
+use crate::components::primitives::overlay::question_sheet::QuestionSheet;
 use crate::services::library::conflict::{ConflictAsk, FolderMergeAnswer, self};
+
+use super::info::more_waiting;
 use crate::state::AppState;
 
 
@@ -37,11 +37,7 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
     let incoming = ask.arrival.name.clone();
     let existing = ask.existing_name.clone();
     let heading = incoming.clone();
-    let subtitle = if waiting > 0 {
-        format!("Into “{existing}” · {} more waiting", waiting)
-    } else {
-        format!("Into “{existing}”")
-    };
+    let subtitle = more_waiting(format!("Into “{existing}”"), waiting);
     // The file arriving is the very file the row on the shelf reads — a
     // re-import of a read-at-place folder's own book. *As new* of it would be
     // a second row of one linked file, which the library does not make, so
@@ -80,16 +76,13 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
     let new_note = format!("Keep both — this file becomes “{new_name}”");
 
     view! {
-        <>
-            <SheetHeader
-                heading=heading
-                subtitle=subtitle
-                on_close=Callback::new(move |_| conflict::cancel(state))
-            />
-
-            <SheetBody>
-                <p class="text-xs text-muted">{question}</p>
-                <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+        <QuestionSheet
+            heading=heading
+            subtitle=subtitle
+            question=question
+            on_close=Callback::new(move |_| conflict::cancel(state))
+            apply_all=Some((waiting, apply_all))
+        >
                     <ChoiceRow
                         label="Merge"
                         note=merge_note
@@ -127,32 +120,6 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
                             />
                         }
                     })}
-                </div>
-                {(waiting > 0).then(|| {
-                    let label = format!("Apply to all {}", waiting + 1);
-                    view! {
-                        <div class="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2">
-                            <span class="text-xs text-muted">{label}</span>
-                            <Switch
-                                checked=Signal::derive(move || apply_all.get())
-                                on_change=Callback::new(move |on| apply_all.set(on))
-                                title="Give every waiting question this same answer"
-                                    .to_string()
-                            />
-                        </div>
-                    }
-                })}
-            </SheetBody>
-
-            <SheetFooter>
-                <Button
-                    on_click=move |_| conflict::cancel(state)
-                    variant=ButtonVariant::Ghost
-                    title="Leave the shelf as it is"
-                >
-                    <span>"Cancel"</span>
-                </Button>
-            </SheetFooter>
-        </>
+        </QuestionSheet>
     }
 }

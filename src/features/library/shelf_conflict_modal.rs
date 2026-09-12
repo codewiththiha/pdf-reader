@@ -40,10 +40,9 @@
 
 use leptos::prelude::*;
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
-use crate::components::primitives::overlay::modal_shell::ModalShell;
-use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
 use crate::components::primitives::menu::choice_row::ChoiceRow;
+use crate::components::primitives::overlay::modal_shell::ModalShell;
+use crate::components::primitives::overlay::question_sheet::QuestionSheet;
 use crate::services::library::conflict::{self, ShelfAnswer, ShelfConflictAsk};
 use crate::state::AppState;
 
@@ -231,16 +230,13 @@ fn ShelfSheet(state: AppState, info: ShelfAskInfo) -> impl IntoView {
     } = info;
 
     view! {
-        <>
-            <SheetHeader
-                heading=heading
-                subtitle=subtitle
-                on_close=Callback::new(move |_| conflict::cancel_shelf(state))
-            />
-
-            <SheetBody>
-                <p class="text-xs text-muted">{question}</p>
-                <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+        <QuestionSheet
+            heading=heading
+            subtitle=subtitle
+            question=question
+            on_close=Callback::new(move |_| conflict::cancel_shelf(state))
+            cancel_title="Import nothing"
+        >
                     {if in_place {
                         // The read-at-place arrival's two: a pointer at the
                         // shelf that is here, or the folder's books joining
@@ -300,18 +296,6 @@ fn ShelfSheet(state: AppState, info: ShelfAskInfo) -> impl IntoView {
                         }
                             .into_any()
                     }}
-                </div>
-            </SheetBody>
-
-            <SheetFooter>
-                <Button
-                    on_click=move |_| conflict::cancel_shelf(state)
-                    variant=ButtonVariant::Ghost
-                    title="Import nothing"
-                >
-                    <span>"Cancel"</span>
-                </Button>
-            </SheetFooter>
-        </>
+        </QuestionSheet>
     }
 }

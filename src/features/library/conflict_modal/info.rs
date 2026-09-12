@@ -48,20 +48,37 @@ pub(super) struct NameSheetInfo {
     pub(super) link_offer: bool,
 }
 
+/// The level an arrival is going to, as a sheet's sentence says it. One
+/// spelling for every question that names the level — the name sheet's, the
+/// covered file's — because two sheets that worded the same shelf differently
+/// would read as two different places. An empty name means the shelf went
+/// while the sheet was up, which is the same answer as the root's: a level
+/// with no name to speak.
+pub(super) fn where_line(state: AppState, shelf_id: &str) -> String {
+    if shelf_id == ALL_SHELF {
+        "in your library".to_string()
+    } else {
+        match state.library.shelf_name(shelf_id) {
+            name if !name.is_empty() => format!("on “{name}”"),
+            _ => "on this shelf".to_string(),
+        }
+    }
+}
+
+/// A subtitle with the queue's count on it, when there is a queue:
+/// "Into “Fiction” · 3 more waiting". One spelling for the three sheets whose
+/// questions queue, so the count reads the same whichever question is up.
+pub(super) fn more_waiting(subtitle: String, waiting: usize) -> String {
+    if waiting > 0 {
+        format!("{subtitle} · {} more waiting", waiting)
+    } else {
+        subtitle
+    }
+}
+
 impl NameSheetInfo {
     pub(super) fn of(state: AppState, ask: &ConflictAsk) -> Self {
-        let where_line = if ask.arrival.shelf_id == ALL_SHELF {
-            "in your library".to_string()
-        } else {
-            // Empty means the shelf went while the sheet was up, which is
-            // the same answer as the root's: a level with no name to speak.
-            // `sanitize` drops a shelf whose name is blank, so nothing on a
-            // loaded list answers with one.
-            match state.library.shelf_name(&ask.arrival.shelf_id) {
-                name if !name.is_empty() => format!("on “{name}”"),
-                _ => "on this shelf".to_string(),
-            }
-        };
+        let where_line = where_line(state, &ask.arrival.shelf_id);
         // One read of both lists, so the promise on the row and the answer the
         // click gives are counted against the same library.
         let (rows, shelves) = state.library.snapshot_rows();

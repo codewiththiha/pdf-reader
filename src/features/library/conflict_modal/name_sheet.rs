@@ -6,24 +6,19 @@ use leptos::prelude::*;
 
 use library_core::conflict::{Answer, MoveAnswer};
 
-use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::menu::choice_row::ChoiceRow;
-use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter, SheetHeader};
+use crate::components::primitives::overlay::question_sheet::QuestionSheet;
 use crate::services::library::conflict;
 use crate::state::AppState;
 
-use super::info::NameSheetInfo;
+use super::info::{more_waiting, NameSheetInfo};
 
 /// The sheet's body, split out so it takes the facts by value: the outer view
 /// answers "is there still a question?" on every run, and this one is built
 /// once per answer with an answer it can keep.
 #[component]
 pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
-    let subtitle = if info.waiting > 0 {
-        format!("Already {} · {} more waiting", info.where_line, info.waiting)
-    } else {
-        format!("Already {}", info.where_line)
-    };
+    let subtitle = more_waiting(format!("Already {}", info.where_line), info.waiting);
     let import = info.import;
     let link_offer = info.link_offer;
     let question = if import {
@@ -89,16 +84,12 @@ pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
     );
 
     view! {
-        <>
-            <SheetHeader
-                heading=heading
-                subtitle=subtitle
-                on_close=Callback::new(move |_| conflict::cancel(state))
-            />
-
-            <SheetBody>
-                <p class="text-xs text-muted">{question}</p>
-                <div class="mt-3 divide-y divide-line rounded-xl border border-line">
+        <QuestionSheet
+            heading=heading
+            subtitle=subtitle
+            question=question
+            on_close=Callback::new(move |_| conflict::cancel(state))
+        >
                     {if import {
                         // A file arriving: what to put on this level.
                         view! {
@@ -175,18 +166,6 @@ pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
                         }
                             .into_any()
                     }}
-                </div>
-            </SheetBody>
-
-            <SheetFooter>
-                <Button
-                    on_click=move |_| conflict::cancel(state)
-                    variant=ButtonVariant::Ghost
-                    title="Leave the shelf as it is"
-                >
-                    <span>"Cancel"</span>
-                </Button>
-            </SheetFooter>
-        </>
+        </QuestionSheet>
     }
 }
