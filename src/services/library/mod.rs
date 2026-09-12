@@ -41,7 +41,7 @@ pub use arrange::{
     reorder_shelves_to_anchor, unfile_books,
 };
 pub use covers::backfill_missing;
-pub use reveal::{reveal_book, reveal_shelf};
+pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
     dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book, verify_library,
     verify_one,
@@ -107,6 +107,7 @@ const CMD_SCAN: &str = "scan_folder";
 const CMD_VERIFY: &str = "verify_paths";
 const CMD_STORE: &str = "store_books";
 const CMD_DELETE: &str = "delete_stored";
+const CMD_REVEAL: &str = "reveal_in_folder";
 
 /// What every command here answers when there is no shell to answer: the same
 /// wording the open dialog uses, because from the reader's side it is the same
@@ -203,6 +204,26 @@ pub(crate) async fn copy_one_to_store(task: &str, path: &str, id: &str) -> Resul
         },
         Err(message) => Err(message),
     }
+}
+
+/// Ask the OS file manager to reveal a path: the item selected inside its
+/// folder on the platforms that have the verb, the containing folder on the
+/// one that has not.
+///
+/// The ok side is the absence of news and is never parsed — a file manager
+/// that opened is its own report — and the error side arrives a sentence
+/// already, which the caller puts on a toast: a reveal is a courtesy, and
+/// its failure changes no state.
+pub(crate) async fn reveal_path(path: String) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&PathArgs { path: &path })
+        .map_err(|e| format!("reveal: could not encode the request ({e})"))?;
+    tauri_bridge::invoke(CMD_REVEAL, args)
+        .await
+        .map_err(|e| {
+            e.as_string()
+                .unwrap_or_else(|| format!("The file manager did not open: {e:?}"))
+        })
+        .map(|_| ())
 }
 
 /// Delete a copy the app made, when the book it belonged to is removed. Fire

@@ -1138,6 +1138,17 @@ selection is. The actions both surfaces offer are one function each in
 `features::library::selection` for that reason: a bar and a menu that each minted a shelf would
 eventually differ about whether to drill into it.
 
+One row hands the reader out of the library and into the OS: *Reveal in folder*
+(`services::library::reveal::reveal_in_folder`) opens the file manager on the item, selected
+inside its folder. WHICH path a row reveals is the row's own fact, read at the build rather than
+at the click — the store's copy for a book the library owns, because that copy is the file this
+row reads; the file where it stands for a book read at its place; the target's own answer for a
+link; the directory its tree cut it from for a watched folder's shelf (`path_of_row`,
+`path_of_shelf`, over the one `Book::path` and `dir_of_rung` that already own those answers). A
+shelf the reader owns has no ground and gets no row, a book whose address died gets a disabled
+one, and the shell's verb is per platform — the item selected on macOS and Windows, the
+containing folder on Linux, which has no standard select (`commands::library::reveal_in_folder`).
+
 A card's right-click is stopped before the hold's exhaust is even asked about. A completed hold
 answers with a synthetic `contextmenu` on some platforms, and one that went on to bubble would open
 the LEVEL's menu under the finger that was busy selecting.

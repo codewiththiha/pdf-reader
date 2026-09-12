@@ -375,11 +375,16 @@ touches a file you own.
   chain with nothing measured and nothing listening. ArrowDown opens it too, since those levels are on
   no other surface. Every crumb is a drop target, which is what makes a deep level reachable with a
   hand full of books; the ellipsis itself is a place to rest and not a place to drop.
-- **A right-click is a menu, per kind of thing.** A book gets Open, Select, Find again when its
-  address died, and Remove; a folder gets Open, Select, a New shelf filed inside the one you asked
-  whichever level the page is on, and Take shelf apart; a card already in a selection gets the set's menu — New shelf from these, Remove, Clear
-  — because a right-click on one of several things means all of them; and the empty shelf gets New
-  shelf and Select all. No row carries a second line explaining itself: a right-click is a reader
+- **A right-click is a menu, per kind of thing.** A book gets Open, Select, Reveal in folder, Find
+  again when its address died, and Remove; a folder gets Open, Select, Reveal in folder, a New
+  shelf filed inside the one you asked whichever level the page is on, and Take shelf apart; a
+  card already in a selection gets the set's menu — New shelf from these, Remove, Clear — because
+  a right-click on one of several things means all of them; and the empty shelf gets New shelf and
+  Select all. **Reveal in folder** opens the OS file manager on the thing itself: a book the
+  library copied reveals the copy in the library's store, a book read at its place reveals the
+  file where it stands, a link reveals what it points at, and a folder shelf reveals the
+  directory its tree cut it from — with no row at all for a shelf the reader owns, which has no
+  directory to show. No row carries a second line explaining itself: a right-click is a reader
   who knows what the rows mean. One host answers all four, so the menu is the same menu wherever it was asked
   from, and a right-click never starts a drag: a menu row is clicked by a pointer that has already
   been released, and a session begun from one would have no release to end it.

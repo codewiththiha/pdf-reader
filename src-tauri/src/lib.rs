@@ -170,7 +170,8 @@ pub fn run() {
             commands::library::scan_folder,
             commands::library::verify_paths,
             commands::library::store_books,
-            commands::library::delete_stored
+            commands::library::delete_stored,
+            commands::library::reveal_in_folder
         ])
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| {

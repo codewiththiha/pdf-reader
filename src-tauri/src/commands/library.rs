@@ -17,7 +17,12 @@
 //!     directory this module ever writes to, and stamps each copy with its own
 //!     modification time so it measures as the file it is rather than as the
 //!     one it came from ([`own_stamp`]);
-//!   * [`delete_stored`] removes a copy, and refuses anything outside it.
+//!   * [`delete_stored`] removes a copy, and refuses anything outside it;
+//!   * [`reveal_in_folder`] hands a path to the OS file manager — the one
+//!     verb here that neither measures nor writes, and the one with no
+//!     document gate, because a shelf's DIRECTORY is as revealable as a
+//!     book's file and opening a file manager on a path the reader pointed
+//!     at is the whole of what it does.
 //!
 //! Progress is emitted on [`PROGRESS_EVENT`] rather than returned, because
 //! walking a large folder takes longer than a UI is willing to look frozen.
@@ -428,6 +433,63 @@ pub fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(format!("could not delete {path}: {e}")),
     }
+}
+
+/// Reveal a path in the OS file manager: the item selected inside its folder
+/// on the platforms that have the verb (macOS, Windows), the containing
+/// folder opened on the platform that has not (Linux).
+///
+/// WHICH path a row reveals is the frontend's answer, not this one's — a book
+/// the library copied names its copy in the store, a book read at its place
+/// names the file where it stands, and a shelf of a watched folder names the
+/// directory the tree cut it from. This is the hand-off to the OS and nothing
+/// else: an existence check first, because the honest answer about a file
+/// that is gone is a sentence here rather than a file manager opening on
+/// nothing, and the spawn is the whole of the result — `explorer` answers
+/// even a successful `/select` with a nonzero exit code, so waiting on a
+/// status would report a failure for every success on Windows.
+#[tauri::command]
+pub async fn reveal_in_folder(path: String) -> Result<(), String> {
+    let target = Path::new(&path);
+    if !target.exists() {
+        let name = target
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        return Err(format!("{name} is not there any more."));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(target)
+            .spawn()
+            .map_err(|e| format!("The file manager did not open: {e}"))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{path}"))
+            .spawn()
+            .map_err(|e| format!("The file manager did not open: {e}"))?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // No standard "select this file" verb: the containing folder is the
+        // honest answer, and a directory reveals itself.
+        let dir = if target.is_dir() {
+            target.to_path_buf()
+        } else {
+            target
+                .parent()
+                .map_or_else(|| target.to_path_buf(), Path::to_path_buf)
+        };
+        std::process::Command::new("xdg-open")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| format!("The file manager did not open: {e}"))?;
+    }
+    Ok(())
 }
 
 /// `<app_data_dir>/Library` — the only directory this module writes to.

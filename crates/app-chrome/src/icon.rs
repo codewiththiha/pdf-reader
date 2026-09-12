@@ -47,6 +47,11 @@ pub enum IconName {
     /// one. Its own glyph rather than a borrowed arrow, because the row it sits
     /// on is the one thing on a shelf that is not a file.
     Link,
+    /// A plain folder — the "Reveal in folder" row: the OS's own file manager,
+    /// opened on the item inside the directory it lives in. `Open`'s folder
+    /// wears a line across it because that one opens a book; this one is the
+    /// directory itself, and the two rows sit in the same menu.
+    Folder,
     Settings,
     Layout,
     /// The settings tab for the reflowable formats' typography.
@@ -81,6 +86,7 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Plus => ("0 0 24 24", "<path d='M12 5v14M5 12h14'/>"),
         IconName::Close => ("0 0 24 24", "<path d='M18 6 6 18M6 6l12 12'/>"),
         IconName::Link => ("0 0 24 24", "<path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/>"),
+        IconName::Folder => ("0 0 24 24", "<path d='M2 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/>"),
         IconName::Check => ("0 0 24 24", "<path d='M20 6 9 17l-5-5'/>"),
         IconName::SinglePage => ("0 0 24 24", "<rect x='4' y='3' width='16' height='18' rx='2'/><path d='M4 9h16'/>"),
         IconName::DualPage => ("0 0 24 24", "<rect x='3' y='4' width='8.5' height='16' rx='1.5'/><rect x='12.5' y='4' width='8.5' height='16' rx='1.5'/>"),

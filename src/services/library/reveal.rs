@@ -1,4 +1,4 @@
-//! Taking the reader to a book.
+//! Taking the reader to a book — in the library, and on the disk.
 //!
 //! Two halves, and the order is the whole of it: the breadcrumb moves to the shelf
 //! the book is on, and only then does the card get scrolled to and lit up. Doing
@@ -9,15 +9,23 @@
 //! gesture, not a state: revealing the same book twice in a row has to work twice,
 //! and a plain `Option<String>` would be unchanged by the second one and so would
 //! notify nobody.
+//!
+//! The third door is the OS's: [`reveal_in_folder`] hands a path to the file
+//! manager, and the two resolvers beside it answer WHICH path a row or a
+//! shelf is — the store's own copy for a book the library owns, the file
+//! where it stands for one read at its place, the directory its tree cut it
+//! from for a watched folder's shelf.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use leptos::prelude::*;
 
-use library_core::shelf::{ALL_SHELF, containing, find};
+use library_core::book::Row;
+use library_core::folder::dir_of_rung;
+use library_core::shelf::{ALL_SHELF, ShelfKind, containing, find};
 
 use crate::state::library::Reveal;
-use crate::state::AppState;
+use crate::state::{AppState, Toast};
 
 /// Monotonic, so two reveals in the same millisecond are still two reveals.
 static NONCE: AtomicU64 = AtomicU64::new(1);
@@ -76,4 +84,69 @@ fn navigate_to_shelf_of(state: AppState, book_id: &str) {
     if state.library.shelf.get_untracked() != target {
         state.library.shelf.set(target);
     }
+}
+
+/// The address a ROW reveals in the OS file manager: the store's own file for
+/// a book the library copied — the copy IS the file this row reads — and the
+/// file where it stands for a book read at its place. One answer, because
+/// `Book::path` is the one function that says where a book reads from, and
+/// the reader, the cover queue and the removal receipt all give the same.
+///
+/// A link reveals what it points AT, by the pointer's own rule: a book by
+/// this rule, a shelf by [`path_of_shelf`]. A link at nothing — which
+/// `drop_dead_shelf_links` and the book's own sweep make unreachable, but a
+/// blob caught between two writes can still carry — reveals nothing, and the
+/// menu simply does not offer the row.
+pub fn path_of_row(state: AppState, row_id: &str) -> Option<String> {
+    match state.library.row(row_id)? {
+        Row::Book(book) => Some(book.path().to_string()),
+        Row::Link { target, .. } => {
+            if library_core::id::is_shelf(&target) {
+                path_of_shelf(state, &target)
+            } else {
+                match state.library.row(&target)? {
+                    Row::Book(book) => Some(book.path().to_string()),
+                    Row::Link { .. } => None,
+                }
+            }
+        }
+    }
+}
+
+/// The directory a SHELF reveals: the ground its watched folder's tree cut it
+/// from — the watched root with the rung's own key joined on,
+/// [`dir_of_rung`]'s answer — for a folder's shelf, read at place or copied,
+/// because that is the directory the shelf represents. A shelf the reader
+/// owns has no ground and answers none.
+pub fn path_of_shelf(state: AppState, shelf_id: &str) -> Option<String> {
+    let shelves = state.library.shelves.get_untracked();
+    let shelf = find(&shelves, shelf_id)?;
+    let ShelfKind::Folder { folder_id, rel } = &shelf.kind else {
+        return None;
+    };
+    let folder = state.library.folder(folder_id)?;
+    Some(dir_of_rung(&folder.root, rel.as_deref().unwrap_or("")))
+}
+
+/// Take the reader to the file itself, in the OS's own terms: the file
+/// manager opens on the item, selected inside its folder.
+///
+/// The OS half of this module's job: [`reveal_book`] and [`reveal_shelf`] take
+/// the reader to a thing in the library, and this takes the reader to the
+/// thing's ground on disk — which path a row reveals is [`path_of_row`]'s
+/// answer, and the caller holds it before the ask. A failure — no shell, a
+/// dead address, no file manager — is one toast and no state: a reveal is a
+/// courtesy, and nothing in the library changes because one could not run.
+pub fn reveal_in_folder(state: AppState, path: String) {
+    if !tauri_bridge::has_tauri() {
+        state.ui.toast.set(Some(Toast::new(
+            "Revealing a file is only available in the desktop app.".to_string(),
+        )));
+        return;
+    }
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(message) = super::reveal_path(path).await {
+            state.ui.toast.set(Some(Toast::new(message)));
+        }
+    });
 }

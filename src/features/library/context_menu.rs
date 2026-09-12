@@ -3,8 +3,9 @@
 //! A card used to answer a right-click with the removal receipt and nothing else,
 //! which is one row of a menu wearing the whole gesture. The receipt is still what
 //! a removal costs and still asks first — it is just reached from a row now, beside
-//! the things a right-click is actually for: opening, selecting, finding a book
-//! whose address died, taking a shelf apart.
+//! the things a right-click is actually for: opening, selecting, revealing the file
+//! in the OS's own manager, finding a book whose address died, taking a shelf
+//! apart.
 //!
 //! One host and one signal, for the reason the removal sheet is one: a right-click
 //! can land on a card, a row, a folder or the empty shelf, and four surfaces each
@@ -38,7 +39,10 @@ use crate::features::library::selection::{
     select_on_screen,
 };
 use crate::services::document;
-use crate::services::library::{create_shelf_and_enter, delete_shelf, relink_dialog};
+use crate::services::library::{
+    create_shelf_and_enter, delete_shelf, path_of_row, path_of_shelf, relink_dialog,
+    reveal_in_folder,
+};
 use crate::state::AppState;
 
 /// What was right-clicked.
@@ -165,6 +169,12 @@ pub(crate) fn LibraryContextMenu(state: AppState) -> impl IntoView {
 #[component]
 fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> impl IntoView {
     let remove_sheet = use_context::<RemoveSheet>().expect("the library page provides the sheet");
+    // Where the file manager would go, read at the build rather than at the
+    // click: the store's own copy for a book the library copied, the file
+    // where it stands for one read at its place, and the target's own answer
+    // for a link. A row with nothing behind it gets no row in the menu — the
+    // menu is built per ask, so the answer cannot go stale while it is up.
+    let reveal = path_of_row(state, &id);
     // One owned id per row: each row's handler is a closure of its own and a
     // `move` takes what it captures.
     let open_id = id.clone();
@@ -194,6 +204,23 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
                     enter_selection(state, &select_id);
                 }
             />
+            {reveal.map(|path| {
+                view! {
+                    <MenuItem
+                        icon=IconName::Folder
+                        label="Reveal in folder"
+                        // A book whose address died has nothing to reveal: a
+                        // row that would answer with the shell's "not there
+                        // any more" is a row that knew better than to be
+                        // offered, the Open row's own rule.
+                        disabled=missing
+                        on_click=move || {
+                            close.run(());
+                            reveal_in_folder(state, path.clone());
+                        }
+                    />
+                }
+            })}
             {missing.then(|| {
                 view! {
                     <MenuItem
@@ -229,6 +256,10 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
 /// "new shelf" on a folder is an answer about that folder and not about the page.
 #[component]
 fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView {
+    // The directory this shelf represents, when it represents one: the ground
+    // its watched folder's tree cut it from. A shelf the reader owns has no
+    // ground and gets no row.
+    let reveal = path_of_shelf(state, &id);
     let open_id = id.clone();
     let select_id = id.clone();
     let inside_id = id.clone();
@@ -252,6 +283,18 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                     enter_selection(state, &select_id);
                 }
             />
+            {reveal.map(|path| {
+                view! {
+                    <MenuItem
+                        icon=IconName::Folder
+                        label="Reveal in folder"
+                        on_click=move || {
+                            close.run(());
+                            reveal_in_folder(state, path.clone());
+                        }
+                    />
+                }
+            })}
             <MenuItem
                 icon=IconName::Plus
                 label="New shelf"
