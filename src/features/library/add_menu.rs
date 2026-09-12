@@ -16,11 +16,12 @@ use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use app_chrome::icon::IconName;
+use app_chrome::icon::{Icon, IconName};
 use library_core::ledger::{Recovered, index_by_fp, recoverables};
 use library_core::shelf::{ALL_SHELF, find};
 use library_core::text::{human_age, human_size};
 
+use crate::components::primitives::controls::button::{Button, ButtonVariant};
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
@@ -165,6 +166,117 @@ pub(crate) fn add_target(state: AppState) -> Signal<Option<String>> {
         let id = state.library.shelf.get();
         (id != ALL_SHELF).then_some(id)
     })
+}
+
+/// Which face the add trigger wears. The three doors to one menu are three
+/// affordances in three layouts, and the wiring behind them — the open flag,
+/// the anchor, the target the picks file onto — is one.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AddFace {
+    /// The grid's last cell: a cover-shaped dashed button. It is a card and
+    /// not a toolbar button because the shelf is where the reader is looking
+    /// when they decide to add to it, and a grid with a hole at the end reads
+    /// as unfinished — the shape is the affordance: same box as a cover,
+    /// dashed instead of painted, plus instead of art. (It wears the book
+    /// card's classes for that shape and is not a book, so the selection
+    /// dimming in `styles/components/library/select.css` names it as an
+    /// exception.)
+    Card,
+    /// The list's last row.
+    Row,
+    /// The empty shelf's one call to action, with the drop hint under it.
+    /// Files onto NO level: the empty state is about the library, not about
+    /// wherever the reader happens to be standing.
+    Empty,
+}
+
+/// The add trigger: the button, its anchor and the menu, wired once for the
+/// three faces.
+#[component]
+pub(crate) fn AddMenuButton(state: AppState, face: AddFace) -> impl IntoView {
+    let open = RwSignal::new(false);
+    let anchor: NodeRef<html::Div> = NodeRef::new();
+    // A pick made from inside a shelf files onto it; one made from the root
+    // has no shelf to file onto. The rule is `add_target`'s, and the empty
+    // state's door is the one that files onto nothing on purpose.
+    let target = match face {
+        AddFace::Empty => Signal::derive(|| None),
+        AddFace::Card | AddFace::Row => add_target(state),
+    };
+    let wrapper = match face {
+        AddFace::Card => "book-card book-add",
+        AddFace::Row => "relative",
+        AddFace::Empty => "relative flex max-w-md flex-col items-center gap-4 text-center",
+    };
+    let has_tauri = tauri_bridge::has_tauri();
+
+    view! {
+        <div node_ref=anchor class=wrapper>
+            {match face {
+                AddFace::Card => {
+                    view! {
+                        <button
+                            class="book-cover book-add-cover"
+                            type="button"
+                            aria-label="Add books"
+                            aria-haspopup="menu"
+                            aria-expanded=move || open.get().to_string()
+                            title="Add books"
+                            on:click=move |_| open.set(!open.get_untracked())
+                        >
+                            <Icon name=IconName::Plus size=32 class="text-muted" />
+                        </button>
+                    }
+                        .into_any()
+                }
+                AddFace::Row => {
+                    view! {
+                        <button
+                            type="button"
+                            aria-label="Add books"
+                            aria-haspopup="menu"
+                            aria-expanded=move || open.get().to_string()
+                            title="Add books"
+                            on:click=move |_| open.set(!open.get_untracked())
+                            class="lib-add-row"
+                        >
+                            <Icon name=IconName::Plus size=15 />
+                            <span>"Add books"</span>
+                        </button>
+                    }
+                        .into_any()
+                }
+                AddFace::Empty => {
+                    view! {
+                        <>
+                            <Button
+                                on_click=move |_| open.set(!open.get_untracked())
+                                variant=ButtonVariant::Primary
+                                active=Signal::derive(move || open.get())
+                                title="Import books"
+                            >
+                                <Icon name=IconName::Plus size=17 />
+                                <span>"Import books"</span>
+                            </Button>
+                            {has_tauri
+                                .then(|| {
+                                    view! {
+                                        <p class="text-xs text-muted">
+                                            {format!(
+                                                "Or drop a {} file anywhere in the window",
+                                                reader_core::format::kind_list()
+                                            )}
+                                        </p>
+                                    }
+                                })}
+                        </>
+                    }
+                        .into_any()
+                }
+            }}
+            <AddMenu state=state open=open anchor=anchor target=target />
+        </div>
+    }
 }
 
 #[component]

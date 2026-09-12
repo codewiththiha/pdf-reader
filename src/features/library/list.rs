@@ -59,7 +59,6 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use leptos::html;
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
@@ -70,18 +69,18 @@ use library_core::sort;
 use library_core::view::CoverFit;
 use reader_core::format::Format;
 
-use crate::features::library::add_menu::{AddMenu, add_target};
+use crate::features::library::add_menu::{AddFace, AddMenuButton};
+use crate::features::library::cover_thumb::CoverThumb;
 use crate::features::library::content::{ShelfOrder, level_folders};
 use crate::features::library::context_menu::MenuTarget;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::folder_card::summary;
-use crate::features::library::gestures::ShelfItemPolicy;
+use crate::features::library::gestures::{book_policy, ShelfItemPolicy};
 use crate::features::library::link_card::LinkRow;
 use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
-use crate::services::document;
 use crate::state::AppState;
 
 /// One level of the shelf tree, expanded in place.
@@ -155,7 +154,7 @@ pub(crate) fn ListView(state: AppState, #[prop(optional)] tree: ShelfTree) -> im
             // The grid ends in an add card, so the list ends in an add row: the two
             // layouts are the same library, and a reader who switched to the denser
             // one has not thereby lost the way in.
-            <AddRow state=state />
+            <AddMenuButton state=state face=AddFace::Row />
         </div>
     }
 }
@@ -417,30 +416,6 @@ fn member_books(state: AppState, members: Signal<Vec<String>>) -> Signal<Vec<Row
 /// The list's last row: the same two sources the grid's add card offers, in the
 /// shape of a row rather than the shape of a cover.
 #[component]
-fn AddRow(state: AppState) -> impl IntoView {
-    let open = RwSignal::new(false);
-    let anchor: NodeRef<html::Div> = NodeRef::new();
-    let target = add_target(state);
-    view! {
-        <div node_ref=anchor class="relative">
-            <button
-                type="button"
-                aria-label="Add books"
-                aria-haspopup="menu"
-                aria-expanded=move || open.get().to_string()
-                title="Add books"
-                on:click=move |_| open.set(!open.get_untracked())
-                class="lib-add-row"
-            >
-                <Icon name=IconName::Plus size=15 />
-                <span>"Add books"</span>
-            </button>
-            <AddMenu state=state open=open anchor=anchor target=target />
-        </div>
-    }
-}
-
-#[component]
 fn ListRow(
     state: AppState,
     book: Book,
@@ -494,26 +469,9 @@ fn ListRow(
     // set the bar's "Add to shelf" was the only way to move.
     // Opening names the ROW, not its address: the library can hold two rows of
     // one file, and the address cannot say which of them the reader clicked.
-    let open_id = id.clone();
-    let context_id = id.clone();
-    let policy = ShelfItemPolicy {
-        id: id.clone(),
-        label: Signal::derive(move || {
-            facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-        }),
-        draggable: Signal::derive(|| true),
-        open: Callback::new(move |_| document::open_row(state, open_id.clone())),
-        // The missing flag is read when the menu is ASKED rather than carried
-        // from the mount: the row it describes is exactly the one a background
-        // measurement can change between the two.
-        menu_target: Callback::new(move |_| MenuTarget::Book {
-            id: context_id.clone(),
-            missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
-        }),
-        // The tree's own fact: a nested row answers to its branch, a flat
-        // row to the level the page is on.
-        container: parent.clone(),
-    };
+    // The tree's own fact: a nested row answers to its branch, a flat row to
+    // the level the page is on.
+    let policy = book_policy(state, &id, facts, parent.clone());
 
     // The row's two own classes: the reveal's light and the missing grey.
     let reveal_class = state.library.is_revealed(&id);
@@ -548,26 +506,18 @@ fn ListRow(
                         class=("book-cover-crop", move || crop.get())
                     >
                         <SelectionCheck state=state selected=is_selected />
-                        {move || {
-                            let f = facts.get()?;
-                            state
-                                .library
-                                .covers
-                                .with(|covers| covers.get(&f.path).cloned())
-                                .map(|cover| {
-                                    let alt = f.title.clone();
-                                    view! {
-                                        // Not natively draggable; see `book_card`.
-                                        <img
-                                            class="lib-row-img"
-                                            src=cover.data_url.clone()
-                                            alt=alt
-                                            loading="lazy"
-                                            draggable="false"
-                                        />
-                                    }
-                                })
-                        }}
+                        <CoverThumb
+                            state=state
+                            path=Signal::derive(move || {
+                                facts
+                                    .with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
+                            })
+                            alt=Signal::derive(move || {
+                                facts
+                                    .with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+                            })
+                            img_class="lib-row-img"
+                        />
                     </span>
                 }
                     .into_any()

@@ -30,13 +30,12 @@ use leptos::prelude::*;
 use app_chrome::icon::{Icon, IconName};
 use library_core::book::Book;
 
-use crate::features::library::context_menu::MenuTarget;
-use crate::features::library::gestures::ShelfItemPolicy;
+use crate::features::library::cover_thumb::CoverThumb;
+use crate::features::library::gestures::book_policy;
 use crate::features::library::facts::book_facts;
 use crate::features::library::remove_modal::RemoveSheet;
 use crate::features::library::selection::SelectionCheck;
 use crate::features::library::shelf_item::{SeamVocab, ShelfItemShell};
-use crate::services::document;
 use crate::services::library::relink_dialog;
 use crate::state::AppState;
 use crate::state::reader::DEFAULT_PAGE_ASPECT;
@@ -98,23 +97,9 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
     // read when the menu is ASKED rather than carried from the mount: the row
     // it describes is exactly the one a background measurement can change
     // between the two.
-    let open_id = id.clone();
-    let context_id = id.clone();
-    let policy = ShelfItemPolicy {
-        id: id.clone(),
-        label: Signal::derive(move || {
-            facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
-        }),
-        draggable: Signal::derive(|| true),
-        open: Callback::new(move |_| document::open_row(state, open_id.clone())),
-        menu_target: Callback::new(move |_| MenuTarget::Book {
-            id: context_id.clone(),
-            missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
-        }),
-        // No shelf of its own: a card is drawn by the open level, which is
-        // the container the session resolves a nameless lift to.
-        container: None,
-    };
+    // No shelf of its own: a card is drawn by the open level, which is the
+    // container the session resolves a nameless lift to.
+    let policy = book_policy(state, &id, facts, None);
 
     // A removal asks first. The card does not know what a removal costs — the
     // resume point, the placements, the highlights, the app's own copy — and
@@ -155,43 +140,28 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                     // choosing: an outline alone asks the reader to remember which
                     // cards they have already tapped.
                     <SelectionCheck state=state selected=is_selected />
-                    {move || {
-                        let Some(f) = facts.get() else {
-                            return ().into_any();
-                        };
-                        match state
-                            .library
-                            .covers
-                            .with(|covers| covers.get(&f.path).cloned())
-                        {
-                            Some(c) => {
-                                let alt = f.title.clone();
-                                view! {
-                                    // Not draggable, and the reason is the whole
-                                    // of this card's gesture: an image is natively
-                                    // draggable, so a press on the cover would hand
-                                    // the pointer to the engine's own drag, which
-                                    // is the drag this shelf no longer uses and
-                                    // the one that used to swallow the release.
-                                    <img
-                                        class="book-cover-img"
-                                        src=c.data_url.clone()
-                                        alt=alt
-                                        loading="lazy"
-                                        draggable="false"
-                                    />
-                                }
-                                    .into_any()
+                    <CoverThumb
+                        state=state
+                        path=Signal::derive(move || {
+                            facts.with(|f| f.as_ref().map(|x| x.path.clone()).unwrap_or_default())
+                        })
+                        alt=Signal::derive(move || {
+                            facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+                        })
+                        img_class="book-cover-img"
+                        fallback=move || {
+                            let Some(f) = facts.get() else {
+                                return ().into_any();
+                            };
+                            let title = f.title.clone();
+                            view! {
+                                <div class="book-cover-fallback">
+                                    <span>{title}</span>
+                                </div>
                             }
-                            None => {
-                                view! {
-                                    <div class="book-cover-fallback">
-                                        <span>{f.title.clone()}</span>
-                                    </div>
-                                }.into_any()
-                            }
+                                .into_any()
                         }
-                    }}
+                    />
                     {move || {
                         facts.with(|f| f.as_ref().is_some_and(|x| x.missing))
                             .then(|| {

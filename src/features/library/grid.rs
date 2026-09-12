@@ -28,7 +28,7 @@ use leptos::prelude::*;
 
 use library_core::view::{COLUMNS_MAX, CoverFit, LibraryView};
 
-use crate::features::library::add_card::AddCard;
+use crate::features::library::add_menu::{AddFace, AddMenuButton};
 use library_core::book::Row;
 
 use crate::features::library::book_card::BookCard;
@@ -125,7 +125,7 @@ pub(crate) fn GridView(state: AppState) -> impl IntoView {
                     }
                 }}
             </For>
-            <AddCard state=state />
+            <AddMenuButton state=state face=AddFace::Card />
         </div>
     }
 }

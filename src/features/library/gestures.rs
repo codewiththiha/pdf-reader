@@ -39,7 +39,9 @@ use crate::components::primitives::interactions::draggable_item::{
 use crate::components::primitives::interactions::long_press::SELECT_PRESS_MS;
 use crate::features::library::context_menu::{LibraryMenuHost, MenuTarget};
 use crate::features::library::dnd::controller::DragController;
+use crate::features::library::facts::BookFacts;
 use crate::features::library::selection::{enter_selection, payload_for, toggle_selected};
+use crate::services::document;
 use crate::state::AppState;
 
 /// The three answers only the surface knows.
@@ -116,6 +118,39 @@ pub(crate) struct ShelfItem {
 /// sidebar's tree — gets a row that still answers a tap and stands everything
 /// else down: nothing to lift into, nothing to ask, no hold to start a
 /// selection no bar could act on.
+/// The policy the two BOOK surfaces share: the grid's card and the list's row
+/// label themselves from the same facts, open the same way, and right-click to
+/// the same question — they differ only in where the row is filed
+/// (`container`). One spelling, beside the contract they both hand to
+/// [`use_shelf_item`], so the link row's sibling ([`link_policy`] in
+/// `crate::features::library::link_card`) and this are the two shapes a
+/// shelf item's policy comes in, each written once.
+pub(crate) fn book_policy(
+    state: AppState,
+    id: &str,
+    facts: Signal<Option<BookFacts>>,
+    container: Option<String>,
+) -> ShelfItemPolicy {
+    let open_id = id.to_string();
+    let context_id = id.to_string();
+    ShelfItemPolicy {
+        id: id.to_string(),
+        label: Signal::derive(move || {
+            facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
+        }),
+        draggable: Signal::derive(|| true),
+        open: Callback::new(move |_| document::open_row(state, open_id.clone())),
+        // The missing flag is read when the menu is ASKED rather than carried
+        // from the mount: the row it describes is exactly the one a background
+        // measurement can change between the two.
+        menu_target: Callback::new(move |_| MenuTarget::Book {
+            id: context_id.clone(),
+            missing: facts.with_untracked(|f| f.as_ref().is_some_and(|x| x.missing)),
+        }),
+        container,
+    }
+}
+
 pub(crate) fn use_shelf_item(
     state: AppState,
     drag: Option<DragController>,

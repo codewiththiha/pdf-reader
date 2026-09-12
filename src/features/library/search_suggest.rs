@@ -24,6 +24,7 @@ use leptos::prelude::*;
 
 use library_core::query::Suggestion;
 
+use crate::features::library::cover_thumb::CoverThumb;
 use crate::state::AppState;
 
 /// Cut `text` at `spans` — sorted, disjoint char ranges — into alternating
@@ -108,7 +109,6 @@ pub(crate) fn SearchSuggestions(
                     }
                     children=move |(at, s)| {
                         let path = s.book.path().to_string();
-                        let cover_path = path.clone();
                         let title = s.book.title();
                         let fallback_letter = title.chars().next().unwrap_or('?').to_string();
                         let author = s.book.author();
@@ -143,24 +143,16 @@ pub(crate) fn SearchSuggestions(
                                 on:pointerenter=move |_| active.set(at)
                             >
                                 <span class="lib-suggest-thumb" aria-hidden="true">
-                                    {move || {
-                                        match state
-                                            .library
-                                            .covers
-                                            .with(|covers| covers.get(&cover_path).cloned())
-                                        {
-                                            Some(c) => {
-                                                view! {
-                                                    <img src=c.data_url.clone() alt="" draggable="false" />
-                                                }
-                                                    .into_any()
-                                            }
-                                            None => {
-                                                view! { <span>{fallback_letter.clone()}</span> }
-                                                    .into_any()
-                                            }
+                                    <CoverThumb
+                                        state=state
+                                        path=Signal::stored(path.clone())
+                                        alt=Signal::stored(String::new())
+                                        img_class=""
+                                        fallback=move || {
+                                            view! { <span>{fallback_letter.clone()}</span> }
+                                                .into_any()
                                         }
-                                    }}
+                                    />
                                 </span>
                                 <span class="lib-suggest-text">
                                     <span class="lib-suggest-title">

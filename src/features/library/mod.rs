@@ -18,7 +18,10 @@
 //!   * [`shelf_item`] — the element that contract paints on: one outer div
 //!     wearing the handlers, the registration and the state classes, so the
 //!     six surfaces differ only in vocabulary and content
-//!   * [`add_card`] / [`add_menu`] / [`empty_state`] — the two ways in
+//!   * [`add_menu`] / [`empty_state`] — the two ways in, on the one trigger
+//!     ([`add_menu::AddMenuButton`]) wearing three faces
+//!   * [`cover_thumb`] — the one painter of a cached cover, and a surface's
+//!     fallback beside it
 //!   * [`import_modal`] — what a folder import is allowed to be
 //!   * [`remove_modal`] — what a removal costs, itemised
 //!   * [`conflict_modal`] — the shelf already holds that book: the
@@ -62,7 +65,6 @@
 //! gesture rather than about the library, and it hands the answer to the same
 //! services every menu row uses.
 
-pub mod add_card;
 pub mod add_menu;
 pub mod already_imported_modal;
 pub mod book_card;
@@ -70,6 +72,7 @@ pub mod breadcrumb;
 pub mod conflict_modal;
 pub mod content;
 pub mod context_menu;
+pub mod cover_thumb;
 pub mod departure_modal;
 pub mod dnd;
 pub mod empty_state;
