@@ -18,7 +18,6 @@ use super::tasks::task_id;
 use super::Asked;
 use crate::services::library as wire;
 use crate::state::AppState;
-use crate::storage::persist_library;
 
 /// Re-scan every watched folder. Called on startup (from [`verify_library`],
 /// never before it) and whenever the window regains focus.

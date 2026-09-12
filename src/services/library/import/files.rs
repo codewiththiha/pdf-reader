@@ -127,7 +127,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
             state,
             &task,
             "None of those files could be opened.".to_string(),
-            false,
+            FailMode::Toast,
         );
     }
     // Measuring a file the library already holds refreshes its fingerprint and

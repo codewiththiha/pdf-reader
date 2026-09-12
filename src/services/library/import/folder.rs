@@ -690,11 +690,11 @@ struct LandTally {
 /// and the blob write stay with the caller: a stage that wrote half a library
 /// would be a stage the next one could not trust.
 #[allow(clippy::too_many_arguments)]
-fn land_the_walk<'a>(
+fn land_the_walk(
     state: AppState,
     folder: &mut WatchedFolder,
     walk: &mut WalkPlan,
-    pending: Vec<(String, &'a FoundFile)>,
+    pending: Vec<(String, &FoundFile)>,
     copies: &HashMap<String, String>,
     copy_measured: &HashMap<String, Fingerprint>,
     root: &str,

@@ -134,7 +134,7 @@ impl ShelfDepartureAsk {
     /// rungs landing beside one another cannot both wear `Fiction_1`, and the
     /// second promise is counted as if the first had landed, which is what the
     /// click's recount then does for real.
-    fn of(
+    pub(super) fn of(
         state: AppState,
         departing: Vec<String>,
         target: Option<String>,

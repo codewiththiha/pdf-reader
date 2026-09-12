@@ -235,7 +235,7 @@ fn ShelfSheet(state: AppState, info: ShelfAskInfo) -> impl IntoView {
             subtitle=subtitle
             question=question
             on_close=Callback::new(move |_| conflict::cancel_shelf(state))
-            cancel_title="Import nothing"
+            cancel_title="Import nothing".to_string()
         >
                     {if in_place {
                         // The read-at-place arrival's two: a pointer at the

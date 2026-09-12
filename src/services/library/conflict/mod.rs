@@ -112,7 +112,6 @@ use leptos::prelude::*;
 
 use library_core::book::{find_row, Row};
 use library_core::conflict::{collide, next_name, Arrival};
-use library_core::shelf;
 
 use crate::state::AppState;
 
@@ -374,7 +373,8 @@ pub(super) fn minted_name(state: AppState, ask: &ConflictAsk) -> String {
 /// The slot a row holds on one shelf, which is the slot its replacement takes.
 pub(super) fn member_slot(state: AppState, shelf_id: &str, row_id: &str) -> Option<usize> {
     state.library.shelves.with_untracked(|shelves| {
-        shelf::find(shelves, shelf_id).and_then(|s| s.books.iter().position(|m| m == row_id))
+        library_core::shelf::find(shelves, shelf_id)
+            .and_then(|s| s.books.iter().position(|m| m == row_id))
     })
 }
 

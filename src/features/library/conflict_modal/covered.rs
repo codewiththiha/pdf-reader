@@ -61,7 +61,7 @@ pub(super) fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
             subtitle=subtitle
             question=question
             on_close=Callback::new(move |_| conflict::cancel(state))
-            apply_all=Some((waiting, apply_all))
+            apply_all=(waiting, apply_all)
         >
                     <ChoiceRow
                         label="Import a copy here"

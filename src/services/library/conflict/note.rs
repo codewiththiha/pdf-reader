@@ -4,6 +4,8 @@
 //!
 //! [`NoteKind`]: crate::state::library::NoteKind
 
+use leptos::prelude::*;
+
 use crate::state::library::{AlreadyNote, NoteKind};
 use crate::state::AppState;
 

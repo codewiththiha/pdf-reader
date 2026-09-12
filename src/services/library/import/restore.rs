@@ -100,7 +100,7 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
                 state,
                 &task,
                 format!("{} is not there any more.", entry.label()),
-                false,
+                FailMode::Toast,
             );
         };
 

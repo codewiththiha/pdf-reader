@@ -82,11 +82,11 @@ pub use verify::{rescan_watched, verify_library, verify_one};
 
 pub(crate) use files::{land_stored_copy, land_stored_copy_settling, settle_ledger};
 pub(crate) use gate::{proceed_folder, reclaim_rung, RootPlan};
-pub(crate) use replace::{
-    purge_folder_linked_books, replace_folder_with_copies, replace_shelf_with_folder,
-};
+pub(crate) use replace::{replace_folder_with_copies, replace_shelf_with_folder};
 
 use library_core::shelf::Shelf;
+
+use crate::services::library::folder_label;
 
 /// Who asked for a folder run, which is what the tombstones mean.
 ///

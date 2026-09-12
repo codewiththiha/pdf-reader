@@ -12,8 +12,6 @@ use library_core::shelf::{self as shelf, Shelf, ALL_SHELF};
 use crate::state::AppState;
 use crate::time::now_ms;
 
-use library_core::id;
-
 use super::shelf_departure::{raise_departure, screen_shelf_moves, SeamSide, ShelfSeam};
 
 /// Make a shelf the reader owns, and drill into it. Returns its id.

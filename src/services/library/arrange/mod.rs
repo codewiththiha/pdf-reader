@@ -72,8 +72,8 @@ pub use moves::{also_show, file_many, move_many_to_shelf, move_row, unfile_books
 pub use purge::{purge_books, PurgeOpts};
 pub use relink::relink_dialog;
 pub use shelf_departure::{
-    answer_departure_return, cancel_departure, confirm_departure, DepartingShelf, ReturnPath,
-    SeamSide, ShelfDepartureAsk, ShelfReturn, ShelfSeam,
+    answer_departure_return, cancel_departure, confirm_departure, ReturnPath, SeamSide,
+    ShelfDepartureAsk,
 };
 pub use shelves::{
     create_shelf_and_enter, create_shelf_here, delete_shelf, memberships, nest_many, nest_shelf,
@@ -84,7 +84,7 @@ pub(crate) use departure::{convert_to_stored, converts_on_move_to, write_moved_s
 pub(crate) use moves::Departed;
 pub(crate) use purge::{drop_row, unlist_row};
 
-use library_core::shelf::Shelf;
+use library_core::shelf::{self as shelf, Shelf};
 
 /// The first of one folder's shelves a book is filed on, in shelf order.
 ///

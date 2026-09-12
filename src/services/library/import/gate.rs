@@ -9,6 +9,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use library_core::folder::{self as folder_ops, rel_under, FolderOpts, WatchedFolder};
 use library_core::id;
+use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
 use super::claim::{already_importing, claim_root, root_is_claimed};
@@ -19,7 +20,6 @@ use crate::services::library::conflict;
 use crate::services::library::folder_label;
 use crate::state::library::{ImportTask, NoteKind};
 use crate::state::AppState;
-use crate::storage::persist_library;
 use crate::time::now_ms;
 
 /// What the folder sheet's answer decided about the run's root, before the run.
@@ -319,7 +319,7 @@ pub(super) fn displaced_member(
 }
 
 /// The facts a displaced member's note speaks and its answer writes.
-struct DisplacedMember {
+pub(super) struct DisplacedMember {
     pub(super) folder_id: String,
     pub(super) rel: String,
     pub(super) shelf_id: String,

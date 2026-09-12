@@ -271,12 +271,12 @@ pub struct AlreadyNote {
 /// than a dismiss: the conflict queue pops the next question into `ask`
 /// without touching `open`, and the already-imported note closes with its ask
 /// still standing, because the reveal rides the close and reads it.
-pub struct Sheet<T: 'static> {
+pub struct Sheet<T: Send + Sync + 'static> {
     pub ask: RwSignal<Option<T>>,
     pub open: RwSignal<bool>,
 }
 
-impl<T: 'static> Sheet<T> {
+impl<T: Send + Sync + 'static> Sheet<T> {
     pub fn new() -> Self {
         Self {
             ask: RwSignal::new(None),
@@ -297,7 +297,7 @@ impl<T: 'static> Sheet<T> {
     }
 }
 
-impl<T: 'static> Default for Sheet<T> {
+impl<T: Send + Sync + 'static> Default for Sheet<T> {
     fn default() -> Self {
         Self::new()
     }
@@ -305,13 +305,13 @@ impl<T: 'static> Default for Sheet<T> {
 
 // Hand-written rather than derived: `RwSignal` is `Copy` whatever it holds,
 // and a derived `Copy` would demand `T: Copy` of questions that are values.
-impl<T: 'static> Clone for Sheet<T> {
+impl<T: Send + Sync + 'static> Clone for Sheet<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: 'static> Copy for Sheet<T> {}
+impl<T: Send + Sync + 'static> Copy for Sheet<T> {}
 
 #[derive(Clone, Copy)]
 pub struct LibraryState {

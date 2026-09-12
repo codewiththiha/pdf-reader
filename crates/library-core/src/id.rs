@@ -89,14 +89,18 @@ mod tests {
         // which is what keeps a shelf member list holding book and folder ids
         // from reading one as the other.
         let now = 1_700_000_000_000;
+        // The explicit-seq half mints at a DIFFERENT tick on purpose: the
+        // counter below hands out seq 0..3 — and an explicit seq 3 at the
+        // same tick would be the very double-mint this test forbids.
+        let other = now + 1;
         let mut all = vec![
             next_id(now),
             next_id(now),
             next_shelf_id(now),
             next_folder_id(now),
-            new_id(now, 3),
-            new_shelf_id(now, 3),
-            new_folder_id(now, 3),
+            new_id(other, 3),
+            new_shelf_id(other, 3),
+            new_folder_id(other, 3),
         ];
         all.sort();
         all.dedup();

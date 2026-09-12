@@ -103,6 +103,8 @@ use library_core::folder::FolderOpts;
 use library_core::scan::FoundFile;
 use library_core::wire::{ImportProgress, PathCheck, StoreRequest, StoreResult};
 
+use leptos::prelude::*;
+
 use crate::state::{AppState, Toast};
 
 pub use crate::events::IMPORT_PROGRESS_EVENT;

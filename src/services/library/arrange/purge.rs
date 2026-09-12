@@ -10,7 +10,7 @@ use library_core::folder::Tombstone;
 use library_core::ledger::tombstone;
 use library_core::shelf::self as shelf;
 
-use crate::services::library::covers::{self, prune_now};
+use crate::services::library::covers::prune_now;
 use crate::services::library as wire;
 use crate::state::AppState;
 use crate::time::now_ms;

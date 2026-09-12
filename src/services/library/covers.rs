@@ -328,14 +328,6 @@ mod tests {
         })
     }
 
-    fn cover() -> Arc<CoverImage> {
-        Arc::new(CoverImage {
-            data_url: "data:image/jpeg;base64,x".to_string(),
-            width: 240.0,
-            height: 320.0,
-        })
-    }
-
     #[test]
     fn a_cover_outlives_nothing_it_does_not_belong_to() {
         let books = vec![

@@ -3,8 +3,6 @@
 //! this level, or the folder's book lit where it stands — and never a second
 //! linked row of one read-at-place file.
 
-use leptos::prelude::*;
-
 use library_core::conflict::Arrival;
 
 use super::{answer_batch, raise, screen, AskKind, ConflictAsk};

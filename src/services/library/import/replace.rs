@@ -14,7 +14,7 @@ use library_core::shelf::{self as shelves_ops};
 
 use super::claim::{already_importing, root_is_claimed};
 use super::gate::{proceed_folder, RootPlan};
-use crate::services::library::arrange::{purge_books, PurgeOpts};
+use crate::services::library::arrange::{self, PurgeOpts};
 use crate::state::AppState;
 
 /// The stored arrival's *replace* over a shelf that is NOT the folder's own
