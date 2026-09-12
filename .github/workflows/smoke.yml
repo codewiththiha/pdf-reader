@@ -1,0 +1,72 @@
+# The mount check CI never had: build the real wasm bundle, bind it for Node
+# and let tools/wasm-smoke.mjs start the app inside jsdom — seeded with a
+# library that resembles a real one — twice: once as a plain browser and once
+# against a stubbed shell, so the startup measure-and-rescan runs too.
+# A panic on the first frame is a blank window for the reader and is
+# invisible to both compile checks and host tests; this is what sees it.
+name: Smoke
+
+on:
+  push:
+    branches: [adjust-library-route-t1]
+  workflow_dispatch:
+
+jobs:
+  mount:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the wasm bundle
+        run: cargo build --target wasm32-unknown-unknown --bin pdf-reader
+
+      - name: Read the wasm-bindgen version out of Cargo.lock
+        run: |
+          VER="$(grep -A1 '^name = "wasm-bindgen"
+
+      - name: Bind the bundle for Node
+        run: wasm-bindgen --target nodejs --out-dir smoke target/wasm32-unknown-unknown/debug/pdf-reader.wasm
+
+      - name: Install jsdom
+        run: npm install --no-save --no-package-lock jsdom
+
+      - name: Mount as a plain browser
+        run: node tools/wasm-smoke.mjs
+
+      - name: Mount against a stubbed shell
+        run: SMOKE_TAURI=1 node tools/wasm-smoke.mjs
+ Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
+          test -n "$VER"
+          echo "WB_VER=$VER" >> "$GITHUB_ENV"
+
+      - name: Cache the wasm-bindgen CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/wb-bin
+          key: wb-cli-${{ env.WB_VER }}
+
+      - name: Install the wasm-bindgen CLI that matches Cargo.lock
+        run: |
+          if [ ! -x "$HOME/wb-bin/bin/wasm-bindgen" ]; then
+            cargo install wasm-bindgen-cli --version "$WB_VER" --locked --root "$HOME/wb-bin"
+          fi
+          echo "$HOME/wb-bin/bin" >> "$GITHUB_PATH"
+          "$HOME/wb-bin/bin/wasm-bindgen" --version
+
+      - name: Bind the bundle for Node
+        run: wasm-bindgen --target nodejs --out-dir smoke target/wasm32-unknown-unknown/debug/pdf-reader.wasm
+
+      - name: Install jsdom
+        run: npm install --no-save jsdom
+
+      - name: Mount as a plain browser
+        run: node tools/wasm-smoke.mjs
+
+      - name: Mount against a stubbed shell
+        run: SMOKE_TAURI=1 node tools/wasm-smoke.mjs
