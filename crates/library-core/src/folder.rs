@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use reader_core::format::Format;
 
 use crate::book::{Book, Fingerprint};
-use crate::scan::{FoundFile, admits, selectable_formats};
+use crate::scan::{FoundFile, admits, selectable_formats, subfolder_of};
 
 /// The default size threshold the import sheet opens on, in bytes: 30 KB. A
 /// PDF smaller than that is a stub, a placeholder or a corrupt download, and a
@@ -174,6 +174,28 @@ pub struct WatchedFolder {
     pub scanned_ms: u64,
 }
 
+/// The path of `path` relative to `root`: `/`-separated on every platform, with
+/// no leading or trailing separator, so `"/books/a/b.pdf"` under `"/books"` is
+/// `"a/b.pdf"`. `Some("")` when the two name the same directory, and `None` when
+/// `path` is not inside `root` at all — a directory edge rather than a string
+/// prefix, which is what keeps `"/bookshelf"` out of `"/book"`.
+///
+/// Every question the library asks about a watched folder's ground starts here:
+/// which folders cover an address, which shelf a directory is, and which rung a
+/// file stands on. One function owns the arithmetic so those answers cannot
+/// disagree about what "inside" means.
+pub fn rel_under(path: &str, root: &str) -> Option<String> {
+    fn norm(p: &str) -> String {
+        p.trim_end_matches(['/', '\\']).replace('\\', "/")
+    }
+    let (path, root) = (norm(path), norm(root));
+    if path == root {
+        return Some(String::new());
+    }
+    let rest = path.strip_prefix(root.as_str())?.strip_prefix('/')?;
+    (!rest.is_empty()).then(|| rest.to_string())
+}
+
 /// Every rung of a shelf key's path, root first and the key itself last: `""`,
 /// then `"2"`, then `"2/deep"`. The root rung is always first because the watched
 /// folder's own shelf is the top of every chain it mints.
@@ -217,6 +239,44 @@ impl WatchedFolder {
         } else {
             String::new()
         }
+    }
+
+    /// The two rungs this folder's tree names for an address: the shelf the
+    /// address's own subfolder maps to, and the shelf at the folder's root. Both
+    /// are `None` when the address is not under this folder at all, and the first
+    /// is `None` on its own when the subfolder has no shelf of its own — an
+    /// address the walk has never placed, or one whose rung the reader deleted.
+    ///
+    /// Two answers rather than one because the two questions asked of them are
+    /// different, and both need the ledger's own arithmetic:
+    ///
+    ///   * *where does this file come back to* wants the chain — the subfolder's
+    ///     rung, the root's when it has none. That is the fallback
+    ///     [`crate::folder::WatchedFolder::shelf_chain_for`] walks down when it
+    ///     mints, so a restore lands where the folder itself would have put it;
+    ///   * *has this file left its ground* wants the first answer alone, with no
+    ///     fallback. A book sitting on the root rung of a folder that groups is
+    ///     not on the ground its own subfolder names, and treating the root as a
+    ///     second home would let a book be dragged rung to rung down the tree
+    ///     while still answering to the folder that placed it.
+    ///
+    /// [`WatchedFolder::shelf_key`]'s arithmetic from an address instead of a
+    /// walk's finding, because a book already in the library has no
+    /// [`FoundFile`]. Same key, same `groups` rule, same map: the walk and the
+    /// membership edit cannot disagree about which rung a file stands on.
+    pub fn rungs_for(&self, path: &str) -> (Option<&str>, Option<&str>) {
+        let Some(rel) = rel_under(path, &self.root) else {
+            return (None, None);
+        };
+        let key = if self.opts.groups {
+            subfolder_of(&rel)
+        } else {
+            ""
+        };
+        (
+            self.shelf_map.get(key).map(String::as_str),
+            self.shelf_map.get("").map(String::as_str),
+        )
     }
 
     /// The shelf a found file belongs on, minting EVERY rung between the folder's
@@ -420,6 +480,90 @@ mod tests {
         assert_eq!(parent_key(""), None);
         assert_eq!(parent_key("2"), Some(""));
         assert_eq!(parent_key("2/deep"), Some("2"));
+    }
+
+    #[test]
+    fn inside_a_folder_starts_on_a_directory_edge() {
+        assert_eq!(rel_under("/books/a/b.pdf", "/books").as_deref(), Some("a/b.pdf"));
+        assert_eq!(rel_under("/books/b.pdf", "/books").as_deref(), Some("b.pdf"));
+        assert_eq!(rel_under("/books", "/books").as_deref(), Some(""));
+        assert_eq!(rel_under("/books/", "/books/").as_deref(), Some(""));
+        // A string prefix is not a directory: `/bookshelf` is not in `/book`.
+        assert_eq!(rel_under("/bookshelf/a.pdf", "/book"), None);
+        assert_eq!(rel_under("/other/a.pdf", "/books"), None);
+        // Windows answers in `/` like every other path in the ledger, because a
+        // `shelf_map` key holding a `\` never matches a found file again.
+        assert_eq!(rel_under("C:\\books\\a\\b.pdf", "C:\\books").as_deref(), Some("a/b.pdf"));
+    }
+
+    #[test]
+    fn a_file_stands_on_the_rung_its_own_subfolder_names() {
+        // The three-level shelf the bug was reported against: `/books` cut into
+        // `Fiction` cut into `Fiction/SciFi`, with the book at the bottom.
+        let f = WatchedFolder {
+            shelf_map: BTreeMap::from([
+                ("".to_string(), "shelf1".to_string()),
+                ("Fiction".to_string(), "shelf2".to_string()),
+                ("Fiction/SciFi".to_string(), "shelf3".to_string()),
+            ]),
+            ..folder("/books")
+        };
+        let deep = "/books/Fiction/SciFi/dune.pdf";
+        assert_eq!(f.rungs_for(deep), (Some("shelf3"), Some("shelf1")));
+        // The rung above is a DIFFERENT rung: a drag from shelf3 to shelf2 has
+        // left the ground the folder's tree names for this file, which is the
+        // whole of the departure rule. Answering shelf2 here — or answering the
+        // root as a second home — is what let a moved book keep wearing the
+        // address and the next import of it highlight the row already dragged away.
+        assert_eq!(
+            f.rungs_for("/books/Fiction/other.pdf"),
+            (Some("shelf2"), Some("shelf1"))
+        );
+        assert_eq!(f.rungs_for("/books/top.pdf"), (Some("shelf1"), Some("shelf1")));
+        // A subfolder the walk never placed, and an address outside the folder:
+        // no rung of its own either way, and the second answer says which.
+        assert_eq!(f.rungs_for("/books/Unmapped/x.pdf"), (None, Some("shelf1")));
+        assert_eq!(f.rungs_for("/other/x.pdf"), (None, None));
+    }
+
+    #[test]
+    fn a_folder_that_does_not_group_has_one_rung_for_every_file() {
+        let f = WatchedFolder {
+            opts: FolderOpts {
+                groups: false,
+                ..FolderOpts::default()
+            },
+            shelf_map: BTreeMap::from([
+                ("".to_string(), "root".to_string()),
+                ("Fiction".to_string(), "ignored".to_string()),
+            ]),
+            ..folder("/books")
+        };
+        // Everything lands flat, so the root rung is the ground for every
+        // address under it — and a stale deeper key in the map is not a rung
+        // anybody stands on.
+        assert_eq!(f.rungs_for("/books/Fiction/SciFi/dune.pdf"), (Some("root"), Some("root")));
+        assert_eq!(f.rungs_for("/books/top.pdf"), (Some("root"), Some("root")));
+    }
+
+    #[test]
+    fn the_rung_a_walk_names_and_the_rung_an_address_names_agree() {
+        // `shelf_key` runs on the walk's finding, `rungs_for` on an address in
+        // the library. One key arithmetic behind both is the reason a rescan and
+        // a drag cannot disagree about where a file belongs; this is the tie.
+        let f = WatchedFolder {
+            shelf_map: BTreeMap::from([("Fiction/SciFi".to_string(), "shelf3".to_string())]),
+            ..folder("/books")
+        };
+        let found = FoundFile {
+            path: "/books/Fiction/SciFi/dune.pdf".into(),
+            rel: "Fiction/SciFi/dune.pdf".into(),
+            ext: "pdf".into(),
+            size: 1,
+            fp: fp(1),
+        };
+        assert_eq!(f.shelf_key(&found), "Fiction/SciFi");
+        assert_eq!(f.rungs_for(&found.path).0, Some("shelf3"));
     }
 
     fn fp(n: u32) -> Fingerprint {

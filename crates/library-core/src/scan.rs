@@ -45,10 +45,21 @@ impl FoundFile {
     /// the root. The key [`crate::folder::WatchedFolder::shelf_key`] hands to
     /// the shelf chain a file is placed on.
     pub fn subfolder(&self) -> &str {
-        match self.rel.rsplit_once('/') {
-            Some((dir, _)) => dir,
-            None => "",
-        }
+        subfolder_of(&self.rel)
+    }
+}
+
+/// The subfolder a path relative to a watched root stands in: everything before
+/// its last `/`, and the empty string for a file at the root itself.
+///
+/// Free rather than a method on [`FoundFile`] because a book already in the
+/// library has an address and no finding, and the two have to agree about which
+/// rung an address belongs to — see
+/// [`crate::folder::WatchedFolder::rungs_for`].
+pub fn subfolder_of(rel: &str) -> &str {
+    match rel.rsplit_once('/') {
+        Some((dir, _)) => dir,
+        None => "",
     }
 }
 

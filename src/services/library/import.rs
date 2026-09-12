@@ -46,7 +46,7 @@ use library_core::book::{
     find_row,
 };
 use library_core::conflict::Arrival;
-use library_core::folder::{self as folder_ops, FolderOpts, Tombstone, WatchedFolder};
+use library_core::folder::{self as folder_ops, FolderOpts, Tombstone, WatchedFolder, rel_under};
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
@@ -436,22 +436,6 @@ fn covered_shelf(state: AppState, root: &str) -> Option<(String, String, String)
         }
     }
     rung
-}
-
-/// `root` as a rung key inside `base`'s tree: the empty key when the two are
-/// the same folder, the `/`-separated remainder when `root` sits inside
-/// `base`, and `None` when it does not. The remainder has to start on a
-/// directory edge, so `/books2` is never "inside" `/books`.
-fn rel_under(root: &str, base: &str) -> Option<String> {
-    fn norm(p: &str) -> String {
-        p.trim_end_matches(['/', '\\']).replace('\\', "/")
-    }
-    let (root, base) = (norm(root), norm(base));
-    if root == base {
-        return Some(String::new());
-    }
-    let rest = root.strip_prefix(base.as_str())?.strip_prefix('/')?;
-    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 /// Claim the root and start the run — the half of [`import_folder`] that is
@@ -2155,16 +2139,15 @@ fn restore_covered_file(
     stone: &Tombstone,
 ) -> String {
     // The folder's two rungs for this file: the one its subfolder maps to,
-    // and the one at its root.
+    // and the one at its root. The ledger's own arithmetic — the same one that
+    // decides whether a book has left the folder's ground — so a book comes
+    // back to the rung it departed from rather than to wherever a second copy
+    // of that lookup happens to land.
     let (rung, root_rung) = state.library.folders.with_untracked(|folders| {
         folder_ops::find(folders, folder_id)
             .map(|f| {
-                let rel = rel_under(&file.path, &f.root).unwrap_or_default();
-                let key = match rel.rsplit_once('/') {
-                    Some((dir, _)) if f.opts.groups => dir,
-                    _ => "",
-                };
-                (f.shelf_map.get(key).cloned(), f.shelf_map.get("").cloned())
+                let (rung, root) = f.rungs_for(&file.path);
+                (rung.map(str::to_string), root.map(str::to_string))
             })
             .unwrap_or_default()
     });
