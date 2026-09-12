@@ -136,12 +136,24 @@ pub fn open_row(state: AppState, row_id: String) {
 /// no address to read, and an error toast for a book the library no longer has
 /// would be a sentence about nothing.
 pub fn open_book(state: AppState, book_id: String) {
-    let Some(path) = state.library.books.with_untracked(|books| {
-        library_core::book::find_by_id(books, &book_id).map(|b| b.path().to_string())
+    let Some(book) = state.library.books.with_untracked(|books| {
+        library_core::book::find_by_id(books, &book_id).cloned()
     }) else {
         return;
     };
-    open_at(state, Some(book_id), path);
+    // A row the library KNOWS is dead — a path check found its address gone —
+    // does not open onto the reader's error screen: the honest answer to a
+    // click on a missing book is the Find-again question
+    // (`crate::services::library::ask_relink`), which keeps the row, its
+    // shelf and its place in the book exactly as they are and asks where the
+    // file went. Opening anyway would be an error page the reader has to back
+    // out of, with the shelf behind it unchanged — the reload-and-try-again
+    // loop this gate exists to end.
+    if book.missing {
+        crate::services::library::ask_relink(state, book_id);
+        return;
+    }
+    open_at(state, Some(book_id), book.path().to_string());
 }
 
 /// Shared open-flow: open `path` through the pipeline its format needs and

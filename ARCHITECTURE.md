@@ -543,6 +543,18 @@ gone, it left as a copy the library holds, and a restore would mint a linked sec
 A relink rewrites the address and clears `missing`; it does not touch the id, the resume point or a
 single shelf membership. That is what makes "the file moved" and "the book was re-filed" orthogonal.
 
+And a relink is a question before it is a sentence the reader has to know to ask: a click on a
+`missing` book raises the Find-again sheet instead of opening the reader onto an error, and its two
+doors are the two ways a file is found again — pick the file itself, or name a FOLDER and let the
+app walk it (the shell's own scan, every format, no size floor: a book the reader lost is not a file
+to filter) looking for the book's own name, which is the shelf's display name, the stem of the dead
+address, or that address's file name, case aside. A hit is re-measured before the row takes it; a
+miss is one sentence; the cancel changes nothing, because a missing book is a book the library is
+still holding a place for. What keeps `missing` honest between launches is the focus moment's other
+half: both automatic passes — the startup's and every refocus — measure every address the library
+holds BEFORE walking the watched folders, because a walk only ever sees what is still on disk, and
+a book deleted or moved out since the last focus is the measure's finding, not the walk's.
+
 A tombstone is a record and not a fingerprint, because it has a second job. Keeping a file out of every
 later rescan needs one hash; offering the book back needs the name the shelf showed, the address it
 lived at, the shelf it was filed on and when it went. Beside the tombstones each folder keeps what its

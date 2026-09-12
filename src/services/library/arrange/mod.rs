@@ -70,7 +70,7 @@ mod tests;
 
 pub use moves::{also_show, file_many, move_many_to_shelf, move_row, unfile_books};
 pub use purge::{purge_books, PurgeOpts};
-pub use relink::relink_dialog;
+pub use relink::{ask_relink, cancel_relink, relink_dialog, relink_search_folder};
 pub use shelf_departure::{
     answer_departure_return, cancel_departure, confirm_departure, ReturnPath, SeamSide,
     ShelfDepartureAsk,

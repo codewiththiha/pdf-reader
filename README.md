@@ -443,6 +443,13 @@ touches a file you own.
   is offered as a move, with two answers — file it here as well, which is a second membership and no
   second copy, or go and look at where it went, which closes the menu, moves the breadcrumb and lights
   up the card it scrolled to.
+- **A book whose file moved or vanished is a question, not an error.** Every focus re-measures the
+  addresses the library holds before it walks the watched folders, so a shelf notices a file that
+  disappeared instead of finding out when you click it. A book whose address no longer resolves
+  stays on the shelf — greyed, with its place in it and its highlights — and opening it raises the
+  Find-again sheet: pick the file it is now, or name a folder and the app walks inside it looking
+  for the book's own name. A match is re-measured and healed, a miss says so in one sentence, and
+  Cancel changes nothing.
 - **An import reports from the corner.** One card per run in the bottom-left, with a ring that spins
   while the folder is walked and fills while files are copied. It stays put when you open a book,
   because the run outlives the page that started it.

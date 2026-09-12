@@ -1,8 +1,14 @@
-//! The library's two automatic measurements: the startup pass over every
-//! address the library holds, and the rescan of every watched folder when the
-//! window regains focus. The order between them is a property of this module:
-//! a diff against placeholder fingerprints would add a second copy of every
-//! migrated book, so the measure runs first and calls the rescan itself.
+//! The library's two automatic measurements, in the one order they owe:
+//! FIRST a pass over every address the library holds — what turns a book
+//! `missing` when its file was deleted or moved out from under it, and what
+//! replaces a migrated book's placeholder fingerprint with a real one — and
+//! THEN the walk of every watched folder when the window regains focus. The
+//! walk alone only ever SEES what is still on disk: a shelf that gained a
+//! book while another quietly died would be a shelf lying about one of them,
+//! so both automatic moments run both passes, in this order, in one task.
+//! Diffing a library that is still carrying placeholder fingerprints would
+//! add a second copy of every book a watched folder already holds, which is
+//! why the measure runs first and the walk's guard reads what it left.
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -19,16 +25,39 @@ use super::Asked;
 use crate::services::library as wire;
 use crate::state::AppState;
 
-/// Re-scan every watched folder. Called on startup (from [`verify_library`],
-/// never before it) and whenever the window regains focus.
+/// Measure every address the library holds, then walk every watched folder.
+/// Called on startup (as [`verify_library`]) and whenever the window regains
+/// focus; both moments owe both passes, measure first.
 pub fn rescan_watched(state: AppState) {
     if !tauri_bridge::has_tauri() {
         return;
     }
-    // A library still carrying placeholder fingerprints cannot be diffed: a real
-    // fingerprint matches no placeholder, so every book a watched folder already
-    // holds would be added a second time. `verify_library` measures first and
-    // calls this itself once it has.
+    // A link has no address to measure, and a pointer at a book is as alive
+    // or as dead as the book it points at, which the book's own row is
+    // already in this list to answer for.
+    let paths: Vec<String> = state
+        .library
+        .books
+        .with_untracked(|rows| book_rows(rows).map(|b| b.path().to_string()).collect());
+    spawn_local(async move {
+        if !paths.is_empty() {
+            match wire::verify_paths(paths).await {
+                Ok(checks) => apply_checks(state, &checks),
+                Err(message) => {
+                    web_sys::console::warn_1(&format!("[library] verify failed: {message}").into());
+                }
+            }
+        }
+        run_watched(state);
+    });
+}
+
+/// The walk half: claim every watched folder's root and start its quiet run.
+/// The measurement pass has just replaced every placeholder it could, so the
+/// guard here only holds the walk back for a book whose address the shell
+/// could not read at all — a diff against a placeholder would add a second
+/// copy of every book the folder already holds.
+fn run_watched(state: AppState) {
     if state
         .library
         .books
@@ -58,37 +87,13 @@ pub fn rescan_watched(state: AppState) {
     }
 }
 
-/// Measure every address the library holds, once, at startup.
-///
-/// This is what makes `missing` true, what replaces a migrated book's
-/// placeholder fingerprint with a real one, and therefore what has to happen
-/// before any rescan. It ends by calling [`rescan_watched`] itself, so that
-/// order is a property of this function rather than of whoever remembers to call
-/// the two in the right sequence.
+/// The startup's name for the same two passes [`rescan_watched`] runs:
+/// measure every address the library holds, then walk the watched folders.
+/// One function under two names because the two moments read differently —
+/// a launch owes the reader a library that knows what it holds, a focus owes
+/// a shelf that noticed the folder — and the work is one.
 pub fn verify_library(state: AppState) {
-    if !tauri_bridge::has_tauri() {
-        return;
-    }
-    // The addresses to ask about: a link has none, and a pointer at a book is
-    // as alive or as dead as the book it points at, which the book's own row
-    // is already in this list to answer for.
-    let paths: Vec<String> = state
-        .library
-        .books
-        .with_untracked(|rows| book_rows(rows).map(|b| b.path().to_string()).collect());
-    if paths.is_empty() {
-        rescan_watched(state);
-        return;
-    }
-    spawn_local(async move {
-        match wire::verify_paths(paths).await {
-            Ok(checks) => apply_checks(state, &checks),
-            Err(message) => {
-                web_sys::console::warn_1(&format!("[library] verify failed: {message}").into());
-            }
-        }
-        rescan_watched(state);
-    });
+    rescan_watched(state);
 }
 
 /// Measure one address and write the result.

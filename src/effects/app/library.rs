@@ -10,11 +10,14 @@
 //! app opens or returns to the foreground" — with no watcher dependency and no
 //! race against an import in flight.
 //!
-//! The order between the first two is not a coincidence and is not left to the
-//! caller: [`verify_library`] measures every address the library holds and calls
-//! [`rescan_watched`] itself when it is done, because diffing a library that is
-//! still carrying placeholder fingerprints would add a second copy of every book
-//! a watched folder already holds.
+//! The order between the two passes is not a coincidence and is not left to the
+//! caller: both moments run the SAME pair — measure every address the library
+//! holds, then walk the watched folders — because a walk only ever sees what
+//! is still on disk (a deleted or moved-out book is the measure's finding, not
+//! the walk's), and a diff against placeholder fingerprints would add a second
+//! copy of every book a watched folder already holds. One service owns the
+//! pair and its order ([`rescan_watched`]); [`verify_library`] is the
+//! startup's name for it.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

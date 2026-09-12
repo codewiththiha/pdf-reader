@@ -23,6 +23,9 @@
 //!   * [`cover_thumb`] — the one painter of a cached cover, and a surface's
 //!     fallback beside it
 //!   * [`import_modal`] — what a folder import is allowed to be
+//!   * [`relink_modal`] — a book that is not where the library left it: the
+//!     two doors that point it at the file it is now, and the Cancel that
+//!     leaves the missing book exactly as missing as it was
 //!   * [`remove_modal`] — what a removal costs, itemised
 //!   * [`conflict_modal`] — the shelf already holds that book: the
 //!     duplicate/replace/merge question, and the second ask a replace owes;
@@ -85,6 +88,7 @@ pub mod link_card;
 pub mod list;
 pub mod page;
 pub mod progress_dock;
+pub mod relink_modal;
 pub mod remove_modal;
 pub mod search_suggest;
 pub mod selection;

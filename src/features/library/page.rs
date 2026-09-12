@@ -38,6 +38,7 @@ use crate::features::library::departure_modal::ShelfDepartureModal;
 use crate::features::library::dnd::layer::DragLayer;
 use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
 use crate::features::library::progress_dock::ProgressDock;
+use crate::features::library::relink_modal::RelinkModal;
 use crate::features::library::remove_modal::{RemoveBookModal, RemoveSheet};
 use crate::features::library::shelf_conflict_modal::ShelfConflictModal;
 use crate::features::library::titlebar_search::TitlebarSearch;
@@ -140,6 +141,9 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             // Not a question — an answer: a folder the library already reads
             // in place is named, and closing the note lights its shelf up.
             <AlreadyImportedModal state=state />
+            // The Find-again question: what a click on a book whose address
+            // died asks instead of opening the reader onto an error.
+            <RelinkModal state=state />
             // Fixed, and mounted at the page rather than inside the content: an
             // import outlives the state the shelf is in, and a card that unmounted
             // with an "Opening…" would take its progress with it.

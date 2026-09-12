@@ -313,6 +313,16 @@ impl<T: Send + Sync + 'static> Clone for Sheet<T> {
 
 impl<T: Send + Sync + 'static> Copy for Sheet<T> {}
 
+/// The Find-again sheet's payload: the row whose address stopped resolving,
+/// and the name its folder search looks for. The name is captured at the ask
+/// rather than read at the click, so a rename that lands while the sheet is
+/// up cannot change the question being answered.
+#[derive(Clone, PartialEq)]
+pub struct RelinkAsk {
+    pub book_id: String,
+    pub name: String,
+}
+
 #[derive(Clone, Copy)]
 pub struct LibraryState {
     /// Every ROW, in the order the "All" shelf shows them: the books, and the
@@ -380,6 +390,11 @@ pub struct LibraryState {
     /// question is the move's COST, with two answers: pay it, or leave the
     /// shelf where the tree put it. See `crate::services::library::arrange`.
     pub shelf_departure: Sheet<ShelfDepartureAsk>,
+    /// The Find-again sheet: what a click on a book whose address died gets —
+    /// the two doors that point the row at the file it is now (a pick, or a
+    /// folder the app walks looking for the book's own name). Raised by the
+    /// open's dead-address gate and the card's own button alike.
+    pub relink: Sheet<RelinkAsk>,
 }
 
 impl Default for LibraryState {
@@ -405,6 +420,7 @@ impl Default for LibraryState {
             shelf_conflict: Sheet::new(),
             already_imported: Sheet::new(),
             shelf_departure: Sheet::new(),
+            relink: Sheet::new(),
         }
     }
 }
