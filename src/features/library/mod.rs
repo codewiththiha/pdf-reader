@@ -32,8 +32,10 @@
 //!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
 //!     folder question an import asks before its walk, and the mode switch a
 //!     read-at-place folder asks when it is re-picked as copies
-//!   * [`already_imported_modal`] — no question at all: a folder the library
-//!     already reads in place, named and lit up
+//!   * [`already_imported_modal`] — a folder the library already reads in
+//!     place, named and lit up; a report for two of its three sentences, and
+//!     for the third a question, because a member of the tree is standing
+//!     outside it and can be put back
 //!   * [`selection`] — the hold that starts a multi-select, the mark that says an
 //!     item is in it, and the bar that acts on the set
 //!   * [`context_menu`] — the right-click: one menu per kind of thing under the

@@ -672,8 +672,13 @@ fact about the pick rather than a setting:
   RECONCILIATION: the walk runs as the explicit import it is, new files join the tree as linked
   books, the logs a removal or a departure wrote are spent by their books coming back — and only
   a walk that found nothing new raises the note, saying the sentence the gate used to say up
-  front and lighting the shelf. A read-at-place tree has no *as new* and needs no *replace*: its
-  re-import is a merge by nature, because its books are the files themselves.
+  front and lighting the shelf. One shape of "nothing new" is a question rather than a report: a
+  MEMBER of the tree standing outside it, because the reader removed its rung and imported that
+  subfolder on its own (`import::displaced_member`). The note then names that shelf instead of the
+  root's and offers to put it back on the rung its directory names, which folds the nested folder's
+  shelves and ledger into the tree and retires the folder (`import::reclaim_rung`). A read-at-place
+  tree has no *as new* and needs no *replace*: its re-import is a merge by nature, because its
+  books are the files themselves.
 - The same root re-picked AS COPIES is the MODE SWITCH, and it is a question — the folder sheet's
   chrome with the switch's own three answers, because "hold this folder as copies" is a decision
   about every book already on it. *Add as new* mints the counter-named second shelf and lands

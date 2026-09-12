@@ -30,9 +30,22 @@
 //! [`crate::folder::WatchedFolder::placed`], so the book is never re-added —
 //! which is the "import back only the genuinely new ones" rule.
 //!
+//! Rows 3 and 4 have one exception, and it is the copy the library made. A
+//! stored row records the address its bytes came from, and a walk standing on
+//! THAT address has not found a book that moved: it has found the original of a
+//! copy the library holds. There is no address to rewrite — the copy's
+//! provenance already names this file — so a rescan is quiet. Reading it as a
+//! move instead rewrote a provenance to itself and reported a relink on every
+//! window focus, forever, for every book the library had copied. An explicit
+//! import does not stay quiet, and the difference is the two tables' own: the
+//! file the reader asked for is not the copy the library made, so it gets a
+//! book of its own.
+//!
 //! The last row is the tombstone, and it is checked FIRST: a book the reader
 //! deliberately removed is refused even when everything else about it says
-//! "new".
+//! "new". A MOVED-OUT log is the one tombstone no scan drops, because what it
+//! records is not a book that is gone but a file the library answered for once:
+//! see [`prune_tombstones`].
 //!
 //! ## Two tables, because two questions are asked
 //!
@@ -57,13 +70,27 @@ use crate::shelf::Shelf;
 
 /// What the ledger needs to know about a book that is already in the library:
 /// its id (so a relink can write back to it), its address (so a move on disk
-/// is recognisable as one) and whether that address is already known to be
-/// dead. Everything else about the book is the reader's business.
+/// is recognisable as one), whether that address is already known to be dead,
+/// and — for a book the library copied — the address the copy was made from.
+/// Everything else about the book is the reader's business.
+///
+/// The source is here because a copy and the file it copied are two addresses
+/// the walk can find, and they are not the same fact. A book whose address
+/// moved is a relink; a book the library holds a COPY of, found standing at the
+/// address the copy came from, is a file the library already answered for once
+/// and is being asked about again. Rewriting that row's provenance to the
+/// address it already names is nothing, and on a watched folder it is a card on
+/// every window focus forever. `None` for a linked book, whose address IS its
+/// source and which never reaches the rule that reads this.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KnownBook {
     pub id: String,
     pub path: String,
     pub missing: bool,
+    /// Where a stored row's bytes came from, when the library knows. A linked
+    /// row carries `None`: its [`Book::source`] is its own address, and the
+    /// rule this feeds is about a copy and its original being two places.
+    pub source: Option<String>,
 }
 
 /// Fingerprint → the library's row for it. Built from the book list on every
@@ -109,6 +136,13 @@ fn known_of(book: &crate::book::Book) -> KnownBook {
         id: book.id.clone(),
         path: book.path().to_string(),
         missing: book.missing,
+        // A stored row's provenance, and nothing for a linked one: a link's
+        // source IS its address, so carrying it would make every linked book
+        // look like a copy of itself to the rule below.
+        source: match &book.origin {
+            Origin::Stored { src, .. } => src.clone(),
+            Origin::Linked { .. } => None,
+        },
     }
 }
 
@@ -173,6 +207,16 @@ fn known_action(folder: &WatchedFolder, known: &KnownBook, file: &FoundFile) -> 
     if known.path == file.path {
         return ScanAction::Skip;
     }
+    // The row the registry named is the library's own COPY of the file this
+    // walk is standing on: the address moved because there are two addresses,
+    // not because a book went anywhere. There is nothing to heal — the copy's
+    // provenance already names this file — so both tables stay quiet here and
+    // let the caller decide what the file itself is owed. Reading it as a move
+    // instead rewrote a provenance to the address it already carried, on every
+    // walk of every folder that held a copy.
+    if known.source.as_deref() == Some(file.path.as_str()) {
+        return ScanAction::Skip;
+    }
     // The address moved. This folder placed the book, so the move is
     // inside a tree it owns; or the book is already known to be
     // missing, in which case any watched tree that finds it heals it.
@@ -209,6 +253,15 @@ pub fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFi
             // reads as a broken import. The address the library already holds
             // is not a second book either way — that is the same file, and the
             // heal in `import::run_folder` measures it rather than adding it.
+            //
+            // The copy of THIS file comes through here too, and it is not the
+            // exception: a rescan is quiet about the copy because the copy
+            // needs nothing, and an import is loud about the FILE because the
+            // reader asked for it. What the file is owed is a book of its own,
+            // which is one Add and the caller's own landing rules — a
+            // read-at-place folder mints the linked row the copy's provenance
+            // says the library owes, and a copying folder's planned run
+            // declines to place a second copy of a content it already holds.
             match action {
                 ScanAction::Skip if known.path != file.path => ScanAction::Add(file.clone()),
                 other => other,
@@ -311,8 +364,19 @@ pub fn tombstone(folders: &mut [WatchedFolder], entry: &Tombstone) {
 /// by any route — a hand-open, a second folder's import, a restore — and a
 /// tombstone left behind for a book that exists is a restore row offering
 /// something the reader already has.
+///
+/// A MOVED-OUT log is not one of those, and is kept whatever the registry says.
+/// Its two jobs both outlive the copy: it keeps a rescan quiet about a file the
+/// library answered for once, and it is what an import of that file spends to
+/// bring the linked book home. Pruning it because the library holds the copy
+/// would drop it every time — the copy is the whole of what a departure leaves
+/// behind — and a folder that lost the log answers an import of its own file
+/// with a second copy beside the first. It is spent by a restore, and a
+/// restore's landing is the only thing that removes it.
 pub fn prune_tombstones(folder: &mut WatchedFolder, registry: &Registry) {
-    folder.ignored.retain(|entry| !registry.contains_key(&entry.fp));
+    folder
+        .ignored
+        .retain(|entry| entry.moved || !registry.contains_key(&entry.fp));
 }
 
 /// The tombstone for `fp`, without taking it. A restore measures the file before
@@ -529,6 +593,26 @@ mod tests {
                         id: (*id).to_string(),
                         path: (*path).to_string(),
                         missing: *missing,
+                        source: None,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// A registry whose rows are the library's own COPIES: each entry carries
+    /// the address its bytes were made from, which is the fact the copy's rule
+    /// reads and a linked book never has.
+    fn copied_registry(rows: &[(u32, &str, &str, &str)]) -> Registry {
+        rows.iter()
+            .map(|(n, id, store, source)| {
+                (
+                    fp(*n),
+                    KnownBook {
+                        id: (*id).to_string(),
+                        path: (*store).to_string(),
+                        missing: false,
+                        source: Some((*source).to_string()),
                     },
                 )
             })
@@ -669,6 +753,141 @@ mod tests {
             to: "/books/a.pdf".into(),
         };
         assert_eq!(decide_import(&placed, &r, &file(1, "/books/a.pdf")), relink);
+    }
+
+    /// The exception both tables carry: the row the registry named is the
+    /// library's own COPY of the file the walk is standing on. The two
+    /// addresses are not a move — the copy is in the store, its source is here
+    /// — so there is no provenance to rewrite and nothing to heal.
+    ///
+    /// This is the row that made a watched folder report work on every window
+    /// focus forever: a rescan answered `Relink`, the relink wrote the source
+    /// address it already carried, and the run counted a change it had just
+    /// declined to make.
+    #[test]
+    fn a_copy_never_relinks_its_own_source() {
+        let f = folder(&[1], &[]);
+        let r = copied_registry(&[(1, "b1", "/store/b1.pdf", "/books/a.pdf")]);
+        assert_eq!(
+            decide(&f, &r, &file(1, "/books/a.pdf")),
+            ScanAction::Skip,
+            "a rescan of the copy's own source is quiet, however the folder placed it"
+        );
+        // A folder that never placed the file gets the same quiet answer: the
+        // copy's provenance is not this folder's to rewrite either.
+        let stranger = folder(&[], &[]);
+        assert_eq!(decide(&stranger, &r, &file(1, "/books/a.pdf")), ScanAction::Skip);
+        // A copy of some OTHER file is not this file's copy: the address the
+        // library holds differs, the provenance differs, and the move heal is
+        // the answer it always was.
+        let other = copied_registry(&[(1, "b1", "/store/b1.pdf", "/books/elsewhere.pdf")]);
+        assert_eq!(
+            decide(&f, &other, &file(1, "/books/moved.pdf")),
+            ScanAction::Relink {
+                book_id: "b1".into(),
+                to: "/books/moved.pdf".into()
+            }
+        );
+        // Nor is a copy whose source died: a MISSING stored row is a book whose
+        // address the library lost, and any watched tree that finds the content
+        // heals it. That is row 4, and it stays row 4 — the walk is not standing
+        // on the copy's source, so there is no provenance to leave alone.
+        let mut dead = copied_registry(&[(1, "b1", "/store/b1.pdf", "/books/gone.pdf")]);
+        dead.get_mut(&fp(1)).expect("a row").missing = true;
+        assert_eq!(
+            decide(&stranger, &dead, &file(1, "/books/a.pdf")),
+            ScanAction::Relink {
+                book_id: "b1".into(),
+                to: "/books/a.pdf".into()
+            }
+        );
+    }
+
+    /// The import table's answer for the same file, and the one case where the
+    /// two tables part company over a copy. A rescan is quiet because the copy
+    /// needs nothing; an import is a reader asking for THIS file, and the copy
+    /// is not it. So the quiet answer becomes the import's own `Add` — which
+    /// for a read-at-place folder mints the file's linked book, the row the
+    /// copy's provenance says the library owes it, and for a copying folder
+    /// mints a second copy that `import::planned_placements` then declines to
+    /// place, because the content is known and a copy is not a membership.
+    /// Neither answer is a relink, and neither is nothing.
+    #[test]
+    fn an_explicit_import_of_a_copy_source_asks_for_the_files_own_book() {
+        let f = folder(&[1], &[]);
+        let r = copied_registry(&[(1, "b1", "/store/b1.pdf", "/books/a.pdf")]);
+        assert_eq!(
+            decide_import(&f, &r, &file(1, "/books/a.pdf")),
+            ScanAction::Add(file(1, "/books/a.pdf")),
+            "the file is not the copy, so the import owes it a book of its own"
+        );
+        // A folder that never placed it asks the same way: the reader named
+        // this folder, and the file is in it.
+        let stranger = folder(&[], &[]);
+        assert_eq!(
+            decide_import(&stranger, &r, &file(1, "/books/a.pdf")),
+            ScanAction::Add(file(1, "/books/a.pdf"))
+        );
+    }
+
+    /// A linked book has no second address: its source IS its path, so the
+    /// copy's exception can never swallow a move heal. Spelled as a test
+    /// because the registry builder that fills `source` from a row is the one
+    /// place the two could be confused.
+    #[test]
+    fn a_linked_book_is_never_a_copy_of_itself() {
+        let rows = vec![Row::Book(Book::new(
+            "b1".into(),
+            fp(1),
+            Format::Markdown,
+            Origin::Linked {
+                src: "/books/a.pdf".into(),
+            },
+            0,
+        ))];
+        let r = registry_of(&rows);
+        assert_eq!(r.get(&fp(1)).and_then(|k| k.source.clone()), None);
+        let f = folder(&[1], &[]);
+        assert_eq!(
+            decide(&f, &r, &file(1, "/books/moved/a.pdf")),
+            ScanAction::Relink {
+                book_id: "b1".into(),
+                to: "/books/moved/a.pdf".into()
+            },
+            "the file moved inside the tree, and the heal is what a rescan owes it"
+        );
+    }
+
+    /// A stored row carries its provenance into the registry, which is the
+    /// whole of what the copy's exception reads.
+    #[test]
+    fn the_registry_carries_a_copy_provenance() {
+        let rows = vec![Row::Book(Book::new(
+            "b1".into(),
+            fp(1),
+            Format::Markdown,
+            Origin::Stored {
+                src: Some("/books/a.pdf".into()),
+                store: "/store/b1.pdf".into(),
+            },
+            0,
+        ))];
+        let known = registry_of(&rows).get(&fp(1)).cloned().expect("a row");
+        assert_eq!(known.path, "/store/b1.pdf", "the address is the store's");
+        assert_eq!(known.source.as_deref(), Some("/books/a.pdf"), "and the source is the file's");
+        // A copy whose provenance the library never learned has none to carry,
+        // and is then an ordinary row at an ordinary address.
+        let rows = vec![Row::Book(Book::new(
+            "b2".into(),
+            fp(2),
+            Format::Markdown,
+            Origin::Stored {
+                src: None,
+                store: "/store/b2.pdf".into(),
+            },
+            0,
+        ))];
+        assert_eq!(registry_of(&rows).get(&fp(2)).and_then(|k| k.source.clone()), None);
     }
 
     #[test]
@@ -1027,6 +1246,54 @@ mod tests {
         prune_tombstones(&mut f, &reg);
         let left: Vec<Fingerprint> = f.ignored.iter().map(|t| t.fp).collect();
         assert_eq!(left, vec![fp(2)], "only the book that is really gone stays");
+    }
+
+    /// A moved-out log outlives the copy that carries its fingerprint.
+    ///
+    /// The prune's reason is that a removal's restore row must not offer a book
+    /// the reader already has. A moved-out log is never offered as a restore —
+    /// `recoverables` skips it — and both of its jobs are about the copy
+    /// EXISTING: it keeps a rescan quiet about a file the library answered for
+    /// once, and it is what an import of that file spends to bring the linked
+    /// book home. Pruning it because the library holds the copy drops it every
+    /// time, since the copy is the whole of what a departure leaves behind, and
+    /// a folder with no log answers an import of its own file with a second
+    /// copy beside the first. It is spent by a restore, and nothing else.
+    #[test]
+    fn pruning_keeps_a_moved_out_log_whatever_the_registry_says() {
+        let mut f = folder(&[1, 2], &[]);
+        f.ignored.push(Tombstone {
+            moved: true,
+            ..stone(1)
+        });
+        f.ignored.push(stone(2));
+        let reg = registry(&[(1, "b1", "/store/b1.pdf", false), (2, "b2", "/books/2.pdf", false)]);
+        prune_tombstones(&mut f, &reg);
+        let left: Vec<Fingerprint> = f.ignored.iter().map(|t| t.fp).collect();
+        assert_eq!(
+            left,
+            vec![fp(1)],
+            "the copy's own fingerprint in the registry is the log's reason to stand, not to go"
+        );
+        assert!(f.ignored[0].moved, "and the log that stands is the moved-out one");
+    }
+
+    /// The log's spend is a restore's landing, which is the one removal it has:
+    /// after it, the file has a linked book again and the folder needs no log
+    /// to keep a rescan quiet, because the book is standing at the address.
+    #[test]
+    fn a_moved_out_log_is_spent_by_the_restore_that_brings_the_book_back() {
+        let mut f = folder(&[1], &[]);
+        f.ignored.push(Tombstone {
+            moved: true,
+            ..stone(1)
+        });
+        let reg = registry(&[(1, "b1", "/store/b1.pdf", false)]);
+        prune_tombstones(&mut f, &reg);
+        assert_eq!(f.ignored.len(), 1, "a scan leaves it standing");
+        assert!(restore_deleted(&mut f, &fp(1)).is_some(), "a restore takes it");
+        prune_tombstones(&mut f, &reg);
+        assert!(f.ignored.is_empty(), "and nothing puts it back");
     }
 
     #[test]

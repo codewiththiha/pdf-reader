@@ -14,7 +14,9 @@
 //!     sets a book `missing`, and what replaces a migrated book's placeholder
 //!     fingerprint with a real one;
 //!   * [`store_books`] copies into `<app_data_dir>/Library/<format>/`, the only
-//!     directory this module ever writes to;
+//!     directory this module ever writes to, and stamps each copy with its own
+//!     modification time so it measures as the file it is rather than as the
+//!     one it came from ([`own_stamp`]);
 //!   * [`delete_stored`] removes a copy, and refuses anything outside it.
 //!
 //! Progress is emitted on [`PROGRESS_EVENT`] rather than returned, because
@@ -31,7 +33,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use std::io::Read as _;
 use tauri::{AppHandle, Emitter, Manager};
@@ -360,12 +362,43 @@ fn copy_one(
     if let Err(e) = fs::copy(&request.path, &target) {
         return fail(format!("could not copy {}: {e}", request.path));
     }
+    own_stamp(&target);
     progress.tick(app, name);
     StoreResult {
         id: request.id.clone(),
         src: request.path.clone(),
         store: path_to_string(&target),
         error: None,
+    }
+}
+
+/// Give a fresh copy its own modification time.
+///
+/// The library measures a file as (size, modification time, first bytes), and
+/// the whole of what a copy owes the ledger is a measurement of ITS OWN: a
+/// stored row is known by its copy's fingerprint so the source file's stays
+/// free for the folder that reads it. That is the departure rule's arithmetic,
+/// and it is what lets a read-at-place book leave its shelf as a copy and come
+/// back as a link without the library ever holding two rows it cannot tell
+/// apart.
+///
+/// A copy inherits its source's bytes and size by definition, so the stamp is
+/// the only one of the three that can differ — and `fs::copy` does not make it
+/// differ everywhere. Linux leaves the copy with the time it was written;
+/// Windows (`CopyFileExW`) and macOS (`fcopyfile` with `COPYFILE_STAT`) carry
+/// the source's stamp across. On those two, an unstamped copy measures EXACTLY
+/// like its source, the row adopts the source's fingerprint, and the folder's
+/// ledger then reads its own copy as the file: a moved-out log is pruned as a
+/// book that came back, a rescan relinks a provenance to itself on every window
+/// focus, and an import of the source file lands a second copy beside the first
+/// instead of bringing the linked book home.
+///
+/// Best-effort on purpose. A stamp the host refuses leaves the copy measurable
+/// as its source, which the ledger's own copy rules survive; failing the copy
+/// would lose the reader a book over a timestamp.
+fn own_stamp(target: &Path) {
+    if let Ok(file) = fs::File::options().write(true).open(target) {
+        let _ = file.set_times(fs::FileTimes::new().set_modified(SystemTime::now()));
     }
 }
 
@@ -511,8 +544,10 @@ fn ensure_walkable(root: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extension_of, relative_to, sanitize_component};
+    use super::{extension_of, own_stamp, relative_to, sanitize_component};
+    use std::fs;
     use std::path::Path;
+    use std::time::{Duration, SystemTime};
 
     #[test]
     fn an_extension_is_lower_case_and_has_no_dot() {
@@ -562,5 +597,54 @@ mod tests {
     #[test]
     fn a_control_character_never_reaches_a_file_name() {
         assert_eq!(sanitize_component("a\u{0}b\u{1f}c"), "a_b_c");
+    }
+
+    /// The stamp is what separates a copy's measurement from its source's, and
+    /// two of the three hosts this ships on carry the source's stamp across a
+    /// copy. So: write a file, backdate it the way a source is backdated by
+    /// having been written last week, and ask for the copy's own stamp — which
+    /// is the whole of what the ledger's copy rules need.
+    ///
+    /// The backdating is `own_stamp`'s own mechanism, so a host that cannot set
+    /// a stamp cannot run this test and says so rather than passing vacuously.
+    #[test]
+    fn a_copy_takes_its_own_modification_time() {
+        let dir = std::env::temp_dir().join(format!("pdf-reader-stamp-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("a scratch directory");
+        let path = dir.join("book.pdf");
+        fs::write(&path, b"%PDF-1.7 a book").expect("a scratch file");
+
+        let backdated = SystemTime::now() - Duration::from_secs(7 * 24 * 3600);
+        let file = fs::File::options().write(true).open(&path).expect("a handle");
+        file.set_times(fs::FileTimes::new().set_modified(backdated))
+            .expect("a host that sets a stamp");
+        drop(file);
+        let before = fs::metadata(&path).and_then(|m| m.modified()).expect("a stamp to read");
+        assert_eq!(
+            before, backdated,
+            "the backdating took, so the assertion below means something"
+        );
+
+        own_stamp(&path);
+
+        let after = fs::metadata(&path).and_then(|m| m.modified()).expect("a stamp to read");
+        assert!(
+            after > before + Duration::from_secs(3600),
+            "the stamp is the copy's own, not the source's week-old one"
+        );
+        assert!(
+            SystemTime::now().duration_since(after).unwrap_or_default() < Duration::from_secs(3600),
+            "and it is a stamp of this run, not a wrapped or invented one"
+        );
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
+    }
+
+    /// A stamp nobody can set is not a failed copy: the file is there, and the
+    /// ledger's own copy rules carry a measurement that cannot tell the two
+    /// apart. The promise is only that a refusal does not panic.
+    #[test]
+    fn a_stamp_nobody_can_set_is_not_an_error() {
+        own_stamp(Path::new("/this/path/is/not/there/book.pdf"));
     }
 }

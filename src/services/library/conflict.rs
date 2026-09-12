@@ -888,13 +888,15 @@ pub fn cancel_shelf(state: AppState) {
 /// than its open, because a light that burns its 1.6 seconds behind a modal
 /// nobody has dismissed is a light nobody sees.
 ///
-/// One raiser for both of the note's sentences, because the two are one act
-/// with one difference and [`NoteKind`] is that difference:
-/// [`NoteKind::Gated`] is the gate, said before any walk ran, and
-/// [`NoteKind::NothingNew`] is the report of a re-import walk that reconciled
-/// the tree and found every book already standing, no log coming back and
-/// nothing copied. Two raisers that differed by a boolean were two places to
-/// keep in step about which sentence the reader was owed.
+/// One raiser for the note's sentences, because they are one act with one
+/// difference and [`NoteKind`] is that difference: [`NoteKind::Gated`] is the
+/// gate, said before any walk ran, [`NoteKind::NothingNew`] is the report of a
+/// re-import walk that reconciled the tree and found every book already
+/// standing, and [`NoteKind::Displaced`] is the same report with a question
+/// attached — the walk found nothing new because a member of the tree is
+/// standing outside it, so the note names THAT shelf and offers to put it back.
+/// Raisers that differed by a boolean were that many places to keep in step
+/// about which sentence the reader was owed.
 pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKind) {
     state
         .library
@@ -908,6 +910,25 @@ pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKin
 /// the lane — ends on the shelf being lit.
 pub fn close_already_imported(state: AppState) {
     state.library.already_imported_open.set(false);
+}
+
+/// The displaced note's second answer: put the member's shelf back on the rung
+/// its directory names, and fold the folder that was reading it into the tree.
+///
+/// The move is the import module's, because it is the same arithmetic a walk
+/// mints a chain with and the same ledger a walk writes; this is the wiring
+/// between the note's three facts and it. The highlight still rides the close,
+/// so the answer ends on the shelf lit in its new place rather than on a modal
+/// claiming it worked.
+pub fn reclaim_displaced(state: AppState) {
+    let Some(note) = state.library.already_imported.get_untracked() else {
+        return;
+    };
+    let NoteKind::Displaced { tree, gone, rel } = note.kind.clone() else {
+        return;
+    };
+    super::import::reclaim_rung(state, &tree, &gone, &rel, &note.shelf_id);
+    close_already_imported(state);
 }
 
 // ---------------------------------------------------------------------------

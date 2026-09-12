@@ -244,8 +244,9 @@ pub struct Reveal {
     pub nonce: u64,
 }
 
-/// Which of the two sentences the "already a shelf here" note says.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Which sentence the "already a shelf here" note says. Two of the three are a
+/// report and one is a question, and the difference is the second button.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NoteKind {
     /// The gate's: a rung inside a tree the library reads in place, said BEFORE
     /// any walk ran, because a linked shelf IS the OS folder and there is no
@@ -254,22 +255,46 @@ pub enum NoteKind {
     /// The report's: a re-import of the tree's own root DID walk and reconcile,
     /// and found nothing new — every book already stood and no log came back.
     NothingNew,
+    /// The question's: a re-import found nothing new because a MEMBER of this
+    /// tree is standing outside it — the reader removed its rung and imported
+    /// that subfolder on its own, so its books are all standing on a shelf that
+    /// is not one of this tree's. The note names that shelf rather than the
+    /// root's, and its second answer puts it back on the rung its directory
+    /// names.
+    ///
+    /// The three facts the answer writes with: the tree that asked, the nested
+    /// folder to fold into it, and the rung key that folder's root names in the
+    /// tree. The shelf itself is the note's own.
+    Displaced {
+        tree: String,
+        gone: String,
+        rel: String,
+    },
 }
 
 impl NoteKind {
     /// The line under the note's heading.
-    pub fn sublabel(self) -> &'static str {
+    pub fn sublabel(&self) -> &'static str {
         match self {
             NoteKind::Gated => "Already in the library",
             NoteKind::NothingNew => "Nothing new to import",
+            NoteKind::Displaced { .. } => "Nothing new — part of it stands elsewhere",
         }
+    }
+
+    /// Whether the note is the question rather than the report, which is what
+    /// the modal's second button rides.
+    pub fn is_displaced(&self) -> bool {
+        matches!(self, NoteKind::Displaced { .. })
     }
 }
 
-/// The "that folder is already a shelf here" note. Not a question: the modal's
-/// one job is to say the sentence and then light the shelf up, and the highlight
-/// rides its CLOSE so a light cannot burn its seconds behind a modal nobody has
-/// dismissed.
+/// The "that folder is already a shelf here" note. Two of its three sentences
+/// are not a question: the modal's one job is to say the sentence and then
+/// light the shelf up, and the highlight rides its CLOSE so a light cannot burn
+/// its seconds behind a modal nobody has dismissed. The third
+/// ([`NoteKind::Displaced`]) offers the move beside the highlight, and closes
+/// onto the same light either way.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlreadyNote {
     /// The shelf to reveal when the note closes.
@@ -345,8 +370,8 @@ pub struct LibraryState {
     /// for the reason [`Self::conflict_open`] exists.
     pub shelf_conflict_open: RwSignal<bool>,
     /// The "that folder is already a shelf here" note: which shelf to light when
-    /// it closes, the name the modal speaks, and which of the two sentences it
-    /// says. Not a question either way.
+    /// it closes, the name the modal speaks, and which sentence it says. Two of
+    /// the three are a report; the third is a question with a second answer.
     pub already_imported: RwSignal<Option<AlreadyNote>>,
     /// The pair of [`Self::already_imported`] the lane and the Escape rule
     /// hold, for the reason [`Self::conflict_open`] exists.
