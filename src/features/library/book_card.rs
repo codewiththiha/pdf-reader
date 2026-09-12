@@ -149,7 +149,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                             facts.with(|f| f.as_ref().map(|x| x.title.clone()).unwrap_or_default())
                         })
                         img_class="book-cover-img"
-                        fallback=move || {
+                        fallback=Callback::new(move |_| {
                             let Some(f) = facts.get() else {
                                 return ().into_any();
                             };
@@ -160,7 +160,7 @@ pub(crate) fn BookCard(state: AppState, book: Book, crop: Signal<bool>) -> impl 
                                 </div>
                             }
                                 .into_any()
-                        }
+                        })
                     />
                     {move || {
                         facts.with(|f| f.as_ref().is_some_and(|x| x.missing))

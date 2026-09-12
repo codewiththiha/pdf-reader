@@ -29,9 +29,12 @@ pub(crate) fn CoverThumb(
     alt: Signal<String>,
     /// The class the surface's own CSS gives the art.
     img_class: &'static str,
-    /// What paints while the cache has no art. `None` paints nothing.
+    /// What paints while the cache has no art. `None` paints nothing. A
+    /// `Callback` rather than children because it is the prop's SECOND
+    /// closure, and the optional-callback shape is what the shelf's own shell
+    /// gives its keydown hook: passed as `Callback::new(..)` at the call.
     #[prop(optional)]
-    fallback: Option<ChildrenFn>,
+    fallback: Option<Callback<(), AnyView>>,
 ) -> impl IntoView {
     view! {
         {move || {
@@ -59,8 +62,7 @@ pub(crate) fn CoverThumb(
                         .into_any()
                 }
                 None => fallback
-                    .as_ref()
-                    .map(|f| f())
+                    .map(|f| f.run(()))
                     .unwrap_or_else(|| ().into_any()),
             }
         }}

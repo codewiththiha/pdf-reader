@@ -70,6 +70,18 @@ fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
     state.0.lock().ok().and_then(|mut g| g.take())
 }
 
+/// Whether a path says it is absolute, in any of the three hosts' spellings:
+/// a POSIX root, a Windows UNC share, or a Windows drive letter. Not a claim
+/// that the path is well-formed — the filesystem call that follows is that —
+/// but the refusal of a relative address both of the crate's filesystem gates
+/// apply. One rule rather than one per gate: a second spelling of "absolute"
+/// is a path one gate admits and the other refuses.
+pub(crate) fn path_looks_absolute(path: &str) -> bool {
+    path.starts_with('/')                  // POSIX
+        || path.starts_with("\\\\")        // Windows UNC share
+        || path.as_bytes().get(1) == Some(&b':') // Windows drive letter
+}
+
 /// The gate the `read_file_*` and `commands::library` commands apply before
 /// touching the filesystem:
 /// they are exposed to a webview that parses untrusted documents, so
@@ -77,10 +89,7 @@ fn take_pending_file(state: tauri::State<'_, PendingFile>) -> Option<String> {
 /// being a general file-read primitive. Every real open path (dialog,
 /// drag-drop, OS handoff) already supplies exactly that.
 pub(crate) fn ensure_readable_document(path: &str) -> Result<(), String> {
-    let looks_absolute = path.starts_with('/')          // POSIX
-        || path.starts_with("\\\\")                      // Windows UNC share
-        || path.as_bytes().get(1) == Some(&b':');       // Windows drive letter
-    if !looks_absolute {
+    if !path_looks_absolute(path) {
         return Err(format!("refusing to read a non-absolute path: {path}"));
     }
     let lower = path.to_lowercase();

@@ -148,10 +148,10 @@ pub(crate) fn SearchSuggestions(
                                         path=Signal::stored(path.clone())
                                         alt=Signal::stored(String::new())
                                         img_class=""
-                                        fallback=move || {
+                                        fallback=Callback::new(move |_| {
                                             view! { <span>{fallback_letter.clone()}</span> }
                                                 .into_any()
-                                        }
+                                        })
                                     />
                                 </span>
                                 <span class="lib-suggest-text">

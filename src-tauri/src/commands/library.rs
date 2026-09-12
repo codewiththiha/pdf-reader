@@ -591,10 +591,7 @@ fn read_head(path: &Path) -> Vec<u8> {
 /// a relative path the crate's other filesystem commands apply.
 fn ensure_walkable(root: &Path) -> Result<(), String> {
     let text = root.to_string_lossy();
-    let looks_absolute = text.starts_with('/')          // POSIX
-        || text.starts_with("\\\\")                      // Windows UNC share
-        || text.as_bytes().get(1) == Some(&b':');        // Windows drive letter
-    if !looks_absolute {
+    if !crate::path_looks_absolute(&text) {
         return Err(format!("refusing to walk a relative path: {text}"));
     }
     match fs::metadata(root) {
