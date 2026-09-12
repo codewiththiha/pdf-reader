@@ -239,7 +239,7 @@ fn moved_arrivals(
 }
 
 /// The row ids of a screened clean half — the moves that may land now. The
-/// import half of a screen is [`super::import::land_stored_copy`]'s business
+/// import half of a screen is [`crate::services::library::import::land_stored_copy`]'s business
 /// instead; nothing in this module raises one.
 fn clean_move_ids(clean: Vec<Arrival>) -> Vec<String> {
     clean.into_iter().filter_map(|a| a.moving).collect()

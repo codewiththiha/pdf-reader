@@ -521,7 +521,7 @@ reappearing on every window focus. An explicit import is a reader asking for *th
 file in it is a file this folder has, so it is a book on this folder's shelf: handing back an empty
 shelf for a folder the reader can see files in is the answer that reads as a broken import. The
 address the library already holds is not a second book either way — that is the same file, and the
-heal in `import::run_folder` measures the row rather than adding one beside it.
+heal in `import::folder::run_folder` measures the row rather than adding one beside it.
 
 Two rows of one fingerprint at two addresses are what that makes possible, and one guard keeps them
 honest: the registry is first-wins per fingerprint, so it names one of the two, and a relink that
@@ -564,7 +564,7 @@ disk and imported there is the file the log was written for. The row returns wea
 shelf showed, and the run reveals it when it lands, so a book that reappeared is a book the reader
 sees appear. WHERE it comes back is the log's answer and not the drop's, for a file an in-place tree
 holds: the shelf the log remembers, then the folder's mapped rung for the file's subfolder, then the
-folder's root shelf (`import::restore_covered_file`), because a book that came back should not come
+folder's root shelf (`import::restore::restore_covered_file`), because a book that came back should not come
 back somewhere new — and least of all on the level the file happened to be dropped on, which is a
 level the folder does not own. A log of a COPYING folder, or of a file that has since left the tree,
 has no folder place to come back to, and lands as the library's own copy on the level it was dropped
@@ -695,7 +695,7 @@ A FOLDER has its own spelling of the question, asked before the walk rather than
 before the question a GATE about read-at-place and its FAMILY: a shelf cut from a linked folder IS
 the OS folder, so one folder is one shelf, and which tree a pick belongs to is a fact about the
 ground rather than about the level the reader happens to be standing on. The gate
-(`import::covered_shelf`, which walks the in-place folders' `shelf_map`, and
+(`import::gate::covered_shelf`, which walks the in-place folders' `shelf_map`, and
 `library_core::shelf::family_for`, which walks their roots for the rung a slot no shelf wears)
 answers for READ-AT-PLACE picks alone; a stored pick walks straight to the level's name question,
 its copies being the library's own second instance, unrelated to any tree:
@@ -719,7 +719,7 @@ its copies being the library's own second instance, unrelated to any tree:
   the shelf where it stands again. An import of a folder is the reader wanting it back, and back
   is inside the tree its ground belongs to, not a second shelf at the top of the library.
 - The same fold runs at the end of any explicit walk whose tree has a MEMBER standing outside
-  it (`import::displaced_member`) — the rung removed and the subfolder imported on its own, or
+  it (`import::gate::displaced_member`) — the rung removed and the subfolder imported on its own, or
   left standing by an older build: the fold puts it back, folds the folder that was reading it
   into the tree's ledger and retires it, and the note that rises is the report of the shelf that
   went home (`NoteKind::Returned`). An import is an ask, and a member outside its family is an

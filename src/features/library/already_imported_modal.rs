@@ -2,7 +2,7 @@
 //!
 //! The answer a read-at-place import gets when the ground it picked is ground
 //! the library already reads: the very folder of an in-place tree, or a
-//! subfolder inside one (`crate::services::library::import::covered_shelf`).
+//! subfolder inside one (`crate::services::library::import::gate::covered_shelf`).
 //! A linked shelf IS the OS folder — one folder is one shelf, and there is no
 //! second instance to make — so this is not a question with answers but a
 //! sentence with a highlight: the modal says the folder is already in the
