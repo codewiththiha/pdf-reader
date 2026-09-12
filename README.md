@@ -407,6 +407,26 @@ touches a file you own.
   shelves, so a drag between two rungs of one watched folder departs as well; only a re-order on the
   rung the book is already on, and the move of any book the library already stores, copies nothing
   and stays the membership edit a drag has always been.
+- **Moving a shelf a folder reads in place asks first: a copy, or its place back.** The shelf IS
+  the OS directory — the way a linked book is the OS file — so a hand taking it off the seat the
+  folder's tree names is a departure, and the one move that asks before it runs: the sheet says
+  which folder reads the shelf, how many books the copy costs and the name the copy will wear at
+  the level it lands on. Confirm and the shelf and every read-at-place book standing on it become
+  the library's own copies — bytes into the store, names, highlights and places in them
+  travelling along — and the copy takes the level's next free name, which keeps the folder's own
+  name free for the original. The copy is a book and a shelf of their own, bound to nothing: no
+  rescan, no import and no light ever answers through it, and importing the folder again brings
+  the original back on the seats the disk names, in the old names, lit inside its family. Cancel
+  leaves the shelf where the tree put it.
+- **A move inside the shelf's own family never has to cost a copy.** Dropping a read-at-place
+  shelf on a rung of a tree its directory belongs to — the tree it was cut from, or the family
+  that covers a folder you imported on its own — offers a third answer beside the copy and the
+  cancel: **Put it back in its place**. A shelf you imported on its own folds back into the
+  family tree, on the rung its directory names, with the folder that was reading it folded into
+  the tree's ledger; a shelf an older build left off its seat simply reseats, and the disk owns
+  the place again. Nothing is copied either way, the files are never touched, and the light
+  lands on the shelf where it went home. A re-order among its own siblings copies nothing, and a
+  shelf of a folder the library COPIES moves freely, the way a stored book does.
 - **A watched folder can give a book back.** Its import menu keeps a tombstone per removal — the name
   the shelf showed, how long ago it went, how big it is — and offers the book back after measuring the
   file to check it is still there. An explicit restore ignores the folder's format and size filters,
@@ -454,33 +474,50 @@ touches a file you own.
   the copy stays in the store.
 - **Re-importing a folder the library reads in place continues it.** The walk runs, as the
   explicit import it is: files the folder gained join the shelf as linked books, books you had
-  removed or moved away — whose logs have been keeping rescans quiet — come back and light up in
-  the folder's own place, and the books that were already there keep every bit of their data,
-  because nothing about them is a question. Only a walk that found nothing new says so: the
-  *already imported* note, which lights the shelf when you close it. Picking a SUBFOLDER of a
-  tree the library reads in place still gets that note without a walk — a linked folder cannot
-  mint a second instance of itself, or of a rung inside its own tree — and a shelf of the
-  library's own copies can, so a stored folder still asks the name question.
-- **Re-picking that same folder as copies asks how you want to hold it.** Turning read-at-place
-  off on a re-import means *the library should own these books*, which is a decision about every
-  book already on the shelf, so the sheet asks: **Add as new** mints a second shelf under the
-  next free name whose books are the library's own copies — books of their own bytes, beside the
-  linked ones the old shelf keeps reading; **Merge into it** keeps the shelf that is here
-  standing and turns every book on it into a copy where it stands — same name, same highlights,
-  same place in the book, nothing lost in the flip, and new files join as copies; **Replace**
-  sends the read-at-place books out of the library, their highlights with them — the row says
-  how many before you click — and seats copies on the shelf they left.
+  removed or moved away — whose logs have been keeping rescans quiet — come back in their old
+  names, and the books that were already there keep every bit of their data, because nothing
+  about them is a question. What a FOLDER import lights is the FOLDER: you stay on the level
+  that holds it and its card lights up — only a file import goes to a book and lights that.
+  Only a walk that found nothing new says so: the *already imported* note, which lights the
+  shelf when you close it. Picking a SUBFOLDER of a tree the library reads in place still gets
+  that note without a walk — a linked folder cannot mint a second instance of itself, or of a
+  rung inside its own tree — and a shelf of the library's own copies can, so a stored folder
+  still asks the name question.
+- **A folder you import back goes home to its family.** Picking a folder whose directory stands
+  inside a tree the library reads in place, when the tree no longer holds a shelf for it — you
+  removed the rung, or it left as a copy — imports it back INTO that tree: the walk runs on the
+  folder's own ledger, so the books that left come back in their old names, and the shelf lands
+  on the rung its directory names, inside the nesting, lit where it stands. The same happens at
+  the end of any import of the outer tree that finds one of its folders standing outside it: an
+  import is you asking for the folder, and a member outside its family is an ask answered — the
+  note that rises is the report of the shelf that went home, not a question about it.
+- **A copies import is the library's own business, and asks only the level's name question.**
+  Turning read-at-place off means *the library should own these books* — a second instance of
+  its own, unrelated to any tree — so the import checks one thing: the name at the level it
+  lands on. Nothing holds it and the copies simply import. Something does, and the sheet offers
+  the level's own three: **Show it** imports nothing and lights the shelf that is here where it
+  stands; **Replace** sends the books that shelf holds out of the library — the row says how
+  many before you click, highlights and all — and seats the arriving copies on it, which of a
+  folder's own read-at-place tree is the log-spending sweep, so the copies come back in the
+  names the shelves showed; **Add as new** mints the counter-named second shelf, and of ground
+  the library already reads in place its books are copies of their own — independent books of
+  their own bytes beside the linked ones the old tree keeps reading. A copies import of a
+  subfolder of a read-at-place tree is no different: it is not related to the tree, only the
+  level's names can ask, and the ground the tree still reads is no obstacle — every file the
+  library reads in place becomes a book of its own on the copies shelf, an independent copy of
+  its own bytes beside the linked book the tree keeps, never a silent "Imported 0 books".
 - **Importing a FOLDER whose name the level already holds asks its own question**, before the walk
-  rather than after it: **Add as new** imports it under the next free name (`Books_1`, promised on
-  the row) — offered to a stored import only, since as new of a read-at-place folder is the second
-  instance the note above exists to prevent; **Make link** imports nothing and leaves a pointer
-  that lights the folder where it is when you tap it; **Merge into it** files the folder's books
-  onto the shelf that is here, and a book whose name a shelf already holds is asked one by one on
-  a compact sheet — Merge, Replace or As new — at every level of the tree that already stands, not
-  only the top, with an apply-to-all switch for a reader who has seen enough of the folder to
-  answer for the rest. As new is withheld when the arriving file is the very file the shelf's book
-  reads: two rows of one linked file are a duplicate, and the library does not make those. Books
-  nothing collides with simply go in.
+  rather than after it, and which answers it asks is the arrival's mode: a copies import gets the
+  three above — **Show it**, **Replace**, **Add as new** (`Books_1`, promised on the row) — and a
+  read-at-place arrival of a DIFFERENT folder's name gets two, since as new of a linked folder is
+  the second instance the family rule exists to prevent: **Make link** imports nothing and leaves
+  a pointer that lights the folder where it is when you tap it; **Merge into it** files the
+  folder's books onto the shelf that is here, and a book whose name a shelf already holds is
+  asked one by one on a compact sheet — Merge, Replace or As new — at every level of the tree
+  that already stands, not only the top, with an apply-to-all switch for a reader who has seen
+  enough of the folder to answer for the rest. As new is withheld when the arriving file is the
+  very file the shelf's book reads: two rows of one linked file are a duplicate, and the library
+  does not make those. Books nothing collides with simply go in.
 - **Importing a file puts a book where you dropped it.** A file the library already holds somewhere
   else is not a reason for a shelf to stay empty: importing `notes.md` into a second folder gives
   that folder its own book — a copy of its own, with its own highlights and its own place in it —

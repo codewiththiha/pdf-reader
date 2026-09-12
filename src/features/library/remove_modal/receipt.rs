@@ -9,7 +9,7 @@
 use leptos::prelude::*;
 
 use library_core::book::{Book, Row};
-use library_core::shelf::{Shelf, ancestors, children_of};
+use library_core::shelf::{Shelf, ancestors, children_of, subtree_ids};
 use library_core::text::{human_size, plural};
 
 use crate::services::library::memberships;
@@ -159,33 +159,18 @@ impl Receipt {
 /// Every shelf below any of `roots`, at any depth, in no particular order and
 /// without repeats.
 ///
-/// Walked with an explicit stack and a seen-set rather than recursively, for two
-/// reasons. The forest is finite because `library_core::shelf::sanitize` cuts cycles
-/// out of a loaded blob — but this reads a list that can be caught between two
-/// writes, and a recursion over a graph with a loop in it is a stack that never
-/// unwinds. A shelf inside itself is also a shelf that would otherwise be counted
-/// twice on its own receipt, and two selected shelves can share a descendant, which
-/// one removal takes apart once.
-///
-/// Pure over the shelf list rather than over the state, so the arithmetic a cascade
-/// depends on is testable on the host: this is the function that decides which
-/// shelves a removal deletes, and "which shelves go" is exactly the question that
-/// should not need a browser to answer.
+/// The walk itself is `library_core::shelf::subtree_ids` — the departure's ride
+/// asks it the same question, and a cascade and a copy that answered "which
+/// shelves go with this one" differently would be two rules wearing one name.
+/// Pure over the shelf list rather than over the state, so the arithmetic a
+/// cascade depends on is testable on the host: this is the function that decides
+/// which shelves a removal deletes, and "which shelves go" is exactly the
+/// question that should not need a browser to answer.
 fn subtree(shelves: &[Shelf], roots: &[String]) -> Vec<Shelf> {
-    let mut out: Vec<Shelf> = Vec::new();
-    let mut stack: Vec<String> = roots.to_vec();
-    while let Some(parent) = stack.pop() {
-        for child in children_of(shelves, Some(parent.as_str())) {
-            if roots.iter().any(|each| each == &child.id)
-                || out.iter().any(|each| each.id == child.id)
-            {
-                continue;
-            }
-            stack.push(child.id.clone());
-            out.push(child.clone());
-        }
-    }
-    out
+    subtree_ids(shelves, roots)
+        .into_iter()
+        .filter_map(|id| shelves.iter().find(|s| s.id == id).cloned())
+        .collect()
 }
 
 

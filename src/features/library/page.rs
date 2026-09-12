@@ -34,6 +34,7 @@ use crate::features::library::content::LibraryContent;
 use crate::features::library::context_menu::LibraryMenuHost;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::already_imported_modal::AlreadyImportedModal;
+use crate::features::library::departure_modal::ShelfDepartureModal;
 use crate::features::library::dnd::layer::DragLayer;
 use crate::features::library::import_modal::{ImportModal, ImportSheet, drain_sheet_toasts};
 use crate::features::library::progress_dock::ProgressDock;
@@ -131,6 +132,11 @@ pub fn LibraryPage(state: AppState) -> impl IntoView {
             // walk rather than after it: its answers are about a whole import
             // run, not one placement.
             <ShelfConflictModal state=state />
+            // The departure's question, asked of a move rather than of an
+            // arrival: a read-at-place shelf taken off the seat its folder's
+            // tree names becomes the library's own copy, and the copies are a
+            // cost the reader is told before they are made.
+            <ShelfDepartureModal state=state />
             // Not a question — an answer: a folder the library already reads
             // in place is named, and closing the note lights its shelf up.
             <AlreadyImportedModal state=state />

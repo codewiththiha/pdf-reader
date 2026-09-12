@@ -35,9 +35,10 @@ pub mod import;
 pub mod reveal;
 
 pub use arrange::{
-    PurgeOpts, also_show, create_shelf_and_enter, create_shelf_here, delete_shelf, file_many,
-    memberships, move_many_to_shelf, nest_many, nest_shelf, purge_books, relink_dialog,
-    rename_shelf, reorder_shelves_to_anchor, unfile_books,
+    PurgeOpts, also_show, answer_departure_return, cancel_departure, confirm_departure,
+    create_shelf_and_enter, create_shelf_here, delete_shelf, file_many, memberships,
+    move_many_to_shelf, nest_many, nest_shelf, purge_books, relink_dialog, rename_shelf,
+    reorder_shelves_to_anchor, unfile_books,
 };
 pub use covers::backfill_missing;
 pub use reveal::{reveal_book, reveal_shelf};

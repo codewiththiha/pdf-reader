@@ -3,37 +3,35 @@
 //! A folder arriving under a name its level holds is the shelf's own spelling
 //! of the collision the book sheet asks about — two doors of one name on one
 //! level are two doors a reader cannot tell apart — and it is asked BEFORE the
-//! walk rather than after it, because the answer decides what the walk is for:
-//! a shelf of its own under the next free name, a pointer at the shelf that is
-//! already here, or the shelf that is here itself, with the folder's books
-//! joining it. Two of the three answers start the import run again with a plan
-//! (`crate::services::library::import::RootPlan`); the third walks away with a
-//! pointer row and no import at all.
+//! walk rather than after it, because the answer decides what the walk is for.
+//! WHICH answers the sheet offers is the arrival's mode, and the two sets are
+//! the two ways a folder can be held:
+//!
+//! A STORED arrival — copies the library owns, unrelated to any tree — gets
+//! the level's own three: *show it* goes and lights the shelf that is here
+//! and imports nothing, *replace* sends the books the shelf holds out through
+//! the removal's sweep and seats the arriving copies on it, and *as new*
+//! mints a shelf of the next free name. Of ground the library already READS
+//! IN PLACE, the *as new* tree holds copies of its own — independent books of
+//! their own bytes beside the linked ones the old tree keeps — and the
+//! *replace* is the import module's own log-spending sweep, so the copies
+//! take the shelf the linked books left.
+//!
+//! A READ-AT-PLACE arrival keeps two answers: *make link* leaves a pointer at
+//! the sheet that is here, and *merge into it* files the folder's books onto
+//! it, a book whose name it already holds asking one by one on the compact
+//! sheet — at every level of the tree that already stands, with an
+//! apply-to-all switch for a reader who has seen enough to answer for the
+//! rest. Its *as new* is withheld: a second shelf of one linked folder is the
+//! second instance the family gate exists to prevent. And a read-at-place
+//! arrival of its OWN family never reaches this sheet at all — the gate in
+//! `crate::services::library::import` answers it with a light, a
+//! continuation, or the fold back into the tree its directory names.
 //!
 //! A folder colliding with its OWN previous shelf asks too — a re-import that
 //! ended on "Imported 0 books" with no sheet in between was the silent
-//! nothing this exists to stop — and gets the same answers, worded as the
-//! continuation it is. The gate in front of all of it is about read-at-place,
-//! and it turns one shape away while sending another to this sheet: a pick of
-//! a RUNG inside a tree the library reads in place never reaches here at all
-//! — a linked shelf is the OS folder, and one folder is one shelf, so the
-//! import answers with the "already in the library" modal
-//! (`already_imported_modal`) and a highlight instead. The tree's own root
-//! re-picked AS COPIES is an arrival, and it wears this sheet's chrome with a
-//! question of its own — the MODE SWITCH, whose three answers are about how
-//! the folder is held from here on: *as new* mints a second shelf whose books
-//! are copies of their own and leaves the old tree reading the folder; *merge
-//! into it* keeps the shelf that is here and turns every book on it into the
-//! library's copy where it stands, name, highlights and place in it all
-//! surviving the flip; *replace* sends the read-at-place books out of the
-//! library, highlights and all — promised on the row, counted at the render —
-//! and seats the copies on the shelf they left. No *make link*: a pointer at
-//! the folder's own shelf, from an import of that very folder, would point at
-//! the thing being imported. A read-at-place arrival keeps the ordinary sheet
-//! only when a DIFFERENT folder holds the name, and then it offers two
-//! answers, not three — *as new* of a linked folder is the second instance
-//! the gate exists to prevent. A stored arrival keeps all three: its copies
-//! are the library's own.
+//! nothing this exists to stop — and the sheet words it as the continuation
+//! it is.
 //!
 //! A drag never asks this: nesting a shelf writes a parent rather than a
 //! membership, so nothing arrives on a level for a name to collide with — the
@@ -94,18 +92,17 @@ struct Info {
     heading: String,
     subtitle: String,
     question: String,
+    show_note: String,
     new_note: String,
     merge_note: String,
     replace_note: String,
-    /// Whether the sheet offers the mode switch's three answers rather than the
-    /// arrival's: a folder the library already reads in place, re-picked as
-    /// copies, is asking how it is HELD from here on and not what to call it.
-    mode_switch: bool,
-    /// Whether the arriving folder reads in place. A read-at-place import never
-    /// offers *as new*: the folder's shelf IS the OS folder, and a counter-named
-    /// twin of it would be a second door onto the same ground. The mode switch
-    /// needs no such rule — its *as new* twin holds copies, books of their own
-    /// bytes — so the switch's branch renders the row whatever this says.
+    /// Whether the arriving folder reads in place, which is which SET of
+    /// answers the sheet offers: a read-at-place import never offers *as new*
+    /// — the folder's shelf IS the OS folder, and a counter-named twin of it
+    /// would be a second door onto the same ground — and never *replace*,
+    /// because a linked tree is not the level's to empty. A stored arrival
+    /// gets the level's own three and no pointer: copies are the library's to
+    /// make another of, and "show me the first" is a light rather than a row.
     in_place: bool,
 }
 
@@ -116,68 +113,72 @@ const LINK_NOTE: &str = "A pointer row, not a second shelf: nothing is \
 
 impl Info {
     fn of(state: AppState, ask: &ShelfConflictAsk) -> Self {
-        // A folder colliding with its OWN previous shelf is a continuation, and
-        // the sheet WORDS it as one — but the three answers are the three
-        // answers either way: an *as new* tree of one folder holds that folder's
-        // books as memberships of the rows the library already holds, which is
-        // a second arrangement and never a second copy.
+        // A folder colliding with its OWN previous shelf is a continuation,
+        // and the sheet WORDS it as one — but the answers are the arrival
+        // mode's either way.
         let own = ask.own;
-        let mode_switch = ask.mode_switch;
         let in_place = ask.opts.in_place;
-        // The name *as new* would mint, counted against the level's own shelves
-        // at the click — the row promises the counter rather than asking the
+        // Whether the ground the arrival picks is one the library already
+        // READS in place: the *as new* tree of copies beside the linked rows
+        // the old tree keeps, and the *replace* that spends the tree's own
+        // logs, are both this fact's.
+        let reads_in_place = state.library.folders.with_untracked(|folders| {
+            folders
+                .iter()
+                .any(|f| f.root == ask.root && f.opts.in_place)
+        });
+        // The name *as new* would mint, counted against the level's own
+        // shelves — the row promises the counter rather than asking the
         // reader to take "the next free name" on faith.
         let new_name = state.library.shelves.with_untracked(|shelves| {
             library_core::conflict::next_shelf_name(shelves, None, &ask.incoming_name)
         });
-        // The replace row's promise, counted here rather than taken on faith:
-        // how many read-at-place books the answer sends out of the library.
-        let replace_rows = if mode_switch {
-            crate::services::library::import::mode_switch_replace_rows(state, &ask.root).len()
+        // The replace row's promise, counted here rather than taken on
+        // faith: of the folder's own read-at-place tree, the linked books the
+        // sweep sends out; of any other shelf, the rows it holds.
+        let replace_rows = if own && reads_in_place {
+            crate::services::library::import::replace_rows_of_tree(state, &ask.root).len()
         } else {
-            0
+            let (rows, shelves) = state.library.snapshot_rows();
+            library_core::shelf::members_of(&rows, &shelves, &ask.existing_id).len()
         };
-        let subtitle = if mode_switch {
-            format!("Read in place as “{}”", ask.existing_name)
-        } else if own {
+        let subtitle = if own {
             format!("Already in the library as “{}”", ask.existing_name)
         } else {
             format!("A shelf called “{}” is already here", ask.existing_name)
         };
-        let question = if mode_switch {
-            format!(
-                "The library already reads “{}” where it stands, and this import asks \
-                 for copies the library stores itself. Give the copies a shelf of the \
-                 next free name and leave the tree that is here reading the folder, \
-                 switch the shelf that is here over to copies — every book keeping its \
-                 name, its highlights and its place in it — or replace its books with \
-                 copies.",
-                ask.existing_name
-            )
-        } else if own {
-            format!(
-                "This folder is already in the library — “{}” is the shelf its last \
-                 import made. Continue the import into it, give it a shelf of the next \
-                 free name, or leave a pointer here instead.",
-                ask.existing_name
-            )
-        } else if in_place {
+        let question = if in_place {
             format!(
                 "You are importing the folder “{}”, and this level already has a shelf \
                  called that. A folder read at its place cannot mint a second shelf of \
-                 itself — leave a pointer to the shelf that is here, or file the \
-                 folder's books into it.",
+                 itself — leave a pointer to the shelf that is here, or file the folder's \
+                 books into it.",
                 ask.incoming_name
+            )
+        } else if own {
+            format!(
+                "“{}” is already in the library — “{}” is the shelf its last import \
+                 made, and this pick asks for copies the library stores itself. Go and \
+                 look at the shelf that is here, replace its books with the folder's \
+                 copies, or give the copies a shelf of the next free name.",
+                ask.incoming_name, ask.existing_name
             )
         } else {
             format!(
                 "You are importing the folder “{}”, and this level already has a shelf \
-                 called that. Give the arriving folder the next free name, leave a \
-                 pointer to the shelf that is here, or file the folder's books into it.",
+                 called that. The copies are the library's own, so the level's three \
+                 answers are all here: go and look at the shelf that is here, replace \
+                 its books with the arriving copies, or give the folder a shelf of the \
+                 next free name.",
                 ask.incoming_name
             )
         };
-        let new_note = if mode_switch {
+        let show_note = format!(
+            "Nothing is imported — the library goes to “{}” and lights it up where it \
+             stands",
+            ask.existing_name
+        );
+        let new_note = if reads_in_place {
             format!(
                 "Import as “{new_name}” — its own shelf of the library's copies; the \
                  tree that is here keeps reading the folder"
@@ -185,33 +186,23 @@ impl Info {
         } else {
             format!("Import as “{new_name}” — its own shelf, its own tree")
         };
-        let merge_note = if mode_switch {
-            format!(
-                "“{}” keeps standing — every book on it becomes the library's copy, \
-                 keeping its name, its highlights and its place in it; files the \
-                 folder gained join as copies",
-                ask.existing_name
-            )
-        } else {
-            format!(
-                "The folder's books join “{}”; a book whose name it already holds is \
-                 asked one by one",
-                ask.existing_name
-            )
-        };
+        let merge_note = format!(
+            "The folder's books join “{}”; a book whose name it already holds is asked \
+             one by one",
+            ask.existing_name
+        );
         let replace_note = match replace_rows {
             0 => format!(
-                "Nothing is left to remove — the library's copies simply take “{}”",
+                "Nothing is left to remove — the arriving copies simply take “{}”",
                 ask.existing_name
             ),
             1 => format!(
-                "One read-at-place book leaves the library, with its highlights — a \
-                 copy takes its place on “{}”",
+                "One book leaves the library, with its highlights — a copy takes its \
+                 place on “{}”",
                 ask.existing_name
             ),
             n => format!(
-                "{n} read-at-place books leave the library, with their highlights — \
-                 copies take “{}”",
+                "{n} books leave the library, with their highlights — copies take “{}”",
                 ask.existing_name
             ),
         };
@@ -219,10 +210,10 @@ impl Info {
             heading: ask.incoming_name.clone(),
             subtitle,
             question,
+            show_note,
             new_note,
             merge_note,
             replace_note,
-            mode_switch,
             in_place,
         }
     }
@@ -242,10 +233,10 @@ fn ShelfSheet(state: AppState, info: Info) -> impl IntoView {
         heading,
         subtitle,
         question,
+        show_note,
         new_note,
         merge_note,
         replace_note,
-        mode_switch,
         in_place,
     } = info;
 
@@ -260,52 +251,15 @@ fn ShelfSheet(state: AppState, info: Info) -> impl IntoView {
             <SheetBody>
                 <p class="text-xs text-muted">{question}</p>
                 <div class="mt-3 divide-y divide-line rounded-xl border border-line">
-                    {if mode_switch {
-                        // The switch's three: a second shelf of copies, the
-                        // shelf that is here switched over, or copies in place of
-                        // the books that are here. No link — a pointer at the
-                        // folder's own shelf, from an import of that very folder,
-                        // points at the thing being imported.
+                    {if in_place {
+                        // The read-at-place arrival's two: a pointer at the
+                        // shelf that is here, or the folder's books joining
+                        // it. No *as new* — a second shelf of one linked
+                        // folder is the second instance the family gate
+                        // exists to prevent — and no *replace*: a linked tree
+                        // is not the level's to empty.
                         view! {
                             <>
-                                <ChoiceRow
-                                    label="Add as new"
-                                    note=new_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::AsNew)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Merge into it"
-                                    note=merge_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Merge)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Replace"
-                                    note=replace_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Replace)
-                                    })
-                                />
-                            </>
-                        }
-                            .into_any()
-                    } else {
-                        view! {
-                            <>
-                                {(!in_place).then(move || {
-                                    view! {
-                                        <ChoiceRow
-                                            label="Add as new"
-                                            note=new_note.clone()
-                                            on_click=Callback::new(move |_| {
-                                                conflict::answer_shelf(state, ShelfAnswer::AsNew)
-                                            })
-                                        />
-                                    }
-                                })}
                                 <ChoiceRow
                                     label="Make link"
                                     note=LINK_NOTE.to_string()
@@ -318,6 +272,38 @@ fn ShelfSheet(state: AppState, info: Info) -> impl IntoView {
                                     note=merge_note
                                     on_click=Callback::new(move |_| {
                                         conflict::answer_shelf(state, ShelfAnswer::Merge)
+                                    })
+                                />
+                            </>
+                        }
+                            .into_any()
+                    } else {
+                        // The stored arrival's three, the level's own: go and
+                        // look, replace what is here, or a shelf of the next
+                        // free name. No pointer — a stored import is a second
+                        // instance the library owns, and "show me the first"
+                        // is a light rather than a row.
+                        view! {
+                            <>
+                                <ChoiceRow
+                                    label="Show it"
+                                    note=show_note
+                                    on_click=Callback::new(move |_| {
+                                        conflict::answer_shelf(state, ShelfAnswer::Show)
+                                    })
+                                />
+                                <ChoiceRow
+                                    label="Replace"
+                                    note=replace_note
+                                    on_click=Callback::new(move |_| {
+                                        conflict::answer_shelf(state, ShelfAnswer::Replace)
+                                    })
+                                />
+                                <ChoiceRow
+                                    label="Add as new"
+                                    note=new_note
+                                    on_click=Callback::new(move |_| {
+                                        conflict::answer_shelf(state, ShelfAnswer::AsNew)
                                     })
                                 />
                             </>

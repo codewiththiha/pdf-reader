@@ -260,8 +260,10 @@ pub fn decide_import(folder: &WatchedFolder, registry: &Registry, file: &FoundFi
             // reader asked for it. What the file is owed is a book of its own,
             // which is one Add and the caller's own landing rules — a
             // read-at-place folder mints the linked row the copy's provenance
-            // says the library owes, and a copying folder's planned run
-            // declines to place a second copy of a content it already holds.
+            // says the library owes, and a copying folder's run answers with
+            // its own copy list (`copy_over_paths`), which puts the files the
+            // library reads in place back on the add list as books of their
+            // own bytes.
             match action {
                 ScanAction::Skip if known.path != file.path => ScanAction::Add(file.clone()),
                 other => other,
@@ -280,39 +282,41 @@ pub fn diff_import(folder: &WatchedFolder, registry: &Registry, found: &[FoundFi
     out
 }
 
-/// The addresses an *as new* mode switch owes a copy of its own.
+/// The addresses an explicit COPIES run owes a book of its own: the found
+/// files the library already reads in place.
 ///
-/// The switch's COPY list, as against its CONVERT list — [`linked_rows_of`]
-/// answers the other one. A file is on this list when all four of these hold, and
-/// the four are the whole of what separates "a second instance the reader just
-/// asked for by name" from "the instance the library already has":
+/// A file is on this list when all three of these hold, and the three are the
+/// whole of what separates "a second instance the reader just asked for" from
+/// "the instance the library already has":
 ///
 ///   * the walk found it and the ledger knows its content, so it is a file the
-///     library already holds rather than a new one;
+///     library already holds rather than a new one — the ledger's own table
+///     answers it with a Skip, which is the right answer for a RESCAN and the
+///     wrong one for a reader asking for copies of this very folder;
 ///   * the row the ledger named is the row at THIS address, so the copy is a
 ///     second instance of the same file and not a namesake of it;
-///   * that row reads in place, because a stored row is already the library's own
-///     copy and making another would be a third;
-///   * this folder placed it, so the copy belongs to this folder's tree and not to
-///     a watched folder that happens to hold the same bytes.
+///   * that row reads IN PLACE, because a stored row is already the library's
+///     own copy and the walk that finds its source is standing on a file the
+///     library answered for once — which the caller's own landing rules
+///     answer, not this list.
 ///
-/// Pure over the walk, the registry and the rows, which is the point: the four
-/// conditions are a host test rather than something discovered by re-importing a
-/// real folder with the read-in-place switch off and reading the shelf.
-pub fn switch_copy_paths(
-    found: &[FoundFile],
-    registry: &Registry,
-    rows: &[Row],
-    placed: &HashSet<Fingerprint>,
-) -> HashSet<String> {
+/// Which folder placed the linked row is nobody's question: a copies import is
+/// the library's own second instance, unrelated to any tree, and ground a
+/// DIFFERENT folder reads in place is exactly the ground it owes a copy of —
+/// refusing it is the silent "Imported 0 books" of a nested folder picked
+/// with the read-at-place switch off while the outer tree stands. The run's
+/// own caller decides WHEN the list is asked (an explicit copies run, never a
+/// rescan); this function is the what, pure over the walk, the registry and
+/// the rows, which is the point: the conditions are a host test rather than
+/// something discovered by re-importing a real folder with the switch off and
+/// reading the shelf.
+pub fn copy_over_paths(found: &[FoundFile], registry: &Registry, rows: &[Row]) -> HashSet<String> {
     found
         .iter()
         .filter(|file| {
             registry.get(&file.fp).is_some_and(|known| {
                 find_by_id(rows, &known.id).is_some_and(|b| {
-                    matches!(b.origin, Origin::Linked { .. })
-                        && b.path() == file.path
-                        && placed.contains(&file.fp)
+                    matches!(b.origin, Origin::Linked { .. }) && b.path() == file.path
                 })
             })
         })
@@ -321,9 +325,9 @@ pub fn switch_copy_paths(
 }
 
 /// The living linked rows a folder's `placed` set answers for — the books its
-/// tree reads in place. The CONVERT list of a mode switch: what a merge flips
-/// into the library's own copies where they stand, and what a replace puts
-/// through the removal's sweep first.
+/// tree reads in place. What a *replace* of that tree puts through the
+/// removal's sweep first, so the copies that land spend the logs the sweep
+/// wrote and come back in the names the shelves showed.
 pub fn linked_rows_of(rows: &[Row], placed: &HashSet<Fingerprint>) -> Vec<String> {
     book_rows(rows)
         .filter(|b| matches!(b.origin, Origin::Linked { .. }) && placed.contains(&b.fp))
@@ -920,9 +924,7 @@ mod tests {
     }
 
     #[test]
-    fn the_switch_copies_the_files_its_own_tree_reads_in_place() {
-        // All four conditions, one per row of the walk: known content at its own
-        // address, read in place, placed by THIS folder.
+    fn a_copies_run_copies_over_every_file_the_library_reads_in_place() {
         let linked = |id: &str, path: &str, n: u32| {
             Row::Book(Book::new(
                 id.into(),
@@ -945,9 +947,9 @@ mod tests {
             ))
         };
         let rows = vec![
-            linked("b1", "/one/a.md", 1),   // on the list
+            linked("b1", "/one/a.md", 1),   // read in place
             stored("b2", "/one/b.md", 2),   // already the library's own copy
-            linked("b3", "/one/c.md", 3),   // placed by ANOTHER folder
+            linked("b3", "/one/c.md", 3),   // read in place by ANOTHER folder's tree
         ];
         let found = vec![
             file(1, "/one/a.md"),
@@ -955,17 +957,14 @@ mod tests {
             file(3, "/one/c.md"),
             file(4, "/one/d.md"), // content the library does not hold
         ];
-        // This folder placed the first two. The third is a linked book of the
-        // same content that ANOTHER watched folder placed, which is exactly the
-        // row a copy here would duplicate rather than answer for.
-        let placed: HashSet<Fingerprint> = [fp(1), fp(2)].into_iter().collect();
         let registry = registry_of(&rows);
-        let paths = switch_copy_paths(&found, &registry, &rows, &placed);
+        let paths = copy_over_paths(&found, &registry, &rows);
+        let mut paths = paths.into_iter().collect::<Vec<_>>();
+        paths.sort();
         assert_eq!(
-            paths.into_iter().collect::<Vec<_>>(),
-            vec!["/one/a.md".to_string()],
-            "a stored row is already a copy, a row another folder placed is not this tree's, \
-             and a file the library does not hold is an ordinary add"
+            paths,
+            vec!["/one/a.md".to_string(), "/one/c.md".to_string()],
+            "which folder placed the linked row is nobody's question: a copies run              owes a book of its own for every file the library reads in place. A              stored row is already a copy, and a file the library does not hold is              an ordinary add."
         );
     }
 
@@ -973,7 +972,7 @@ mod tests {
     fn a_namesake_at_another_address_is_not_a_second_instance() {
         // The registry knows the CONTENT; the copy list is about the file. A
         // byte-identical book filed at a different address is a namesake the
-        // ledger will Relink or Skip, not a file this tree reads.
+        // ledger will Relink or Skip, not a file the library reads HERE.
         let rows = vec![Row::Book(Book::new(
             "b1".into(),
             fp(1),
@@ -984,15 +983,14 @@ mod tests {
             0,
         ))];
         let found = vec![file(1, "/one/a.md")];
-        let placed: HashSet<Fingerprint> = [fp(1)].into_iter().collect();
         assert!(
-            switch_copy_paths(&found, &registry_of(&rows), &rows, &placed).is_empty(),
+            copy_over_paths(&found, &registry_of(&rows), &rows).is_empty(),
             "the row the ledger named is not the row at this address"
         );
     }
 
     #[test]
-    fn the_convert_list_is_the_linked_rows_the_ledger_answers_for() {
+    fn the_replace_list_is_the_linked_rows_the_ledger_answers_for() {
         let rows = vec![
             Row::Book(Book::new(
                 "b1".into(),

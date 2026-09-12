@@ -723,8 +723,8 @@ pub fn cancel(state: AppState) {
 /// A separate ask rather than a variant of [`ConflictAsk`] because a folder
 /// has no [`Arrival`] — nothing has been measured when its NAME is the
 /// question — and because its answers are about a whole import run rather
-/// than about one placement: two of the three start the run again with a
-/// plan, and the third walks away with a pointer.
+/// than about one placement: the ones that import start the run again with a
+/// plan, and the ones that do not walk away with a light or a pointer.
 #[derive(Clone, PartialEq)]
 pub struct ShelfConflictAsk {
     /// What the arriving folder would be called: the last segment of its
@@ -740,53 +740,57 @@ pub struct ShelfConflictAsk {
     /// Whether the shelf that holds the name is the arriving folder's OWN —
     /// the one its previous run minted, which its `shelf_map` still names. A
     /// re-import of one folder is a continuation rather than an arrival, and
-    /// the sheet words it as one; the three answers are the three answers
-    /// either way, and an *as new* tree of one folder holds that folder's
-    /// books as memberships of the rows the library already holds — a second
-    /// arrangement, never a second copy.
+    /// the sheet words it as one. Own or not, the arrival's MODE decides the
+    /// answers: a stored arrival gets the level's own three — go and look at
+    /// the shelf that is here, replace it, or a shelf of the next free name
+    /// — and a read-at-place arrival of a DIFFERENT folder's name keeps the
+    /// pointer and the merge, its *as new* withheld as the second instance
+    /// the family gate exists to prevent.
     pub own: bool,
-    /// Whether this ask is the MODE SWITCH: the folder arriving as copies is
-    /// a folder the library already reads in place, re-picked with the
-    /// read-in-place switch off. The shelf that is here is the tree's own
-    /// root, and the question is not what to name the arrival but how the
-    /// library should hold it from now on — so the sheet's answers are the
-    /// switch's three rather than the continuation's: *as new* (a second
-    /// shelf whose books are copies of their own, the old tree untouched),
-    /// *merge* (the shelf that is here keeps standing, and every book on it
-    /// becomes the library's copy, data and all), and *replace* (the linked
-    /// books leave the library and copies take the shelf). *Make link* is
-    /// not among them: a pointer at the folder's own shelf, from an import
-    /// of that very folder, points at the thing being imported.
-    pub mode_switch: bool,
 }
 
 /// The reader's answer to a folder's name collision.
+///
+/// Which of them the sheet offers is the arrival's mode: a STORED arrival —
+/// copies the library owns, unrelated to any tree — gets *show it*,
+/// *replace* and *as new*, the level's own three; a READ-AT-PLACE arrival of
+/// a different folder's name gets *make link* and *merge*, its *as new*
+/// withheld as the second instance the family gate exists to prevent. A
+/// read-at-place arrival of its OWN family never reaches the sheet at all:
+/// the gate answers it with a light, a continuation, or the fold back into
+/// the tree its directory names.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ShelfAnswer {
+    /// Import nothing and go and look: the library navigates to the shelf
+    /// that holds the name and lights it up where it stands — the folder
+    /// import's own spelling of the book sheet's *already imported*, and the
+    /// stored arrival's answer for "oh, that one".
+    Show,
     /// Mint the arriving folder's shelf under the next free name
-    /// ([`next_shelf_name`]) and import into its own tree. On the mode
-    /// switch's sheet, the tree it mints holds copies of its own — books of
-    /// their own bytes beside the linked ones the old tree keeps reading.
+    /// ([`next_shelf_name`]) and import into its own tree. Of ground the
+    /// library already reads in place, the tree it mints holds copies of its
+    /// own — independent books of their own bytes beside the linked ones the
+    /// old tree keeps reading.
     AsNew,
     /// Place nothing and import nothing: leave a pointer row at the level —
     /// the folder's own `library_core::book::Row::Link`, whose target is the
     /// shelf's id — and a tap on it reveals the shelf it names, lit, wherever
-    /// it hangs. Not offered on the mode switch's sheet.
+    /// it hangs. The read-at-place arrival's answer.
     Link,
     /// The arriving folder IS the shelf that is here: its books join it, and
     /// the files whose names it already holds ask, one by one, on the compact
-    /// sheet ([`answer_folder_merge`]). On the mode switch's sheet it is the
-    /// quiet shape instead: the tree continues with no per-file ask, and the
-    /// run flips every book it read in place into the library's own copy,
-    /// keeping each row — and with it the name, the shelves, the resume
-    /// point and the highlights — exactly where it stands.
+    /// sheet ([`answer_folder_merge`]). The read-at-place arrival's other
+    /// answer.
     Merge,
-    /// The mode switch's destructive answer, and only its sheet offers it:
-    /// the folder's read-at-place books leave the library through the
-    /// removal's own sweep, and the copy import lands on the shelf they
-    /// left, so what stands at the end is one shelf of the library's own
-    /// copies. The row says what goes before the click — how many books
-    /// leave, highlights and all — the way the move sheet's replace does.
+    /// The destructive answer, and only a stored arrival's sheet offers it:
+    /// the books the shelf that is here holds leave the library through the
+    /// removal's own sweep, and the folder's copies take the shelf, so what
+    /// stands at the end is one shelf of the library's own copies. Of the
+    /// folder's OWN read-at-place tree it is the log-spending sweep the
+    /// import module owns; of any other shelf it is the removal's receipt
+    /// over the shelf's members and the merge's filing into it. The row says
+    /// what goes before the click — how many books leave, highlights and all
+    /// — the way the move sheet's replace does.
     Replace,
 }
 
@@ -820,13 +824,14 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
                 },
             );
         }
+        ShelfAnswer::Show => {
+            // Import nothing and go and look: the light lands on the shelf
+            // that holds the name, wherever it hangs — the stored arrival's
+            // "oh, that one", answered the way the family gate answers a
+            // pick of ground the library already reads.
+            super::reveal::reveal_shelf(state, &ask.existing_id);
+        }
         ShelfAnswer::Link => {
-            // The mode switch does not offer a link — its sheet never renders
-            // the row — and an answer it was not asked is an import nobody
-            // chose: nothing runs, which is what Cancel has always meant.
-            if ask.mode_switch {
-                return;
-            }
             // A pointer at the shelf, on the level the import would have
             // minted one: the row the reader can recognise, and no second
             // door with the same name on it.
@@ -839,15 +844,9 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
             ))));
         }
         ShelfAnswer::Merge => {
-            if ask.mode_switch {
-                // The switch's merge is the quiet continuation plus the flip:
-                // the tree keeps its shelf map, the walk lands what is new,
-                // and the run turns every book it read in place into the
-                // library's own copy where it stands. No per-file ask — the
-                // reader just answered for the whole folder.
-                super::import::proceed_folder(state, ask.root, ask.opts, Default::default());
-                return;
-            }
+            // The arriving folder's books join the shelf that is here, and
+            // the files whose names it already holds ask one by one on the
+            // compact sheet.
             super::import::proceed_folder(
                 state,
                 ask.root,
@@ -859,14 +858,28 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
             );
         }
         ShelfAnswer::Replace => {
-            // Only the mode switch's sheet offers it. The import module owns
-            // the order — the root's claim first, so a walk already in
-            // flight refuses the answer BEFORE anything is removed, then the
-            // sweep, then the copy walk that spends the logs it wrote.
-            if !ask.mode_switch {
-                return;
+            // The folder's OWN read-at-place tree is the import module's own
+            // sweep: the root's claim first, so a walk already in flight
+            // refuses the answer BEFORE anything is removed, then the linked
+            // books go and the copy walk spends the logs it wrote. Any other
+            // shelf — a stored folder's, a reader's own — is the removal's
+            // receipt over the shelf's members and the copies filing into it.
+            let own_in_place = ask.own
+                && state.library.folders.with_untracked(|folders| {
+                    folders
+                        .iter()
+                        .any(|f| f.root == ask.root && f.opts.in_place)
+                });
+            if own_in_place {
+                super::import::replace_folder_with_copies(state, ask.root, ask.opts);
+            } else {
+                super::import::replace_shelf_with_folder(
+                    state,
+                    ask.root,
+                    ask.opts,
+                    ask.existing_id,
+                );
             }
-            super::import::replace_folder_with_copies(state, ask.root, ask.opts);
         }
     }
 }
@@ -892,11 +905,10 @@ pub fn cancel_shelf(state: AppState) {
 /// difference and [`NoteKind`] is that difference: [`NoteKind::Gated`] is the
 /// gate, said before any walk ran, [`NoteKind::NothingNew`] is the report of a
 /// re-import walk that reconciled the tree and found every book already
-/// standing, and [`NoteKind::Displaced`] is the same report with a question
-/// attached — the walk found nothing new because a member of the tree is
-/// standing outside it, so the note names THAT shelf and offers to put it back.
-/// Raisers that differed by a boolean were that many places to keep in step
-/// about which sentence the reader was owed.
+/// standing, and [`NoteKind::Returned`] is the fold's report — the import put
+/// a shelf back inside the family its directory names, and the note names the
+/// shelf that went home. Raisers that differed by a boolean were that many
+/// places to keep in step about which sentence the reader was owed.
 pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKind) {
     state
         .library
@@ -910,25 +922,6 @@ pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKin
 /// the lane — ends on the shelf being lit.
 pub fn close_already_imported(state: AppState) {
     state.library.already_imported_open.set(false);
-}
-
-/// The displaced note's second answer: put the member's shelf back on the rung
-/// its directory names, and fold the folder that was reading it into the tree.
-///
-/// The move is the import module's, because it is the same arithmetic a walk
-/// mints a chain with and the same ledger a walk writes; this is the wiring
-/// between the note's three facts and it. The highlight still rides the close,
-/// so the answer ends on the shelf lit in its new place rather than on a modal
-/// claiming it worked.
-pub fn reclaim_displaced(state: AppState) {
-    let Some(note) = state.library.already_imported.get_untracked() else {
-        return;
-    };
-    let NoteKind::Displaced { tree, gone, rel } = note.kind.clone() else {
-        return;
-    };
-    super::import::reclaim_rung(state, &tree, &gone, &rel, &note.shelf_id);
-    close_already_imported(state);
 }
 
 // ---------------------------------------------------------------------------
@@ -1626,32 +1619,35 @@ mod tests {
     }
 
     #[test]
-    fn the_mode_switch_never_links_at_the_folder_it_is_importing() {
-        // A pointer at the folder's own shelf, from an import of that very
-        // folder, points at the thing being imported: the sheet does not
-        // render the row, and an answer it was never asked refuses by doing
-        // nothing — beyond the close every answer owes.
-        let (_owner, state) = library(Vec::new(), Vec::new());
+    fn the_show_answer_imports_nothing_and_lights_the_shelf_that_is_here() {
+        // The stored arrival's first answer is a light and no import: nothing
+        // is written, no run starts, and the reveal lands on the shelf whose
+        // name the arrival carried, wherever it hangs.
+        let (_owner, state) = library(Vec::new(), vec![shelf("s1", &[])]);
         state.library.shelf_conflict.set(Some(ShelfConflictAsk {
             incoming_name: "Books".to_string(),
             existing_id: "s1".to_string(),
             existing_name: "Books".to_string(),
             root: "/books".to_string(),
-            opts: FolderOpts::default(),
+            opts: FolderOpts {
+                in_place: false,
+                ..FolderOpts::default()
+            },
             own: true,
-            mode_switch: true,
         }));
         state.library.shelf_conflict_open.set(true);
 
-        answer_shelf(state, ShelfAnswer::Link);
+        answer_shelf(state, ShelfAnswer::Show);
 
         assert!(
             state.library.books.get_untracked().is_empty(),
-            "no pointer was written"
+            "no row was written"
         );
+        let reveal = state.library.reveal.get_untracked().expect("a reveal");
+        assert_eq!(reveal.id, "s1", "and the light lands on the shelf that is here");
         assert!(
             !state.library.shelf_conflict_open.get_untracked(),
-            "and the sheet closed, which is all a refused answer may do"
+            "the answer closed the sheet"
         );
     }
 

@@ -28,13 +28,25 @@
 //! subfolder's address inside a watched directory's tree — a rescan key, owned
 //! by the filesystem. For a folder shelf `parent` starts as its projection —
 //! the tree on disk is the tree on the shelf, and a scan re-hangs the folder's
-//! shelves on the rungs their `rel` names — until the reader moves one by hand.
-//! A hand beats the disk: [`reparent`] accepts the move and marks the row
-//! [`Shelf::manual_parent`], which is what makes the next rescan leave it
-//! where the reader put it. The shelf keeps its disk knowledge through the
-//! move — its `rel` still routes newly scanned files into it — and for a
-//! virtual shelf `parent` is the reader's from the start, and no scan ever
-//! writes it.
+//! shelves on the rungs their `rel` names. For a virtual shelf `parent` is the
+//! reader's from the start, and no scan ever writes it.
+//!
+//! ## The hand and the disk
+//!
+//! What a hand-move of a folder shelf MEANS depends on how its folder is read,
+//! and [`departs_on_move`] is the one answer. A shelf of a COPYING folder is
+//! the library's own already: the move is the reader's, [`reparent`] takes it
+//! and marks the row [`Shelf::manual_parent`], and the next re-hang passes it
+//! by. A shelf of a READ-AT-PLACE folder is the OS directory itself — the way
+//! a linked book is the OS file itself — so a hand cannot take it off the rung
+//! the tree names for it: the move is a DEPARTURE, the shelf's own spelling of
+//! what a linked book leaving its rung does, and it leaves as a copy the
+//! library owns, asked before the copy is made. The original stays on disk and
+//! comes back to the tree on the next import, lit, exactly as a departed
+//! book's file does. The departure itself — the ask, the copies, the ledger's
+//! zone going free — is the library services' business; what this crate owns
+//! is the rule of which moves are departures, the seat a hand-move is measured
+//! against, and the subtree that rides with the shelf the hand named.
 
 use serde::{Deserialize, Serialize};
 
@@ -98,17 +110,25 @@ pub struct Shelf {
     /// the right reading of it rather than a migration.
     #[serde(default)]
     pub parent: Option<String>,
-    /// The reader moved this shelf by hand, so its place in the library is the
-    /// reader's and not the disk's: a watched folder's rescan re-hangs the
-    /// shelves it owns on the rungs their `rel` names, and passes a shelf
-    /// wearing this mark by. Written by [`reparent`] and by nothing else;
-    /// `#[serde(default)]` because a blob from before shelves could be
-    /// hand-moved has no key and every shelf in it is the scan's.
+    /// The reader moved this shelf by hand off the seat its folder's own
+    /// shelves name for it, so its place in the library is the reader's and
+    /// not the disk's: a watched folder's rescan re-hangs the shelves it owns
+    /// on the rungs their `rel` names, and passes a shelf wearing this mark
+    /// by. Written by [`reparent`] — which compares the seat and so CLEARS the
+    /// mark when a hand puts the shelf back where the disk names — and born
+    /// written on the rungs a merged import mints, whose tree hangs off a
+    /// shelf the disk does not own. `#[serde(default)]` because a blob from
+    /// before shelves could be hand-moved has no key and every shelf in it is
+    /// the scan's.
     ///
-    /// The shelf keeps everything else it knows: its `rel` is still the rescan
-    /// key, its folder's `shelf_map` still routes newly scanned files into it,
-    /// and its books keep their read-in-place addresses — a moved shelf moves
-    /// its whole subtree, the way a moved directory takes its tree with it.
+    /// Only a shelf a hand may take wears it: a rung of a read-at-place folder
+    /// departs as a copy instead of moving (see [`departs_on_move`]), so this
+    /// is a copying folder's shelf, a merged tree's rung, or a shelf of an
+    /// older blob from before the ask. Such a shelf keeps everything else it
+    /// knows: its `rel` is still the rescan key, its folder's `shelf_map`
+    /// still routes newly scanned files into it, and its books keep their
+    /// read-in-place addresses — a moved shelf moves its whole subtree, the
+    /// way a moved directory takes its tree with it.
     #[serde(default)]
     pub manual_parent: bool,
 }
@@ -218,30 +238,242 @@ pub fn can_nest(shelves: &[Shelf], folder_id: &str, target_id: &str) -> bool {
 /// was: a drop that would close a cycle is a drop that never happened, which
 /// is what lets the caller answer a refusal by doing nothing at all.
 ///
-/// Every shelf may be moved, including one cut from a watched tree — the
-/// reader's hand beats the disk's shape — and moving a watched one marks it
-/// [`Shelf::manual_parent`], which is what tells the next rescan's re-hang to
-/// pass it by instead of putting it back where the directory had it. The mark
-/// is written HERE, in the one function every hand-move rides (a drag's nest,
-/// a bulk filing, a sibling reorder), rather than at call sites that would
-/// each have to remember it.
+/// Every shelf may be moved, including one cut from a watched tree — and for
+/// a folder shelf the mark is an honest COMPARISON rather than a blanket:
+/// [`Shelf::manual_parent`] records that the shelf hangs off the seat its
+/// folder's own shelves name for it (`folder_seat`). A hand that takes a
+/// rung off its seat marks it, and the next re-hang passes it by; a hand that
+/// puts one BACK on its seat clears the mark, and the disk owns the place
+/// again; a re-order on the seat the shelf already hangs on writes the same
+/// answer it had. The mark is written HERE, in the one function every
+/// hand-move rides (a drag's nest, a bulk filing, a sibling reorder), rather
+/// than at call sites that would each have to remember it.
+///
+/// The read-at-place rung a hand drags off its seat does not arrive here at
+/// all: it departs as a copy first ([`departs_on_move`]), and what rides this
+/// function afterwards is the virtual shelf the copy became.
 pub fn reparent(shelves: &mut [Shelf], folder_id: &str, parent: Option<&str>) -> bool {
     if let Some(target) = parent
         && !can_nest(shelves, folder_id, target)
     {
         return false;
     }
+    // The seat is read before the write borrow: which place the disk names is
+    // a fact about the list as it stands, not about the shelf mid-move.
+    let seat = folder_seat(shelves, folder_id);
     let Some(shelf) = shelves.iter_mut().find(|s| s.id == folder_id) else {
         return false;
     };
-    // A watched shelf keeps every fact it has except its rung: the `rel` that
-    // routes its folder's new files into it travels with the move, and the
-    // mark below is what stops the next re-hang from undoing the hand.
-    if shelf.is_folder() {
-        shelf.manual_parent = true;
+    // A watched shelf keeps every fact it has except its place: the `rel`
+    // that routes its folder's new files into it travels with the move, and
+    // the mark below is what stops the next re-hang from undoing a hand the
+    // disk disagrees with — and nothing else.
+    if let Some(seat) = seat {
+        shelf.manual_parent = seat.as_deref() != parent;
     }
     shelf.parent = parent.map(str::to_string);
     true
+}
+
+/// The folder's rungs: every shelf of one folder, from the `rel` key to the
+/// shelf id wearing it. One map for the seat question and the re-hang,
+/// because both ask which shelf a rung key names and the two cannot drift.
+fn rungs_of<'a>(
+    shelves: &'a [Shelf],
+    folder_id: &str,
+) -> std::collections::HashMap<String, &'a str> {
+    shelves
+        .iter()
+        .filter_map(|s| match &s.kind {
+            ShelfKind::Folder {
+                folder_id: owner,
+                rel,
+            } if owner == folder_id => Some((rel.clone().unwrap_or_default(), s.id.as_str())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The parent the folder's own SHELVES name for a folder shelf: the rung
+/// above its `rel`, or the library's root for a top-level rung. `None` for a
+/// shelf that is no folder's rung — a virtual shelf is the reader's wherever
+/// it hangs, and there is no disk answer to compare against.
+///
+/// The seat the re-hang wants and the mark [`reparent`] writes are one
+/// arithmetic: a rung whose parent rung is not standing — removed, or never
+/// minted yet — seats at the root, which is the honest answer for a broken
+/// tree and the same one [`rehang_moves`] gives.
+fn folder_seat(shelves: &[Shelf], shelf_id: &str) -> Option<Option<String>> {
+    let shelf = find(shelves, shelf_id)?;
+    let ShelfKind::Folder { folder_id, rel } = &shelf.kind else {
+        return None;
+    };
+    let key = rel.clone().unwrap_or_default();
+    let rungs = rungs_of(shelves, folder_id);
+    Some(
+        crate::folder::parent_key(&key)
+            .and_then(|rung| rungs.get(rung))
+            .map(|id| id.to_string()),
+    )
+}
+
+/// The family a ground directory belongs to but is not standing in: the
+/// DEEPEST in-place folder whose root covers `ground` at a rung of its own,
+/// when the rung that folder's ledger names for it is not standing — a slot a
+/// removal emptied, or a departure. `None` when no in-place tree covers the
+/// ground, or the covering tree's rung is alive: an alive rung is the import
+/// gate's "already in the library" answer rather than a family to fold back
+/// into.
+///
+/// The answer is the tree's id and the rung key the ground names in it — the
+/// two facts an import's fold and a move's "put it back" both run on
+/// (`crate::ledger` folds through the import's own `reclaim_rung`), from the
+/// one lookup every family question reads. The deepest tree wins because a
+/// nested in-place import is the closer family: its rung is the seat the
+/// ground's own directory names.
+pub fn family_for(
+    folders: &[crate::folder::WatchedFolder],
+    shelves: &[Shelf],
+    ground: &str,
+) -> Option<(String, String)> {
+    folders
+        .iter()
+        .filter(|f| f.opts.in_place)
+        .filter_map(|f| {
+            crate::folder::rel_under(ground, &f.root)
+                .filter(|rel| !rel.is_empty())
+                .map(|rel| (rel.len(), f, rel))
+        })
+        .max_by_key(|(len, _, _)| *len)
+        .and_then(|(_, folder, rel)| {
+            let vacant = match folder.shelf_map.get(&rel) {
+                Some(id) => !shelves.iter().any(|s| s.id == *id),
+                None => true,
+            };
+            vacant.then(|| (folder.id.clone(), rel))
+        })
+}
+
+/// Whether moving this shelf under `parent` is a departure that owes a copy:
+/// a shelf cut from a READ-AT-PLACE folder, leaving the seat the folder's own
+/// ledger names for its rung.
+///
+/// The negatives are as load-bearing as the positive, and each is the book
+/// departure's rule read one level up. A VIRTUAL shelf is the reader's own
+/// and simply moves. A shelf of a COPYING folder is the library's own already
+/// — no ledger waits on its rung, and the move is the membership edit it has
+/// always been. A RE-ORDER on the seat a shelf already hangs on copies
+/// nothing: the same parent is the same ground. And a move BACK onto the seat
+/// is a return rather than a departure: [`reparent`] takes the hand's shelf
+/// off the mark and gives the scan its place back.
+///
+/// Everywhere else is a departure, **including another rung of the very tree
+/// that named the shelf.** What ties a read-at-place shelf to its folder is
+/// the seat its directory stands on, not membership of the folder's shelf
+/// tree: a rung dragged from `Fiction/` to `Sci-Fi/` is no longer where the
+/// ledger says it is, and a linked shelf wearing a place it was dragged off
+/// is a shelf the next import of that folder collides with instead of coming
+/// home to. The seat is the LEDGER's answer — the folder's `shelf_map` at the
+/// rung above — which is the same map [`crate::folder::WatchedFolder::rungs_for`]
+/// names a file's rung from, so a shelf and the books standing on it cannot
+/// disagree about the ground they left.
+pub fn departs_on_move(
+    shelves: &[Shelf],
+    folders: &[crate::folder::WatchedFolder],
+    shelf_id: &str,
+    parent: Option<&str>,
+) -> bool {
+    let Some(shelf) = find(shelves, shelf_id) else {
+        return false;
+    };
+    let ShelfKind::Folder { folder_id, rel } = &shelf.kind else {
+        return false;
+    };
+    let Some(folder) = folders
+        .iter()
+        .find(|f| &f.id == folder_id && f.opts.in_place)
+    else {
+        return false;
+    };
+    // A re-order on the seat the shelf already hangs on is the folder's own
+    // business, whatever the seat is.
+    if shelf.parent.as_deref() == parent {
+        return false;
+    }
+    let key = rel.clone().unwrap_or_default();
+    let seat = crate::folder::parent_key(&key).and_then(|rung| folder.shelf_map.get(rung));
+    seat.map(String::as_str) != parent
+}
+
+/// A batch of requested shelf moves, split into the half that lands as it is
+/// and the half that owes the departure's ask — the shelf's own screen for
+/// what a drag, a bulk filing or a sibling reorder is about to do.
+///
+/// One rule per shelf, [`departs_on_move`] against the requested parent, and
+/// the departures named in the order the gesture gave. The batch shape hides
+/// one exclusion: a departing shelf filed INSIDE another departing one rides
+/// with it and asks nothing of its own — the subtree goes with the copy, the
+/// way a directory's tree goes with the directory. Such a shelf is in neither
+/// half: the outer departure carries it, and landing it separately would pull
+/// it out of the very copy it rode.
+pub fn departing_moves(
+    shelves: &[Shelf],
+    folders: &[crate::folder::WatchedFolder],
+    ids: &[String],
+    parent: Option<&str>,
+) -> (Vec<String>, Vec<String>) {
+    let mut clean: Vec<String> = Vec::new();
+    let mut departing: Vec<String> = Vec::new();
+    for id in ids {
+        if departs_on_move(shelves, folders, id, parent) {
+            departing.push(id.clone());
+        } else {
+            clean.push(id.clone());
+        }
+    }
+    // The riders, collected before the retain: a filter that read `departing`
+    // while the retain held it would be two borrows of one list.
+    let riders: Vec<String> = departing
+        .iter()
+        .filter(|id| {
+            ancestors(shelves, id.as_str())
+                .iter()
+                .any(|each| {
+                    each.id != id.as_str() && departing.iter().any(|outer| outer == &each.id)
+                })
+        })
+        .cloned()
+        .collect();
+    departing.retain(|id| !riders.contains(id));
+    (clean, departing)
+}
+
+/// Every shelf below any of `roots`, at any depth, in no particular order,
+/// without repeats and without the roots themselves.
+///
+/// Walked with an explicit stack and a seen-set rather than recursively, for
+/// two reasons. The forest is finite because [`sanitize`] cuts cycles out of a
+/// loaded blob — but this reads a list that can be caught between two writes,
+/// and a recursion over a graph with a loop in it is a stack that never
+/// unwinds. A shelf inside itself is also a shelf that would otherwise be
+/// counted twice, and two roots can share a descendant, which one question
+/// asks once — a removal's cascade and a departure's ride both count what
+/// actually goes.
+pub fn subtree_ids(shelves: &[Shelf], roots: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut stack: Vec<String> = roots.to_vec();
+    while let Some(parent) = stack.pop() {
+        for child in children_of(shelves, Some(parent.as_str())) {
+            if roots.iter().any(|each| each == &child.id)
+                || out.iter().any(|each| each == &child.id)
+            {
+                continue;
+            }
+            stack.push(child.id.clone());
+            out.push(child.id.clone());
+        }
+    }
+    out
 }
 
 /// Move a shelf's children up to the level it was on. What taking a shelf apart
@@ -281,19 +513,10 @@ pub fn lift_children(shelves: &mut [Shelf], folder_id: &str) {
 /// whatever a stale `shelf_map` claims: a self-edge the walk resolved through
 /// is filtered here rather than trusted to the sanitizer to catch later.
 pub fn rehang_moves(shelves: &[Shelf], folder_id: &str) -> Vec<(String, Option<String>)> {
-    // The folder's rungs: its own `rel` to the shelf that carries it.
-    let rungs: std::collections::HashMap<String, String> = shelves
-        .iter()
-        .filter_map(|s| match &s.kind {
-            ShelfKind::Folder {
-                folder_id: owner,
-                rel,
-            } if owner == folder_id => {
-                Some((rel.clone().unwrap_or_default(), s.id.clone()))
-            }
-            _ => None,
-        })
-        .collect();
+    // The folder's rungs: its own `rel` to the shelf that carries it — the
+    // one map the seat question reads too, so the re-hang and the hand's
+    // mark cannot disagree about which shelf a rung names.
+    let rungs = rungs_of(shelves, folder_id);
     let mut moved = Vec::new();
     for shelf in shelves.iter() {
         // The reader's placement wins over the disk's shape.
@@ -312,9 +535,10 @@ pub fn rehang_moves(shelves: &[Shelf], folder_id: &str) -> Vec<(String, Option<S
         }
         let key = rel.clone().unwrap_or_default();
         let want = crate::folder::parent_key(&key)
-            .and_then(|rung| rungs.get(rung).cloned())
+            .and_then(|rung| rungs.get(rung).copied())
             // A shelf is never its own parent, whatever a stale map claims.
-            .filter(|w| *w != shelf.id);
+            .filter(|w| *w != shelf.id.as_str())
+            .map(str::to_string);
         if shelf.parent != want {
             moved.push((shelf.id.clone(), want));
         }
@@ -996,5 +1220,211 @@ mod tests {
         let shelves = vec![cut("loop", "f1", Some("loop"), Some("r"))];
         let moves = rehang_moves(&shelves, "f1");
         assert_eq!(moves, vec![("loop".to_string(), None)]);
+    }
+
+    use crate::folder::{FolderOpts, WatchedFolder};
+    use std::collections::{BTreeMap, HashSet};
+
+    /// `/books` read in place, cut into three rungs — the root ("r"),
+    /// "Fiction" ("fic") and "Fiction/SciFi" ("sf") — with the map that names
+    /// each, and one virtual shelf of the reader's own beside the tree.
+    fn in_place_tree() -> (Vec<Shelf>, Vec<WatchedFolder>) {
+        let shelves = vec![
+            cut("r", "f1", None, None),
+            cut("fic", "f1", Some("Fiction"), Some("r")),
+            cut("sf", "f1", Some("Fiction/SciFi"), Some("fic")),
+            plain("mine", &[]),
+        ];
+        let folders = vec![WatchedFolder {
+            id: "f1".into(),
+            root: "/books".into(),
+            opts: FolderOpts::default(),
+            placed: HashSet::new(),
+            ignored: Vec::new(),
+            last_seen: Vec::new(),
+            shelf_map: BTreeMap::from([
+                (String::new(), "r".to_string()),
+                ("Fiction".to_string(), "fic".to_string()),
+                ("Fiction/SciFi".to_string(), "sf".to_string()),
+            ]),
+            scanned_ms: 0,
+        }];
+        (shelves, folders)
+    }
+
+    fn marked(shelves: &[Shelf], id: &str) -> bool {
+        shelves
+            .iter()
+            .find(|s| s.id == id)
+            .is_some_and(|s| s.manual_parent)
+    }
+
+    #[test]
+    fn a_rung_of_a_reading_folder_departs_whatever_it_leaves_for() {
+        let (shelves, folders) = in_place_tree();
+        // Another rung of the very tree that named the shelf is still a
+        // departure: what ties a rung to its folder is the seat its directory
+        // stands on, not membership of the folder's shelf tree — the shelf's
+        // own spelling of the book rule one level down.
+        assert!(departs_on_move(&shelves, &folders, "sf", Some("r")));
+        // The reader's own shelf and the library's root are nobody's rung.
+        assert!(departs_on_move(&shelves, &folders, "sf", Some("mine")));
+        assert!(departs_on_move(&shelves, &folders, "sf", None));
+        // And the tree's root rung departs into any shelf: the seat it stands
+        // on is the root, and a move off the root is a move off the seat.
+        assert!(departs_on_move(&shelves, &folders, "r", Some("mine")));
+    }
+
+    #[test]
+    fn a_reorder_on_the_seat_and_a_return_to_it_copy_nothing() {
+        let (shelves, folders) = in_place_tree();
+        // A re-order among siblings is the same parent, which is the same
+        // ground: the cheapest drag in the library must stay the cheapest.
+        assert!(!departs_on_move(&shelves, &folders, "sf", Some("fic")));
+        assert!(!departs_on_move(&shelves, &folders, "r", None));
+        // A rung an older blob carries off its seat comes BACK to the seat as
+        // a return: the hand put it where the disk names, so no copy is owed.
+        let mut off_seat = shelves.clone();
+        off_seat
+            .iter_mut()
+            .find(|s| s.id == "sf")
+            .unwrap()
+            .parent = Some("mine".to_string());
+        assert!(!departs_on_move(&off_seat, &folders, "sf", Some("fic")));
+    }
+
+    #[test]
+    fn a_virtual_shelf_and_a_copying_folder_s_move_freely() {
+        let (mut shelves, mut folders) = in_place_tree();
+        shelves.push(cut("stored", "f2", None, None));
+        folders.push(WatchedFolder {
+            id: "f2".into(),
+            root: "/dvds".into(),
+            opts: FolderOpts {
+                in_place: false,
+                ..FolderOpts::default()
+            },
+            placed: HashSet::new(),
+            ignored: Vec::new(),
+            last_seen: Vec::new(),
+            shelf_map: BTreeMap::from([(String::new(), "stored".to_string())]),
+            scanned_ms: 0,
+        });
+        // The reader's own shelf is the reader's wherever it hangs.
+        assert!(!departs_on_move(&shelves, &folders, "mine", Some("r")));
+        // A copying folder's shelf is the library's own already: no ledger
+        // waits on its rung, so the move is the membership edit it always was.
+        assert!(!departs_on_move(&shelves, &folders, "stored", Some("mine")));
+        // A shelf the list does not hold, and a folder shelf no folder
+        // answers for, owe nothing at all.
+        assert!(!departs_on_move(&shelves, &folders, "gone", Some("r")));
+        let orphan = vec![cut("orphan", "f9", None, None)];
+        assert!(!departs_on_move(&orphan, &folders, "orphan", Some("mine")));
+    }
+
+    #[test]
+    fn a_departing_shelf_inside_another_departing_one_rides_with_it() {
+        let (shelves, folders) = in_place_tree();
+        let ids: Vec<String> = ["fic", "sf", "mine"]
+            .iter()
+            .map(|id| id.to_string())
+            .collect();
+        let (clean, departing) = departing_moves(&shelves, &folders, &ids, None);
+        assert_eq!(
+            departing,
+            vec!["fic".to_string()],
+            "sf rides inside fic's copy and asks nothing of its own"
+        );
+        assert_eq!(clean, vec!["mine".to_string()]);
+    }
+
+    #[test]
+    fn a_hand_that_puts_a_shelf_back_on_its_seat_gives_the_scan_its_place_back() {
+        let (mut shelves, _) = in_place_tree();
+        // Off the seat, the mark goes on: the next re-hang passes the shelf by.
+        assert!(reparent(&mut shelves, "sf", Some("mine")));
+        assert!(marked(&shelves, "sf"));
+        // Back on the seat the disk names, the mark comes off: the place is
+        // the scan's again, and the re-hang owns the shelf like any other.
+        assert!(reparent(&mut shelves, "sf", Some("fic")));
+        assert!(!marked(&shelves, "sf"));
+        // A re-order on the seat the shelf already hangs on writes the same
+        // answer it had: the mark is a fact about the place, not the gesture.
+        assert!(reparent(&mut shelves, "sf", Some("fic")));
+        assert!(!marked(&shelves, "sf"));
+    }
+
+    #[test]
+    fn the_family_is_the_deepest_tree_whose_rung_for_the_ground_is_free() {
+        let (shelves, folders) = in_place_tree();
+        // A ground deep in f1's tree whose rung the map does not name: the
+        // family is f1, and the key is the rung the ground names in it.
+        assert_eq!(
+            family_for(&folders, &shelves, "/books/Fiction/Deleted"),
+            Some(("f1".to_string(), "Fiction/Deleted".to_string()))
+        );
+        // A rung the map names AND whose shelf stands is no family to fold
+        // into — it is a covered shelf, the import gate's own answer.
+        assert_eq!(
+            family_for(&folders, &shelves, "/books/Fiction/SciFi"),
+            None
+        );
+        // The tree's own root is not inside its family.
+        assert_eq!(family_for(&folders, &shelves, "/books"), None);
+        // A dead map entry — a rung whose shelf is gone — counts as free.
+        let mut dead_slot = folders.clone();
+        dead_slot[0]
+            .shelf_map
+            .insert("Fiction/SciFi".to_string(), "gone".to_string());
+        assert_eq!(
+            family_for(&dead_slot, &shelves, "/books/Fiction/SciFi"),
+            Some(("f1".to_string(), "Fiction/SciFi".to_string()))
+        );
+        // Of two nested trees, the DEEPEST wins: its rung is the seat the
+        // ground's own directory names.
+        let mut deeper = folders[0].clone();
+        deeper.id = "f2".into();
+        deeper.root = "/books/Fiction".into();
+        deeper.shelf_map.clear();
+        let mut outer = folders[0].clone();
+        outer.shelf_map.remove("Fiction/SciFi");
+        let both = vec![outer, deeper];
+        assert_eq!(
+            family_for(&both, &shelves, "/books/Fiction/SciFi"),
+            Some(("f1".to_string(), "Fiction/SciFi".to_string()))
+        );
+    }
+
+    #[test]
+    fn the_subtree_is_everything_below_and_never_the_root_itself() {
+        let tree = vec![
+            shelf("a", "A", &[]),
+            nested("b", "B", "a"),
+            nested("c", "C", "b"),
+            nested("d", "D", "a"),
+        ];
+        let mut under_a = subtree_ids(&tree, &["a".to_string()]);
+        under_a.sort();
+        assert_eq!(
+            under_a,
+            vec!["b".to_string(), "c".to_string(), "d".to_string()]
+        );
+        assert!(
+            subtree_ids(&tree, &["d".to_string()]).is_empty(),
+            "an empty leaf has no subtree"
+        );
+        // Two roots that share a descendant count it once — and a root is
+        // never reported as its own descendant.
+        let mut under_both = subtree_ids(&tree, &["a".to_string(), "b".to_string()]);
+        under_both.sort();
+        assert_eq!(under_both, vec!["c".to_string(), "d".to_string()]);
+        // And a loop a hand-edited blob can still carry terminates: x is the
+        // root and is never counted, y is below it, and x-inside-y is the root
+        // again, which the seen-set refuses.
+        let looped = vec![nested("x", "X", "y"), nested("y", "Y", "x")];
+        assert_eq!(
+            subtree_ids(&looped, &["x".to_string()]),
+            vec!["y".to_string()]
+        );
     }
 }

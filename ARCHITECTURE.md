@@ -414,6 +414,40 @@ the ledger says it is, and a linked row wearing an address it has been dragged o
 import of that file collides with instead of coming home to. Only a re-order on the book's own rung
 is no departure. A stored book is already the library's own and simply moves.
 
+The SHELF departs the same way, and asks first — the book's rule read one level up
+(`library_core::shelf::departs_on_move`). What ties a read-at-place rung to its folder is the seat
+its directory stands on in the tree the folder's ledger names, so a hand taking the rung anywhere
+else — another rung of the very same tree included — is a departure; only a re-order among its own
+siblings, and a move back onto the seat, are not. The departure copies rather than converts one
+thing at a time: the shelf becomes the reader's own, every read-at-place book standing on the
+departing rungs goes through the very `convert_to_stored` a book's departure rides — bytes, logs,
+gloss keys and all — the copy takes the level's next free name so the folder's own name stays free,
+and the folder's `shelf_map` lets the departed zone go. What rides along unconverted is what was
+never the folder's to convert: the reader's own shelves inside the subtree, a book also shown on a
+departing rung whose OWN rung still stands, and another folder's rung the subtree carries, which
+keeps its disk knowledge under the hand's mark. Because a departure copies a whole tree of bytes,
+it is the one move that goes to a sheet BEFORE it happens (`arrange::ShelfDepartureAsk`): the row
+promises the copies and the counter name, Confirm pays, and Cancel leaves the shelf where the tree
+put it while the clean half of the gesture — the books and the virtual shelves a mixed drag also
+carried — keeps the landing it already had.
+
+The sheet has a third answer when the drop landed inside the mover's FAMILY — a rung of an
+in-place tree whose root covers the ground the mover stands on (`arrange::target_is_family`) —
+because a read-at-place shelf lives on the seat its directory stands on, so a move inside the
+tree it belongs to never has to cost a copy. *Put it back in its place* returns every mover that
+has a way home (`arrange::ReturnPath`): a displaced folder — one removed and imported on its own,
+or born under an older build — folds into the family tree through the import's own
+`reclaim_rung`, on the rung its directory names, and an off-seat rung reseats on the seat its
+ledger names, which takes the hand's mark off on the way and gives the disk its place back. A
+mover already on its seat has no way home to offer, because it is home.
+
+The next import of the folder re-mints the original tree on the seats the disk names, the
+moved-out logs are spent by their books coming back in their old names, and what a FOLDER import
+reveals is the folder: its shelf lit on the level that holds it — nested inside the family, when
+a nested rung is what left and its own subfolder is what was picked. The copy is never the
+light's target: it is a book and a shelf of their own, bound to nothing. A shelf of a COPYING
+folder is the library's own already and simply moves, as a stored book does.
+
 ### Identity is a fingerprint, not a path
 
 `library_core::book::Fingerprint` is `{size, mtime_ms, head_hash}`: FNV-1a over the first 8 KiB
@@ -658,60 +692,78 @@ next onto the screen, and Cancel drops them, which is what Cancel has always mea
 questions are forty files of one folder rather than forty gestures.
 
 A FOLDER has its own spelling of the question, asked before the walk rather than after it, and
-before the question a GATE about read-at-place: a shelf cut from a linked folder IS the OS folder,
-so one folder is one shelf and a second instance of it is a second door onto the same ground —
-every book on it duplicated. The gate (`import::covered_shelf`, which walks the in-place folders'
-`shelf_map` and nothing else) is three answers rather than one, and which answer a pick gets is a
-fact about the pick rather than a setting:
+before the question a GATE about read-at-place and its FAMILY: a shelf cut from a linked folder IS
+the OS folder, so one folder is one shelf, and which tree a pick belongs to is a fact about the
+ground rather than about the level the reader happens to be standing on. The gate
+(`import::covered_shelf`, which walks the in-place folders' `shelf_map`, and
+`library_core::shelf::family_for`, which walks their roots for the rung a slot no shelf wears)
+answers for READ-AT-PLACE picks alone; a stored pick walks straight to the level's name question,
+its copies being the library's own second instance, unrelated to any tree:
 
 - A RUNG inside a tree the library reads in place — a subfolder of an imported folder — never
-  reaches a sheet in either mode: the "already imported" note
+  reaches a sheet: the "already imported" note
   (`features::library::already_imported_modal`) says what the pick already is, and closing it
   navigates to the shelf the reader meant and lights it, wherever in the tree it hangs.
 - The tree's OWN root, re-picked read at its place, is not a note and not a sheet but a
   RECONCILIATION: the walk runs as the explicit import it is, new files join the tree as linked
   books, the logs a removal or a departure wrote are spent by their books coming back — and only
   a walk that found nothing new raises the note, saying the sentence the gate used to say up
-  front and lighting the shelf. One shape of "nothing new" is a question rather than a report: a
-  MEMBER of the tree standing outside it, because the reader removed its rung and imported that
-  subfolder on its own (`import::displaced_member`). The note then names that shelf instead of the
-  root's and offers to put it back on the rung its directory names, which folds the nested folder's
-  shelves and ledger into the tree and retires the folder (`import::reclaim_rung`). A read-at-place
-  tree has no *as new* and needs no *replace*: its re-import is a merge by nature, because its
-  books are the files themselves.
-- The same root re-picked AS COPIES is the MODE SWITCH, and it is a question — the folder sheet's
-  chrome with the switch's own three answers, because "hold this folder as copies" is a decision
-  about every book already on it. *Add as new* mints the counter-named second shelf and lands
-  copies of its OWN there — independent books beside the linked ones the old tree keeps reading,
-  each identified by its copy's own measurement, which is what leaves the originals' fingerprints
-  with the tree that reads them. *Merge into it* continues the standing tree with no per-file ask
-  — the reader just answered for the whole folder — and the run then flips every linked book the
-  folder's ledger answers for into the library's own copy WHERE IT STANDS
-  (`import::convert_folder_books_to_stored`): the same row, so the id, the name, the shelves, the
-  resume point and the highlights all survive the flip, the marks migrate their key by the
-  departure's own rule, a row without a title takes the stem it was showing before the address
-  changes, and the copy's measurement becomes the row's identity while the ORIGINAL fingerprint
-  stays in `placed` with no row wearing it — which is what keeps a later rescan quiet. *Replace*
-  puts the folder's linked books through the removal's own sweep first — logs and all, so the
-  copies that land spend them and come back in the names the shelves showed — and then imports
-  the folder as copies onto the shelf they left; its row promises the count before the click. A
-  per-file copy failure, in either answer, leaves that one book reading in place: a folder with
-  copies for some of its books is stable, and a re-import offers the switch again for the rest.
+  front and lighting the shelf. What a FOLDER import reveals is the folder: the walk ends on its
+  root shelf lit on the level that holds it — the reader stays outside, where the folder is
+  visible — while a FILE import reveals the book (`run_files`). Going inside the tree and
+  lighting a book in it would be reporting the folder's contents as the folder.
+- A pick whose rung the family's ledger names but no shelf wears — removed, or departed as a
+  copy — imports BACK INTO THE FAMILY: the walk runs on the pick's own ledger — where the
+  departed books' logs are, to be spent — and the run's last act folds the shelf it minted onto
+  the rung its directory names (`RootPlan::fold`, `import::reclaim_rung`), the light landing on
+  the shelf where it stands again. An import of a folder is the reader wanting it back, and back
+  is inside the tree its ground belongs to, not a second shelf at the top of the library.
+- The same fold runs at the end of any explicit walk whose tree has a MEMBER standing outside
+  it (`import::displaced_member`) — the rung removed and the subfolder imported on its own, or
+  left standing by an older build: the fold puts it back, folds the folder that was reading it
+  into the tree's ledger and retires it, and the note that rises is the report of the shelf that
+  went home (`NoteKind::Returned`). An import is an ask, and a member outside its family is an
+  ask answered rather than a second question.
+- A tree whose root rung a hand took OUT — the shelf's own departure — arrives with no shelf
+  and no family slot to name, and simply walks: the copy wears the level's counter name, so the
+  folder's own name is free, the walk re-mints the tree on the seats the disk names, and the
+  light lands on the shelf that came back.
 
-Stored trees never hit the gate — the library's own copies are the library's to make another of,
-and that is the question below.
+A read-at-place tree has no *as new* and needs no *replace*: its re-import is a merge by nature,
+because its books are the files themselves.
+
+A STORED arrival's question is the level's name alone, and its three answers are the level's own:
+*Show it* imports nothing and goes and looks — the shelf that is here lit where it stands, the
+folder spelling of the book sheet's *already imported*. *Replace* sends the books the shelf that
+is here holds out through the removal's sweep and seats the arriving copies on it — of the
+folder's OWN read-at-place tree, the sweep is the import module's log-spending one
+(`import::replace_folder_with_copies`, whose landed copies spend the logs the sweep wrote and
+come back in the names the shelves showed); of any other shelf it is the removal's receipt over
+the shelf's members and the merge's filing of the copies into it
+(`import::replace_shelf_with_folder`). The row promises the count before the click either way.
+*As new* mints the counter-named second shelf and imports into its own tree. And of ground the
+library already reads in place, EVERY explicit copies run holds copies of its own — a nested
+folder picked with the switch off while the outer tree stands is the shape this exists for: the
+ledger's own table answers Skip for a file the library already holds, which is a rescan's answer
+and not an import's, so the run's copy list (`ledger::copy_over_paths`) puts every file a linked
+row reads back on the add list, and each lands as an independent book of its own bytes beside
+the linked row the tree keeps, identified by its copy's own measurement — which is what leaves
+the originals' fingerprints with the tree that reads them. A rescan never owes one: quiet about
+ground another folder placed is a rescan's whole job. A per-file copy failure leaves that one
+book reading in place: a folder with copies for some of its books is stable, and a re-import
+mints the rest.
 
 Past the gate, an import whose name the root level already holds
 (`library_core::conflict::collide_shelf`, which counts the level's SHELF names and nothing else)
 raises the folder sheet, because two doors of one name on one level are two doors a reader cannot
 tell apart — which is what two books of one name are. Its answers are about the whole run rather
-than one placement, and WHICH of them are on offer is the arrival's own fact: *Add as new* mints
-the folder's root under the next free counter (`next_shelf_name`) and imports into its own tree,
-and only a STORED arrival is offered it, because as new of a read-at-place folder is the second
-instance the gate exists to prevent. *Make link* imports nothing and leaves a pointer row instead
-— a `Row::Link` whose target is a SHELF id, which the ids' first letters keep disjoint from a
-book's, and whose tap reveals the shelf it names (`services::library::reveal_shelf`: its level,
-then its card, lit). *Merge into it* maps the folder's root rung onto the shelf that is here — the
+than one placement, and WHICH set of them is on offer is the arrival's mode: a stored arrival
+gets the level's three above, and a READ-AT-PLACE arrival of a DIFFERENT folder's name gets two,
+its *as new* withheld as the second instance the gate exists to prevent. *Make link* imports
+nothing and leaves a pointer row instead — a `Row::Link` whose target is a SHELF id, which the
+ids' first letters keep disjoint from a book's, and whose tap reveals the shelf it names
+(`services::library::reveal_shelf`: its level, then its card, lit). *Merge into it* maps the
+folder's root rung onto the shelf that is here — the
 folder's `shelf_map` carries the promise, so every later rescan keeps it — and every file whose
 NAME a STANDING rung holds goes to the compact per-file sheet: the root shelf the answer named,
 and any subfolder shelf a previous run mapped, because a merge reuses the rungs it has rather than
@@ -727,14 +779,13 @@ case — and "a file nothing collides with" is answered over EVERY file the walk
 ones the ledger marked new: a planned tree (a merge's, or an *as new* one) owes a membership of the
 row the library holds for each file it already knows, because one content is one identity and one
 identity is one row, and a second shelf of one folder is a second arrangement rather than a second
-copy. A folder colliding with its OWN previous shelf asks too, when the library's copy of it is
-what collided — a reader who picked a folder and clicked Import asked for an answer, and a run
-that ends on "Imported 0 books" with no sheet in between is the silent nothing the book collision
-used to be — and it gets the same answers, worded as the continuation it is. Its merge is the
-reconcile a re-import asks for: every file whose name a standing rung holds goes to the compact
-per-file sheet — a file's OWN row included, which is what makes re-importing one folder a question
-per book rather than a shrug — and *Merge* there is the one-book answer that keeps everything as
-it is. A nesting still asks nothing at all, because a nesting writes a parent and not a
+copy. A folder colliding with its OWN previous shelf asks too — a reader who picked a folder and
+clicked Import asked for an answer, and a run that ends on "Imported 0 books" with no sheet in
+between is the silent nothing the book collision used to be — and the sheet words it as the
+continuation it is: a stored re-pick of one's own tree is the *show*, *replace* and *as new*
+question about how the folder is held from here on. A read-at-place pick of one's own family
+never reaches the sheet at all: the gate above answers it with the note, the reconciliation, or
+the fold. A nesting still asks nothing at all, because a nesting writes a parent and not a
 membership.
 
 Nesting asks nothing at all, and that is the rule rather than an oversight: filing a folder inside
@@ -850,16 +901,18 @@ list and host-tested, including the cycle a blob caught between two writes can s
 Nesting is not `ShelfKind::Folder`'s `rel`. `rel` is a subfolder's address inside a watched
 directory's tree — a rescan key, written by the filesystem's shape. For a FOLDER shelf, `parent`
 starts as its projection: the tree on disk is the tree on the shelf, and every scan re-hangs the
-folder's shelves on the rung their `rel` names — until the reader moves one by hand. A hand beats
-the disk: `library_core::shelf::reparent` accepts the move and marks the row
-`Shelf::manual_parent`, and the re-hang passes a marked shelf by, so the move is a promise the next
-scan KEEPS instead of one it breaks. The mark is written in `reparent` alone — the one function
-every hand-move rides. The moved shelf keeps every disk fact it had: its `rel` still routes newly
-scanned files
-into it, and its subtree hangs off `parent` pointers, so a moved folder carries its folders and
-its books the way a moved directory carries its tree — and a read-in-place book's address travels
-on the book, so tracking, relink and the resume points never knew a move happened. For a VIRTUAL
-shelf `parent` is the reader's from the start, and no scan ever writes it.
+folder's shelves on the rung their `rel` names. Which shelves a hand may simply take is decided by
+how their folder is read (`library_core::shelf::departs_on_move`): a shelf of a COPYING folder is
+the library's own already, so `library_core::shelf::reparent` accepts the move and marks the row
+`Shelf::manual_parent` when the new parent is not the seat the folder's shelves name, and clears
+the mark when a hand puts the shelf back on it — the re-hang passes a marked shelf by, so the move
+is a promise the next scan KEEPS instead of one it breaks. A shelf of a READ-AT-PLACE folder is the
+OS directory itself and never arrives at that reparent off its seat: the hand-move is the
+departure, which asks and then lands a copy (`services::library::arrange`). The subtree still
+travels with the shelf the hand named — a copy carries its folders and its books the way a moved
+directory carries its tree — and a read-in-place book's address travels on the book, so tracking,
+relink and the resume points never knew a move happened. For a VIRTUAL shelf `parent` is the
+reader's from the start, and no scan ever writes it.
 
 ### One gesture, decided once
 
@@ -943,9 +996,10 @@ middle one, and the grid keeps its whole-card answers without the table carrying
 layouts. The tree adds the courtesy every file manager's tree gives a drag: a hold resting on a
 collapsed shelf row opens it, so the way deeper is the way in. A shelf row is a LIFT as well as a
 landing: a hold enters the selection with the shelf in it and a movement picks it up, by the same
-wiring the folder card wears — a folder is draggable at both densities, watched or not (the move
-is the hand's, and `Shelf::manual_parent` is what tells the next re-hang so), and a set of books
-and folders is one gesture in either.
+wiring the folder card wears — a folder is draggable at both densities, watched or not (what the
+drag MEANS is the services' answer: a membership edit for a shelf the reader or the store owns,
+and the departure's ask for a rung a read-at-place folder named), and a set of books and folders is
+one gesture in either.
 
 Two dwells hang off the same target change, and they are NOT the same question at two depths — the
 difference is the whole of the design. The sink belongs to the title bar alone: at 420ms over a crumb,

@@ -241,7 +241,7 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                         // --- how the books are held -------------------------
                         <SectionLabel text="Books" />
                         <div class="divide-y divide-line rounded-xl border border-line">
-                            <Row label="Keep books where they are">
+                            <Row label="Read at place">
                                 <Switch
                                     checked=in_place
                                     on_change=Callback::new(move |on| {

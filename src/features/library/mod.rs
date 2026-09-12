@@ -32,6 +32,9 @@
 //!   * [`shelf_conflict_modal`] — the level already holds that NAME: the
 //!     folder question an import asks before its walk, and the mode switch a
 //!     read-at-place folder asks when it is re-picked as copies
+//!   * [`departure_modal`] — a hand taking a read-at-place shelf off the seat
+//!     its folder's tree names: the move becomes the library's own copy, asked
+//!     before the copies are made
 //!   * [`already_imported_modal`] — a folder the library already reads in
 //!     place, named and lit up; a report for two of its three sentences, and
 //!     for the third a question, because a member of the tree is standing
@@ -67,6 +70,7 @@ pub mod breadcrumb;
 pub mod conflict_modal;
 pub mod content;
 pub mod context_menu;
+pub mod departure_modal;
 pub mod dnd;
 pub mod empty_state;
 pub mod facts;

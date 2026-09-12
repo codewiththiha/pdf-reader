@@ -20,12 +20,15 @@
 //! and a movement hands the press to `crate::features::library::dnd`, which is
 //! what files a book dropped on it or nests a shelf dropped on it.
 //!
-//! Every card drags, including one cut from a watched folder. A scan mints such a
-//! shelf on the rung its directory has on disk and re-hangs it there — but the
-//! reader's hand beats the disk's shape: the move is marked on the row
-//! (`library_core::shelf::Shelf::manual_parent`), the next re-hang passes it by,
-//! and the shelf keeps its disk knowledge through the move, so files its folder
-//! scans later still land inside it wherever the reader filed it.
+//! Every card drags, including one cut from a watched folder. What the drag
+//! MEANS is the services' answer rather than the card's: a shelf of a copying
+//! folder, and every shelf the reader owns, is filed where the hand takes it;
+//! a shelf a READ-AT-PLACE folder named is the OS directory itself, and a hand
+//! taking it off the seat its tree names is a departure — the sheet asks, and
+//! what lands where the hand pointed is the library's own copy of the shelf
+//! and of every read-at-place book standing on it
+//! (`crate::services::library::arrange`). The folder on disk is untouched, and
+//! the next import of it mints the original tree back and lights it up.
 //!
 //! A drop this folder refuses — a shelf that would end up inside itself — wears no
 //! ring at all, which is the honest half of the gesture: the decision table says

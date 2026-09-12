@@ -224,6 +224,42 @@ pub fn parent_key(key: &str) -> Option<&str> {
     }
 }
 
+/// Whether a rung key stands inside a zone of the tree: the zone itself, or
+/// anywhere below it. The empty zone is the whole tree, because the watched
+/// root is every rung's ancestor — a departure of the root rung takes every
+/// key the folder's map holds with it.
+///
+/// A directory edge rather than a string prefix, the rule [`rel_under`] gives
+/// for addresses: `"2"` is inside `"2"` and inside nothing else that starts
+/// with those characters, so a zone of `"2"` does not swallow `"20/deep"`.
+/// What a shelf's departure asks of the folder's map — which rung keys leave
+/// the tree with it — is the same question [`rel_under`] asks of a file, and
+/// the two answer with one arithmetic.
+pub fn key_in_zone(key: &str, zone: &str) -> bool {
+    if zone.is_empty() {
+        return true;
+    }
+    key == zone
+        || key
+            .strip_prefix(zone)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// The address a rung's directory stands at: the watched root for the root
+/// rung, and the root with the rung's key joined onto it for any rung below.
+///
+/// [`rel_under`] run backwards. One function owns each direction so a shelf's
+/// ground and its folder's map cannot drift about what the key names: the
+/// family questions — which tree a folder belongs to, which tree a rung is a
+/// member of — all start by turning the rung back into the address the disk
+/// knows, and hand it to [`rel_under`] like every other ground question.
+pub fn dir_of_rung(root: &str, rel: &str) -> String {
+    if rel.is_empty() {
+        return root.to_string();
+    }
+    format!("{}/{}", root.trim_end_matches(['/', '\\']), rel)
+}
+
 impl WatchedFolder {
     /// The ledger key for a found file: its subfolder when the folder groups,
     /// the empty string for the root otherwise. One function owns the choice so
@@ -494,6 +530,35 @@ mod tests {
         // Windows answers in `/` like every other path in the ledger, because a
         // `shelf_map` key holding a `\` never matches a found file again.
         assert_eq!(rel_under("C:\\books\\a\\b.pdf", "C:\\books").as_deref(), Some("a/b.pdf"));
+    }
+
+    #[test]
+    fn a_zone_holds_its_own_key_and_the_rungs_below_it() {
+        assert!(key_in_zone("2", "2"));
+        assert!(key_in_zone("2/deep", "2"));
+        assert!(key_in_zone("2/deep/deeper", "2"));
+        // A string prefix is not a directory: `20` is not inside `2`.
+        assert!(!key_in_zone("20", "2"));
+        assert!(!key_in_zone("20/deep", "2"));
+        // A sibling and a parent are outside the zone.
+        assert!(!key_in_zone("3", "2"));
+        assert!(!key_in_zone("", "2"));
+        // The root zone is the whole tree, including the root's own key.
+        assert!(key_in_zone("", ""));
+        assert!(key_in_zone("2", ""));
+        assert!(key_in_zone("2/deep", ""));
+    }
+
+    #[test]
+    fn a_rung_s_address_is_its_key_joined_back_onto_the_root() {
+        assert_eq!(dir_of_rung("/books", ""), "/books");
+        assert_eq!(dir_of_rung("/books", "2/3"), "/books/2/3");
+        assert_eq!(dir_of_rung("/books/", "2"), "/books/2");
+        assert_eq!(dir_of_rung("C:\\books", "2"), "C:\\books/2");
+        // And the two directions of the arithmetic agree, which is the point
+        // of owning both: an address round-trips through its key.
+        let dir = dir_of_rung("/books", "2/3");
+        assert_eq!(rel_under(&dir, "/books").as_deref(), Some("2/3"));
     }
 
     #[test]

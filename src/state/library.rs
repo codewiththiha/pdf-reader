@@ -34,6 +34,7 @@ use library_core::text::plural;
 use library_core::view::LibraryView;
 use library_core::wire::{ImportPhase, ImportProgress};
 
+use crate::services::library::arrange::ShelfDepartureAsk;
 use crate::services::library::conflict::{ConflictAsk, ShelfConflictAsk};
 use crate::time::now_ms;
 
@@ -244,8 +245,9 @@ pub struct Reveal {
     pub nonce: u64,
 }
 
-/// Which sentence the "already a shelf here" note says. Two of the three are a
-/// report and one is a question, and the difference is the second button.
+/// Which sentence the "already a shelf here" note says. All three are a
+/// report and a highlight — the import that could have asked a question put
+/// the shelf back instead, and the note is how the reader is told.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NoteKind {
     /// The gate's: a rung inside a tree the library reads in place, said BEFORE
@@ -255,21 +257,13 @@ pub enum NoteKind {
     /// The report's: a re-import of the tree's own root DID walk and reconcile,
     /// and found nothing new — every book already stood and no log came back.
     NothingNew,
-    /// The question's: a re-import found nothing new because a MEMBER of this
-    /// tree is standing outside it — the reader removed its rung and imported
-    /// that subfolder on its own, so its books are all standing on a shelf that
-    /// is not one of this tree's. The note names that shelf rather than the
-    /// root's, and its second answer puts it back on the rung its directory
-    /// names.
-    ///
-    /// The three facts the answer writes with: the tree that asked, the nested
-    /// folder to fold into it, and the rung key that folder's root names in the
-    /// tree. The shelf itself is the note's own.
-    Displaced {
-        tree: String,
-        gone: String,
-        rel: String,
-    },
+    /// The fold's: the import put a shelf BACK — the picked folder into the
+    /// family its ground names, or a member an outer tree's walk found
+    /// standing outside it — on the rung its directory names, with the folder
+    /// that was reading it folded into the tree's ledger. The note names the
+    /// shelf that went home, and the light rides the close onto the level
+    /// that holds it now.
+    Returned,
 }
 
 impl NoteKind {
@@ -278,23 +272,15 @@ impl NoteKind {
         match self {
             NoteKind::Gated => "Already in the library",
             NoteKind::NothingNew => "Nothing new to import",
-            NoteKind::Displaced { .. } => "Nothing new — part of it stands elsewhere",
+            NoteKind::Returned => "Back where its folder names",
         }
-    }
-
-    /// Whether the note is the question rather than the report, which is what
-    /// the modal's second button rides.
-    pub fn is_displaced(&self) -> bool {
-        matches!(self, NoteKind::Displaced { .. })
     }
 }
 
-/// The "that folder is already a shelf here" note. Two of its three sentences
-/// are not a question: the modal's one job is to say the sentence and then
-/// light the shelf up, and the highlight rides its CLOSE so a light cannot burn
-/// its seconds behind a modal nobody has dismissed. The third
-/// ([`NoteKind::Displaced`]) offers the move beside the highlight, and closes
-/// onto the same light either way.
+/// The "that folder is already a shelf here" note. None of its sentences is a
+/// question: the modal's one job is to say the sentence and then light the
+/// shelf up, and the highlight rides its CLOSE so a light cannot burn its
+/// seconds behind a modal nobody has dismissed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlreadyNote {
     /// The shelf to reveal when the note closes.
@@ -376,6 +362,16 @@ pub struct LibraryState {
     /// The pair of [`Self::already_imported`] the lane and the Escape rule
     /// hold, for the reason [`Self::conflict_open`] exists.
     pub already_imported_open: RwSignal<bool>,
+    /// The shelf departure's question: a read-at-place shelf a hand is taking
+    /// off the seat its folder's tree names for it, which is a move the library
+    /// owes copies for. Its own signal rather than a variant of the name sheet
+    /// because nothing collides — no membership arrives on any level — and the
+    /// question is the move's COST, with two answers: pay it, or leave the
+    /// shelf where the tree put it. See `crate::services::library::arrange`.
+    pub shelf_departure: RwSignal<Option<ShelfDepartureAsk>>,
+    /// The pair of [`Self::shelf_departure`] the lane and the Escape rule hold,
+    /// for the reason [`Self::conflict_open`] exists.
+    pub shelf_departure_open: RwSignal<bool>,
 }
 
 impl Default for LibraryState {
@@ -403,6 +399,8 @@ impl Default for LibraryState {
             shelf_conflict_open: RwSignal::new(false),
             already_imported: RwSignal::new(None),
             already_imported_open: RwSignal::new(false),
+            shelf_departure: RwSignal::new(None),
+            shelf_departure_open: RwSignal::new(false),
         }
     }
 }
