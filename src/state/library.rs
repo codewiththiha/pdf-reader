@@ -549,7 +549,6 @@ impl LibraryState {
 mod tests {
     use super::*;
     use library_core::book::{Fingerprint, Origin};
-    use reader_core::format::Format;
 
     /// A book row: the cover cache is keyed by address, and a link has none.
     fn book(path: &str, last_read: u64) -> Row {
@@ -559,26 +558,17 @@ mod tests {
     fn book_value(path: &str, last_read: u64) -> Book {
         let len = path.len() as u64;
         Book {
-            id: path.to_string(),
             fp: Fingerprint {
                 size: len,
                 mtime_ms: last_read,
                 head_hash: len as u32,
             },
-            title: None,
-            author: None,
-            format: Format::Pdf,
             origin: Origin::Linked {
                 src: path.to_string(),
             },
             added_ms: last_read,
             last_read_ms: last_read,
-            page: 1,
-            num_pages: 0,
-            fraction: None,
-            missing: false,
-            fp_pending: false,
-            independent: false,
+            ..library_core::testkit::book(path)
         }
     }
 

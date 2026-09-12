@@ -102,6 +102,12 @@ md-core = { path = "crates/md-core" }
 # same fingerprint this crate defines.
 library-core = { path = "crates/library-core" }
 
+[dev-dependencies]
+# The app's host tests build their books, rows and shelves with the domain
+# crate's own fixtures rather than a tenth private copy of a fifteen-field
+# literal; the feature is a dev-only gate and never reaches a release build.
+library-core = { path = "crates/library-core", features = ["test-util"] }
+
 [workspace]
 members = [
   "src-tauri",

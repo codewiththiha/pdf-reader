@@ -12,6 +12,11 @@ license = "MIT"
 reader-core = { path = "../reader-core" }
 serde = { version = "1", features = ["derive"] }
 
+[features]
+# Compiles `testkit`, the fixture builders the app crate's host tests share
+# with this crate's own. Off in every real build.
+test-util = []
+
 [dev-dependencies]
 serde_json = "1"
 

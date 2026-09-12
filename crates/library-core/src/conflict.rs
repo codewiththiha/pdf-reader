@@ -221,7 +221,7 @@ pub fn same_name(a: &str, b: &str) -> bool {
 ///   * names compare as [`same_name`], so a counter a previous answer minted
 ///     (`1_1`) is a different name from the one that arrives (`1`).
 pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> {
-    let index = row_index(rows);
+    let index = crate::book::index_by_id(rows);
     crate::shelf::members_of(rows, shelves, &at.shelf_id)
         .into_iter()
         .find_map(|member| {
@@ -245,7 +245,7 @@ pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> 
 /// it mints survives [`crate::book::sanitize`]'s rule about titles that look
 /// like file names.
 pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) -> String {
-    let index = row_index(rows);
+    let index = crate::book::index_by_id(rows);
     let in_use: HashSet<String> = crate::shelf::members_of(rows, shelves, shelf_id)
         .iter()
         .filter_map(|member| index.get(*member).copied())
@@ -285,32 +285,25 @@ pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> S
 }
 
 
-/// Id → row, in one pass, so a level's members resolve against a map rather
-/// than re-walking the library per member — a batch of arrivals asks the
-/// question once per file, and the library is the list being asked about.
-fn row_index(rows: &[Row]) -> std::collections::HashMap<&str, &Row> {
-    let mut index = std::collections::HashMap::with_capacity(rows.len());
-    for row in rows {
-        index.entry(row.id()).or_insert(row);
-    }
-    index
-}
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::book::{Book, Fingerprint, Origin};
     use crate::shelf::ALL_SHELF;
-    use reader_core::format::Format;
 
     fn book(id: &str, path: &str) -> Row {
-        Row::Book(Book::new(
-            id.to_string(),
-            Fingerprint { size: 10, mtime_ms: 5, head_hash: 9 },
-            Format::Pdf,
-            Origin::Linked { src: path.to_string() },
-            10,
-        ))
+        Row::Book(Book {
+            fp: Fingerprint {
+                size: 10,
+                mtime_ms: 5,
+                head_hash: 9,
+            },
+            added_ms: 10,
+            origin: Origin::Linked { src: path.to_string() },
+            ..crate::testkit::book(id)
+        })
     }
 
     /// A book row that shows `title`, which is what a collision compares.
@@ -321,18 +314,11 @@ mod tests {
     }
 
     fn link(id: &str, name: &str, target: &str) -> Row {
-        Row::link(id.to_string(), name.to_string(), target.to_string(), 10)
+        crate::testkit::link(id, name, target)
     }
 
     fn shelf(id: &str, members: &[&str]) -> Shelf {
-        Shelf {
-            id: id.to_string(),
-            name: id.to_string(),
-            kind: Default::default(),
-            books: members.iter().map(|m| m.to_string()).collect(),
-            parent: None,
-            manual_parent: false,
-        }
+        crate::testkit::plain_shelf(id, members)
     }
 
     /// A shelf with a name of its own: the shelf collision asks about NAMES,
@@ -581,8 +567,8 @@ mod tests {
     #[test]
     fn a_link_row_is_not_a_book_and_says_so() {
         let rows = [book("b1", "/books/1.pdf"), link("l1", "1", "b1")];
-        assert!(rows[0].is_book() && !rows[0].is_link());
-        assert!(rows[1].is_link() && !rows[1].is_book());
+        assert!(rows[0].book().is_some() && !rows[0].is_link());
+        assert!(rows[1].is_link() && rows[1].book().is_none());
         assert_eq!(rows[1].book(), None);
         assert_eq!(rows[1].fp(), None, "a pointer has no content identity");
         assert_eq!(rows[1].target(), Some("b1"));

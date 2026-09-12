@@ -392,10 +392,8 @@ pub(crate) fn LibraryContent(state: AppState) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use library_core::book::{Book, Fingerprint, Origin};
-    use library_core::shelf::ShelfKind;
+    use library_core::book::Book;
     use library_core::sort::SortKey;
-    use reader_core::format::Format;
 
     /// The shelf and the level, wired the way the page wires them. Held in the
     /// returned `Owner` — dropping it disposes every signal the state carries.
@@ -409,32 +407,14 @@ mod tests {
     }
 
     fn book(id: &str, title: &str) -> Row {
-        let mut book = Book::new(
-            id.to_string(),
-            Fingerprint {
-                size: 1,
-                mtime_ms: 1,
-                head_hash: 1,
-            },
-            Format::Markdown,
-            Origin::Linked {
-                src: format!("/books/{id}.md"),
-            },
-            0,
-        );
-        book.title = Some(title.to_string());
-        Row::Book(book)
+        Row::Book(Book {
+            title: Some(title.to_string()),
+            ..library_core::testkit::markdown_book(id)
+        })
     }
 
     fn shelf(id: &str, name: &str, members: &[&str], parent: Option<&str>) -> Shelf {
-        Shelf {
-            id: id.to_string(),
-            name: name.to_string(),
-            kind: ShelfKind::Virtual,
-            books: members.iter().map(|m| m.to_string()).collect(),
-            parent: parent.map(str::to_string),
-            manual_parent: false,
-        }
+        library_core::testkit::shelf(id, name, members, parent)
     }
 
     fn ids(rows: &[Row]) -> Vec<&str> {

@@ -39,7 +39,7 @@ pub mod sanitize;
 pub use check::{add_book, apply_check, drop_dangling_links, drop_dead_shelf_links, remove_row};
 pub use merge::{fold_books, further_point};
 pub use naming::{duplicate_title, stem_of};
-pub use query::{find_book_mut, find_by_id, find_by_path, gloss_key_of, resume_point};
+pub use query::{find_book_mut, find_by_id, find_by_path, gloss_key_of, index_by_id, resume_point};
 pub use read::{ReadPoint, record_read, record_read_row, rows_for_read};
 pub use sanitize::{sanitize};
 
@@ -314,10 +314,6 @@ impl Row {
         matches!(self, Row::Link { .. })
     }
 
-    pub fn is_book(&self) -> bool {
-        !self.is_link()
-    }
-
     /// The book this row is, or `None` for a link — the one question every
     /// content rule in the library asks before it looks at a row.
     pub fn book(&self) -> Option<&Book> {
@@ -329,16 +325,6 @@ impl Row {
 
     /// The same, for a write.
     pub fn as_book_mut(&mut self) -> Option<&mut Book> {
-        match self {
-            Row::Book(b) => Some(b),
-            Row::Link { .. } => None,
-        }
-    }
-
-    /// The book this row was, taking it out. What a removal does with the row
-    /// it just lifted, when it needs the address and the origin to finish the
-    /// job.
-    pub fn into_book(self) -> Option<Book> {
         match self {
             Row::Book(b) => Some(b),
             Row::Link { .. } => None,
@@ -470,7 +456,7 @@ impl Book {
 
     /// The author line, when there is one to show.
     pub fn author(&self) -> Option<String> {
-        self.author.clone().filter(|a| !a.trim().is_empty())
+        crate::text::non_blank(self.author.as_deref()).map(str::to_string)
     }
 
     /// Reading progress as a fraction of the document, when the page count is

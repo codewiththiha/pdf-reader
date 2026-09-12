@@ -265,14 +265,14 @@ mod tests {
         // one ROW per book, and nothing else about the library moves.
         let v1 = migrate_v1(vec![legacy("/books/dune.pdf", 42, 400)], 1_000);
         let legacy_blob = BlobV2 {
-            books: v1.books.iter().filter_map(|r| r.clone().into_book()).collect(),
+            books: v1.books.iter().filter_map(|r| r.book().cloned()).collect(),
             shelves: vec![shelf("s1", "Sci-fi", ShelfKind::Virtual, &[])],
             folders: Vec::new(),
             view: LibraryView::default(),
         };
         let blob = migrate_v2(legacy_blob.clone());
         assert_eq!(blob.books.len(), 1);
-        assert!(blob.books[0].is_book());
+        assert!(blob.books[0].book().is_some());
         assert_eq!(at(&blob, 0).page, 42);
         assert_eq!(blob.shelves, legacy_blob.shelves);
         // And it round-trips under the new key's own names: a row carries the

@@ -2795,17 +2795,7 @@ mod tests {
     /// A measured Markdown file: the cover queue skips anything that is not a
     /// PDF, so a host test that lands one never starts the wasm render chain.
     fn found(path: &str, n: u32) -> FoundFile {
-        FoundFile {
-            rel: path.rsplit('/').next().unwrap_or(path).to_string(),
-            path: path.to_string(),
-            ext: "md".to_string(),
-            size: u64::from(n),
-            fp: Fingerprint {
-                size: u64::from(n),
-                mtime_ms: u64::from(n),
-                head_hash: n,
-            },
-        }
+        library_core::testkit::found_md(path, n)
     }
 
     /// The same file, with the `rel` a walk of `root` would report: the path
@@ -2822,14 +2812,7 @@ mod tests {
     }
 
     fn plain(id: &str) -> Shelf {
-        Shelf {
-            id: id.to_string(),
-            name: id.to_string(),
-            kind: Default::default(),
-            books: Vec::new(),
-            parent: None,
-            manual_parent: false,
-        }
+        library_core::testkit::plain_shelf(id, &[])
     }
 
     #[test]

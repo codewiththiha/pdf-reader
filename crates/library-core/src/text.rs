@@ -7,6 +7,16 @@
 //! while the modal said "12.4 MB" would be two components disagreeing about
 //! one file.
 
+/// An optional name with the blanks taken out: `None`, `""` and a run of
+/// spaces all answer `None`, and anything else answers itself, untrimmed.
+///
+/// One predicate for the rule the library asks of every name it is handed —
+/// a document's title, an author, the stem a sheet promises — which used to
+/// be spelled as a trim-and-filter at every site that cared.
+pub fn non_blank(text: Option<&str>) -> Option<&str> {
+    text.filter(|t| !t.trim().is_empty())
+}
+
 /// A byte count as a reader would say it.
 ///
 /// Binary units, decimal spelling: `1024 * 1024` bytes reads as "1.0 MB" and not
@@ -100,9 +110,7 @@ pub fn page_line(page: u32, num_pages: u32) -> String {
 /// row that each fell back their own way would eventually disagree about the
 /// same file.
 pub fn display_or_stem(title: Option<&str>, path: &str) -> String {
-    if let Some(title) = title
-        && !title.trim().is_empty()
-    {
+    if let Some(title) = non_blank(title) {
         return title.to_string();
     }
     // The stem's own one spelling — `crate::book::stem_of` — rather than a
@@ -112,7 +120,7 @@ pub fn display_or_stem(title: Option<&str>, path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{display_or_stem, human_age, human_size, page_line, plural};
+    use super::{display_or_stem, human_age, human_size, non_blank, page_line, plural};
 
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
@@ -175,6 +183,16 @@ mod tests {
         // The irregular plural is the caller's to spell, which is the whole of
         // why the rule takes both words.
         assert_eq!(plural(2, "shelf", "shelves"), "2 shelves");
+    }
+
+    #[test]
+    fn a_blank_name_is_no_name() {
+        assert_eq!(non_blank(None), None);
+        assert_eq!(non_blank(Some("")), None);
+        assert_eq!(non_blank(Some("   ")), None);
+        // Untrimmed on purpose: whether a name is worth showing and how it
+        // is spelled are two questions, and this answers only the first.
+        assert_eq!(non_blank(Some(" Dune ")), Some(" Dune "));
     }
 
     #[test]

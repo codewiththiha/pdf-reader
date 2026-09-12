@@ -89,8 +89,8 @@ pub fn record_read(
         return None;
     }
     let point = point.settled();
-    let title = title.filter(|t| !t.trim().is_empty());
-    let author = author.filter(|a| !a.trim().is_empty());
+    let title = crate::text::non_blank(title.as_deref()).map(str::to_string);
+    let author = crate::text::non_blank(author.as_deref()).map(str::to_string);
     let book = Book {
         title,
         author,
@@ -128,8 +128,8 @@ fn write_read(
         return false;
     }
     let point = point.settled();
-    let title = title.as_deref().filter(|t| !t.trim().is_empty());
-    let author = author.as_deref().filter(|a| !a.trim().is_empty());
+    let title = crate::text::non_blank(title.as_deref());
+    let author = crate::text::non_blank(author.as_deref());
     for i in at {
         // A link is never in the list `rows_for_read` answers with, and the
         // `else` is the guard that keeps that a property of this function
@@ -142,7 +142,7 @@ fn write_read(
         book.fraction = point.fraction;
         book.last_read_ms = now_ms;
         book.missing = false;
-        if book.title.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        if crate::text::non_blank(book.title.as_deref()).is_none() {
             if let Some(t) = title {
                 book.title = Some(t.to_string());
             }

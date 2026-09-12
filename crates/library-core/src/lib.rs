@@ -59,3 +59,11 @@ pub mod text;
 pub mod view;
 pub mod wire;
 
+/// The shared fixtures every host test builds its books, rows and shelves
+/// from. Compiled only for tests: the crate's own `cargo test`, or a
+/// dependent crate that asks for the `test-util` feature in its
+/// dev-dependencies — which is how the app crate's tests reach it and how a
+/// release bundle never does.
+#[cfg(any(test, feature = "test-util"))]
+pub mod testkit;
+

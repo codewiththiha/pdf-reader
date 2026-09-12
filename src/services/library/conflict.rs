@@ -1234,25 +1234,19 @@ mod tests {
     use reader_core::format::Format;
 
     fn fp(n: u32) -> Fingerprint {
-        Fingerprint {
-            size: u64::from(n),
-            mtime_ms: u64::from(n),
-            head_hash: n,
-        }
+        library_core::testkit::fp_n(n)
     }
 
     /// A Markdown row: the cover queue skips anything that is not a PDF, so a
     /// host test that lands a book never starts the wasm render chain.
     fn row(id: &str, title: &str, path: &str, n: u32) -> Row {
-        let mut book = Book::new(
-            id.to_string(),
-            fp(n),
-            Format::Markdown,
-            Origin::Linked { src: path.to_string() },
-            0,
-        );
-        book.title = Some(title.to_string());
-        Row::Book(book)
+        Row::Book(Book {
+            title: Some(title.to_string()),
+            fp: fp(n),
+            format: Format::Markdown,
+            origin: Origin::Linked { src: path.to_string() },
+            ..library_core::testkit::book(id)
+        })
     }
 
     /// A book row that has been read to `page`, so a fold has something to take.
@@ -1264,14 +1258,7 @@ mod tests {
     }
 
     fn shelf(id: &str, members: &[&str]) -> Shelf {
-        Shelf {
-            id: id.to_string(),
-            name: id.to_string(),
-            kind: Default::default(),
-            books: members.iter().map(|m| m.to_string()).collect(),
-            parent: None,
-            manual_parent: false,
-        }
+        library_core::testkit::plain_shelf(id, members)
     }
 
     /// A stored row: the library's own copy of a file, with the provenance a

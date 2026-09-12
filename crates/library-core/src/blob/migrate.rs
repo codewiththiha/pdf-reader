@@ -112,7 +112,7 @@ pub fn migrate_v1(legacy: Vec<RecentBook>, now_ms: u64) -> LibraryBlob {
                 fp: Fingerprint::placeholder(&b.path),
                 format: reader_core::format::format_of(&b.path),
                 origin: Origin::Linked { src: b.path },
-                title: b.title.filter(|t| !t.trim().is_empty()),
+                title: crate::text::non_blank(b.title.as_deref()).map(str::to_string),
                 author: None,
                 id,
                 // A migrated book was opened, so it has been read — but the old

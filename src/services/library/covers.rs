@@ -221,26 +221,16 @@ mod tests {
     fn book_value(path: &str, format: Format) -> Book {
         let len = path.len() as u64;
         Book {
-            id: path.to_string(),
             fp: Fingerprint {
                 size: len,
                 mtime_ms: 0,
                 head_hash: len as u32,
             },
-            title: None,
-            author: None,
             format,
             origin: Origin::Linked {
                 src: path.to_string(),
             },
-            added_ms: 0,
-            last_read_ms: 0,
-            page: 1,
-            num_pages: 0,
-            fraction: None,
-            missing: false,
-            fp_pending: false,
-            independent: false,
+            ..library_core::testkit::book(path)
         }
     }
 

@@ -305,8 +305,7 @@ pub fn filter(rows: &[Row], query: &str) -> Vec<Row> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::book::{Fingerprint, Origin};
-    use reader_core::format::Format;
+    use crate::book::Origin;
 
     /// A book row — the list a search reads is a list of rows.
     fn row(title: &str, author: Option<&str>, path: &str) -> Row {
@@ -323,26 +322,12 @@ mod tests {
 
     fn book(title: &str, author: Option<&str>, path: &str) -> Book {
         Book {
-            id: title.to_string(),
-            fp: Fingerprint {
-                size: 1,
-                mtime_ms: 1,
-                head_hash: 1,
-            },
             title: Some(title.to_string()),
             author: author.map(str::to_string),
-            format: Format::Pdf,
             origin: Origin::Linked {
                 src: path.to_string(),
             },
-            added_ms: 0,
-            last_read_ms: 0,
-            page: 1,
-            num_pages: 0,
-            fraction: None,
-            missing: false,
-            fp_pending: false,
-            independent: false,
+            ..crate::testkit::book(title)
         }
     }
 

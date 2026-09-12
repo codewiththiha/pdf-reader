@@ -81,15 +81,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn two_mints_in_one_tick_never_share_an_id() {
+    fn mints_of_one_tick_never_share_an_id() {
         // Two import tasks finishing their walks in the same millisecond: the
         // counter is the crate's, so the second mint differs from the first
-        // and no caller has to know what the other one minted.
+        // and no caller has to know what the other one minted. The three
+        // kinds are distinct twice over — the counter and the letter prefix,
+        // which is what keeps a shelf member list holding book and folder ids
+        // from reading one as the other.
         let now = 1_700_000_000_000;
-        let mut all = vec![next_id(now), next_id(now), next_shelf_id(now), next_folder_id(now)];
+        let mut all = vec![
+            next_id(now),
+            next_id(now),
+            next_shelf_id(now),
+            next_folder_id(now),
+            new_id(now, 3),
+            new_shelf_id(now, 3),
+            new_folder_id(now, 3),
+        ];
         all.sort();
         all.dedup();
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 7, "counter and prefix together keep all seven apart");
     }
 
     #[test]
@@ -98,27 +109,13 @@ mod tests {
         assert!(id.starts_with('b'));
         assert!(!id.contains(char::is_whitespace));
         assert_eq!(id.len(), 16);
-    }
-
-    #[test]
-    fn the_prefix_says_which_kind_a_token_is() {
+        // The prefix is the kind: a shelf answers, a book and a folder do not,
+        // and neither does a stray empty token.
         let (now, seq) = (1_700_000_000_000, 3);
         assert!(is_shelf(&new_shelf_id(now, seq)));
         assert!(!is_shelf(&new_id(now, seq)));
         assert!(!is_shelf(&new_folder_id(now, seq)));
         assert!(!is_shelf(""));
-    }
-
-    #[test]
-    fn the_three_kinds_never_collide() {
-        // A shelf member list and a folder id can land in the same blob; the
-        // letter prefix is what keeps a book from being read as either.
-        let (now, seq) = (1_700_000_000_000, 3);
-        let ids = [new_id(now, seq), new_shelf_id(now, seq), new_folder_id(now, seq)];
-        let mut distinct = ids.to_vec();
-        distinct.sort();
-        distinct.dedup();
-        assert_eq!(distinct.len(), 3);
     }
 
     #[test]

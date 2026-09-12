@@ -53,13 +53,13 @@ pub fn fold_books(survivor: &mut Book, gone: &Book) {
     survivor.page = point.page;
     survivor.fraction = point.fraction;
     survivor.num_pages = point.num_pages.max(survivor.num_pages).max(gone.num_pages);
-    if survivor.title.as_deref().map(str::trim).unwrap_or("").is_empty()
-        && let Some(title) = gone.title.clone().filter(|t| !t.trim().is_empty())
+    if crate::text::non_blank(survivor.title.as_deref()).is_none()
+        && let Some(title) = crate::text::non_blank(gone.title.as_deref())
     {
-        survivor.title = Some(title);
+        survivor.title = Some(title.to_string());
     }
     if survivor.author.is_none() {
-        survivor.author = gone.author.clone().filter(|a| !a.trim().is_empty());
+        survivor.author = crate::text::non_blank(gone.author.as_deref()).map(str::to_string);
     }
     survivor.added_ms = earliest_known(survivor.added_ms, gone.added_ms);
     survivor.last_read_ms = survivor.last_read_ms.max(gone.last_read_ms);

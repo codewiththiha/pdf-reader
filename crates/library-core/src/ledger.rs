@@ -545,11 +545,7 @@ mod tests {
     }
 
     fn fp(n: u32) -> Fingerprint {
-        Fingerprint {
-            size: u64::from(n),
-            mtime_ms: u64::from(n),
-            head_hash: n,
-        }
+        crate::testkit::fp_n(n)
     }
 
     fn file(n: u32, path: &str) -> FoundFile {
@@ -1097,20 +1093,15 @@ mod tests {
 
     fn book_value(id: &str, origin: Origin, missing: bool) -> Book {
         Book {
-            id: id.to_string(),
             fp: fp(1),
             title: Some("Dune".into()),
-            author: None,
-            format: Format::Pdf,
             origin,
             added_ms: 1,
             last_read_ms: 5,
             page: 42,
             num_pages: 400,
-            fraction: None,
             missing,
-            fp_pending: false,
-            independent: false,
+            ..crate::testkit::book(id)
         }
     }
 

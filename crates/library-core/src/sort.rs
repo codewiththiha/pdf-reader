@@ -171,13 +171,7 @@ pub fn sort_rows(rows: &mut [Row], key: SortKey, asc: bool) {
 /// every change to the books, and a shelf of hundreds inside a library of
 /// thousands is exactly where a quadratic walk becomes a dropped frame.
 pub fn ordered(rows: &[Row], members: &[String], key: SortKey, asc: bool) -> Vec<Row> {
-    let mut index: std::collections::HashMap<&str, &Row> =
-        std::collections::HashMap::with_capacity(rows.len());
-    for row in rows {
-        // First wins, which is `find`'s own answer for a list that somehow
-        // carries one id twice.
-        index.entry(row.id()).or_insert(row);
-    }
+    let index = crate::book::index_by_id(rows);
     let mut out: Vec<Row> = members
         .iter()
         .filter_map(|id| index.get(id.as_str()).map(|row| (*row).clone()))
@@ -189,31 +183,13 @@ pub fn ordered(rows: &[Row], members: &[String], key: SortKey, asc: bool) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::book::{Fingerprint, Origin, book_rows};
-    use reader_core::format::Format;
+    use crate::book::{Origin, book_rows};
 
     fn book(title: &str, author: Option<&str>) -> Book {
         Book {
-            id: title.to_string(),
-            fp: Fingerprint {
-                size: 1,
-                mtime_ms: 1,
-                head_hash: 1,
-            },
             title: Some(title.to_string()),
             author: author.map(str::to_string),
-            format: Format::Pdf,
-            origin: Origin::Linked {
-                src: format!("/books/{title}.pdf"),
-            },
-            added_ms: 0,
-            last_read_ms: 0,
-            page: 1,
-            num_pages: 0,
-            fraction: None,
-            missing: false,
-            fp_pending: false,
-            independent: false,
+            ..crate::testkit::book(title)
         }
     }
 

@@ -2080,19 +2080,7 @@ mod tests {
     /// A linked row. Markdown rather than PDF so nothing that reads these lists
     /// ever asks the cover queue to render one — a host test has no engine.
     fn row(id: &str) -> Row {
-        Row::Book(Book::new(
-            id.to_string(),
-            Fingerprint {
-                size: 1,
-                mtime_ms: 1,
-                head_hash: 1,
-            },
-            Format::Markdown,
-            Origin::Linked {
-                src: format!("/books/{id}.md"),
-            },
-            0,
-        ))
+        library_core::testkit::markdown_row(id)
     }
 
     fn list() -> Vec<Row> {

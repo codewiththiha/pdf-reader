@@ -44,6 +44,20 @@ pub fn find_book_mut<'a>(rows: &'a mut [Row], id: &str) -> Option<&'a mut Book> 
 /// list, and every other book at the address reads the address's — and the
 /// address is the answer otherwise, which is the shared rule and the honest
 /// fallback when the row went.
+/// Id → row, in one pass: the index a level's members resolve against rather
+/// than a walk of the library per member. Two modules each hand-rolled this
+/// map — the sort that renders a shelf and the collision that screens an
+/// arrival — and a third would have been a third first-wins rule. First wins
+/// on a list that somehow holds one id twice, which is [`crate::book::add_book`]'s
+/// own resolution and a state [`crate::book::sanitize`] heals on load.
+pub fn index_by_id(rows: &[Row]) -> std::collections::HashMap<&str, &Row> {
+    let mut index = std::collections::HashMap::with_capacity(rows.len());
+    for row in rows {
+        index.entry(row.id()).or_insert(row);
+    }
+    index
+}
+
 pub fn gloss_key_of(rows: &[Row], book_id: Option<&str>, path: &str) -> String {
     book_id
         .and_then(|id| find_by_id(rows, id))
