@@ -3,9 +3,9 @@
 //! A card used to answer a right-click with the removal receipt and nothing else,
 //! which is one row of a menu wearing the whole gesture. The receipt is still what
 //! a removal costs and still asks first — it is just reached from a row now, beside
-//! the things a right-click is actually for: opening, selecting, revealing the file
-//! in the OS's own manager, finding a book whose address died, taking a shelf
-//! apart.
+//! the things a right-click is actually for: opening, selecting, duplicating a row
+//! as a second copy beside itself, revealing the file in the OS's own manager,
+//! finding a book whose address died, taking a shelf apart.
 //!
 //! One host and one signal, for the reason the removal sheet is one: a right-click
 //! can land on a card, a row, a folder or the empty shelf, and four surfaces each
@@ -40,8 +40,8 @@ use crate::features::library::selection::{
 };
 use crate::services::document;
 use crate::services::library::{
-    create_shelf_and_enter, delete_shelf, path_of_row, path_of_shelf, relink_dialog,
-    reveal_in_folder, set_folder_watch, shelf_watch, ShelfWatch,
+    create_shelf_and_enter, delete_shelf, duplicate_row, duplicate_rows, path_of_row, path_of_shelf,
+    relink_dialog, reveal_in_folder, set_folder_watch, shelf_watch, ShelfWatch,
 };
 use crate::state::AppState;
 
@@ -179,6 +179,7 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
     // `move` takes what it captures.
     let open_id = id.clone();
     let select_id = id.clone();
+    let dup_id = id.clone();
     let relink_id = id.clone();
     let remove_id = id;
 
@@ -202,6 +203,18 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
+                }
+            />
+            <MenuItem
+                icon=IconName::Copy
+                label="Duplicate"
+                title="A second copy of this book, filed beside it".to_string()
+                // A duplicate is a copy, and a book whose address died has
+                // nothing to copy — the Open row's own rule.
+                disabled=missing
+                on_click=move || {
+                    close.run(());
+                    duplicate_row(state, &dup_id);
                 }
             />
             {reveal.map(|path| {
@@ -379,6 +392,7 @@ fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>
     let count = state.library.selected.with_untracked(|set| set.len());
     let heading = format!("{count} selected");
     let remove_label = format!("Remove ({count})");
+    let duplicate_label = format!("Duplicate ({count})");
 
     view! {
         <>
@@ -389,6 +403,23 @@ fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>
                 on_click=move || {
                     close.run(());
                     file_selection_on_new_shelf(state);
+                }
+            />
+            <MenuItem
+                icon=IconName::Copy
+                label=duplicate_label
+                // One row per selected thing, and each one is the single
+                // duplicate's own act — a copy beside the original, in the
+                // counter name the level gives it. Rows that cannot be copied
+                // (a book whose file died) are skipped by the service, which
+                // is where that fact lives.
+                on_click=move || {
+                    close.run(());
+                    let ids: Vec<String> = state
+                        .library
+                        .selected
+                        .with_untracked(|set| set.iter().cloned().collect());
+                    duplicate_rows(state, &ids);
                 }
             />
             <Separator spacing="my-1" />

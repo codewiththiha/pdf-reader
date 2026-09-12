@@ -835,7 +835,9 @@ The split is IO on one side and decisions on the other, and the wire between the
   walk with `library_core::folder::FolderOpts::admits_file` so a folder of forty thousand
   screenshots never crosses the wire, refuses symlinks and hidden directories, caps the depth and
   the result count, and gates every path through the crate's existing document gate. Its delete
-  command only removes a path that canonicalises inside the app's own store directory.
+  command only removes a path that canonicalises inside the app's own store directory, and its
+  beside-copy — the duplicate's (`copy_beside`) — only creates a document inside the original's
+  own directory, under a name that does not exist yet.
 - `library_core::wire` holds the four types that cross (`ImportProgress`, `PathCheck`,
   `StoreRequest`, `StoreResult`). Both sides depend on `library-core`, so there is one declaration
   and no contract test needed to prove the halves agree — which is an improvement on the AI chunk
@@ -1189,6 +1191,23 @@ link; the directory its tree cut it from for a watched folder's shelf (`path_of_
 shelf the reader owns has no ground and gets no row, a book whose address died gets a disabled
 one, and the shell's verb is per platform — the item selected on macOS and Windows, the
 containing folder on Linux, which has no standard select (`commands::library::reveal_in_folder`).
+
+One row makes a second instance of what was pointed at: *Duplicate*
+(`services::library::duplicate`). A book read AT ITS PLACE gets a second file beside the first —
+the shell's `commands::library::copy_beside` creates it inside the original's own directory under
+a name the frontend probed free, refuses a name already taken rather than overwriting it, and
+stamps it with its own modification time, so the copy measures as a second book and not as the
+first one twice; the folders whose ground the copy stands on take the placement into their
+ledgers, which is what makes removing the duplicate later a removal the next rescan honours
+instead of a book that walks back in. A book the library COPIED gets a second store copy through
+the store's own batch, named after the new row's id and known by the copy's own measurement, and
+a link duplicates as a link — a pointer costs a row, not bytes. Either way the duplicate is a row
+of its own: the counter name the level showing the original gives it
+(`library_core::conflict::next_name` — the collision sheet's convention), filed right behind the
+row the reader pointed at on every shelf the original is filed on, with a fresh resume point and
+fresh highlights. A book whose address died has nothing to copy and gets the disabled row, the
+Open row's own rule; the selection's menu duplicates the set, one task and one report, because
+two duplicates of one book asked in the same tick would race for one counter name.
 
 A card's right-click is stopped before the hold's exhaust is even asked about. A completed hold
 answers with a synthetic `contextmenu` on some platforms, and one that went on to bubble would open

@@ -27,7 +27,8 @@
 //! a rescan skips is `library_core`'s ledger; [`import`] runs it against the
 //! shell's answers and writes the result to the library state, [`arrange`]
 //! holds the moves a reader makes by hand (a drag between shelves, a shelf filed
-//! inside another, a removal, a relink), and [`conflict`] is the one question
+//! inside another, a removal, a relink), [`duplicate`] is the second instance
+//! of one row a right-click asks for, and [`conflict`] is the one question
 //! both ask before a placement lands: does the level this is going to already
 //! hold a book of this name? The rule itself is `library_core::conflict`'s —
 //! pure, and host-tested — and [`conflict`] is the wiring between it and the
@@ -35,11 +36,13 @@
 //!
 //! [`import`]: crate::services::library::import
 //! [`arrange`]: crate::services::library::arrange
+//! [`duplicate`]: crate::services::library::duplicate
 //! [`conflict`]: crate::services::library::conflict
 
 pub mod arrange;
 pub mod conflict;
 pub mod covers;
+pub mod duplicate;
 pub mod import;
 pub mod reveal;
 
@@ -50,6 +53,7 @@ pub use arrange::{
     relink_search_folder, rename_shelf, reorder_shelves_to_anchor, unfile_books,
 };
 pub use covers::backfill_missing;
+pub use duplicate::{duplicate_row, duplicate_rows};
 pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
     dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book,
@@ -133,6 +137,7 @@ const CMD_SCAN: &str = "scan_folder";
 const CMD_VERIFY: &str = "verify_paths";
 const CMD_STORE: &str = "store_books";
 const CMD_DELETE: &str = "delete_stored";
+const CMD_COPY_BESIDE: &str = "copy_beside";
 const CMD_REVEAL: &str = "reveal_in_folder";
 
 /// What every command here answers when there is no shell to answer: the same
@@ -177,6 +182,12 @@ struct PathsArgs {
 struct StoreArgs<'a> {
     task: &'a str,
     requests: &'a [StoreRequest],
+}
+
+#[derive(Serialize)]
+struct CopyBesideArgs<'a> {
+    path: &'a str,
+    dest: &'a str,
 }
 
 #[derive(Serialize)]
@@ -253,6 +264,16 @@ pub(crate) async fn copy_and_measure(
         .and_then(|checks| checks.into_iter().next())
         .and_then(|check| check.fingerprint());
     Ok((store, measured))
+}
+
+/// Copy ONE document beside itself, answering with the copy's own measurement:
+/// the read-at-place half of a duplicate (`crate::services::library::duplicate`).
+///
+/// `dest` is a counter name beside the original — the shell refuses a copy
+/// anywhere else and a name already taken, so a probe that raced a file
+/// arriving is an error the caller can step past rather than an overwrite.
+pub(crate) async fn copy_beside(path: &str, dest: &str) -> Result<PathCheck, String> {
+    call(CMD_COPY_BESIDE, &CopyBesideArgs { path, dest }).await
 }
 
 /// Ask the OS file manager to reveal a path: the item selected inside its

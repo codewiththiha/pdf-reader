@@ -47,6 +47,10 @@ pub enum IconName {
     /// one. Its own glyph rather than a borrowed arrow, because the row it sits
     /// on is the one thing on a shelf that is not a file.
     Link,
+    /// Two sheets, one behind the other — the shelf's "Duplicate": a second
+    /// instance of the row under the pointer. A copy of a document rather than
+    /// a folder or a link, because what it makes is one more book.
+    Copy,
     /// A plain folder — the "Reveal in folder" row: the OS's own file manager,
     /// opened on the item inside the directory it lives in. `Open`'s folder
     /// wears a line across it because that one opens a book; this one is the
@@ -94,6 +98,7 @@ fn icon_data(name: IconName) -> (&'static str, &'static str) {
         IconName::Plus => ("0 0 24 24", "<path d='M12 5v14M5 12h14'/>"),
         IconName::Close => ("0 0 24 24", "<path d='M18 6 6 18M6 6l12 12'/>"),
         IconName::Link => ("0 0 24 24", "<path d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/><path d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/>"),
+        IconName::Copy => ("0 0 24 24", "<rect x='8' y='8' width='14' height='14' rx='2'/><path d='M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2'/>"),
         IconName::Folder => ("0 0 24 24", "<path d='M2 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z'/>"),
         IconName::Eye => ("0 0 24 24", "<path d='M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0'/><circle cx='12' cy='12' r='3'/>"),
         IconName::EyeOff => ("0 0 24 24", "<path d='M10.73 5.08A10.75 10.75 0 0 1 12 5a10.75 10.75 0 0 1 9.94 6.65 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-4.43 5.14'/><path d='M6.61 6.61A10.75 10.75 0 0 0 2.06 11.65a1 1 0 0 0 0 .7 10.75 10.75 0 0 0 15.31 5.04'/><path d='M14.12 14.12a3 3 0 1 1-4.24-4.24'/><path d='m2 2 20 20'/>"),

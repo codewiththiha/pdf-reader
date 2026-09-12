@@ -18,6 +18,9 @@
 //!     modification time so it measures as the file it is rather than as the
 //!     one it came from ([`own_stamp`]);
 //!   * [`delete_stored`] removes a copy, and refuses anything outside it;
+//!   * [`copy_beside`] copies ONE document beside itself — the read-at-place
+//!     half of a duplicate — under a counter name the frontend minted, into
+//!     the original's own directory and nowhere else;
 //!   * [`reveal_in_folder`] hands a path to the OS file manager — the one
 //!     verb here that neither measures nor writes, and the one with no
 //!     document gate, because a shelf's DIRECTORY is as revealable as a
@@ -435,6 +438,72 @@ pub fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
     }
 }
 
+/// Copy ONE document beside itself — the read-at-place half of a duplicate.
+///
+/// A linked book's bytes belong to the reader's folder, so its duplicate is a
+/// second FILE beside the first rather than a store copy, wearing the file
+/// manager's counter name the frontend minted (`book_1.pdf`). `dest` is the
+/// frontend's answer and is not trusted: both ends pass the document gate, the
+/// copy must land in the SAME directory as the original — the containment that
+/// keeps a duplicate from being a general file-write primitive reachable from
+/// a webview that parses untrusted documents — and it must not exist yet: the
+/// copy is created `create_new`, so a name that was free at the frontend's
+/// probe and taken by the time this runs is refused rather than overwritten.
+///
+/// The copy takes its own modification time (`own_stamp`), the store copy's
+/// own rule: a copy that measured exactly like its source would wear the
+/// source's fingerprint, and the ledger would read two files as one book. The
+/// answer is the copy's own measurement, so the row the frontend mints is
+/// known by the copy's bytes from the start.
+#[tauri::command]
+pub async fn copy_beside(path: String, dest: String) -> Result<PathCheck, String> {
+    tauri::async_runtime::spawn_blocking(move || copy_beside_sync(&path, &dest))
+        .await
+        .map_err(|e| format!("copy worker failed: {e}"))?
+}
+
+fn copy_beside_sync(src: &str, dest: &str) -> Result<PathCheck, String> {
+    crate::ensure_readable_document(src)?;
+    crate::ensure_readable_document(dest)?;
+    let source = Path::new(src);
+    let target = Path::new(dest);
+    if source.parent() != target.parent() {
+        return Err("The copy has to live beside the original.".to_string());
+    }
+    let copied = (|| -> Result<(), String> {
+        let mut reader =
+            fs::File::open(source).map_err(|e| format!("Could not read {src}: {e}"))?;
+        let mut writer = fs::File::options()
+            .create_new(true)
+            .write(true)
+            .open(target)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    format!("A file is already at {dest}.")
+                } else {
+                    format!("Could not create {dest}: {e}")
+                }
+            })?;
+        std::io::copy(&mut reader, &mut writer)
+            .map_err(|e| format!("Could not write {dest}: {e}"))?;
+        Ok(())
+    })();
+    if copied.is_err() {
+        // A half-written copy is a file in the reader's folder nobody asked
+        // for: take it back off. Best effort — the copy's own failure is the
+        // one being reported.
+        let _ = fs::remove_file(target);
+        return copied;
+    }
+    own_stamp(target);
+    let check = check_path(dest);
+    if !check.exists {
+        let _ = fs::remove_file(target);
+        return Err(format!("Could not measure the copy at {dest}."));
+    }
+    Ok(check)
+}
+
 /// Reveal a path in the OS file manager: the item selected inside its folder
 /// on the platforms that have the verb (macOS, Windows), the containing
 /// folder opened on the platform that has not (Linux).
@@ -603,10 +672,53 @@ fn ensure_walkable(root: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extension_of, own_stamp, relative_to, sanitize_component};
+    use super::{copy_beside_sync, extension_of, own_stamp, relative_to, sanitize_component};
     use std::fs;
     use std::path::Path;
     use std::time::{Duration, SystemTime};
+
+    /// The two refusals that keep a beside-copy a duplicate rather than a
+    /// general write verb: a copy that is not beside the original, and a name
+    /// already taken — which is refused rather than overwritten, because the
+    /// file standing there is a reader's and the probe that named this one
+    /// free was a moment ago. And the copy that lands: bytes, own stamp and
+    /// measurement, the three things a duplicate's row is minted from.
+    #[test]
+    fn a_beside_copy_stays_beside_and_never_overwrites() {
+        let dir = std::env::temp_dir().join(format!("pdf-reader-beside-{}", std::process::id()));
+        let other = dir.join("other");
+        fs::create_dir_all(&other).expect("a scratch directory");
+        let src = dir.join("dune.pdf");
+        fs::write(&src, b"%PDF-1.7 dune").expect("a scratch file");
+        let src = src.to_string_lossy().into_owned();
+
+        // A copy elsewhere is refused, however document-shaped the path is.
+        let elsewhere = other.join("dune_1.pdf").to_string_lossy().into_owned();
+        assert!(copy_beside_sync(&src, &elsewhere).is_err());
+        assert!(!other.join("dune_1.pdf").exists());
+
+        // A name already taken is refused, and the file wearing it is
+        // untouched — create_new, not a copy over.
+        let taken = dir.join("dune_1.pdf");
+        fs::write(&taken, b"a reader's own file").expect("a scratch file");
+        let taken_s = taken.to_string_lossy().into_owned();
+        assert!(copy_beside_sync(&src, &taken_s).is_err());
+        assert_eq!(fs::read(&taken).expect("readable"), b"a reader's own file");
+
+        // A free name copies, and the answer is the copy's own measurement.
+        let free = dir.join("dune_2.pdf").to_string_lossy().into_owned();
+        let check = copy_beside_sync(&src, &free).expect("a copy");
+        assert!(check.exists);
+        assert_eq!(check.path, free);
+        assert_eq!(fs::read(&free).expect("readable"), b"%PDF-1.7 dune");
+        assert_eq!(
+            check.size,
+            fs::metadata(&free).expect("metadata").len(),
+            "the measurement is of the copy that landed"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn an_extension_is_lower_case_and_has_no_dot() {
