@@ -59,6 +59,43 @@ pub fn import_files(state: AppState, paths: Vec<String>, target: Option<String>)
     });
 }
 
+/// The read-at-place folder's answer for every loose file, before the
+/// level's name question: a file an in-place tree holds is a file the library
+/// already has a book for, and what the drop means is the folder's to say — a
+/// logged book comes back where the folder holds it, a standing book asks the
+/// covered question, and only a file no tree answers for stays in the walk as
+/// an ordinary import. Answers with the rows that came back and the covered
+/// questions the reader owes; `found` keeps only the ordinary half.
+fn screen_files(
+    state: AppState,
+    found: &mut Vec<FoundFile>,
+    shelf_id: &str,
+) -> (Vec<String>, Vec<ConflictAsk>) {
+    let mut restored: Vec<String> = Vec::new();
+    let mut covered_asks: Vec<ConflictAsk> = Vec::new();
+    found.retain(|file| match covered_fate(state, file) {
+        CoveredFate::Ordinary => true,
+        CoveredFate::Restore { folder_id, stone } => {
+            restored.push(restore_covered_file(state, file, &folder_id, &stone));
+            false
+        }
+        CoveredFate::Ask { folder_id, row_id } => {
+            // Named before the id is moved: the row's own name is what the
+            // sheet prints, and reading it after the constructor took the id
+            // would be reading a value that is no longer here.
+            let existing_name = state.library.row_name(&row_id);
+            covered_asks.push(ConflictAsk::covered(
+                Arrival::import(file.clone(), shelf_id.to_string(), None),
+                row_id,
+                existing_name,
+                folder_id,
+            ));
+            false
+        }
+    });
+    (restored, covered_asks)
+}
+
 /// Import loose files: measure them, then answer each one by the ground it
 /// stands on — a file of a read-at-place folder is that folder's business
 /// first, and the rest land as the library's own stored copies, except the
@@ -103,33 +140,8 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
         .clone()
         .unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string());
 
-    // The read-at-place folder's answer, before the level's name question: a
-    // file an in-place tree holds is a file the library already has a book
-    // for, and what the drop means is the folder's to say — a logged book
-    // comes back where the folder holds it, a standing book asks the covered
-    // question, and only a file no tree answers for is an ordinary import.
-    let mut restored: Vec<String> = Vec::new();
-    let mut covered_asks: Vec<ConflictAsk> = Vec::new();
-    found.retain(|file| match covered_fate(state, file) {
-        CoveredFate::Ordinary => true,
-        CoveredFate::Restore { folder_id, stone } => {
-            restored.push(restore_covered_file(state, file, &folder_id, &stone));
-            false
-        }
-        CoveredFate::Ask { folder_id, row_id } => {
-            // Named before the id is moved: the row's own name is what the
-            // sheet prints, and reading it after the constructor took the id
-            // would be reading a value that is no longer here.
-            let existing_name = state.library.row_name(&row_id);
-            covered_asks.push(ConflictAsk::covered(
-                Arrival::import(file.clone(), shelf_id.clone(), None),
-                row_id,
-                existing_name,
-                folder_id,
-            ));
-            false
-        }
-    });
+    // The read-at-place folder's answer, before the level's name question.
+    let (restored, covered_asks) = screen_files(state, &mut found, &shelf_id);
     // The books that came back are on their shelf already; write them before
     // the copies run, so a failure below cannot lose a restoration.
     if !restored.is_empty() {
