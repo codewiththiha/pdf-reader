@@ -8,7 +8,7 @@ use leptos::prelude::*;
 use library_core::book::{Book, Row, book_rows, drop_dangling_links, find_row, remove_row};
 use library_core::folder::Tombstone;
 use library_core::ledger::tombstone;
-use library_core::shelf::self as shelf;
+use library_core::shelf;
 
 use crate::services::library::covers::prune_now;
 use crate::services::library as wire;
