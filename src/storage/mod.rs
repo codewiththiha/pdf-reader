@@ -253,7 +253,7 @@ pub fn persist_library(library: LibraryState) {
 }
 
 /// [`persist_library`] for the cover cache, which is budgeted on its own key:
-/// the cap in `crate::state::library::COVER_CAP` is only a real quota if the
+/// the cap in `crate::services::library::covers::COVER_CAP` is only a real quota if the
 /// images are written back after a prune, not just dropped from memory.
 pub fn persist_covers(library: LibraryState) {
     if let Err(e) = library.covers.with_untracked(|covers| save_covers(covers)) {

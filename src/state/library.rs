@@ -26,7 +26,7 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use library_core::blob::LibraryBlob;
-use library_core::book::{Book, Row, book_rows};
+use library_core::book::Row;
 use library_core::folder::{self as folder_ops, WatchedFolder};
 use library_core::id;
 use library_core::shelf::{self, ALL_SHELF, Shelf};
@@ -43,8 +43,6 @@ use crate::time::now_ms;
 /// — is the library's real memory and quota budget. Past it the least recently
 /// read covers go; they are derived, and reopening a book renders its page 1
 /// again.
-pub const COVER_CAP: usize = 60;
-
 /// Persisted cover art for one book: the first page rendered to a small JPEG.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,35 +57,6 @@ pub struct CoverImage {
 /// is read out of a signal on every shelf render and cloned whole before every
 /// save; sharing the images makes those reads pointer copies.
 pub type CoverMap = std::collections::HashMap<String, Arc<CoverImage>>;
-
-/// Bring the cover cache back inside its budget, and drop the covers of books
-/// that are no longer in the library.
-///
-/// Two jobs in one pass because they are the same question — "is this cover
-/// still wanted?" — and the cap is only a real budget if an evicted book takes
-/// its art with it. The survivors are the most recently read, so a shelf the
-/// reader is scrolling through keeps the covers they are looking at.
-pub fn prune_covers(rows: &[Row], covers: &mut CoverMap) {
-    // The books, and only the books: a link has no address and no page 1, so
-    // it holds no art and keeps none alive.
-    let books: Vec<&Book> = book_rows(rows).collect();
-    let live: HashSet<&str> = books.iter().map(|b| b.path()).collect();
-    covers.retain(|path, _| live.contains(path.as_str()));
-    if covers.len() <= COVER_CAP {
-        return;
-    }
-    let mut by_recency: Vec<(String, u64)> = books
-        .iter()
-        .map(|b| (b.path().to_string(), b.last_read_ms.max(b.added_ms)))
-        .collect();
-    by_recency.sort_by_key(|(_, stamp)| std::cmp::Reverse(*stamp));
-    let keep: HashSet<&str> = by_recency
-        .iter()
-        .take(COVER_CAP)
-        .map(|(path, _)| path.as_str())
-        .collect();
-    covers.retain(|path, _| keep.contains(path.as_str()));
-}
 
 /// Which half of an import a dock card is showing. The shell reports
 /// [`ImportPhase`] for the two it can see; `Done` and `Failed` are the
@@ -290,6 +259,60 @@ pub struct AlreadyNote {
     pub kind: NoteKind,
 }
 
+/// One sheet's state: the question it is showing, and whether it is up.
+///
+/// The app's four sheets each spelled this pair on their own — a raise was
+/// two writes in an order nothing enforced, a cancel was two more, and an
+/// "open with nothing asked" was a state the type allowed and no reader could
+/// explain. One pair, one [`raise`](Sheet::raise), one
+/// [`dismiss`](Sheet::dismiss).
+///
+/// The signals stay public because two sheets close in ways that are more
+/// than a dismiss: the conflict queue pops the next question into `ask`
+/// without touching `open`, and the already-imported note closes with its ask
+/// still standing, because the reveal rides the close and reads it.
+pub struct Sheet<T: 'static> {
+    pub ask: RwSignal<Option<T>>,
+    pub open: RwSignal<bool>,
+}
+
+impl<T: 'static> Sheet<T> {
+    pub fn new() -> Self {
+        Self {
+            ask: RwSignal::new(None),
+            open: RwSignal::new(false),
+        }
+    }
+
+    /// Put the question on screen.
+    pub fn raise(&self, ask: T) {
+        self.ask.set(Some(ask));
+        self.open.set(true);
+    }
+
+    /// Take the sheet down, question and all.
+    pub fn dismiss(&self) {
+        self.ask.set(None);
+        self.open.set(false);
+    }
+}
+
+impl<T: 'static> Default for Sheet<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// Hand-written rather than derived: `RwSignal` is `Copy` whatever it holds,
+// and a derived `Copy` would demand `T: Copy` of questions that are values.
+impl<T: 'static> Clone for Sheet<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: 'static> Copy for Sheet<T> {}
+
 #[derive(Clone, Copy)]
 pub struct LibraryState {
     /// Every ROW, in the order the "All" shelf shows them: the books, and the
@@ -327,7 +350,7 @@ pub struct LibraryState {
     /// than by a component, which is why it lives here and not in a sheet's own
     /// handle: an import asks from inside a spawned future that outlived every
     /// component. See `crate::services::library::conflict`.
-    pub conflict: RwSignal<Option<ConflictAsk>>,
+    pub conflict: Sheet<ConflictAsk>,
     /// The collisions behind the one on screen.
     ///
     /// One question at a time is the sheet's whole shape, and a batch — a drag
@@ -338,40 +361,25 @@ pub struct LibraryState {
     /// which is what Cancel has always meant — the placements already answered
     /// keep their answers and the ones not asked simply do not land.
     pub conflict_waiting: RwSignal<Vec<ConflictAsk>>,
-    /// The pair of [`Self::conflict`] that the overlay lane and the Escape rule
-    /// can hold: the lane registry speaks in booleans. Every writer of the two
-    /// goes through the conflict service's `raise` and `cancel`, so while the
-    /// sheet is up they cannot drift; a lane arbitration that closes the sheet
-    /// behind its back leaves a payload nobody reads, and the next raise
-    /// replaces it.
-    pub conflict_open: RwSignal<bool>,
     /// The folder question a name collision at import raises: the shelf the
     /// level already holds, and the folder arriving under the same name. Its
-    /// own signal rather than a variant of [`Self::conflict`] because the two
-    /// sheets answer different arrivals — a book sheet's payload is an
+    /// own sheet rather than a variant of [`Self::conflict`] because the two
+    /// answer different arrivals — a book sheet's payload is an
     /// [`Arrival`](library_core::conflict::Arrival), and a folder has none
     /// yet: nothing has been measured when its name is the question.
-    pub shelf_conflict: RwSignal<Option<ShelfConflictAsk>>,
-    /// The pair of [`Self::shelf_conflict`] the lane and the Escape rule hold,
-    /// for the reason [`Self::conflict_open`] exists.
-    pub shelf_conflict_open: RwSignal<bool>,
+    pub shelf_conflict: Sheet<ShelfConflictAsk>,
     /// The "that folder is already a shelf here" note: which shelf to light when
     /// it closes, the name the modal speaks, and which sentence it says. Two of
     /// the three are a report; the third is a question with a second answer.
-    pub already_imported: RwSignal<Option<AlreadyNote>>,
-    /// The pair of [`Self::already_imported`] the lane and the Escape rule
-    /// hold, for the reason [`Self::conflict_open`] exists.
-    pub already_imported_open: RwSignal<bool>,
+    /// Closes WITHOUT a dismiss — the reveal on close reads the ask.
+    pub already_imported: Sheet<AlreadyNote>,
     /// The shelf departure's question: a read-at-place shelf a hand is taking
     /// off the seat its folder's tree names for it, which is a move the library
-    /// owes copies for. Its own signal rather than a variant of the name sheet
+    /// owes copies for. Its own sheet rather than a variant of the name sheet
     /// because nothing collides — no membership arrives on any level — and the
     /// question is the move's COST, with two answers: pay it, or leave the
     /// shelf where the tree put it. See `crate::services::library::arrange`.
-    pub shelf_departure: RwSignal<Option<ShelfDepartureAsk>>,
-    /// The pair of [`Self::shelf_departure`] the lane and the Escape rule hold,
-    /// for the reason [`Self::conflict_open`] exists.
-    pub shelf_departure_open: RwSignal<bool>,
+    pub shelf_departure: Sheet<ShelfDepartureAsk>,
 }
 
 impl Default for LibraryState {
@@ -392,15 +400,11 @@ impl Default for LibraryState {
             reveal: RwSignal::new(None),
             selecting: RwSignal::new(false),
             selected: RwSignal::new(HashSet::new()),
-            conflict: RwSignal::new(None),
+            conflict: Sheet::new(),
             conflict_waiting: RwSignal::new(Vec::new()),
-            conflict_open: RwSignal::new(false),
-            shelf_conflict: RwSignal::new(None),
-            shelf_conflict_open: RwSignal::new(false),
-            already_imported: RwSignal::new(None),
-            already_imported_open: RwSignal::new(false),
-            shelf_departure: RwSignal::new(None),
-            shelf_departure_open: RwSignal::new(false),
+            shelf_conflict: Sheet::new(),
+            already_imported: Sheet::new(),
+            shelf_departure: Sheet::new(),
         }
     }
 }
@@ -548,76 +552,6 @@ impl LibraryState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use library_core::book::{Fingerprint, Origin};
-
-    /// A book row: the cover cache is keyed by address, and a link has none.
-    fn book(path: &str, last_read: u64) -> Row {
-        Row::Book(book_value(path, last_read))
-    }
-
-    fn book_value(path: &str, last_read: u64) -> Book {
-        let len = path.len() as u64;
-        Book {
-            fp: Fingerprint {
-                size: len,
-                mtime_ms: last_read,
-                head_hash: len as u32,
-            },
-            origin: Origin::Linked {
-                src: path.to_string(),
-            },
-            added_ms: last_read,
-            last_read_ms: last_read,
-            ..library_core::testkit::book(path)
-        }
-    }
-
-    fn cover() -> Arc<CoverImage> {
-        Arc::new(CoverImage {
-            data_url: "data:image/jpeg;base64,x".to_string(),
-            width: 240.0,
-            height: 320.0,
-        })
-    }
-
-    #[test]
-    fn a_cover_outlives_nothing_it_does_not_belong_to() {
-        let books = vec![book("/a.pdf", 1), book("/b.pdf", 2), Row::link(
-            "l1".into(),
-            "A".into(),
-            "/a.pdf".into(),
-            3,
-        )];
-        let mut covers: CoverMap = [
-            ("/a.pdf".to_string(), cover()),
-            ("/b.pdf".to_string(), cover()),
-            ("/gone.pdf".to_string(), cover()),
-        ]
-        .into_iter()
-        .collect();
-        prune_covers(&books, &mut covers);
-        assert_eq!(covers.len(), 2, "a link keeps no art alive and holds none");
-        assert!(!covers.contains_key("/gone.pdf"));
-    }
-
-    #[test]
-    fn the_cap_keeps_the_most_recently_read() {
-        let books: Vec<Row> = (0..(COVER_CAP + 5))
-            .map(|i| book(&format!("/books/{i}.pdf"), i as u64))
-            .collect();
-        let mut covers: CoverMap = books
-            .iter()
-            .filter_map(Row::book)
-            .map(|b| (b.path().to_string(), cover()))
-            .collect();
-        prune_covers(&books, &mut covers);
-        assert_eq!(covers.len(), COVER_CAP);
-        // The five never-read-again books at the head of the list are the ones
-        // that went.
-        assert!(!covers.contains_key("/books/0.pdf"));
-        assert!(!covers.contains_key("/books/4.pdf"));
-        assert!(covers.contains_key("/books/5.pdf"));
-    }
 
     #[test]
     fn a_beat_moves_the_card_and_never_finishes_it() {

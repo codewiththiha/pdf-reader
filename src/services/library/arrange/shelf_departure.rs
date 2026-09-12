@@ -11,7 +11,7 @@ use library_core::book::{Origin, Row, book_rows, duplicate_title};
 use library_core::folder::{self as folder_ops, WatchedFolder};
 use library_core::shelf::{self as shelf, Shelf};
 
-use crate::services::library::covers::self;
+use crate::services::library::covers;
 use crate::services::library::{folder_label, toast};
 use crate::state::AppState;
 
@@ -395,16 +395,14 @@ pub(super) fn raise_departure(
     let Some(ask) = ShelfDepartureAsk::of(state, departing, target, seam) else {
         return;
     };
-    state.library.shelf_departure.set(Some(ask));
-    state.library.shelf_departure_open.set(true);
+    state.library.shelf_departure.raise(ask);
 }
 
 /// Walk away from the departure question: nothing moves, nothing copies, and
 /// the clean half of the gesture — the books and the reader's own shelves that
 /// landed before the sheet rose — keeps its landing.
 pub fn cancel_departure(state: AppState) {
-    state.library.shelf_departure.set(None);
-    state.library.shelf_departure_open.set(false);
+    state.library.shelf_departure.dismiss();
 }
 
 /// The sheet's family answer: no copies — every mover that has a way home
@@ -418,7 +416,7 @@ pub fn cancel_departure(state: AppState) {
 /// that moved, so the answer ends on the shelf in the place the sentence
 /// promised rather than on a modal claiming it worked.
 pub fn answer_departure_return(state: AppState) {
-    let Some(ask) = state.library.shelf_departure.get_untracked() else {
+    let Some(ask) = state.library.shelf_departure.ask.get_untracked() else {
         return;
     };
     cancel_departure(state);
@@ -449,7 +447,7 @@ pub fn answer_departure_return(state: AppState) {
 /// screen at once, the import's own shape: the dock and the toasts own the
 /// feedback from here on.
 pub fn confirm_departure(state: AppState) {
-    let Some(ask) = state.library.shelf_departure.get_untracked() else {
+    let Some(ask) = state.library.shelf_departure.ask.get_untracked() else {
         return;
     };
     cancel_departure(state);

@@ -112,7 +112,7 @@ mod tests {
         let (clean, asks) = screen(state, vec![Arrival::import(file("Report", 2), "t", None)]);
         assert_eq!(clean.len(), 1);
         assert!(asks.is_empty());
-        assert!(!state.library.conflict_open.get_untracked());
+        assert!(!state.library.conflict.open.get_untracked());
     }
 
     #[test]
@@ -151,8 +151,8 @@ mod tests {
         assert_eq!(asks[1].existing_id, "b2");
 
         raise(state, asks);
-        assert!(state.library.conflict_open.get_untracked());
-        let on_screen = state.library.conflict.get_untracked().expect("a question");
+        assert!(state.library.conflict.open.get_untracked());
+        let on_screen = state.library.conflict.ask.get_untracked().expect("a question");
         assert_eq!(on_screen.existing_id, "b1", "one question at a time");
         assert_eq!(
             state.library.conflict_waiting.get_untracked().len(),
@@ -168,7 +168,7 @@ mod tests {
         );
         raise(state, more);
         assert_eq!(
-            state.library.conflict.get_untracked().map(|a| a.existing_id).as_deref(),
+            state.library.conflict.ask.get_untracked().map(|a| a.existing_id).as_deref(),
             Some("b1"),
             "the question on screen is still the one that was asked first"
         );
@@ -176,9 +176,9 @@ mod tests {
 
         // Cancel drops what is waiting, which is what Cancel has always meant.
         cancel(state);
-        assert!(state.library.conflict.get_untracked().is_none());
+        assert!(state.library.conflict.ask.get_untracked().is_none());
         assert!(state.library.conflict_waiting.get_untracked().is_empty());
-        assert!(!state.library.conflict_open.get_untracked());
+        assert!(!state.library.conflict.open.get_untracked());
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(state.library.shelf.get_untracked(), "s");
         let first = state.library.reveal.get_untracked().expect("a reveal");
         assert_eq!(first.id, "b1");
-        assert!(!state.library.conflict_open.get_untracked());
+        assert!(!state.library.conflict.open.get_untracked());
 
         // Asking again is asking again: the nonce is what makes a second
         // reveal of the same row a second gesture rather than an equal value
@@ -239,7 +239,7 @@ mod tests {
             Some(vec!["b1".to_string(), link.id().to_string()]),
             "filed on the level it was dropped on, beside the book it points at"
         );
-        assert!(!state.library.conflict_open.get_untracked());
+        assert!(!state.library.conflict.open.get_untracked());
     }
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
             vec!["b1".to_string()],
             "and on every shelf the dissolved row held"
         );
-        assert!(!state.library.conflict_open.get_untracked());
+        assert!(!state.library.conflict.open.get_untracked());
     }
 
     #[test]
@@ -377,7 +377,7 @@ mod tests {
         );
         let id = state.library.reveal.get_untracked().expect("a reveal").id;
         assert_eq!(id, "b1", "and the light lands on the book the folder holds");
-        assert!(!state.library.conflict_open.get_untracked());
+        assert!(!state.library.conflict.open.get_untracked());
     }
 
     #[test]
@@ -386,7 +386,7 @@ mod tests {
         // is written, no run starts, and the reveal lands on the shelf whose
         // name the arrival carried, wherever it hangs.
         let (_owner, state) = library(Vec::new(), vec![shelf("s1", &[])]);
-        state.library.shelf_conflict.set(Some(ShelfConflictAsk {
+        state.library.shelf_conflict.ask.set(Some(ShelfConflictAsk {
             incoming_name: "Books".to_string(),
             existing_id: "s1".to_string(),
             existing_name: "Books".to_string(),
@@ -397,7 +397,7 @@ mod tests {
             },
             own: true,
         }));
-        state.library.shelf_conflict_open.set(true);
+        state.library.shelf_conflict.open.set(true);
 
         answer_shelf(state, ShelfAnswer::Show);
 
@@ -408,7 +408,7 @@ mod tests {
         let reveal = state.library.reveal.get_untracked().expect("a reveal");
         assert_eq!(reveal.id, "s1", "and the light lands on the shelf that is here");
         assert!(
-            !state.library.shelf_conflict_open.get_untracked(),
+            !state.library.shelf_conflict.open.get_untracked(),
             "the answer closed the sheet"
         );
     }

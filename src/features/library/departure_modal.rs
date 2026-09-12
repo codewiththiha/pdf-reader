@@ -46,14 +46,14 @@ use crate::state::AppState;
 
 #[component]
 pub(crate) fn ShelfDepartureModal(state: AppState) -> impl IntoView {
-    let open = state.library.shelf_departure_open;
+    let open = state.library.shelf_departure.open;
 
     // A close that came from the lane registry, the Escape key or the shell's
     // backdrop wrote only the boolean; the question goes with it, so a
     // gesture that was dismissed can never land behind the reader's back.
     Effect::new(move |_| {
         if !open.get() {
-            state.library.shelf_departure.set(None);
+            state.library.shelf_departure.ask.set(None);
         }
     });
 
@@ -64,7 +64,7 @@ pub(crate) fn ShelfDepartureModal(state: AppState) -> impl IntoView {
             width="min(92vw, 420px)"
         >
             {move || {
-                let ask = state.library.shelf_departure.get()?;
+                let ask = state.library.shelf_departure.ask.get()?;
                 let info = Info::of(&ask);
                 Some(view! { <DepartureSheet state=state info=info /> }.into_any())
             }}

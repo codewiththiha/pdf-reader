@@ -315,8 +315,8 @@ pub fn raise(state: AppState, asks: Vec<ConflictAsk>) {
     if asks.is_empty() {
         return;
     }
-    let open = state.library.conflict_open.get_untracked();
-    if open && state.library.conflict.get_untracked().is_some() {
+    let open = state.library.conflict.open.get_untracked();
+    if open && state.library.conflict.ask.get_untracked().is_some() {
         state.library.conflict_waiting.update(|waiting| {
             waiting.extend(asks);
         });
@@ -327,8 +327,7 @@ pub fn raise(state: AppState, asks: Vec<ConflictAsk>) {
     state.library.conflict_waiting.update(|waiting| {
         waiting.extend(asks);
     });
-    state.library.conflict.set(Some(first));
-    state.library.conflict_open.set(true);
+    state.library.conflict.raise(first);
 }
 
 /// The question on screen is answered: the next one up, or the sheet closes.
@@ -342,7 +341,7 @@ pub(super) fn advance(state: AppState) {
             state.library.conflict_waiting.update(|waiting| {
                 waiting.remove(0);
             });
-            state.library.conflict.set(Some(ask));
+            state.library.conflict.ask.set(Some(ask));
         }
         None => cancel(state),
     }
@@ -352,9 +351,8 @@ pub(super) fn advance(state: AppState) {
 /// question on screen and every one behind it are skipped: the placements
 /// already answered keep their answers, and the rest simply do not land.
 pub fn cancel(state: AppState) {
-    state.library.conflict.set(None);
+    state.library.conflict.dismiss();
     state.library.conflict_waiting.set(Vec::new());
-    state.library.conflict_open.set(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,7 +395,7 @@ pub(super) fn answer_batch<A: Copy + 'static>(
     is_mine: fn(&AskKind) -> bool,
     apply: fn(AppState, &ConflictAsk, A),
 ) {
-    let Some(ask) = state.library.conflict.get_untracked() else {
+    let Some(ask) = state.library.conflict.ask.get_untracked() else {
         return;
     };
     if !is_mine(&ask.kind) {
@@ -408,7 +406,7 @@ pub(super) fn answer_batch<A: Copy + 'static>(
     if !apply_all {
         return;
     }
-    while let Some(next) = state.library.conflict.get_untracked() {
+    while let Some(next) = state.library.conflict.ask.get_untracked() {
         if !is_mine(&next.kind) {
             break;
         }

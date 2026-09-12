@@ -9,7 +9,6 @@ use leptos::prelude::*;
 use library_core::folder::self as folder_ops;
 use library_core::shelf::{self as shelf, Shelf, ALL_SHELF};
 
-use crate::services::library::covers::self;
 use crate::state::AppState;
 use crate::time::now_ms;
 

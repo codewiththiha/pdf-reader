@@ -23,7 +23,7 @@ use crate::state::AppState;
 
 /// One of the three buttons.
 pub fn answer(state: AppState, answer: Answer) {
-    let Some(ask) = state.library.conflict.get_untracked() else {
+    let Some(ask) = state.library.conflict.ask.get_untracked() else {
         return;
     };
     match answer {
@@ -45,7 +45,7 @@ pub fn answer(state: AppState, answer: Answer) {
 /// row rather than minting one — and an ask whose arrival names no row (it went
 /// while the sheet was up) has nothing to write, so it is answered by moving on.
 pub fn answer_move(state: AppState, answer: MoveAnswer) {
-    let Some(ask) = state.library.conflict.get_untracked() else {
+    let Some(ask) = state.library.conflict.ask.get_untracked() else {
         return;
     };
     if ask.arrival.moving.is_none() {

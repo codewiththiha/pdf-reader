@@ -66,7 +66,7 @@ use name_sheet::NameSheet;
 /// the one door every raiser and this view already share.
 #[component]
 pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
-    let open = state.library.conflict_open;
+    let open = state.library.conflict.open;
 
     // A close that came from the lane registry, the Escape key or the shell's
     // backdrop wrote only the boolean; the question and the ones waiting
@@ -74,7 +74,7 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
     // somebody already dismissed.
     Effect::new(move |_| {
         if !open.get() {
-            state.library.conflict.set(None);
+            state.library.conflict.ask.set(None);
             state.library.conflict_waiting.set(Vec::new());
         }
     });
@@ -86,7 +86,7 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
             width="min(92vw, 420px)"
         >
             {move || {
-                let ask = state.library.conflict.get()?;
+                let ask = state.library.conflict.ask.get()?;
                 // A folder merge's file asks wear the compact sheet: the
                 // shelf's question is already answered, and what is left is a
                 // run of files with the same three doors each.

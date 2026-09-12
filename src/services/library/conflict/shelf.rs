@@ -93,13 +93,12 @@ pub enum ShelfAnswer {
 /// Put the folder question on screen. One question, no queue: a folder import
 /// is one run, and the run does not start until it is answered.
 pub fn raise_shelf(state: AppState, ask: ShelfConflictAsk) {
-    state.library.shelf_conflict.set(Some(ask));
-    state.library.shelf_conflict_open.set(true);
+    state.library.shelf_conflict.raise(ask);
 }
 
 /// One of the folder sheet's buttons.
 pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
-    let Some(ask) = state.library.shelf_conflict.get_untracked() else {
+    let Some(ask) = state.library.shelf_conflict.ask.get_untracked() else {
         return;
     };
     cancel_shelf(state);
@@ -180,6 +179,5 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
 /// Cancel the folder question: the import simply does not run, which is what
 /// Cancel has always meant.
 pub fn cancel_shelf(state: AppState) {
-    state.library.shelf_conflict.set(None);
-    state.library.shelf_conflict_open.set(false);
+    state.library.shelf_conflict.dismiss();
 }

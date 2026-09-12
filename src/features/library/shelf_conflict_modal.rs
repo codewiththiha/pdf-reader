@@ -49,14 +49,14 @@ use crate::state::AppState;
 
 #[component]
 pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
-    let open = state.library.shelf_conflict_open;
+    let open = state.library.shelf_conflict.open;
 
     // A close that came from the lane registry, the Escape key or the shell's
     // backdrop wrote only the boolean; the question goes with it, so the sheet
     // can never reopen onto a folder somebody already dismissed.
     Effect::new(move |_| {
         if !open.get() {
-            state.library.shelf_conflict.set(None);
+            state.library.shelf_conflict.ask.set(None);
         }
     });
 
@@ -67,7 +67,7 @@ pub(crate) fn ShelfConflictModal(state: AppState) -> impl IntoView {
             width="min(92vw, 420px)"
         >
             {move || {
-                let ask = state.library.shelf_conflict.get()?;
+                let ask = state.library.shelf_conflict.ask.get()?;
                 let info = Info::of(state, &ask);
                 Some(view! { <ShelfSheet state=state info=info /> }.into_any())
             }}

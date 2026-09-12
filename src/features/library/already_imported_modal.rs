@@ -42,7 +42,7 @@ use crate::state::AppState;
 
 #[component]
 pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
-    let open = state.library.already_imported_open;
+    let open = state.library.already_imported.open;
 
     // Any close ends on the highlight: take the shelf the note named, light
     // it, and clear the note so the modal can never reopen onto a folder
@@ -51,10 +51,10 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
         if open.get() {
             return;
         }
-        let Some(note) = state.library.already_imported.get_untracked() else {
+        let Some(note) = state.library.already_imported.ask.get_untracked() else {
             return;
         };
-        state.library.already_imported.set(None);
+        state.library.already_imported.ask.set(None);
         reveal_shelf(state, &note.shelf_id);
     });
 
@@ -65,7 +65,7 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
             width="min(92vw, 400px)"
         >
             {move || {
-                let AlreadyNote { name, kind, .. } = state.library.already_imported.get()?;
+                let AlreadyNote { name, kind, .. } = state.library.already_imported.ask.get()?;
                 let sublabel = kind.sublabel().to_string();
                 // Three sentences, one shelf light. The gate's is for a pick
                 // that never walked — a rung inside a tree the library reads

@@ -26,18 +26,18 @@ use crate::state::AppState;
 /// shelf that went home. Raisers that differed by a boolean were that many
 /// places to keep in step about which sentence the reader was owed.
 pub fn raise_note(state: AppState, shelf_id: String, name: String, kind: NoteKind) {
-    state
-        .library
-        .already_imported
-        .set(Some(AlreadyNote { shelf_id, name, kind }));
-    state.library.already_imported_open.set(true);
+    state.library.already_imported.raise(AlreadyNote {
+        shelf_id,
+        name,
+        kind,
+    });
 }
 
 /// Acknowledge the "already imported" note. The highlight is the modal's own
 /// close effect's job, so every way out — the button, the backdrop, Escape,
 /// the lane — ends on the shelf being lit.
 pub fn close_already_imported(state: AppState) {
-    state.library.already_imported_open.set(false);
+    state.library.already_imported.open.set(false);
 }
 
 // ---------------------------------------------------------------------------
