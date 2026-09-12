@@ -13,8 +13,11 @@
 //! the way out ([`convert_to_stored`]), because a book no folder answers for
 //! has to be a book the library holds outright — its bytes its own, its
 //! identity the copy's own fingerprint, and the ORIGINAL fingerprint free for
-//! the folder's log to keep. A re-arrangement inside the folder's own tree,
-//! and every move of a book that is already stored, stays a membership edit.
+//! the folder's log to keep. The ground is the rung the folder's own tree
+//! names for the file's address and not the folder's shelf tree as a whole, so
+//! a drag from one rung of a watched folder to another departs as well; only a
+//! re-order on the book's own rung, and every move of a book that is already
+//! stored, stays a membership edit.
 //!
 //! The rule is also what makes the ledger's hardest row true without anybody
 //! having to remember it: dragging a book off a watched folder's shelf leaves
@@ -82,6 +85,24 @@ pub fn move_many_to_shelf(
     to: String,
     index: Option<usize>,
 ) {
+    seat_many(state, book_ids, from, to, index, &[]);
+}
+
+/// [`move_many_to_shelf`], knowing which rows THIS gesture turned into copies.
+///
+/// The public entry has converted nothing yet, so it passes an empty list and
+/// every stored book it lands can bind a folder's moved-out log as a return.
+/// The departure gate's retry passes the rows it just copied, and those land
+/// without binding: the log they wrote is the one a bind would find, and a
+/// departure is not a return — see [`convert_departures`].
+fn seat_many(
+    state: AppState,
+    book_ids: &[String],
+    from: Option<String>,
+    to: String,
+    index: Option<usize>,
+    departed: &[String],
+) {
     if book_ids.is_empty() {
         return;
     }
@@ -94,8 +115,8 @@ pub fn move_many_to_shelf(
     // says so.
     if to != ALL_SHELF && from.as_deref().is_some_and(|f| f != to) {
         let (lifted_from, landed_on) = (from.clone(), to.clone());
-        if convert_departures(state, book_ids, &to, move |rest| {
-            move_many_to_shelf(state, &rest, lifted_from, landed_on, index)
+        if convert_departures(state, book_ids, &to, move |rest, gone| {
+            seat_many(state, &rest, lifted_from, landed_on, index, &gone)
         }) {
             return;
         }
@@ -141,9 +162,13 @@ pub fn move_many_to_shelf(
         });
         crate::storage::persist_library(state.library);
         // A stored book landing back on a shelf of the folder it left is a
-        // return, and the folder's moved-out log records it.
+        // return, and the folder's moved-out log records it — unless this
+        // gesture is the one that made the copy, whose landing would bind the
+        // very log it just wrote.
         for book_id in &book_ids {
-            bind_returned(state, book_id, &to);
+            if !departed.contains(book_id) {
+                bind_returned(state, book_id, &to);
+            }
         }
     }
     // Raised after the clean half landed: the sheet counts the questions, and
@@ -205,17 +230,34 @@ fn clean_move_ids(clean: Vec<Arrival>) -> Vec<String> {
 /// pointed at. The root is the exception the root always was: it has no member
 /// list, so a move there is a lift out of every shelf and — when the drop named
 /// a slot — a move inside the library's own order, which IS that level's list.
-pub fn move_row(state: AppState, row_id: &str, shelf_id: &str, index: Option<usize>) {
+///
+/// `departed` says the row became the library's own copy in THIS gesture — the
+/// caller converted it, or the gate below did and is running the move again.
+/// Such a row lands without binding a folder's moved-out log to itself: the log
+/// it would bind is the one its own departure just wrote, and a departure is not
+/// a return. See [`convert_departures`].
+pub fn move_row(
+    state: AppState,
+    row_id: &str,
+    shelf_id: &str,
+    index: Option<usize>,
+    departed: bool,
+) {
     // The departure gate, for the one-row form: convert first, then run the
     // move again over the stored row, so the shelf writes below are the whole
     // of what happens and happen in one order.
     {
         let (row, landed_on) = (row_id.to_string(), shelf_id.to_string());
-        if convert_departures(state, std::slice::from_ref(&row), shelf_id, move |rest| {
-            if let Some(one) = rest.into_iter().next() {
-                move_row(state, &one, &landed_on, index);
-            }
-        }) {
+        if convert_departures(
+            state,
+            std::slice::from_ref(&row),
+            shelf_id,
+            move |rest, gone| {
+                if let Some(one) = rest.into_iter().next() {
+                    move_row(state, &one, &landed_on, index, gone.contains(&one));
+                }
+            },
+        ) {
             return;
         }
     }
@@ -240,7 +282,9 @@ pub fn move_row(state: AppState, row_id: &str, shelf_id: &str, index: Option<usi
         }
     });
     crate::storage::persist_library(state.library);
-    bind_returned(state, row_id, shelf_id);
+    if !departed {
+        bind_returned(state, row_id, shelf_id);
+    }
 }
 
 /// Take books off a shelf without filing them anywhere else.
@@ -264,10 +308,12 @@ pub fn unfile_books(state: AppState, book_ids: &[String], shelf_id: &str) {
     }
     // A lift OUT of a folder's shelf is a departure like any other move: a
     // read-at-place book becomes the library's own copy on the way out, and
-    // the lift then runs again over the stored rows.
+    // the lift then runs again over the stored rows. The rows it converted are
+    // of no interest here: a lift out files the book on no shelf, and only a
+    // landing on a shelf of the folder it left can read as a return.
     {
         let lifted_from = shelf_id.to_string();
-        if convert_departures(state, book_ids, ALL_SHELF, move |rest| {
+        if convert_departures(state, book_ids, ALL_SHELF, move |rest, _| {
             unfile_books(state, &rest, &lifted_from)
         }) {
             return;
@@ -384,11 +430,22 @@ fn insert_many<T>(list: &mut Vec<T>, items: impl Iterator<Item = T>, index: Opti
 /// was, linked, the toast says so, and the other books in the same drag still go.
 /// `retry` runs the move over the survivors and is called from the spawned task,
 /// which is what lets the caller return at once and keep its own shape.
+///
+/// `retry` takes the survivors AND the rows this gate turned into copies, because
+/// the landing owes them one exception: a departure writes a moved-out log, and
+/// the copy then lands — often on another shelf of the very folder it left, which
+/// is where a reader re-arranging a watched tree puts it. [`bind_returned`] reads
+/// a stored book landing on a shelf of the folder it left as the book coming
+/// HOME, and a log bound to a row is one a later import answers by lighting that
+/// row up instead of bringing the linked book back. One gesture cannot be both
+/// the departure and the return, so the rows this gate converted are named to the
+/// landing and the bind stands aside for them; a drag of the same row back on a
+/// LATER gesture is a return and binds as it always did.
 fn convert_departures(
     state: AppState,
     ids: &[String],
     to: &str,
-    retry: impl FnOnce(Vec<String>) + 'static,
+    retry: impl FnOnce(Vec<String>, Vec<String>) + 'static,
 ) -> bool {
     if !tauri_bridge::has_tauri() {
         return false;
@@ -413,7 +470,13 @@ fn convert_departures(
         super::covers::backfill_missing(state);
         let rest: Vec<String> = all.into_iter().filter(|id| !failed.contains(id)).collect();
         if !rest.is_empty() {
-            retry(rest);
+            // A copy that failed left the row linked and logged nothing, so it
+            // departs nothing either.
+            let departed: Vec<String> = converting
+                .into_iter()
+                .filter(|id| !failed.contains(id))
+                .collect();
+            retry(rest, departed);
         }
     });
     true
@@ -444,40 +507,56 @@ impl Default for PurgeOpts {
 // ---------------------------------------------------------------------------
 
 /// Whether moving this row to this level is a departure that owes a copy: a
-/// read-at-place book an in-place folder placed, leaving for ground that is
-/// not that folder's own.
+/// read-at-place book an in-place folder placed, leaving the rung that folder's
+/// own tree names for the file's address.
 ///
 /// The three negatives are as load-bearing as the positive. A STORED book is
-/// already the library's own and simply moves. A book no in-place folder
-/// placed — a loose file the reader dropped, a book of a copying folder — has
-/// no ledger waiting on its fingerprint and moves as a membership. And a
-/// re-arrangement inside the placing folder's OWN tree is the folder's
-/// business: the book stays a linked book of that ground, so no copy is made
-/// and no log is written.
+/// already the library's own and simply moves. A book no in-place folder placed
+/// — a loose file the reader dropped, a book of a copying folder — has no ledger
+/// waiting on its fingerprint and moves as a membership. And a re-order on the
+/// book's OWN rung is the folder's business: the file is still standing on the
+/// ground that made it, so no copy is made and no log is written.
+///
+/// Everywhere else is a departure, **including another rung of the very folder
+/// that placed the book.** What ties a read-at-place book to a folder is the
+/// ground its file stands on, not the folder's shelf tree: a book dragged up
+/// from `Sci-Fi/` to `Fiction/` is no longer where the folder's ledger says it
+/// is, so it becomes the library's own copy on the way out and the ORIGINAL
+/// fingerprint goes free for the log to keep. Reading the tie as the tree
+/// instead is what let a moved book go on wearing the address — the next import
+/// of that same file then found a living row at it, asked the reader to choose
+/// between a collision and a highlight, and pointed at the row they had dragged
+/// away rather than bringing the file home to the rung it belongs on.
 pub(crate) fn converts_on_move_to(state: AppState, row_id: &str, to: &str) -> bool {
-    let Some(fp) = state.library.books.with_untracked(|rows| {
+    let Some((fp, path)) = state.library.books.with_untracked(|rows| {
         find_row(rows, row_id)
             .and_then(|row| row.book())
             .filter(|book| matches!(book.origin, Origin::Linked { .. }))
-            .map(|book| book.fp)
+            .map(|book| (book.fp, book.path().to_string()))
     }) else {
         return false;
     };
-    let placers: Vec<String> = state.library.folders.with_untracked(|folders| {
+    // One entry per in-place folder whose ledger answers for this fingerprint:
+    // the rung that folder names for the address, or `None` when it names none
+    // — a rung the reader has deleted since the walk that placed the file, whose
+    // book has left the ground all the same. An EMPTY list is therefore the only
+    // thing the length says: no ledger is waiting, so no departure is owed.
+    let rungs: Vec<Option<String>> = state.library.folders.with_untracked(|folders| {
         folders
             .iter()
             .filter(|f| f.opts.in_place && f.placed.contains(&fp))
-            .map(|f| f.id.clone())
+            .map(|f| f.rungs_for(&path).0.map(str::to_string))
             .collect()
     });
-    if placers.is_empty() {
+    if rungs.is_empty() {
         return false;
     }
-    if to == ALL_SHELF {
-        return true;
-    }
-    let owner = state.library.shelf_folder_id(to);
-    owner.is_none_or(|owner| !placers.contains(&owner))
+    // The root is nobody's rung: "All" is the library's own list rather than a
+    // shelf, so no folder's map can name it and a book that lands there has left
+    // every ground. Spelled out because it is the departure readers make most,
+    // and because reading it off the list alone would leave the answer depending
+    // on a map never holding a level that is not a shelf.
+    to == ALL_SHELF || !rungs.iter().any(|rung| rung.as_deref() == Some(to))
 }
 
 /// Make a read-at-place book the library's own stored copy: the departure
@@ -627,6 +706,14 @@ pub(crate) fn migrate_gloss(state: AppState, from_key: &str, to_key: &str, addre
 /// folder does not recognise it, the log stays unbound, and a later import of
 /// the file simply brings the linked book back and lights it up, which is the
 /// honest answer for a name the folder has never seen.
+///
+/// Callers that seat a row THIS gesture turned into a copy do not reach here at
+/// all. A departure writes a log and then lands, and a reader re-arranging a
+/// watched tree lands it on another shelf of the same folder — which is the
+/// shape of a return without being one, and a bind there would spend the log on
+/// the row that just left, so the file could never come home again.
+/// [`convert_departures`] names those rows to the landing; [`file_many`] has
+/// none to name, because a second membership departs nothing.
 fn bind_returned(state: AppState, row_id: &str, shelf_id: &str) {
     if shelf_id == ALL_SHELF {
         return;
@@ -1278,7 +1365,11 @@ pub(crate) fn toast(state: AppState, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{BTreeMap, HashSet};
+
     use library_core::book::{Book, Fingerprint, Origin};
+    use library_core::folder::{FolderOpts, WatchedFolder};
+    use library_core::shelf::ShelfKind;
     use reader_core::format::Format;
 
     /// A linked row. Markdown rather than PDF so nothing that reads these lists
@@ -1448,5 +1539,269 @@ mod tests {
         // file nothing will ever read again; the sheet is where a reader says
         // otherwise, and it is the only place that does.
         assert!(PurgeOpts::default().delete_store_copy);
+    }
+
+    // -----------------------------------------------------------------------
+    // converts_on_move_to — the departure, and the ground it measures against.
+    // -----------------------------------------------------------------------
+
+    fn fp(n: u32) -> Fingerprint {
+        Fingerprint {
+            size: u64::from(n),
+            mtime_ms: u64::from(n),
+            head_hash: n,
+        }
+    }
+
+    fn linked_at(id: &str, path: &str, n: u32) -> Row {
+        Row::Book(Book::new(
+            id.to_string(),
+            fp(n),
+            Format::Markdown,
+            Origin::Linked {
+                src: path.to_string(),
+            },
+            0,
+        ))
+    }
+
+    fn stored_at(id: &str, src: &str, store: &str, n: u32) -> Row {
+        Row::Book(Book::new(
+            id.to_string(),
+            fp(n),
+            Format::Markdown,
+            Origin::Stored {
+                src: Some(src.to_string()),
+                store: store.to_string(),
+            },
+            0,
+        ))
+    }
+
+    /// `/books` cut into `Fiction` cut into `Fiction/SciFi`, read in place and
+    /// holding fingerprint `n` — the three-level shelf the departure rule was
+    /// wrong about.
+    fn nested(n: u32) -> WatchedFolder {
+        WatchedFolder {
+            id: "f1".into(),
+            root: "/books".into(),
+            opts: FolderOpts::default(),
+            placed: HashSet::from([fp(n)]),
+            ignored: Vec::new(),
+            last_seen: Vec::new(),
+            shelf_map: BTreeMap::from([
+                (String::new(), "shelf1".to_string()),
+                ("Fiction".to_string(), "shelf2".to_string()),
+                ("Fiction/SciFi".to_string(), "shelf3".to_string()),
+            ]),
+            scanned_ms: 0,
+        }
+    }
+
+    /// The reported shape, written into a fresh state: one read-in-place
+    /// folder, three rungs, and the linked book the deepest one placed.
+    ///
+    /// Takes the state rather than making one because the `Owner` a signal
+    /// needs has to outlive the write, and a helper that minted its own would
+    /// drop it on the way out.
+    fn set_nested(state: AppState) {
+        state.library.folders.set(vec![nested(7)]);
+        state
+            .library
+            .books
+            .set(vec![linked_at("b1", "/books/Fiction/SciFi/dune.md", 7)]);
+    }
+
+    #[test]
+    fn a_drag_to_another_rung_of_the_same_folder_is_a_departure() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        set_nested(state);
+        // shelf3 is the rung the folder's own tree names for this address, so a
+        // drag UP to shelf2 leaves the ground even though shelf2 is a rung of
+        // the very folder that placed the book. Reading the tie as the folder's
+        // shelf tree instead — "any shelf this folder owns" — left the row
+        // linked at an address it had been dragged off, and the next import of
+        // that file found a living row there, asked the reader to choose between
+        // a collision and a highlight, and lit up the row that had moved rather
+        // than bringing the file home to the rung it belongs on.
+        assert!(converts_on_move_to(state, "b1", "shelf2"));
+        assert!(converts_on_move_to(state, "b1", "shelf1"));
+        // And a shelf the folder's map does not name for this address at all is
+        // ground the book has left whatever it is.
+        assert!(converts_on_move_to(state, "b1", "elsewhere"));
+    }
+
+    #[test]
+    fn a_reorder_on_the_book_s_own_rung_copies_nothing() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        set_nested(state);
+        // The cheapest drag in the library must stay the cheapest: re-ordering
+        // the books a folder placed, on the rung it placed them on, is the
+        // folder's own business. Copying here would spend a reader's disk on a
+        // move that changed no ground at all.
+        assert!(!converts_on_move_to(state, "b1", "shelf3"));
+    }
+
+    #[test]
+    fn the_root_and_the_reader_s_own_shelves_are_nobody_s_ground() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        set_nested(state);
+        // "All" is the library's own list rather than a shelf, so no folder's
+        // map can name it — this is the departure the rule always had.
+        assert!(converts_on_move_to(state, "b1", ALL_SHELF));
+        // And a virtual shelf is the reader's own by construction.
+        assert!(converts_on_move_to(state, "b1", "mine"));
+    }
+
+    #[test]
+    fn a_rung_the_reader_deleted_is_ground_the_book_has_left() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let mut folder = nested(7);
+        // The shelf is gone, so the map no longer names a rung for the address.
+        // The ledger is still waiting on the fingerprint, which is what makes
+        // this a departure rather than a book nobody answers for: an empty map
+        // answer and an empty list of folders are not the same fact.
+        folder.shelf_map.remove("Fiction/SciFi");
+        state.library.folders.set(vec![folder]);
+        state
+            .library
+            .books
+            .set(vec![linked_at("b1", "/books/Fiction/SciFi/dune.md", 7)]);
+        assert!(converts_on_move_to(state, "b1", "shelf2"));
+        assert!(converts_on_move_to(state, "b1", "shelf3"));
+    }
+
+    #[test]
+    fn a_folder_that_does_not_group_has_one_ground_for_every_file() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let mut folder = nested(7);
+        folder.opts.groups = false;
+        // Everything lands flat, so the root rung is the ground for the whole
+        // tree and a drag between the folder's own shelves is a re-order.
+        folder.shelf_map = BTreeMap::from([(String::new(), "flat".to_string())]);
+        state.library.folders.set(vec![folder]);
+        state
+            .library
+            .books
+            .set(vec![linked_at("b1", "/books/Fiction/SciFi/dune.md", 7)]);
+        assert!(!converts_on_move_to(state, "b1", "flat"));
+        assert!(converts_on_move_to(state, "b1", "shelf2"));
+    }
+
+    #[test]
+    fn only_a_linked_book_of_a_reading_folder_owes_the_copy() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        let mut copying = nested(7);
+        copying.id = "f2".into();
+        copying.opts.in_place = false;
+        state.library.folders.set(vec![nested(7), copying]);
+        state.library.books.set(vec![
+            linked_at("b1", "/books/Fiction/SciFi/dune.md", 7),
+            // The copy a departure made: the library's own, so it simply moves.
+            stored_at("b2", "/books/Fiction/SciFi/dune.md", "/store/b2.md", 9),
+            // A loose file the reader dropped: no ledger is waiting on it.
+            linked_at("b3", "/elsewhere/loose.md", 11),
+        ]);
+
+        assert!(converts_on_move_to(state, "b1", "shelf2"));
+        assert!(!converts_on_move_to(state, "b2", "shelf2"));
+        assert!(!converts_on_move_to(state, "b3", "shelf2"));
+        // A row the library does not hold owes nothing at all.
+        assert!(!converts_on_move_to(state, "gone", "shelf2"));
+    }
+
+    /// A shelf cut from a watched folder's tree, which is what makes a landing
+    /// on it look like a return.
+    fn folder_shelf(id: &str, folder_id: &str, rel: &str) -> Shelf {
+        Shelf {
+            id: id.to_string(),
+            name: id.to_string(),
+            kind: ShelfKind::Folder {
+                folder_id: folder_id.to_string(),
+                rel: Some(rel.to_string()),
+            },
+            books: Vec::new(),
+            parent: None,
+            manual_parent: false,
+        }
+    }
+
+    /// `f1` read in place, holding fingerprint 7, with the moved-out log a
+    /// departure of that file writes: the name the shelf showed, the rung it was
+    /// filed on, and no row bound to it yet.
+    fn folder_with_moved_log() -> WatchedFolder {
+        WatchedFolder {
+            id: "f1".into(),
+            root: "/books".into(),
+            opts: FolderOpts::default(),
+            placed: HashSet::from([fp(7)]),
+            ignored: vec![Tombstone {
+                fp: fp(7),
+                title: Some("Dune".to_string()),
+                format: Format::Markdown,
+                last_path: "/books/Fiction/SciFi/dune.md".to_string(),
+                shelf_id: Some("shelf3".to_string()),
+                removed_ms: 5,
+                moved: true,
+                returned_row: None,
+            }],
+            last_seen: Vec::new(),
+            shelf_map: BTreeMap::from([
+                ("Fiction".to_string(), "shelf2".to_string()),
+                ("Fiction/SciFi".to_string(), "shelf3".to_string()),
+            ]),
+            scanned_ms: 0,
+        }
+    }
+
+    #[test]
+    fn a_departure_s_landing_does_not_bind_the_log_it_just_wrote() {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        // The row a departure leaves behind: the library's own copy, still
+        // wearing the name the folder's log remembers.
+        let mut rows = vec![stored_at("b1", "/books/Fiction/SciFi/dune.md", "/store/b1.md", 9)];
+        find_book_mut(&mut rows, "b1").unwrap().title = Some("Dune".to_string());
+        state.library.books.set(rows);
+        state
+            .library
+            .shelves
+            .set(vec![folder_shelf("shelf2", "f1", "Fiction")]);
+        state.library.folders.set(vec![folder_with_moved_log()]);
+        let bound = |state: AppState| {
+            state.library.folders.with_untracked(|folders| {
+                folders[0].ignored[0].returned_row.is_some()
+            })
+        };
+
+        // The gesture that made the copy lands it on ANOTHER rung of the same
+        // folder — which is the shape of a return without being one. Binding
+        // here would spend the log on the row that just left, and from then on
+        // every import of the OS file would light the copy up instead of
+        // bringing the linked book home to the rung it belongs on.
+        move_row(state, "b1", "shelf2", None, true);
+        assert!(!bound(state), "a departure is not a return");
+        let filed = state.library.shelves.with_untracked(|shelves| {
+            shelves[0].books.iter().any(|id| id == "b1")
+        });
+        assert!(filed, "and the move itself still happened");
+
+        // The NEXT drag of the same row back is the return the bind exists for,
+        // and it binds exactly as it always did.
+        move_row(state, "b1", "shelf2", None, false);
+        assert!(bound(state), "a later gesture binds the log to the row by name");
     }
 }

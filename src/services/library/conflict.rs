@@ -478,28 +478,40 @@ fn replace(state: AppState, ask: &ConflictAsk) {
     // left standing, linked or not.
     if tauri_bridge::has_tauri() && converts_on_move_to(state, &moved_id, &shelf_id) {
         spawn_local(async move {
-            if let Err(message) = convert_to_stored(state, &moved_id).await {
-                toast(state, message);
-            }
+            // A copy that failed leaves the row linked and writes no log, so
+            // there is nothing for the seating to stand aside from either.
+            let departed = match convert_to_stored(state, &moved_id).await {
+                Ok(()) => true,
+                Err(message) => {
+                    toast(state, message);
+                    false
+                }
+            };
             super::covers::backfill_missing(state);
-            seat_replace(state, &moved_id, &shelf_id, index, &inherited);
+            seat_replace(state, &moved_id, &shelf_id, index, &inherited, departed);
         });
         return;
     }
-    seat_replace(state, &moved_id, &shelf_id, index, &inherited);
+    seat_replace(state, &moved_id, &shelf_id, index, &inherited, false);
 }
 
 /// The seating half of a replace: the arrival takes the survivor's slot and
 /// every other shelf the survivor was filed on, and the blob is written once
 /// for the whole of it.
+///
+/// `departed` is the replace's own copy of the gate's answer — the arrival
+/// became the library's own copy in this gesture — and it travels because a
+/// departure must not bind the moved-out log it just wrote. See
+/// [`super::arrange::move_row`].
 fn seat_replace(
     state: AppState,
     moved_id: &str,
     shelf_id: &str,
     index: Option<usize>,
     inherited: &[String],
+    departed: bool,
 ) {
-    super::arrange::move_row(state, moved_id, shelf_id, index);
+    super::arrange::move_row(state, moved_id, shelf_id, index, departed);
     state.library.shelves.update(|shelves| {
         for one in shelves.iter_mut() {
             if inherited.contains(&one.id) {
@@ -607,11 +619,14 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
     match &ask.arrival.moving {
         Some(row_id) => {
             state.library.rename_row(row_id, &name);
+            // `false`: nothing has departed yet, and if the move turns out to
+            // be a departure its own gate says so on the way back in.
             super::arrange::move_row(
                 state,
                 row_id,
                 &ask.arrival.shelf_id,
                 ask.arrival.index,
+                false,
             );
         }
         None => {

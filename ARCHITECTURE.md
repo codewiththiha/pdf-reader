@@ -407,9 +407,12 @@ its rescans and its re-imports would all keep answering for a book that is no lo
 copy takes the bytes into the store, the row takes the copy's own measurement as its identity —
 which frees the ORIGINAL fingerprint, and that freedom is the point — the visible name moves into
 `title`, the highlights move their key, and the folder takes a MOVED-OUT log
-(`Tombstone.moved`). A re-arrangement inside the folder's own tree is no departure: the book is
-still a linked book of that ground, and nothing copies. A stored book is already the library's
-own and simply moves.
+(`Tombstone.moved`). The ground is the rung the folder's own tree names for the file's address
+(`library_core::folder::WatchedFolder::rungs_for`) and not the folder's shelf tree as a whole, so a
+drag from one rung of a watched folder to another is a departure too: the book is no longer where
+the ledger says it is, and a linked row wearing an address it has been dragged off is a row the next
+import of that file collides with instead of coming home to. Only a re-order on the book's own rung
+is no departure. A stored book is already the library's own and simply moves.
 
 ### Identity is a fingerprint, not a path
 

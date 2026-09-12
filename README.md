@@ -403,8 +403,10 @@ touches a file you own.
   with one address. Dragging the stored copy back onto a shelf of the folder it left binds the log
   to it by name, and from then on importing the file just lights that copy up — unless you renamed
   it, in which case the folder does not recognise it and the import brings the linked book back
-  instead. Moving a book inside its own folder's tree, and moving any book the library already
-  stores, copies nothing and stays the membership edit a drag has always been.
+  instead. What ties the book to its folder is the rung its own file stands on, not the folder's
+  shelves, so a drag between two rungs of one watched folder departs as well; only a re-order on the
+  rung the book is already on, and the move of any book the library already stores, copies nothing
+  and stays the membership edit a drag has always been.
 - **A watched folder can give a book back.** Its import menu keeps a tombstone per removal — the name
   the shelf showed, how long ago it went, how big it is — and offers the book back after measuring the
   file to check it is still there. An explicit restore ignores the folder's format and size filters,
