@@ -59,14 +59,13 @@ pub(super) fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
         }
     };
     let question = format!(
-        "“{incoming}” is inside “{folder_name}”, a folder the library reads in place, and the \
-         library already holds the book it is. A folder read in place holds one book per file \
-         and never a second link — so import your own copy {where_line}, stored and owned by \
-         the library, or go to the book the folder holds."
+        "“{incoming}” is inside “{folder_name}”, which the library reads in place — one \
+         book per file, never a second link. Import your own copy {where_line}, or go to \
+         the book the folder holds."
     );
     let import_note = format!(
-        "Copy the file into the library — its own book {where_line}, with its own highlights \
-         and its own place in it"
+        "The library's own copy — its own book {where_line}, its own highlights, its own \
+         place in it"
     );
     let show_note =
         format!("Add nothing — go to “{book_name}” inside “{folder_name}” and light it up");

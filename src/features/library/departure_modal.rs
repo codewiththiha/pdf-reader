@@ -119,35 +119,33 @@ impl Info {
             .departing
             .iter()
             .map(|each| {
-                let copy = format!("The copy will be named “{}”.", each.copy_name);
                 if each.books == 0 {
                     format!(
-                        "“{}” is read at its place inside “{}”. {copy}",
-                        each.name, each.folder_name
+                        "“{}” is read in place inside “{}” — the copy lands as “{}”.",
+                        each.name, each.folder_name, each.copy_name
                     )
                 } else {
                     format!(
-                        "“{}” is read at its place inside “{}”, with {} standing on \
-                         the rungs that leave. {copy}",
+                        "“{}” is read in place inside “{}” — the copy takes its {} \
+                         with it and lands as “{}”.",
                         each.name,
                         each.folder_name,
-                        plural(each.books, "book", "books")
+                        plural(each.books, "book", "books"),
+                        each.copy_name
                     )
                 }
             })
             .collect();
         let promise = if books == 0 {
-            "Nothing inside is read at its place, so no bytes are copied — the shelf \
-             itself becomes the library's own. The folder on disk is untouched: import \
-             it again and its shelves come back on the seats the disk names, lit up."
+            "Nothing inside is read in place, so no bytes are copied. The folder on \
+             disk is untouched — import it again and its shelves come back where they \
+             were, lit up."
                 .to_string()
         } else {
-            "The copied books become the library's own: their bytes move into the \
-             library's store, and their names, highlights and places in them travel \
-             with them. The folder on disk is untouched, and its ledger remembers \
-             every book that left — the rescans stay silent, and the next import of \
-             the folder brings its shelves back on the seats the disk names, with the \
-             books in their old names, lit up where they return."
+            "Copied books keep their names, highlights and places in them; their bytes \
+             move into the library's store. The folder on disk is untouched — import \
+             it again and its shelves come back where they were, with the books in \
+             their old names, lit up."
                 .to_string()
         };
         let return_lines = ask
@@ -155,15 +153,13 @@ impl Info {
             .iter()
             .map(|each| match &each.path {
                 ReturnPath::Reclaim { family_name, .. } => format!(
-                    "“{}” goes back inside “{}”, on the rung its directory names — \
-                     no copies are made, and the folder keeps reading its files \
-                     where they stand.",
+                    "“{}” goes back inside “{}”, on the shelf its directory names. \
+                     Nothing is copied.",
                     each.name, family_name
                 ),
                 ReturnPath::Reseat { family_name, .. } => format!(
-                    "“{}” goes back to the seat “{}” names for it — no copies \
-                     are made, and the folder keeps reading its files where \
-                     they stand.",
+                    "“{}” goes back to the shelf “{}” names for it. Nothing is \
+                     copied.",
                     each.name, family_name
                 ),
             })

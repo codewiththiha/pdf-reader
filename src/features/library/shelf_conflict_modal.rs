@@ -148,61 +148,51 @@ impl Info {
             format!("A shelf called “{}” is already here", ask.existing_name)
         };
         let question = if in_place {
-            format!(
-                "You are importing the folder “{}”, and this level already has a shelf \
-                 called that. A folder read at its place cannot mint a second shelf of \
-                 itself — leave a pointer to the shelf that is here, or file the folder's \
-                 books into it.",
-                ask.incoming_name
-            )
+            // The subtitle already named the collision; the sentence is only
+            // the rule and the two ways out of it.
+            "A folder read in place cannot mint a second shelf of itself. Leave a \
+             pointer to the shelf that is here, or file this folder's books into it."
+                .to_string()
         } else if own {
             format!(
-                "“{}” is already in the library — “{}” is the shelf its last import \
-                 made, and this pick asks for copies the library stores itself. Go and \
-                 look at the shelf that is here, replace its books with the folder's \
-                 copies, or give the copies a shelf of the next free name.",
-                ask.incoming_name, ask.existing_name
+                "“{}” is the shelf this folder's last import made. Look at it, \
+                 replace its books with these copies, or give the copies a shelf of \
+                 the next free name.",
+                ask.existing_name
             )
         } else {
-            format!(
-                "You are importing the folder “{}”, and this level already has a shelf \
-                 called that. The copies are the library's own, so the level's three \
-                 answers are all here: go and look at the shelf that is here, replace \
-                 its books with the arriving copies, or give the folder a shelf of the \
-                 next free name.",
-                ask.incoming_name
-            )
+            "The arriving copies are the library's own, so all three answers are \
+             open: look at the shelf that is here, replace its books, or shelve the \
+             copies under the next free name."
+                .to_string()
         };
         let show_note = format!(
-            "Nothing is imported — the library goes to “{}” and lights it up where it \
-             stands",
+            "Import nothing — go to “{}” and light it up where it stands",
             ask.existing_name
         );
         let new_note = if reads_in_place {
             format!(
-                "Import as “{new_name}” — its own shelf of the library's copies; the \
-                 tree that is here keeps reading the folder"
+                "Import as “{new_name}” — the library's own copies; the tree here \
+                 keeps reading the folder"
             )
         } else {
             format!("Import as “{new_name}” — its own shelf, its own tree")
         };
         let merge_note = format!(
-            "The folder's books join “{}”; a book whose name it already holds is asked \
-             one by one",
+            "The folder's books join “{}” — a name it already holds asks one by one",
             ask.existing_name
         );
         let replace_note = match replace_rows {
             0 => format!(
-                "Nothing is left to remove — the arriving copies simply take “{}”",
+                "Nothing to remove — the copies simply take “{}”",
                 ask.existing_name
             ),
             1 => format!(
-                "One book leaves the library, with its highlights — a copy takes its \
-                 place on “{}”",
+                "One book leaves, highlights and all — a copy takes its place on “{}”",
                 ask.existing_name
             ),
             n => format!(
-                "{n} books leave the library, with their highlights — copies take “{}”",
+                "{n} books leave, highlights and all — copies take “{}”",
                 ask.existing_name
             ),
         };

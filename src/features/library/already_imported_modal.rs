@@ -75,29 +75,24 @@ pub(crate) fn AlreadyImportedModal(state: AppState) -> impl IntoView {
                 // directory names, and the light lands where it stands now.
                 let sentence = match &kind {
                     NoteKind::NothingNew => {
-                        "This folder is already in the library, and the library reads it where \
-                         it stands. The import walked it again and found nothing new: every \
-                         book it holds is on the shelf already, no removed or moved-away book \
-                         came back, and nothing was copied, moved, or asked. Close this and \
-                         the shelf lights up for you."
+                        "The import walked the folder again and found nothing new — every \
+                         book is already on the shelf. The shelf lights up when you close \
+                         this."
                             .to_string()
                     }
                     NoteKind::Gated => {
-                        "This folder is already imported — the library reads it where it stands, \
-                         and a folder it reads in place cannot be imported twice. Nothing was \
-                         copied, moved, or asked. Close this and the shelf it is on lights up for \
-                         you; if the folder you picked is a subfolder of that shelf, the light \
-                         is on the shelf inside the tree."
+                        "The library already reads this folder in place — one folder, one \
+                         shelf, so nothing was imported. If you picked a subfolder, the \
+                         light is on its shelf inside the tree. It lights up when you close \
+                         this."
                             .to_string()
                     }
                     NoteKind::Returned => {
                         format!(
-                            "The import put “{name}” back where it belongs: its directory \
-                             stands inside a folder the library reads in place, and its shelf \
-                             now hangs on the rung that folder names, with the shelf it was \
-                             reading folded into the tree. Nothing was copied, and nothing on \
-                             disk moved. Close this and the shelf lights up where it stands \
-                             now."
+                            "“{name}” went back inside the folder it belongs to, onto the \
+                             shelf its directory names. Nothing was copied, and nothing on \
+                             disk moved. It lights up where it stands now when you close \
+                             this."
                         )
                     }
                 };
