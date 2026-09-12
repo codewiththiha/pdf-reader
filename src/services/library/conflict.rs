@@ -83,23 +83,21 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use ai_core::gloss::GlossMark;
-use library_core::book::{
-    Book, Fingerprint, Row, find_book_mut, find_by_id, find_row, fold_books,
-};
+use library_core::book::{Book, Row, find_book_mut, find_by_id, find_row, fold_books};
 use library_core::conflict::{
     Answer, Arrival, MoveAnswer, collide, next_name, next_shelf_name,
 };
-use library_core::folder::{self as folder_ops, FolderOpts};
-use library_core::ledger;
+use library_core::folder::FolderOpts;
 use library_core::scan::FoundFile;
 use library_core::shelf;
 
 use super::arrange::{
-    PurgeOpts, converts_on_move_to, convert_to_stored, memberships, purge_books, toast,
+    PurgeOpts, converts_on_move_to, convert_to_stored, memberships, purge_books,
     write_moved_stones,
 };
+use super::toast;
 use crate::state::library::{AlreadyNote, NoteKind};
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// Which question an ask is, and the facts only that question has.
 ///
@@ -838,10 +836,7 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
             state
                 .library
                 .add_link(&ask.existing_name, &ask.existing_id, shelf::ALL_SHELF);
-            state.ui.toast.set(Some(Toast::new(format!(
-                "Linked to {}.",
-                ask.existing_name
-            ))));
+            toast(state, format!("Linked to {}.", ask.existing_name));
         }
         ShelfAnswer::Merge => {
             // The arriving folder's books join the shelf that is here, and
@@ -1054,7 +1049,7 @@ fn apply_folder_merge(state: AppState, ask: &ConflictAsk, answer: FolderMergeAns
                     }
                 });
             }
-            settle_folder_ledger(state, folder_id.as_deref(), file.fp);
+            super::import::settle_ledger(state, folder_id.as_deref(), file.fp);
             crate::storage::persist_library(state.library);
         }
         FolderMergeAnswer::AsNew => {
@@ -1104,51 +1099,26 @@ fn land_answer_file(
 ) {
     if in_place {
         super::import::land_file(state, &file, name, &shelf_id, index);
-        settle_folder_ledger(state, folder_id, file.fp);
+        super::import::settle_ledger(state, folder_id, file.fp);
         super::covers::backfill_missing(state);
         crate::storage::persist_library(state.library);
         return;
     }
-    // A folder that copies: the copy is made BEFORE the row is promised, and
-    // a copy that fails leaves the shelf untouched and the ledger unmarked —
-    // the one honest outcome for a file that could not be filed. The id is
-    // minted now because the stored file is named after it.
-    let book_id = library_core::id::next_id(crate::time::now_ms());
-    let task = format!("merge-{book_id}");
-    // Owned for the future: the ledger write is the same two writes the
-    // in-place branch makes, and spelling them a second time here was a second
-    // place a placement could be recorded without the removal being spent.
-    let ledger = folder_id.map(str::to_string);
+    // A folder that copies: the landing is the import module's own
+    // single-file copy composition — the copy made and measured BEFORE the
+    // row is promised, the row's identity the copy's own, the ledger write
+    // riding the success — and a copy that fails leaves the shelf untouched
+    // and the ledger unmarked, the one honest outcome for a file that could
+    // not be filed.
     let fp = file.fp;
-    spawn_local(async move {
-        match super::copy_one_to_store(&task, &file.path, &book_id).await {
-            Ok(store) => {
-                super::import::mint_stored_row(
-                    state, book_id, &file, store, name, &shelf_id, index,
-                );
-                settle_folder_ledger(state, ledger.as_deref(), fp);
-                super::covers::backfill_missing(state);
-                crate::storage::persist_library(state.library);
-            }
-            Err(message) => state.ui.toast.set(Some(Toast::new(message))),
-        }
-    });
-}
-
-/// The folder's ledger half of a landed answer: the placement is recorded,
-/// and a removal that was holding the file out is spent — the two writes
-/// `run_folder` makes when a file lands, made here because this file landed
-/// after an answer rather than after a walk.
-fn settle_folder_ledger(state: AppState, folder_id: Option<&str>, fp: Fingerprint) {
-    let Some(folder_id) = folder_id else {
-        return;
-    };
-    state.library.folders.update(|folders| {
-        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
-            ledger::restore_deleted(folder, &fp);
-            folder.mark_placed(fp);
-        }
-    });
+    super::import::land_stored_copy_settling(
+        state,
+        file,
+        name,
+        shelf_id,
+        index,
+        folder_id.map(|id| (id.to_string(), fp)),
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -63,11 +63,11 @@ use reader_core::format::{Format, is_supported_path};
 
 use super::arrange::PurgeOpts;
 use super::conflict::{self, ConflictAsk};
-use super::{file_name, folder_label};
+use super::{file_name, folder_label, toast};
 use crate::services::library as wire;
 use crate::time::now_ms;
 use crate::state::library::{ImportTask, NoteKind};
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// Who asked for a folder run, which is what the tombstones mean.
 ///
@@ -153,10 +153,10 @@ impl Drop for RootClaim {
 /// words. A toast each door worded itself would eventually differ about
 /// whether the refusal was about this folder or about imports generally.
 fn already_importing(state: AppState, root: &str) {
-    state.ui.toast.set(Some(Toast::new(format!(
-        "{} is already being imported.",
-        folder_label(root)
-    ))));
+    toast(
+        state,
+        format!("{} is already being imported.", folder_label(root)),
+    );
 }
 
 /// Whether a walk of `root` is already in flight — the question the replace
@@ -304,9 +304,9 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
         web_sys::console::warn_1(&format!("[library] rescan failed: {message}").into());
         return;
     }
-    let toast = message.clone();
+    let sentence = message.clone();
     update_task(state, task, move |t| t.fail(message));
-    state.ui.toast.set(Some(Toast::new(toast)));
+    toast(state, sentence);
 }
 
 // ---------------------------------------------------------------------------
@@ -1087,32 +1087,32 @@ fn rehang(state: AppState, folder_id: &str) {
     crate::storage::persist_library(state.library);
 }
 
-/// Take the REPRESENTED files out of the walk, and answer with the rows they are
-/// represented by.
+/// The walked files a moved-out log already REPRESENTS, taken out of the
+/// walk: a file whose log binds itself to a LIVING row is an import that
+/// succeeds by lighting that row up, not by landing a linked neighbour beside
+/// the copy that came home. Answers the row ids; the files leave `found`.
 ///
-/// A file the folder's log says is represented — a moved-out log bound to the
-/// stored copy that came home — is an import that succeeds by counting the row
-/// the log names, not by minting a linked neighbour beside the copy the reader
-/// already moved back. The copy is never the light's target: it is a book of
-/// its own, and what a FOLDER import reveals is the folder — the run's own
-/// shelf, lit on the level that holds it. The log stays standing: it is the
-/// folder's permanent word that this file has a row, and a rescan stays silent
-/// about it as it always was.
-///
-/// Explicit runs only, and the caller is what knows that: a rescan never reveals,
-/// so it never asks. A binding that names a dead row is spent of its meaning, and
-/// the file stays in the walk to take the ordinary import route, which lifts the
-/// log when the book lands.
-fn split_represented(
+/// `scope` narrows the search to ONE folder's log — a folder walk asks only
+/// its own ledger — and `None` searches every log, the loose-drop shape of
+/// the question, where no folder has been named yet. A binding that names a
+/// dead row is spent of its meaning, and the file stays in the walk to take
+/// the ordinary import route, which lifts the log when the book lands.
+fn take_represented(
     state: AppState,
-    folder: &WatchedFolder,
+    scope: Option<&str>,
     found: &mut Vec<FoundFile>,
 ) -> Vec<String> {
     let mut represented = Vec::new();
     found.retain(|file| {
-        let Some(row_id) = ledger::find_tombstone(folder, &file.fp)
-            .and_then(|entry| entry.returned_row.clone())
-        else {
+        let Some(row_id) = state.library.folders.with_untracked(|folders| {
+            folders
+                .iter()
+                .filter(|folder| scope.is_none_or(|id| folder.id == id))
+                .find_map(|folder| {
+                    ledger::find_tombstone(folder, &file.fp)
+                        .and_then(|entry| entry.returned_row.clone())
+                })
+        }) else {
             return true;
         };
         let alive = state
@@ -1505,7 +1505,7 @@ async fn run_folder(
     let represented: Vec<String> = if quiet {
         Vec::new()
     } else {
-        split_represented(state, &folder, &mut found)
+        take_represented(state, Some(&folder.id), &mut found)
     };
 
     let mut adds: Vec<FoundFile> = Vec::new();
@@ -1899,21 +1899,27 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
 
         let now = now_ms();
         let book_id = id::next_id(now);
-        let origin = if opts.in_place {
-            Origin::Linked {
-                src: found.path.clone(),
-            }
-        } else {
-            match wire::copy_one_to_store(&task, &found.path, &book_id).await {
-                Ok(store) => Origin::Stored {
-                    src: Some(found.path.clone()),
-                    store,
+        let (origin, measured) = if opts.in_place {
+            (
+                Origin::Linked {
+                    src: found.path.clone(),
                 },
+                None,
+            )
+        } else {
+            match wire::copy_and_measure(&task, &found.path, &book_id).await {
+                Ok((store, measured)) => (
+                    Origin::Stored {
+                        src: Some(found.path.clone()),
+                        store,
+                    },
+                    measured,
+                ),
                 Err(message) => return fail(state, &task, message, false),
             }
         };
 
-        let book = Book {
+        let mut book = Book {
             // The name the shelf showed before the removal, so a restored book
             // comes back as the book the reader remembers rather than as a
             // file stem.
@@ -1929,6 +1935,14 @@ pub fn restore_deleted_book(state: AppState, folder_id: String, fp: Fingerprint)
                 now,
             )
         };
+        // A restored COPY wears the copy's own measurement, the way every
+        // stored landing does: its identity is its own bytes and the source
+        // file's fingerprint stays free for the folder's ledger (which is
+        // marked with it below). A copy that could not be weighed keeps the
+        // pending flag the startup sweep finishes — not the source's stamp.
+        if !opts.in_place {
+            book.adopt_measurement(measured);
+        }
         let mut placed_id = String::new();
         state.library.books.update(|books| {
             placed_id = add_book(books, book);
@@ -2015,7 +2029,7 @@ fn partition_store_results(
             1 => format!("Could not copy {}", failures[0]),
             n => format!("Could not copy {n} {noun}, starting with {}", failures[0]),
         };
-        state.ui.toast.set(Some(Toast::new(message)));
+        toast(state, message);
     }
     landed
 }
@@ -2134,28 +2148,9 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     let mut found: Vec<FoundFile> = checks.iter().filter_map(found_from_check).collect();
     // A file some folder's log says is REPRESENTED by a returned stored copy
     // succeeds the drop by lighting that row up rather than landing a linked
-    // neighbour beside it — the folder rule, on the loose-file side.
-    let mut represented: Vec<String> = Vec::new();
-    found.retain(|file| {
-        let Some(row_id) = state.library.folders.with_untracked(|folders| {
-            folders.iter().find_map(|folder| {
-                ledger::find_tombstone(folder, &file.fp)
-                    .and_then(|entry| entry.returned_row.clone())
-            })
-        }) else {
-            return true;
-        };
-        let alive = state
-            .library
-            .books
-            .with_untracked(|rows| find_row(rows, &row_id).is_some());
-        if alive {
-            represented.push(row_id);
-            false
-        } else {
-            true
-        }
-    });
+    // neighbour beside it — the folder rule, on the loose-file side. No scope:
+    // a loose file has not named the folder whose log answers for it.
+    let represented: Vec<String> = take_represented(state, None, &mut found);
     if found.is_empty() && represented.is_empty() {
         return fail(
             state,
@@ -2525,16 +2520,12 @@ fn restore_covered_file(
             .or_else(|| standing(&root_rung))
             .or_else(|| root_shelf_of(shelves, folder_id))
     });
-    // The log comes out and the placement is marked in one write: a
-    // fingerprint the ledger skips with no book behind it is the one state a
-    // folder cannot recover from on its own. (`placed` kept the fingerprint
-    // through the removal and the departure alike; the mark is the guarantee.)
-    state.library.folders.update(|folders| {
-        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
-            ledger::restore_deleted(folder, &file.fp);
-            folder.mark_placed(file.fp);
-        }
-    });
+    // The log comes out and the placement is marked in one write — the
+    // ledger's own settle, the one spelling of the pair: a fingerprint the
+    // ledger skips with no book behind it is the one state a folder cannot
+    // recover from on its own. (`placed` kept the fingerprint through the
+    // removal and the departure alike; the mark is the guarantee.)
+    settle_ledger(state, Some(folder_id), file.fp);
     let shelf_id = target.unwrap_or_else(|| shelves_ops::ALL_SHELF.to_string());
     land_file(state, file, stone.title.clone(), &shelf_id, None)
 }
@@ -2655,23 +2646,40 @@ pub(crate) fn land_stored_copy(
     shelf_id: String,
     index: Option<usize>,
 ) {
+    land_stored_copy_settling(state, file, name, shelf_id, index, None);
+}
+
+/// [`land_stored_copy`] with the folder's ledger write riding the landing:
+/// `settle` is the `(folder, fingerprint)` a merged folder's copy answer owes
+/// when the book lands — the placement recorded and the removal spent, through
+/// [`settle_ledger`]. The copy is made and MEASURED before the row is promised
+/// (the row's identity is the copy's own, the source file's fingerprint stays
+/// free), a failure to copy leaves the shelf untouched and the ledger unmarked,
+/// and one spelling serves both the loose-import answers and the folder
+/// sheet's, which used to hand-roll this same sequence each.
+pub(crate) fn land_stored_copy_settling(
+    state: AppState,
+    file: FoundFile,
+    name: Option<String>,
+    shelf_id: String,
+    index: Option<usize>,
+    settle: Option<(String, Fingerprint)>,
+) {
     let book_id = id::next_id(now_ms());
     let task = format!("import-{book_id}");
     spawn_local(async move {
-        match wire::copy_one_to_store(&task, &file.path, &book_id).await {
-            Ok(store) => {
-                let measured = wire::verify_paths(vec![store.clone()])
-                    .await
-                    .ok()
-                    .and_then(|checks| checks.into_iter().next())
-                    .and_then(|check| check.fingerprint());
+        match wire::copy_and_measure(&task, &file.path, &book_id).await {
+            Ok((store, measured)) => {
                 let placed =
                     mint_stored_row(state, book_id, &file, store, name, &shelf_id, index);
                 adopt_copy_measurement(state, &placed, measured);
+                if let Some((folder_id, fp)) = settle {
+                    settle_ledger(state, Some(&folder_id), fp);
+                }
                 super::covers::backfill_missing(state);
                 crate::storage::persist_library(state.library);
             }
-            Err(message) => state.ui.toast.set(Some(Toast::new(message))),
+            Err(message) => toast(state, message),
         }
     });
 }
@@ -2762,6 +2770,24 @@ fn found_from_check(check: &PathCheck) -> Option<FoundFile> {
         size: check.size,
         fp,
     })
+}
+
+/// The folder's ledger half of a landed file: the placement is recorded, and
+/// a removal that was holding the file out is spent — the two writes
+/// `run_folder` makes when a file lands, made here because this file landed
+/// after an ANSWER (a sheet's copy, a covered restore) rather than after a
+/// walk. One spelling, so a placement cannot be recorded anywhere without the
+/// removal being spent beside it.
+pub(crate) fn settle_ledger(state: AppState, folder_id: Option<&str>, fp: Fingerprint) {
+    let Some(folder_id) = folder_id else {
+        return;
+    };
+    state.library.folders.update(|folders| {
+        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
+            ledger::restore_deleted(folder, &fp);
+            folder.mark_placed(fp);
+        }
+    });
 }
 
 /// Put the folder row back. One place, because the ledger is the part of the

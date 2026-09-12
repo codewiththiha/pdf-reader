@@ -24,8 +24,9 @@ use library_core::book::Row;
 use library_core::folder::dir_of_rung;
 use library_core::shelf::{ALL_SHELF, ShelfKind, containing, find};
 
+use super::toast;
 use crate::state::library::Reveal;
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// Monotonic, so two reveals in the same millisecond are still two reveals.
 static NONCE: AtomicU64 = AtomicU64::new(1);
@@ -139,14 +140,15 @@ pub fn path_of_shelf(state: AppState, shelf_id: &str) -> Option<String> {
 /// courtesy, and nothing in the library changes because one could not run.
 pub fn reveal_in_folder(state: AppState, path: String) {
     if !tauri_bridge::has_tauri() {
-        state.ui.toast.set(Some(Toast::new(
+        toast(
+            state,
             "Revealing a file is only available in the desktop app.".to_string(),
-        )));
+        );
         return;
     }
     wasm_bindgen_futures::spawn_local(async move {
         if let Err(message) = super::reveal_path(path).await {
-            state.ui.toast.set(Some(Toast::new(message)));
+            toast(state, message);
         }
     });
 }

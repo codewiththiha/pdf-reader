@@ -26,7 +26,7 @@ use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 use crate::components::primitives::form::row::Row;
 use crate::services::library::{import_folder, pick_folder};
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// The sheet's two handles, provided by the library page: whether it is open and
 /// the folder it opens onto.
@@ -74,7 +74,7 @@ impl ImportSheet {
 pub(crate) fn drain_sheet_toasts(state: AppState, sheet: ImportSheet) {
     if let Some(message) = sheet.toasts.get_untracked() {
         sheet.toasts.set(None);
-        state.ui.toast.set(Some(Toast::new(message)));
+        crate::services::library::toast(state, message);
     }
 }
 

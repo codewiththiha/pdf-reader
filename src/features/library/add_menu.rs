@@ -29,7 +29,7 @@ use crate::features::library::import_modal::ImportSheet;
 use crate::services::library::{
     folder_label, import_files, pick_documents, pick_documents_in, restore_deleted_book,
 };
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// One row the folder section can offer back.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,7 +121,7 @@ fn from_files(state: AppState, target: Option<String>) {
         match pick_documents().await {
             Ok(paths) if paths.is_empty() => {}
             Ok(paths) => import_files(state, paths, target),
-            Err(message) => state.ui.toast.set(Some(Toast::new(message))),
+            Err(message) => crate::services::library::toast(state, message),
         }
     });
 }
@@ -132,7 +132,7 @@ fn from_files_in(state: AppState, root: String, target: Option<String>) {
         match pick_documents_in(root).await {
             Ok(paths) if paths.is_empty() => {}
             Ok(paths) => import_files(state, paths, target),
-            Err(message) => state.ui.toast.set(Some(Toast::new(message))),
+            Err(message) => crate::services::library::toast(state, message),
         }
     });
 }

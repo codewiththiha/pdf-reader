@@ -59,11 +59,11 @@ use library_core::folder::{self as folder_ops, Tombstone, WatchedFolder};
 use library_core::ledger::tombstone;
 use library_core::shelf::{self, Shelf, ALL_SHELF, shelf_add};
 
-use super::conflict;
 use super::covers::prune_now;
+use super::{conflict, toast};
 use crate::services::library as wire;
 use crate::time::now_ms;
-use crate::state::{AppState, Toast};
+use crate::state::AppState;
 
 /// Move books: onto `to` at `index`, and off `from` when the two differ.
 ///
@@ -619,12 +619,8 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
     }
     let path = book.path().to_string();
     let from_key = book.gloss_key();
-    let store = wire::copy_one_to_store(&format!("move-{row_id}"), &path, row_id).await?;
-    let measured = wire::verify_paths(vec![store.clone()])
-        .await
-        .ok()
-        .and_then(|checks| checks.into_iter().next())
-        .and_then(|check| check.fingerprint());
+    let (store, measured) =
+        wire::copy_and_measure(&format!("move-{row_id}"), &path, row_id).await?;
 
     // The log first, while the row still sits on the folder's shelf: the
     // tombstone records the shelf it was filed on, and that is a fact about
@@ -2061,10 +2057,6 @@ pub fn relink_dialog(state: AppState, book_id: String) {
             Err(message) => toast(state, message),
         }
     });
-}
-
-pub(crate) fn toast(state: AppState, message: String) {
-    state.ui.toast.set(Some(Toast::new(message)));
 }
 
 #[cfg(test)]

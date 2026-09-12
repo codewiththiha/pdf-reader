@@ -89,11 +89,23 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use wasm_bindgen::JsValue;
 
+use library_core::book::Fingerprint;
 use library_core::folder::FolderOpts;
 use library_core::scan::FoundFile;
 use library_core::wire::{ImportProgress, PathCheck, StoreRequest, StoreResult};
 
+use crate::state::{AppState, Toast};
+
 pub use crate::events::IMPORT_PROGRESS_EVENT;
+
+/// Put one sentence on the app's single toast slot.
+///
+/// The one spelling of that write for every library surface — the services,
+/// the sheets and the menus — so a failure is delivered the same way wherever
+/// it happened and no screen grows its own private route to the slot.
+pub(crate) fn toast(state: AppState, message: String) {
+    state.ui.toast.set(Some(Toast::new(message)));
+}
 
 /// The Tauri channel the shell emits progress on. Mirrors
 /// `PROGRESS_EVENT` in `src-tauri/src/commands/library.rs`; the payload it
@@ -204,6 +216,29 @@ pub(crate) async fn copy_one_to_store(task: &str, path: &str, id: &str) -> Resul
         },
         Err(message) => Err(message),
     }
+}
+
+/// Copy ONE file into the store and take the copy's own measurement: the
+/// stored address, and its fingerprint — `None` when the copy could not be
+/// weighed, which leaves the row the pending mark the startup sweep finishes.
+///
+/// The composition a departure, a merge's copy answer and a single-file
+/// landing all ride, spelled once: copy FIRST, then measure the COPY rather
+/// than the source, because a stored row's identity is the copy's fingerprint
+/// and the source file's stays free for the folders that read it — the
+/// departure rule's arithmetic, in the one place it can be got right.
+pub(crate) async fn copy_and_measure(
+    task: &str,
+    path: &str,
+    id: &str,
+) -> Result<(String, Option<Fingerprint>), String> {
+    let store = copy_one_to_store(task, path, id).await?;
+    let measured = verify_paths(vec![store.clone()])
+        .await
+        .ok()
+        .and_then(|checks| checks.into_iter().next())
+        .and_then(|check| check.fingerprint());
+    Ok((store, measured))
 }
 
 /// Ask the OS file manager to reveal a path: the item selected inside its
