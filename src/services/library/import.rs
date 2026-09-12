@@ -315,8 +315,6 @@ fn fail(state: AppState, task: &str, message: String, quiet: bool) {
 
 /// Import a folder, with the options the sheet was filled in with. Returns
 /// immediately: the dock owns the feedback from here on.
-/// Import a folder, with the options the sheet was filled in with. Returns
-/// immediately: the dock owns the feedback from here on.
 ///
 /// A folder whose NAME the root level already holds is a question before it
 /// is an import — two shelves of one name on one level are two doors a reader

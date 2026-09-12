@@ -93,6 +93,32 @@ impl SeamVocab {
             SeamVocab::GridCard | SeamVocab::ListRow => "book",
         }
     }
+}
+
+/// The element id a reveal scrolls to and lights: the seam table's own prefix
+/// for the surface the target wears in the layout the reader is looking at.
+///
+/// One table decides every element id an item mounts under
+/// ([`ShelfItemShell`]), so the reveal — the one reader of those ids outside
+/// the mount — asks the table too. A prefix renamed here moves the shell's
+/// registration and the reveal's lookup together, which is the whole of the
+/// contract; a second spelling of it was a rename away from a highlight that
+/// silently found nothing. Book rows keep the grid's `book` prefix in BOTH
+/// layouts (the list row's vocab says so), and only a shelf target's id
+/// depends on the density: a folder is a `folder-` card in the grid and a
+/// `shelf-row-` row in the list.
+pub(crate) fn reveal_dom_id(target_is_shelf: bool, list_layout: bool, id: &str) -> String {
+    let vocab = match (target_is_shelf, list_layout) {
+        (true, true) => SeamVocab::FolderRow,
+        (true, false) => SeamVocab::FolderCard,
+        // A book — and a link, which rides a book's vocab in both densities.
+        (false, true) => SeamVocab::ListRow,
+        (false, false) => SeamVocab::GridCard,
+    };
+    format!("{}-{id}", vocab.dom_prefix())
+}
+
+impl SeamVocab {
 
     fn kind(self) -> DropTargetKind {
         match self {

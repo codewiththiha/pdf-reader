@@ -105,7 +105,9 @@ pub fn display_or_stem(title: Option<&str>, path: &str) -> String {
     {
         return title.to_string();
     }
-    reader_core::filename::file_stem_from_path(path).unwrap_or_else(|| path.to_string())
+    // The stem's own one spelling — `crate::book::stem_of` — rather than a
+    // second copy of the fallback chain here.
+    crate::book::stem_of(path)
 }
 
 #[cfg(test)]

@@ -222,7 +222,7 @@ pub fn same_name(a: &str, b: &str) -> bool {
 ///     (`1_1`) is a different name from the one that arrives (`1`).
 pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> {
     let index = row_index(rows);
-    level_members(rows, shelves, &at.shelf_id)
+    crate::shelf::members_of(rows, shelves, &at.shelf_id)
         .into_iter()
         .find_map(|member| {
             let row = *index.get(member)?;
@@ -246,7 +246,7 @@ pub fn collide(rows: &[Row], shelves: &[Shelf], at: &Arrival) -> Option<String> 
 /// like file names.
 pub fn next_name(rows: &[Row], shelves: &[Shelf], shelf_id: &str, name: &str) -> String {
     let index = row_index(rows);
-    let in_use: HashSet<String> = level_members(rows, shelves, shelf_id)
+    let in_use: HashSet<String> = crate::shelf::members_of(rows, shelves, shelf_id)
         .iter()
         .filter_map(|member| index.get(*member).copied())
         .map(Row::display_name)
@@ -284,15 +284,6 @@ pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> S
     duplicate_title(name, &in_use)
 }
 
-/// The ids of the rows one level holds — [`crate::shelf::members_of`], which
-/// is the one answer to that question rather than this module's own: a shelf's
-/// member list, and at the root the rows no shelf holds. A shelf id that names
-/// no shelf and is not the root answers with nothing, so an arrival aimed at a
-/// level that does not exist has nothing to collide with and the placement
-/// that follows is the caller's to refuse.
-fn level_members<'a>(rows: &'a [Row], shelves: &'a [Shelf], shelf_id: &str) -> Vec<&'a str> {
-    crate::shelf::members_of(rows, shelves, shelf_id)
-}
 
 /// Id → row, in one pass, so a level's members resolve against a map rather
 /// than re-walking the library per member — a batch of arrivals asks the

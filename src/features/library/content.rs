@@ -85,17 +85,14 @@ fn install_reveal(state: AppState) {
         };
         // A folder link lights the FOLDER: its card in the grid, its row in
         // the list — the two surfaces a shelf has, under their own id schemes.
-        // A shelf id is a letter apart from a book's, so the reveal's one
-        // signal serves both kinds.
-        let dom_id = if library_core::id::is_shelf(&book_id) {
-            if state.library.view.with_untracked(|v| v.is_list()) {
-                format!("shelf-row-{book_id}")
-            } else {
-                format!("folder-{book_id}")
-            }
-        } else {
-            format!("book-{book_id}")
-        };
+        // The seam table owns that scheme (it is what an item's mount writes
+        // its id from), so the reveal reads the table rather than re-spelling
+        // the prefixes: `crate::features::library::shelf_item::reveal_dom_id`.
+        let dom_id = crate::features::library::shelf_item::reveal_dom_id(
+            library_core::id::is_shelf(&book_id),
+            state.library.view.with_untracked(|v| v.is_list()),
+            &book_id,
+        );
         let smooth = scroll_may_animate(state);
         request_animation_frame(move || {
             request_animation_frame(move || {
