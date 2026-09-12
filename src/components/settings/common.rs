@@ -17,7 +17,7 @@
 use leptos::html;
 use leptos::prelude::*;
 
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;

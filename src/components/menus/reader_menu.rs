@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use reader_core::view::ViewMode;
 use reader_core::zoom_math::FitMode;
 
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
 use crate::components::primitives::menu::kbd::Kbd;

@@ -15,7 +15,7 @@ use leptos::prelude::*;
 use app_chrome::hooks::dom::by_id;
 use app_chrome::icon::{Icon, IconName};
 
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::state::AppState;

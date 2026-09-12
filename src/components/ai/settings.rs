@@ -19,7 +19,7 @@ use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::lanes::OverlayPolicy;
 use crate::components::primitives::form::row::Row;
 use crate::components::settings::common::StyleSelect;
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::state::AppState;
 
 /// The "AI Appearance" section of the reader settings modal's Theme tab.

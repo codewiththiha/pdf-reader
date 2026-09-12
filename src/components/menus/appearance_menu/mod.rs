@@ -44,7 +44,7 @@ use crate::components::shell::controller::ChromeSurface;
 use app_chrome::icon::{Icon, IconName};
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::effects::appearance::flush_appearance_commit;
 use crate::state::AppState;
 use reader_core::settings::Settings;

@@ -27,7 +27,7 @@ use crate::services::library::create_shelf_and_enter;
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::state::AppState;
 
 /// The sort keys the menu offers, in the order it offers them. The labels come

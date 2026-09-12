@@ -48,7 +48,7 @@ use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
 use crate::components::primitives::overlay::action_bar::ActionBar;
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::content::{FolderOrder, ShelfOrder, visible};
 use crate::features::library::dnd::controller::DragPayload;
 use crate::features::library::remove_modal::RemoveSheet;

@@ -88,7 +88,7 @@ use library_core::shelf::{ALL_SHELF, Shelf, ancestors};
 
 use crate::components::primitives::form::text_input::TextInput;
 use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
 use crate::services::library::{delete_shelf, rename_shelf};

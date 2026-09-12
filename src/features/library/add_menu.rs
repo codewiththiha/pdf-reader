@@ -24,7 +24,7 @@ use library_core::text::{human_age, human_size};
 use crate::components::primitives::menu::menu_item::MenuItem;
 use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::menu::separator::Separator;
-use crate::components::shell::titlebar::toolbar_popover::MenuPopover;
+use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::import_modal::ImportSheet;
 use crate::services::library::{
     folder_label, import_files, pick_documents, pick_documents_in, restore_deleted_book,
