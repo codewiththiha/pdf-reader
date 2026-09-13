@@ -10,6 +10,7 @@ use leptos::prelude::*;
 use library_core::book::{add_book, book_rows, book_rows_mut, Book, Fingerprint, Origin, Row};
 use library_core::conflict::Arrival;
 use library_core::folder::{self as folder_ops, FolderOpts, WatchedFolder};
+use library_core::tracking::TrackingTree;
 use library_core::id;
 use library_core::ledger::{self, ScanAction};
 use library_core::scan::FoundFile;
@@ -169,6 +170,7 @@ pub(super) fn resolve_folder(
         shelf_map: BTreeMap::new(),
         last_seen: Vec::new(),
         scanned_ms: 0,
+        tracking: TrackingTree::default(),
     });
     // The sheet's answers are this import's truth, and the next scan's — with
     // one answer the ground has already given. A watched read-at-place tree
@@ -190,8 +192,26 @@ pub(super) fn resolve_folder(
     let ground_is_watched =
         opts.in_place && folder_ops::watching_over(folders, shelves, root).is_some();
     folder.opts = opts;
-    if ground_is_watched {
-        folder.opts.watch = true;
+    // The sheet's switch is a question about the ROOT RUNG, and the tree is what
+    // answers it from here on — so the sheet's answer is written into the tree
+    // rather than left on the flag alone. The two stay agreed because
+    // `set_tracking` mirrors the root's answer back onto the flag the sheet and
+    // the older surfaces read.
+    //
+    // An import of ground a watched tree is SEATED on forces the root ON whatever
+    // the sheet said: an import of a folder is the reader asking for its books
+    // again rather than asking the library to stop looking, and a run that arrived
+    // with the defaults would otherwise un-track the tree it was importing. A
+    // rung the sheet turned off below that ground keeps its own `Off`, which is
+    // the subfolder control the single flag could not express.
+    //
+    // A run that COPIES writes the flag the sheet gave and no root decision,
+    // because the watch is not offered beside a copy: a copying folder's flag
+    // stays whatever it was, exactly as before, and its tree is left for the
+    // shelf's menu to answer for. The mode is read off the folder rather than off
+    // the parameter, which was moved into it a line above.
+    if folder.opts.in_place {
+        folder.set_tracking("", ground_is_watched || folder.opts.watch);
     }
     // A pointer at a shelf that is gone is a rung the walk reuses instead of
     // minting, and every placement that rides it lands on no shelf at all. Cut

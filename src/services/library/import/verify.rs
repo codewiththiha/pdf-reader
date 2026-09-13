@@ -88,7 +88,7 @@ fn run_watched(state: AppState) {
         .folders
         .get_untracked()
         .iter()
-        .filter(|f| f.opts.watch)
+        .filter(|f| f.tracked())
         .map(|f| (f.root.clone(), f.opts.clone()))
         .collect();
     for (root, opts) in watched {
@@ -103,7 +103,7 @@ fn run_watched(state: AppState) {
 /// Two callers and one spelling, because the two are the same walk asked by two
 /// different moments — every watched folder when the window regains focus, and
 /// the one folder a hand just turned a watch on.
-fn walk_one(state: AppState, root: String, opts: FolderOpts) {
+pub(super) fn walk_one(state: AppState, root: String, opts: FolderOpts) {
     // A folder a previous run is still walking keeps its walk: a rescan is
     // a question, and the run in flight is already answering it. An explicit
     // run in flight keeps its walk for the stronger reason — it is the reader's.
@@ -222,7 +222,7 @@ pub fn shelf_watch(state: AppState, shelf_id: &str) -> Option<ShelfWatch> {
         return None;
     }
     Some(ShelfWatch {
-        on: folder.opts.watch,
+        on: folder.tracked(),
         label: folder_label(&folder.root),
         folder_id,
     })
@@ -250,10 +250,10 @@ pub fn set_folder_watch(state: AppState, folder_id: &str, on: bool) {
             // A folder that already answers this way is not a write, and is not
             // a walk either: toggling it on again would be a second rescan of a
             // ground the first one has just covered.
-            (folder.opts.watch != on).then(|| {
-                let mut opts = folder.opts.clone();
-                opts.watch = on;
-                (folder.root.clone(), opts, folder_label(&folder.root))
+            (folder.tracked() != on).then(|| {
+                let mut folder = folder.clone();
+                folder.set_tracking("", on);
+                (folder.root.clone(), folder.opts.clone(), folder_label(&folder.root))
             })
         })
     }) else {
@@ -261,7 +261,11 @@ pub fn set_folder_watch(state: AppState, folder_id: &str, on: bool) {
     };
     state.library.folders.update(|folders| {
         if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
-            folder.opts.watch = on;
+            // The whole tree, which is the rung the shelf's menu asks about: a
+            // shelf of a watched folder is a seat in that folder's tree, and
+            // "stop watching" from there is the root's answer rather than the
+            // rung's.
+            folder.set_tracking("", on);
         }
     });
     crate::storage::persist_library(state.library);

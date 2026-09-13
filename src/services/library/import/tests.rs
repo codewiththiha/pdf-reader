@@ -14,6 +14,7 @@ use crate::state::AppState;
 use leptos::prelude::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
 use library_core::folder::{FolderOpts, Tombstone, WatchedFolder};
+use library_core::tracking::TrackingTree;
 use library_core::scan::FoundFile;
 use library_core::shelf::Shelf;
 use reader_core::format::Format;
@@ -154,15 +155,23 @@ fn a_run_the_reader_started_is_the_one_an_ask_is_refused_by() {
 
 /// A read-at-place folder with the two mode switches set: the fixture the watch
 /// lock is asked about, where [`folder`]'s defaults answer every case the same.
+/// A folder in an explicit mode. The watch arrives as the tree's root decision
+/// and not as the flag alone, because the flag is now that decision's mirror: a
+/// fixture that set only the flag would be a folder this build never writes, and
+/// every surface that reads the tree would answer `false` for it.
 fn folder_in_mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
-    WatchedFolder {
+    let mut folder = WatchedFolder {
         opts: FolderOpts {
             in_place,
             watch,
             ..FolderOpts::default()
         },
         ..folder(id, root, &[], Vec::new())
+    };
+    if watch {
+        folder.set_tracking("", true);
     }
+    folder
 }
 
 /// A shelf of folder `id`'s tree, at the rung its root files onto: a seat for
@@ -241,6 +250,59 @@ fn a_watched_folder_no_shelf_of_stands_holds_no_lock() {
         &RootPlan::default(),
     );
     assert!(asked.opts.watch);
+}
+
+#[test]
+fn the_sheet_s_watch_answer_lands_in_the_tree_and_not_only_on_the_flag() {
+    // The flag is what an older build wrote and read; the tree is what every
+    // surface reads from here on. A run that wrote the flag alone would leave a
+    // folder the sheet asked to watch with an empty tree — and an empty tree
+    // tracks nothing, so the folder would never be rescanned again.
+    let asked = resolve_folder(
+        &[],
+        &[],
+        "/books",
+        FolderOpts {
+            watch: true,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(asked.tracked(), "the switch became the root rung's decision");
+    assert!(asked.tracks_rung("Fiction/SciFi"), "and the tree below inherits it");
+    assert!(asked.opts.watch, "with the flag left agreed");
+
+    // The same ground with the switch off is a folder nothing tracks, and the
+    // two halves say so together.
+    let off = resolve_folder(
+        &[],
+        &[],
+        "/books",
+        FolderOpts {
+            watch: false,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(!off.tracked());
+    assert!(!off.opts.watch);
+
+    // A copying run writes no root decision at all: the sheet does not offer the
+    // watch beside a copy, so there is no answer of the reader's to record, and a
+    // watched copy would be a folder no surface can turn off.
+    let copies = resolve_folder(
+        &[],
+        &[],
+        "/dvds",
+        FolderOpts {
+            in_place: false,
+            watch: true,
+            ..FolderOpts::default()
+        },
+        &RootPlan::default(),
+    );
+    assert!(!copies.tracked(), "no rung decision was written");
+    assert!(copies.opts.watch, "and the flag stays the sheet's, as it always did");
 }
 
 #[test]
@@ -401,6 +463,7 @@ fn folder(id: &str, root: &str, placed: &[u32], ignored: Vec<Tombstone>) -> Watc
         shelf_map: Default::default(),
         last_seen: Vec::new(),
         scanned_ms: 0,
+        tracking: TrackingTree::default(),
     }
 }
 

@@ -76,7 +76,6 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
     // one item shell (see `crate::features::library::shelf_item`); what is left
     // here is the folder's own content.
     let id = shelf.id.clone();
-    let watched_folder = shelf.kind.folder_id().map(str::to_string);
 
     let name = state.library.shelf_name_signal(&id);
 
@@ -94,17 +93,13 @@ pub(crate) fn FolderCard(state: AppState, shelf: Shelf) -> impl IntoView {
         (books, inside)
     });
 
-    // Whether the folder this shelf was cut from is still being watched: the
-    // breathing dot that says "this shelf may fill itself". It needs the folder
-    // row, so it is a reactive read rather than a copy taken at mount.
-    let watched = Signal::derive(move || {
-        let Some(folder_id) = watched_folder.clone() else {
-            return false;
-        };
-        state.library.folders.with(|folders| {
-            folders.iter().any(|f| f.id == folder_id && f.opts.watch)
-        })
-    });
+    // Whether this shelf's rung is still tracked: the breathing dot that says
+    // "this shelf may fill itself". The question is the rung's and not the whole
+    // import's, so a subfolder turned off under a watched tree stops breathing
+    // while the tree above it keeps watching. Reactive, because the answer lives
+    // in two lists a hand can change while this card is on screen.
+    let dot_id = id.clone();
+    let watched = Signal::derive(move || state.library.shelf_tracked(&dot_id));
 
     // The membership the plate's check mark paints from — the same set the
     // shell's own selected class reads, and the one `SelectionCheck` marks.

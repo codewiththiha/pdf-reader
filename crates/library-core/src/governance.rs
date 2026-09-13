@@ -27,7 +27,7 @@
 
 use crate::book::Fingerprint;
 use crate::folder::{rel_under, WatchedFolder};
-use crate::shelf::{find as find_shelf, Shelf};
+use crate::shelf::{ancestors, find as find_shelf, Shelf, ShelfKind};
 
 /// The folder, the rung and the standing shelf that answer for a path.
 ///
@@ -143,6 +143,43 @@ impl<'a> Governance<'a> {
     /// "which folders placed this content, and where does each say it lives now"
     /// — so the rule about a book leaving its ground reads the same resolver the
     /// import gate does rather than re-walking the folder list itself.
+    /// Whether the tree a shelf was cut from tracks the rung that shelf stands
+    /// on — the question every watch dot asks, and the one a single flag for the
+    /// whole import could only answer about the root.
+    ///
+    /// A shelf of a folder answers with that folder's own decision for the rung
+    /// the shelf's `rel` names, so a subfolder turned off under a tracked root
+    /// stops showing a dot while the tree above it keeps watching. A shelf the
+    /// reader made inside such a tree answers with the closest folder shelf above
+    /// it: it is not a rung the disk names, but it is standing inside a tracked
+    /// tree, and "is this shelf watched" asked from there is the same question.
+    ///
+    /// `None` for a shelf no read-at-place folder answers for — the reader's own
+    /// shelf on the reader's own ground, or a shelf of a COPYING folder, whose
+    /// import sheet does not offer the watch either, so there is no dot to draw.
+    pub fn shelf_tracked(&self, shelf_id: &str) -> Option<bool> {
+        let shelf = find_shelf(self.shelves, shelf_id)?;
+        let (folder_id, rung) = match &shelf.kind {
+            ShelfKind::Folder { folder_id, rel } => {
+                (folder_id.as_str(), rel.as_deref().unwrap_or(""))
+            }
+            // Not a rung of any tree: the closest folder shelf above it is the
+            // tree it stands inside. `ancestors` is root-first, so the LAST
+            // folder shelf in it is the nearest one.
+            ShelfKind::Virtual => ancestors(self.shelves, shelf_id)
+                .iter()
+                .rev()
+                .find_map(|each| match &each.kind {
+                    ShelfKind::Folder { folder_id, rel } => {
+                        Some((folder_id.as_str(), rel.as_deref().unwrap_or("")))
+                    }
+                    ShelfKind::Virtual => None,
+                })?,
+        };
+        let folder = crate::folder::find(self.folders, folder_id)?;
+        folder.opts.in_place.then(|| folder.tracks_rung(rung))
+    }
+
     pub fn placing_rungs(&self, fp: &Fingerprint, path: &str) -> Vec<Option<String>> {
         self.folders
             .iter()
@@ -156,6 +193,7 @@ impl<'a> Governance<'a> {
 mod tests {
     use super::*;
     use crate::folder::FolderOpts;
+    use crate::tracking::TrackingTree;
     use crate::testkit::{folder_shelf, fp_n};
     use std::collections::{BTreeMap, HashSet};
 
@@ -176,6 +214,7 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect::<BTreeMap<_, _>>(),
             scanned_ms: 0,
+            tracking: TrackingTree::default(),
         }
     }
 
@@ -308,6 +347,69 @@ mod tests {
         // A folder that placed nothing is not in the list, so an empty answer
         // means no ledger is waiting.
         assert!(g.placing_rungs(&fp_n(99), "/books/Fiction/dune.pdf").is_empty());
+    }
+
+    #[test]
+    fn a_watch_dot_is_the_rung_s_answer_not_the_tree_s() {
+        let (folders, shelves) = tree();
+        let g = Governance::new(&folders, &shelves);
+        // Nothing tracked yet: no rung of the tree answers on.
+        assert_eq!(g.shelf_tracked("r"), Some(false));
+        assert_eq!(g.shelf_tracked("sf"), Some(false));
+
+        // Tracking the root lights every rung, which is the whole-tree answer the
+        // single flag used to be.
+        let mut all = folders.clone();
+        all[0].set_tracking("", true);
+        let g = Governance::new(&all, &shelves);
+        assert_eq!(g.shelf_tracked("r"), Some(true));
+        assert_eq!(g.shelf_tracked("fic"), Some(true));
+        assert_eq!(g.shelf_tracked("sf"), Some(true), "a rung inherits the root");
+
+        // Turning one rung off is the case the flag could not express: that shelf
+        // stops answering on and the tree above it keeps watching.
+        let mut partly = all.clone();
+        partly[0].set_tracking("Fiction", false);
+        let g = Governance::new(&partly, &shelves);
+        assert_eq!(g.shelf_tracked("r"), Some(true));
+        assert_eq!(g.shelf_tracked("fic"), Some(false), "the rung turned off");
+        assert_eq!(g.shelf_tracked("sf"), Some(false), "and everything below it");
+        // The flag stays the root's answer, so a downgrade reads the same tree.
+        assert!(partly[0].tracked());
+        assert!(partly[0].opts.watch);
+    }
+
+    #[test]
+    fn a_shelf_the_reader_made_answers_for_the_tree_it_stands_inside() {
+        let (folders, mut shelves) = tree();
+        // "mine" hangs at the root; put a reader's shelf inside the Fiction rung
+        // and ask about it. It is not a rung the disk names, but it is standing
+        // inside the tree, so the tree's answer for that rung is the answer.
+        shelves.push(crate::testkit::shelf("mine2", "Mine", &[], Some("fic")));
+        let mut tracked = folders.clone();
+        tracked[0].set_tracking("", true);
+        let g = Governance::new(&tracked, &shelves);
+        assert_eq!(g.shelf_tracked("mine2"), Some(true));
+        let mut off = tracked.clone();
+        off[0].set_tracking("Fiction", false);
+        assert_eq!(Governance::new(&off, &shelves).shelf_tracked("mine2"), Some(false));
+    }
+
+    #[test]
+    fn a_shelf_nothing_reads_in_place_has_no_dot_to_draw() {
+        let (folders, shelves) = tree();
+        let g = Governance::new(&folders, &shelves);
+        // A shelf of the reader's own at the root level: no folder above it.
+        assert_eq!(g.shelf_tracked("mine"), None);
+        // A shelf the list does not hold, and the pseudo-shelf, answer the same.
+        assert_eq!(g.shelf_tracked("gone"), None);
+        assert_eq!(g.shelf_tracked(crate::shelf::ALL_SHELF), None);
+        // A COPYING folder's shelf has no watch either way: the import sheet does
+        // not offer the watch beside a copy, so there is no dot to draw and no
+        // surface that could turn one off.
+        let copying = vec![folder("c1", "/dvds", false, &[("", "x")])];
+        let copy_shelves = vec![folder_shelf("x", "DVDs", "c1", None, &[], None)];
+        assert_eq!(Governance::new(&copying, &copy_shelves).shelf_tracked("x"), None);
     }
 
     #[test]

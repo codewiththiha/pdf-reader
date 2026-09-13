@@ -118,6 +118,7 @@ mod tests {
     use super::*;
     use crate::book::{Book, Fingerprint};
     use crate::folder::FolderOpts;
+    use crate::tracking::TrackingTree;
     use std::collections::{BTreeMap, HashSet};
 
     /// The book a row holds. Every row a migration makes is a book — no
@@ -251,6 +252,7 @@ mod tests {
                 shelf_map: BTreeMap::new(),
                 last_seen: Vec::new(),
                 scanned_ms: 0,
+                tracking: TrackingTree::default(),
             }],
             view: LibraryView::default(),
         };

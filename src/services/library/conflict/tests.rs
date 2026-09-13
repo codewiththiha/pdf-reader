@@ -2,6 +2,7 @@ use super::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
 use library_core::conflict::{Answer, MoveAnswer};
 use library_core::folder::FolderOpts;
+use library_core::tracking::TrackingTree;
 use library_core::shelf::Shelf;
 use reader_core::format::Format;
 
@@ -68,6 +69,7 @@ fn folder_in_place(
         shelf_map: Default::default(),
         last_seen: Vec::new(),
         scanned_ms: 0,
+        tracking: TrackingTree::default(),
     }
 }
 

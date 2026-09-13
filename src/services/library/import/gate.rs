@@ -113,7 +113,24 @@ pub(crate) struct RootPlan {
 /// still withholds *as new* from a read-at-place arrival of a DIFFERENT
 /// folder's name, because as new of a linked folder is exactly the second
 /// instance the gate exists to prevent.
-pub fn import_folder(state: AppState, root: String, opts: FolderOpts) {
+/// `track` is the sheet's watch answer for THIS ground, and it is an `Option`
+/// because the two cases are not two settings of one thing. `None` is the
+/// ordinary import: the switch wrote the options and the folder's own root rung
+/// takes whatever the sheet said. `Some((tree, rung, on))` is a ground an
+/// existing read-at-place tree already covers, where the decision belongs at that
+/// rung of THAT tree rather than at a fresh folder's root — which is what lets a
+/// subfolder be tracked differently from the import it stands inside, and what
+/// lets a switch turned off on watched ground be an answer rather than a control
+/// the reader was not allowed to touch.
+pub fn import_folder(
+    state: AppState,
+    root: String,
+    opts: FolderOpts,
+    track: Option<(String, String, bool)>,
+) {
+    if let Some((tree_id, rung, on)) = &track {
+        set_rung_tracking(state, tree_id, rung, *on);
+    }
     if opts.in_place {
         if let Some(covered) = covered_shelf(state, &root) {
             // Ground a family tree already holds — its own root re-picked, or
@@ -219,6 +236,63 @@ pub(super) struct Covered {
     /// The root of the tree that covers the ground — the walk the re-pick
     /// owes runs on THIS ledger, whichever rung of it the reader picked.
     pub tree_root: String,
+    /// The rung this ground names in that tree — `""` when the ground IS the
+    /// tree's root. What makes a tracking decision about this ground a decision
+    /// about this ground rather than about the whole import: the sheet's switch
+    /// writes this rung, and a subfolder can then say something different from
+    /// the tree it stands in.
+    pub rel: String,
+}
+
+/// Whether the ground the sheet is about to import is tracked, and by which tree
+/// at which rung — the three facts the watch switch needs to be the reader's own
+/// question rather than a lock.
+///
+/// `None` when no read-at-place tree covers the ground, which is the ordinary
+/// case: nothing is tracking it, so the switch simply writes the folder's own
+/// root when the import lands. `Some` names the tree and the rung, so a switch
+/// turned OFF on ground an ancestor tree tracks becomes an explicit decision at
+/// THAT rung instead of a disabled control and a sentence telling the reader to
+/// go and right-click something else.
+pub fn ground_tracking(state: AppState, root: &str) -> Option<(String, String, bool)> {
+    let covered = covered_shelf(state, root)?;
+    let on = state.library.folders.with_untracked(|folders| {
+        folder_ops::find(folders, &covered.tree_root)
+            .map(|f| f.tracks_rung(&covered.rel))
+            .unwrap_or(false)
+    });
+    Some((covered.tree_root, covered.rel, on))
+}
+
+/// Write one rung's tracking decision, on the tree that owns it.
+///
+/// The sheet's switch is the reader's answer about the ground they picked, and
+/// the ground belongs to a rung of an existing tree whenever one covers it — so
+/// the write is at that rung rather than at a fresh folder's root. Turning it ON
+/// owes the quiet walk the shelf's own menu owes (`set_folder_watch`), because a
+/// reader who just asked the library to look at this ground should see the file
+/// that arrived while nobody was watching, now rather than at the next focus.
+/// It is the rescan's own walk, so the tombstones a removal wrote still hold.
+fn set_rung_tracking(state: AppState, folder_id: &str, rung: &str, on: bool) {
+    let mut changed = false;
+    state.library.folders.update(|folders| {
+        if let Some(folder) = folder_ops::find_mut(folders, folder_id) {
+            folder.set_tracking(rung, on);
+            changed = true;
+        }
+    });
+    if !changed {
+        return;
+    }
+    crate::storage::persist_library(state.library);
+    if on {
+        let Some((root, opts)) = state.library.folders.with_untracked(|folders| {
+            folder_ops::find(folders, folder_id).map(|f| (f.root.clone(), f.opts.clone()))
+        }) else {
+            return;
+        };
+        super::verify::walk_one(state, root, opts);
+    }
 }
 
 /// [`covered_of`] over the live lists.
@@ -260,6 +334,7 @@ pub(super) fn covered_of(
     Some(Covered {
         shelf_name: shelf.name.clone(),
         tree_root: folder.root.clone(),
+        rel: coverage.rel,
         shelf_id: coverage.shelf_id,
     })
 }

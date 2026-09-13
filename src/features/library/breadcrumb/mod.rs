@@ -155,11 +155,10 @@ fn crumbs(state: AppState) -> Signal<Vec<Crumb>> {
                 return Vec::new();
             };
             let of = |shelf: &Shelf| {
-                let watched = shelf.kind.folder_id().is_some_and(|folder_id| {
-                    state.library.folders.with_untracked(|folders| {
-                        folders.iter().any(|f| f.id == folder_id && f.opts.watch)
-                    })
-                });
+                // The rung's own answer rather than the whole import's, so a
+                // crumb for a subfolder turned off under a watched tree does not
+                // carry a dot the shelf below it has stopped earning.
+                let watched = state.library.shelf_tracked(&shelf.id);
                 Crumb {
                     id: shelf.id.clone(),
                     name: shelf.name.clone(),

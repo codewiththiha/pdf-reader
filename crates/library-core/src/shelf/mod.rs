@@ -769,6 +769,7 @@ mod tests {
     }
 
     use crate::folder::{FolderOpts, WatchedFolder};
+    use crate::tracking::TrackingTree;
     use std::collections::{BTreeMap, HashSet};
 
     /// `/books` read in place, cut into three rungs — the root ("r"),
@@ -794,6 +795,7 @@ mod tests {
                 ("Fiction/SciFi".to_string(), "sf".to_string()),
             ]),
             scanned_ms: 0,
+            tracking: TrackingTree::default(),
         }];
         (shelves, folders)
     }
@@ -855,6 +857,7 @@ mod tests {
             last_seen: Vec::new(),
             shelf_map: BTreeMap::from([(String::new(), "stored".to_string())]),
             scanned_ms: 0,
+            tracking: TrackingTree::default(),
         });
         // The reader's own shelf is the reader's wherever it hangs.
         assert!(!departs_on_move(&shelves, &folders, "mine", Some("r")));

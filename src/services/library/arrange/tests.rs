@@ -12,6 +12,7 @@ use library_core::shelf::{Shelf, ALL_SHELF};
 
 use library_core::book::{Book, Fingerprint, Origin};
 use library_core::folder::{FolderOpts, WatchedFolder};
+use library_core::tracking::TrackingTree;
 use library_core::shelf::ShelfKind;
 use reader_core::format::Format;
 
@@ -226,6 +227,7 @@ fn nested(n: u32) -> WatchedFolder {
             ("Fiction/SciFi".to_string(), "shelf3".to_string()),
         ]),
         scanned_ms: 0,
+        tracking: TrackingTree::default(),
     }
 }
 
@@ -394,6 +396,7 @@ fn folder_with_moved_log() -> WatchedFolder {
             ("Fiction/SciFi".to_string(), "shelf3".to_string()),
         ]),
         scanned_ms: 0,
+        tracking: TrackingTree::default(),
     }
 }
 
@@ -457,6 +460,7 @@ fn reading_folder() -> WatchedFolder {
             ("Fiction/SciFi".to_string(), "sf".to_string()),
         ]),
         scanned_ms: 0,
+        tracking: TrackingTree::default(),
     }
 }
 

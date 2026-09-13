@@ -18,6 +18,7 @@ use reader_core::format::Format;
 use crate::book::{Book, Fingerprint};
 use crate::scan::{FoundFile, admits, selectable_formats, subfolder_of};
 use crate::shelf::Shelf;
+use crate::tracking::{Track, TrackingTree};
 
 /// The default size threshold the import sheet opens on, in bytes: 30 KB. A
 /// PDF smaller than that is a stub, a placeholder or a corrupt download, and a
@@ -173,6 +174,17 @@ pub struct WatchedFolder {
     /// it, which is why a stale stamp can never suppress a scan.
     #[serde(default)]
     pub scanned_ms: u64,
+    /// Which rungs of this tree are tracked, per rung rather than for the whole
+    /// import. [`WatchedFolder::tracked`] is the answer every caller reads;
+    /// [`crate::tracking::TrackingTree`] owns the inheritance.
+    ///
+    /// `#[serde(default)]` because a blob written before tracking was a tree has
+    /// no key at all, and [`sanitize`] is what carries the legacy
+    /// [`FolderOpts::watch`] flag across into it — an empty tree tracks nothing,
+    /// so a load that skipped that step would silently stop rescanning every
+    /// watched folder the reader had.
+    #[serde(default)]
+    pub tracking: TrackingTree,
 }
 
 /// The path of `path` relative to `root`: `/`-separated on every platform, with
@@ -361,6 +373,38 @@ impl WatchedFolder {
         self.placed.insert(fp);
     }
 
+    /// Whether this folder's tree is tracked from its root — the whole-tree
+    /// answer the single [`FolderOpts::watch`] flag used to be, now read off the
+    /// rung tree so a subfolder can say something different from its root.
+    ///
+    /// Every surface that draws a watch dot, and the rescan that decides which
+    /// folders to walk, ask this rather than the flag: one rule for "is this
+    /// folder watched", and a rung-level answer available to the surfaces that
+    /// want one ([`WatchedFolder::tracks_rung`]).
+    pub fn tracked(&self) -> bool {
+        self.tracking.tracked()
+    }
+
+    /// Whether one rung of this tree is tracked: the rung's own decision, or the
+    /// nearest ancestor that has one. The root rung is [`WatchedFolder::tracked`].
+    pub fn tracks_rung(&self, key: &str) -> bool {
+        self.tracking.resolve(key)
+    }
+
+    /// Turn tracking on or off for one rung of this tree, and mirror the root's
+    /// answer back onto [`FolderOpts::watch`] so the import sheet's switch and
+    /// every surface that reads the flag agree with the tree.
+    ///
+    /// The flag is the legacy half of one decision rather than a second source of
+    /// truth: a blob written by an older build carries the flag and no tree, and
+    /// [`sanitize`] carries it across on load. Writing both keeps a downgrade
+    /// honest in the one direction that matters — a folder this build watched is a
+    /// folder an older build still watches.
+    pub fn set_tracking(&mut self, key: &str, on: bool) {
+        self.tracking.set(key, if on { Track::On } else { Track::Off });
+        self.opts.watch = self.tracking.tracked();
+    }
+
     /// Drop the map's pointers at shelves that are no longer standing, and
     /// answer whether it dropped any.
     ///
@@ -532,7 +576,7 @@ pub fn watching_over<'a>(
 ) -> Option<&'a WatchedFolder> {
     folders
         .iter()
-        .filter(|f| f.opts.in_place && f.opts.watch)
+        .filter(|f| f.opts.in_place && f.tracked())
         .filter(|f| governs(f, shelves, ground))
         .max_by_key(|f| f.root.trim_end_matches(['/', '\\']).chars().count())
 }
@@ -590,6 +634,17 @@ pub fn sanitize(folders: &mut Vec<WatchedFolder>) {
         // A watch on a folder that is not read in place still means something
         // (the source may gain a file worth copying), so it is left alone; the
         // sheet simply does not offer it there.
+        //
+        // The legacy flag is carried into the rung tree the first time this build
+        // sees the folder, and the flag is then kept equal to the tree's root so
+        // the two cannot drift. An empty tree is what a blob from before tracking
+        // existed deserialises to, and an empty tree tracks nothing — so without
+        // this step every watched folder a reader had would silently stop being
+        // rescanned on the upgrade.
+        if f.tracking.is_empty() && f.opts.watch {
+            f.tracking.set("", Track::On);
+        }
+        f.opts.watch = f.tracking.tracked();
         f.shelf_map.retain(|k, v| !v.trim().is_empty() && !k.contains('\\'));
         // One tombstone per fingerprint: a book removed twice (it can happen —
         // restore it, then remove it again) must not leave two rows offering the
@@ -746,6 +801,7 @@ mod tests {
             shelf_map: BTreeMap::new(),
             last_seen: Vec::new(),
             scanned_ms: 0,
+            tracking: TrackingTree::default(),
         }
     }
 
@@ -901,6 +957,57 @@ mod tests {
     }
 
     #[test]
+    fn a_blob_from_before_tracking_was_a_tree_keeps_watching() {
+        // The whole upgrade in one assertion: a folder written by an older build
+        // carries `opts.watch` and no tree, and an empty tree tracks nothing — so
+        // a load that did not carry the flag across would silently stop rescanning
+        // every watched folder the reader had.
+        let raw = r#"{"id":"f1","root":"/books","opts":{"inPlace":true,"watch":true}}"#;
+        let mut folders: Vec<WatchedFolder> = serde_json::from_str(&format!("[{raw}]")).unwrap();
+        assert!(folders[0].tracking.is_empty(), "the old blob has no tree");
+        assert!(folders[0].opts.watch, "and the flag it did have");
+        sanitize(&mut folders);
+        assert!(folders[0].tracked(), "the flag became the root rung's decision");
+        assert!(folders[0].tracks_rung("Fiction"), "and the tree below it inherits");
+        assert!(folders[0].opts.watch, "the flag is left agreed with the tree");
+        // The other direction: an unwatched folder stays unwatched, and a tree
+        // that already has a decision is not overwritten by the flag beside it.
+        let raw_off = r#"{"id":"f2","root":"/dvds","opts":{"inPlace":true,"watch":false}}"#;
+        let mut off: Vec<WatchedFolder> =
+            serde_json::from_str(&format!("[{raw_off}]")).unwrap();
+        sanitize(&mut off);
+        assert!(!off[0].tracked());
+        // A folder this build wrote carries a tree, and a stale flag disagreeing
+        // with it yields to the tree — the tree is the answer from here on.
+        let mut written = vec![mode("f3", "/books", true, false)];
+        written[0].set_tracking("", true);
+        assert!(written[0].opts.watch, "set_tracking mirrors the root onto the flag");
+        written[0].opts.watch = false;
+        sanitize(&mut written);
+        assert!(written[0].tracked(), "the tree wins");
+        assert!(written[0].opts.watch, "and the flag is brought back into agreement");
+    }
+
+    #[test]
+    fn turning_a_rung_off_below_a_watched_root_leaves_the_root_watching() {
+        // The control the single flag could not express, asked of the folder
+        // rather than of the tree: the root keeps its answer and its flag, the
+        // rung below it does not, and a deeper rung inherits the nearer decision.
+        let mut f = folder("/books");
+        f.set_tracking("", true);
+        assert!(f.tracked() && f.tracks_rung("Fiction") && f.tracks_rung("Fiction/SciFi"));
+        f.set_tracking("Fiction", false);
+        assert!(f.tracked(), "the tree is still watched");
+        assert!(f.opts.watch, "and the flag still says so");
+        assert!(!f.tracks_rung("Fiction"), "the rung turned off is off");
+        assert!(!f.tracks_rung("Fiction/SciFi"), "and so is everything below it");
+        assert!(f.tracks_rung("Poetry"), "a sibling is untouched");
+        // Clearing the rung's decision hands it back to the root.
+        f.tracking.set("Fiction", crate::tracking::Track::Inherit);
+        assert!(f.tracks_rung("Fiction/SciFi"));
+    }
+
+    #[test]
     fn sanitize_dedupes_roots_and_clamps_the_dial() {
         let mut folders = vec![
             WatchedFolder {
@@ -987,15 +1094,24 @@ mod tests {
         folders[1].id = "f2".into();
         assert_eq!(find(&folders, "f2").map(|f| f.root.as_str()), Some("/two"));
         assert!(find(&folders, "gone").is_none());
-        find_mut(&mut folders, "f2").unwrap().opts.watch = true;
-        assert!(find(&folders, "f2").is_some_and(|f| f.opts.watch));
+        // Through the writer rather than the field: `set_tracking` is what keeps
+        // the tree and the flag agreed, and a test that poked the flag directly
+        // would pass while proving nothing about the folder every surface reads.
+        find_mut(&mut folders, "f2").unwrap().set_tracking("", true);
+        assert!(find(&folders, "f2").is_some_and(|f| f.tracked() && f.opts.watch));
     }
 
     /// A folder with the two mode switches set explicitly: the fixture the
     /// watch-cover rule is asked about, where the default fixture's `false`
     /// watch would answer every case the same way.
+    /// A folder with the two mode switches set explicitly.
+    ///
+    /// The watch arrives as a TREE rather than as the flag alone, because the
+    /// flag is now the root rung's mirror: a fixture that set only the flag would
+    /// be a folder this build never writes, and `watching_over` — which reads the
+    /// tree — would answer `false` for a folder the test meant to be watched.
     fn mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedFolder {
-        WatchedFolder {
+        let mut folder = WatchedFolder {
             id: id.into(),
             opts: FolderOpts {
                 in_place,
@@ -1003,7 +1119,11 @@ mod tests {
                 ..FolderOpts::default()
             },
             ..folder(root)
+        };
+        if watch {
+            folder.set_tracking("", true);
         }
+        folder
     }
 
     #[test]

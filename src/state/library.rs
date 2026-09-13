@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use library_core::blob::LibraryBlob;
 use library_core::book::Row;
 use library_core::folder::{self as folder_ops, WatchedFolder};
+use library_core::governance::Governance;
 use library_core::id;
 use library_core::shelf::{self, ALL_SHELF, Shelf};
 use library_core::text::plural;
@@ -510,6 +511,39 @@ impl LibraryState {
         self.shelves.with_untracked(|shelves| {
             shelf::find(shelves, shelf_id).and_then(|s| s.kind.folder_id().map(str::to_string))
         })
+    }
+
+    /// Whether a shelf is tracked — the watch dot's one rule, for the four
+    /// surfaces that draw or read one (a folder card, a breadcrumb crumb, a
+    /// removal receipt's shelf line, and the shelf's own menu).
+    ///
+    /// A shelf of a read-at-place folder answers with that folder's decision for
+    /// the rung the shelf stands on, so a subfolder turned off under a tracked
+    /// root stops showing a dot while the tree above it keeps watching. A shelf
+    /// the reader made inside such a tree answers with the tree it stands in.
+    /// `false` for anything no read-at-place folder answers for — the reader's own
+    /// shelf on the reader's own ground, a shelf of a copying folder, and the
+    /// pseudo-shelf — because none of them has a dot to draw.
+    ///
+    /// Reactive: it reads both lists, so a card repaints on the frame a hand
+    /// turns the folder's tracking off rather than at the next mount.
+    pub fn shelf_tracked(&self, shelf_id: &str) -> bool {
+        self.folders.with(|folders| {
+            self.shelves
+                .with(|shelves| Governance::new(folders, shelves).shelf_tracked(shelf_id))
+        }) == Some(true)
+    }
+
+    /// [`shelf_tracked`] without the subscription, for a caller that is building
+    /// a snapshot rather than painting — a removal receipt reads the library once
+    /// and writes a value the sheet prints, and subscribing there would tie a
+    /// one-shot read to the reactive graph for nothing.
+    pub fn shelf_tracked_untracked(&self, shelf_id: &str) -> bool {
+        self.folders.with_untracked(|folders| {
+            self.shelves.with_untracked(|shelves| {
+                Governance::new(folders, shelves).shelf_tracked(shelf_id)
+            })
+        }) == Some(true)
     }
 
     /// The watched folder an id names, cloned and read untracked: what the

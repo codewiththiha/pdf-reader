@@ -56,8 +56,9 @@ pub use covers::backfill_missing;
 pub use duplicate::{duplicate_row, duplicate_rows, duplicate_shelf};
 pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
-    dismiss_task, import_files, import_folder, migrate_store_layout, rescan_watched,
-    restore_deleted_book, set_folder_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
+    dismiss_task, ground_tracking, import_files, import_folder, migrate_store_layout,
+    rescan_watched, restore_deleted_book, set_folder_watch, shelf_watch, verify_library, verify_one,
+    ShelfWatch,
 };
 
 /// The last segment of a path, on either separator, with no trailing separator.

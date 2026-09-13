@@ -287,11 +287,10 @@ pub(super) fn receipt(
             } else {
                 children_of(&all, Some(s.id.as_str())).len()
             },
-            watched: s.kind.folder_id().is_some_and(|folder_id| {
-                state.library.folders.with_untracked(|folders| {
-                    folders.iter().any(|f| f.id == folder_id && f.opts.watch)
-                })
-            }),
+            // The rung's own answer: the receipt says whether THIS shelf's
+            // ground will refill itself, and a subfolder turned off under a
+            // watched tree does not.
+            watched: state.library.shelf_tracked_untracked(&s.id),
         })
         .collect();
     let mut marks = 0usize;
@@ -330,7 +329,7 @@ pub(super) fn receipt(
     let watched = measured
         && state.library.folders.with_untracked(|folders| {
             folders.iter().any(|f| {
-                f.opts.watch
+                f.tracked()
                     && fingerprints
                         .iter()
                         .any(|fp| f.placed.contains(fp) || f.is_ignored(fp))

@@ -10,37 +10,41 @@
 //! be a second opinion about a book that already exists. The row hides rather
 //! than disables, because a switch that cannot be turned on is noise.
 //!
-//! One ground the watch switch is NOT the reader's to set, and it disables rather
-//! than hides: ground a watched read-at-place tree is SEATED on — the folder
-//! itself re-picked, a rung of it, or a directory under a rung that still hangs —
-//! is watched, and an import of it is the reader asking for its books again rather
-//! than asking the library to stop looking. The switch locks on and says why,
-//! because the alternative is a sheet whose defaults quietly un-track a folder by
-//! importing it.
+//! The watch switch is the reader's on every ground, and what changes is which
+//! rung their answer lands on. Tracking is a tree rather than one flag for the
+//! whole import (`library_core::tracking`), so ground an existing read-at-place
+//! tree already covers is a rung of THAT tree: the switch reads the tree's own
+//! answer for the rung and writes back to it, which is what lets a subfolder be
+//! tracked differently from the import it stands inside. Ground nothing covers is
+//! a fresh folder's root, and the switch writes the options the sheet already
+//! holds.
 //!
-//! The seat is the GROUND's and not the folder's, and the difference is what a
-//! removal leaves behind: taking a folder's shelf apart lifts the shelves inside
-//! it to the level it was on, so the folder keeps shelves the reader can see
-//! while the ground they took one off is seated by nothing. That ground locks no
-//! more — the next import of it mints a fresh shelf with the sheet's own options,
-//! and an import of it with the switch off is how the invisible watch ends. A
-//! rung below a ground is not a seat for it, and a lock that read "this folder
-//! still has shelves somewhere" was a switch stuck on for a folder the reader had
-//! just taken apart. Turning a watch off by hand is the shelf's own right-click,
-//! which asks nothing of a walk (`crate::services::library::set_folder_watch`).
+//! This used to be a lock. Ground a watched tree was seated on got a disabled
+//! switch and a sentence telling the reader to go and right-click the shelf
+//! instead, because there was no unit smaller than the whole imported tree to
+//! hang a decision on — so an import of a subfolder under a watched ancestor
+//! could not say anything about that subfolder, and a sheet whose defaults were
+//! `false` would have quietly un-tracked the tree it was importing. The lock was
+//! the only honest answer a single flag could give. With a rung to write, the
+//! import is the reader's ask again: turning the switch off on covered ground is
+//! an explicit `Off` at that rung, and the tree above keeps watching its own.
 //!
-//! The lock is the READ-AT-PLACE ground's, and only while the run stays
-//! read-at-place: a folder imported as copies is a different mode, whose watch
-//! the sheet has already taken off with the switch it hides, and leaving a copy
-//! watched would be a folder nothing can turn off any more — the shelf's menu
-//! answers for read-at-place ground, because that is the only ground the sheet
-//! offers the watch on.
+//! The sheet still hides the row entirely for a folder imported as copies,
+//! because a store copy is the app's own file from the moment it lands and
+//! rescanning the source afterwards would be a second opinion about a book that
+//! already exists. Hiding is the honest answer there — the mode has no tracking
+//! question — where disabling never was.
+//!
+//! Turning tracking off by hand from the shelf's own right-click is still
+//! `crate::services::library::set_folder_watch`, and it is the whole tree's root
+//! it answers for: a shelf of a watched folder is a seat in that folder's tree,
+//! and "stop watching" from there means the folder, not the rung.
 
 use leptos::prelude::*;
 
 use app_chrome::icon::{Icon, IconName};
 use app_chrome::icon_button::IconButton;
-use library_core::folder::{watching_over, FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
+use library_core::folder::{FolderOpts, MIN_SIZE_CEIL, MIN_SIZE_FLOOR};
 use library_core::scan::selectable_formats;
 use reader_core::format::Format;
 
@@ -51,7 +55,7 @@ use crate::components::primitives::menu::section_label::SectionLabel;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::sheet::{SheetBody, SheetFooter};
 use crate::components::primitives::form::row::Row;
-use crate::services::library::{import_folder, pick_folder};
+use crate::services::library::{ground_tracking, import_folder, pick_folder};
 use crate::state::AppState;
 
 /// The sheet's two handles, provided by the library page: whether it is open and
@@ -114,22 +118,28 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
 
     let in_place = Signal::derive(move || opts.with(|o| o.in_place));
     let watching = Signal::derive(move || opts.with(|o| o.watch));
-    // Ground a watched read-at-place tree is SEATED on, where the watch is the
-    // folder's answer and not the sheet's question. The lock reads the ledger
-    // reactively (`ground_is_watched`), so a folder whose watch the reader
-    // turned off from its own menu in between — or whose shelf another surface
-    // took apart while this sheet was open — frees the switch on the frame it
+    // The tree and rung a watch answer belongs to, when an existing read-at-place
+    // tree already covers this ground. Read reactively, so a folder whose tracking
+    // the reader turned off from its own menu in between — or whose shelf another
+    // surface took apart while this sheet was open — answers on the frame it
     // happens rather than at the next open onto it.
-    let watch_locked = Signal::derive(move || {
-        sheet.open.get()
-            && sheet
-                .root
-                .get()
-                .is_some_and(|root| ground_is_watched(state, &root))
+    let ground = Signal::derive(move || {
+        sheet
+            .open
+            .get()
+            .then(|| sheet.root.get())
+            .flatten()
+            .and_then(|root| ground_tracking(state, &root))
     });
-    // What the switch shows, which is the value that lands: a locked watch is on
-    // whatever the options signal was left holding by the last folder imported.
-    let watching_on = Signal::derive(move || watching.get() || watch_locked.get());
+    // What the switch shows, which is the value that lands. On ground a tree
+    // already covers the answer is that tree's own at that rung, and the options
+    // signal — left holding whatever the last folder imported said — is not
+    // consulted; everywhere else the switch is the sheet's own.
+    let watching_on = Signal::derive(move || {
+        ground
+            .get()
+            .map_or_else(|| watching.get(), |(_, _, on)| on)
+    });
     let include = Signal::derive(move || opts.with(|o| o.include_selected));
     let grouped = Signal::derive(move || opts.with(|o| o.groups));
     let min_size = Signal::derive(move || opts.with(|o| o.min_size));
@@ -314,9 +324,19 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                             </span>
                                             <span class="mt-0.5 block text-xs text-muted">
                                                 {move || {
-                                                    if watch_locked.get() {
-                                                        "This folder is already watched. Right-click \
-                                                         its shelf to stop."
+                                                    // A subfolder of a tree the
+                                                    // library already reads says
+                                                    // which rung the answer is
+                                                    // about, because the switch is
+                                                    // the reader's here rather
+                                                    // than a lock: turning it off
+                                                    // is a decision at that rung
+                                                    // and the tree above keeps
+                                                    // watching its own.
+                                                    if ground.get().is_some() {
+                                                        "This folder is part of a tree the library \
+                                                         already reads. The switch answers for this \
+                                                         subfolder alone."
                                                             .to_string()
                                                     } else {
                                                         "Checks for new books when the app opens or \
@@ -328,12 +348,11 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                         </div>
                                         // Rebuilt rather than reactive inside:
                                         // the row's title is a `String` prop, and
-                                        // a lock that changed is a switch with a
+                                        // a ground that changed is a switch with a
                                         // different sentence on it.
                                         {move || {
-                                            let locked = watch_locked.get();
-                                            let title = if locked {
-                                                "Already watched — the shelf's own menu turns it off"
+                                            let title = if ground.get().is_some() {
+                                                "Watch this subfolder for new books"
                                             } else {
                                                 "Watch for new books"
                                             };
@@ -343,7 +362,6 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                                     on_change=Callback::new(move |on| {
                                                         opts.update(|o| o.watch = on);
                                                     })
-                                                    disabled=watch_locked
                                                     title=title.to_string()
                                                 />
                                             }
@@ -406,15 +424,21 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                                     return;
                                 };
                                 // The value that lands is the value the switch
-                                // showed: on ground a watched tree covers the
-                                // switch is locked ON and the options signal may
-                                // still be holding the last folder's `false`, so
-                                // the lock writes what the reader was looking at.
-                                if options.in_place && watch_locked.get_untracked() {
-                                    options.watch = true;
+                                // showed. On ground an existing tree covers the
+                                // switch read that tree's own answer for the rung,
+                                // so the options signal — which may still be
+                                // holding the last folder's `false` — is not what
+                                // the reader was looking at, and the decision goes
+                                // to that tree at that rung rather than to a fresh
+                                // folder's root.
+                                let track = ground
+                                    .get_untracked()
+                                    .map(|(tree, rung, _)| (tree, rung, options.watch));
+                                if options.in_place {
+                                    options.watch = watching_on.get_untracked();
                                 }
                                 sheet.open.set(false);
-                                import_folder(state, root, options);
+                                import_folder(state, root, options, track);
                             }
                             variant=ButtonVariant::Primary
                             disabled=Signal::derive(move || !chosen.get())
@@ -426,27 +450,6 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
                     </SheetFooter>
         </ModalShell>
     }
-}
-
-/// Whether ground a watched read-at-place tree is SEATED on is what the sheet is
-/// pointed at: the folder itself, a rung of it, or a directory under a rung that
-/// still hangs — and not a ground whose shelf the reader took apart, however many
-/// rungs below it still stand. One question with the folder run's own lock on the
-/// other side of it (`import::folder::resolve_folder`), answered by the same
-/// function so the sheet and the ledger cannot disagree about which imports are
-/// locked.
-///
-/// Tracked rather than read once: the ledger moves under an open sheet — a focus
-/// rescan mints a rung, a removal on another surface takes one apart — and a lock
-/// answered from the last look this sheet took would be a switch stuck the wrong
-/// way for as long as the sheet stayed up.
-fn ground_is_watched(state: AppState, root: &str) -> bool {
-    state.library.folders.with(|folders| {
-        state
-            .library
-            .shelves
-            .with(|shelves| watching_over(folders, shelves, root).is_some())
-    })
 }
 
 /// One format's checkbox row. Its own component because the rows are built from
