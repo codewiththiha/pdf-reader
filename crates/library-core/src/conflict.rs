@@ -284,14 +284,288 @@ pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> S
     duplicate_title(name, &in_use)
 }
 
+// ---------------------------------------------------------------------------
+// One placement vocabulary.
+// ---------------------------------------------------------------------------
 
+/// What the reader decided to do about a thing the library already holds.
+///
+/// Five answers, and they are the whole of it: every sheet the library raises
+/// about an arrival that met something already there — a name on the level, a
+/// folder merging into a shelf, a file an in-place tree holds, a shelf arriving
+/// under a name its level has, a row dragged onto a row — is offering some
+/// subset of these five. They used to be five separate enums
+/// ([`Answer`], [`MoveAnswer`], and the app's own folder-merge, covered and
+/// shelf answers), each with its own apply function, and each of those
+/// re-derived "how do I purge the loser", "how do I fold the reading progress"
+/// and "how do I re-seat the shelf membership" for itself — which is why every
+/// one of them had its own bugs and needed its own fix.
+///
+/// WHICH subset a sheet offers is the ask's own fact, not the answer's:
+/// [`PlacementAsk::offers`]. An import has no row to fold and offers no *merge*;
+/// a move has no "go and look at it" and offers no *open*. One enum and a list
+/// of the buttons that make sense, rather than one enum per combination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Placement {
+    /// Place nothing: take the reader to the thing that is already there.
+    /// [`Answer::GoToExisting`], and the covered sheet's *go to the book the
+    /// folder holds*.
+    Open,
+    /// Land it beside what is there, under the next free name — both are books
+    /// of their own. [`Answer::AsNew`] and [`MoveAnswer::AsNew`].
+    KeepBoth,
+    /// Fold the arrival into the thing that is there: the further reading place
+    /// wins, a name or an author fills a gap, the arrival's shelves and marks
+    /// join the survivor, and the arrival goes ([`crate::book::fold_books`]).
+    /// [`MoveAnswer::Merge`], and a folder merging into the shelf it found.
+    Merge,
+    /// The thing that is there goes and the arrival takes its place — its slot,
+    /// its name and every other shelf it was filed on. [`MoveAnswer::Replace`].
+    Replace,
+    /// Put a pointer at the thing that is there instead of a second instance: a
+    /// [`Row::Link`] on this level. [`Answer::AsLink`] and [`MoveAnswer::Link`].
+    LinkOnly,
+}
 
+impl Placement {
+    /// The sentence a button wearing this answer says. One spelling per answer
+    /// rather than one per sheet, so five sheets cannot drift about what the
+    /// same decision is called.
+    pub fn label(self) -> &'static str {
+        match self {
+            Placement::Open => "Already imported",
+            Placement::KeepBoth => "Add as new",
+            Placement::Merge => "Merge",
+            Placement::Replace => "Replace",
+            Placement::LinkOnly => "Make link",
+        }
+    }
+
+    /// Whether this answer destroys anything — the row that is already there.
+    /// What a sheet uses to decide whether the button owes a promise about what
+    /// goes with it, and the reason *replace* is the only one of the five that
+    /// reads as a warning.
+    pub fn is_destructive(self) -> bool {
+        matches!(self, Placement::Replace)
+    }
+
+    /// The three an import of a FILE is offered: there is no row to fold and no
+    /// row to take the place of, so *merge* and *replace* are not answers a
+    /// drop can give.
+    pub const FILE: &'static [Placement] =
+        &[Placement::Open, Placement::KeepBoth, Placement::LinkOnly];
+
+    /// The three a ROW being moved onto a row is offered: the reader is holding
+    /// the arrival, so "go and look at the other one" is not a question they
+    /// need answered.
+    pub const MOVE: &'static [Placement] =
+        &[Placement::Merge, Placement::Replace, Placement::KeepBoth];
+
+    /// The same three, with *link* standing in for the destructive *replace* —
+    /// offered when the row being moved reads a file at its place and the row on
+    /// the level is one of the library's own copies, where neither side is the
+    /// reader's to destroy.
+    pub const MOVE_KEEPING_BOTH: &'static [Placement] =
+        &[Placement::Merge, Placement::LinkOnly, Placement::KeepBoth];
+
+    /// The two a covered file is offered: the library's own copy on this level,
+    /// or the book the folder already holds. A second linked row of one
+    /// read-at-place file is the one thing that rule can never make, so
+    /// *keep both* lands a stored copy rather than a link.
+    pub const COVERED: &'static [Placement] = &[Placement::Open, Placement::KeepBoth];
+
+    /// The five a shelf arriving under a name its level already holds is
+    /// offered — every answer, because a shelf is membership and a name, and
+    /// both of those can be folded, replaced, kept or pointed at.
+    pub const SHELF: &'static [Placement] = &[
+        Placement::Open,
+        Placement::KeepBoth,
+        Placement::Merge,
+        Placement::Replace,
+        Placement::LinkOnly,
+    ];
+}
+
+/// Which thing the reader's answer is about: the row already there, or the shelf
+/// already there.
+///
+/// The one branch a unified apply has to make. Everything else about an answer
+/// is the same question asked of a book or of a shelf — purge it, fold into it,
+/// seat beside it, point at it — and the two halves differ only in what a
+/// "membership" is: a row's is the shelves it is filed on, a shelf's is the
+/// books it holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Scope {
+    /// A row of the library's list: a book or a link.
+    Book { row_id: String },
+    /// A shelf, which is membership and a name and nothing else.
+    Shelf { shelf_id: String },
+}
+
+impl Scope {
+    /// The id this scope names, whichever kind it is.
+    pub fn id(&self) -> &str {
+        match self {
+            Scope::Book { row_id } => row_id,
+            Scope::Shelf { shelf_id } => shelf_id,
+        }
+    }
+
+    pub fn is_shelf(&self) -> bool {
+        matches!(self, Scope::Shelf { .. })
+    }
+}
+
+/// One question about one arrival that met something the library already holds.
+///
+/// Generalizes the app's five ask types into one: the arrival (which was always
+/// general), the thing it met, that thing's name, and the subset of
+/// [`Placement`] this particular question offers. A sheet renders `offers` and
+/// does not need to know WHY those are the options — which is what lets one
+/// component serve a drop, a drag, a folder merge, a covered file and a shelf
+/// collision instead of five.
+// `PartialEq` and not `Eq`: the ask carries an [`Arrival`], which is `PartialEq`
+// alone, and an ask is never a map key or a set member — it is a question on
+// screen, compared only by the tests that build one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlacementAsk {
+    /// The arrival that met something. Kept whole: an answer places it, and a
+    /// placement needs the file it measured or the row it was moving, the level
+    /// it was going to and the slot the drop pointed at.
+    pub arrival: Arrival,
+    /// The row or shelf already there, which *open* reveals, *merge* folds into,
+    /// *replace* purges and *link* points at.
+    pub existing: Scope,
+    /// That thing's name, read once: a sheet prints it in a heading and on
+    /// buttons, and three derivations of one string is three chances to disagree
+    /// about which book the question is about.
+    pub existing_name: String,
+    /// Which answers this question offers, in the order the sheet shows them.
+    pub offers: &'static [Placement],
+}
+
+impl PlacementAsk {
+    /// A question about a ROW already on the level.
+    pub fn book(
+        arrival: Arrival,
+        row_id: String,
+        existing_name: String,
+        offers: &'static [Placement],
+    ) -> Self {
+        Self {
+            arrival,
+            existing: Scope::Book { row_id },
+            existing_name,
+            offers,
+        }
+    }
+
+    /// A question about a SHELF already on the level.
+    pub fn shelf(
+        arrival: Arrival,
+        shelf_id: String,
+        existing_name: String,
+        offers: &'static [Placement],
+    ) -> Self {
+        Self {
+            arrival,
+            existing: Scope::Shelf { shelf_id },
+            existing_name,
+            offers,
+        }
+    }
+
+    /// Whether this ask offers `choice` at all. A sheet that rendered a button
+    /// the ask did not offer would be an answer with nothing to apply, so the
+    /// check is the ask's and not the view's.
+    pub fn offers_placement(&self, choice: Placement) -> bool {
+        self.offers.contains(&choice)
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::book::{Book, Fingerprint, Origin};
     use crate::shelf::ALL_SHELF;
+
+    #[test]
+    fn every_answer_a_sheet_can_offer_is_one_of_five() {
+        // The point of the vocabulary: five sheets used to carry five enums
+        // between them, and the union of what they offered is these five.
+        let all = Placement::SHELF;
+        for offer in [
+            Placement::Open,
+            Placement::KeepBoth,
+            Placement::Merge,
+            Placement::Replace,
+            Placement::LinkOnly,
+        ] {
+            assert!(all.contains(&offer));
+        }
+        assert_eq!(all.len(), 5);
+    }
+
+    #[test]
+    fn each_ask_offers_only_the_answers_it_can_apply() {
+        // An import has no row to fold and no row to displace.
+        assert!(!Placement::FILE.contains(&Placement::Merge));
+        assert!(!Placement::FILE.contains(&Placement::Replace));
+        assert!(Placement::FILE.contains(&Placement::Open));
+        // A move has no "go and look at it" — the reader is holding the arrival.
+        assert!(!Placement::MOVE.contains(&Placement::Open));
+        assert!(Placement::MOVE.contains(&Placement::Replace));
+        // The shape that keeps both sides swaps the destructive answer for a
+        // pointer, and changes nothing else.
+        assert!(!Placement::MOVE_KEEPING_BOTH.contains(&Placement::Replace));
+        assert!(Placement::MOVE_KEEPING_BOTH.contains(&Placement::LinkOnly));
+        assert!(Placement::MOVE_KEEPING_BOTH.contains(&Placement::Merge));
+        // A covered file is two answers: a second linked row of one read-at-place
+        // file is the one thing that rule can never make.
+        assert_eq!(Placement::COVERED, &[Placement::Open, Placement::KeepBoth]);
+    }
+
+    #[test]
+    fn only_replace_destroys_the_thing_that_is_already_there() {
+        for offer in Placement::SHELF {
+            assert_eq!(offer.is_destructive(), *offer == Placement::Replace);
+        }
+    }
+
+    #[test]
+    fn an_ask_answers_for_the_thing_it_met_and_refuses_an_answer_it_did_not_offer() {
+        let book =
+            PlacementAsk::book(import("dune", "s1"), "b1".into(), "Dune".into(), Placement::FILE);
+        assert_eq!(book.existing.id(), "b1");
+        assert!(!book.existing.is_shelf());
+        assert!(book.offers_placement(Placement::KeepBoth));
+        assert!(
+            !book.offers_placement(Placement::Merge),
+            "an import cannot fold a row it does not have"
+        );
+
+        let shelf = PlacementAsk::shelf(
+            import("dune", "s1"),
+            "s2".into(),
+            "Sci-fi".into(),
+            Placement::SHELF,
+        );
+        assert_eq!(shelf.existing.id(), "s2");
+        assert!(shelf.existing.is_shelf());
+        assert!(shelf.offers_placement(Placement::Replace));
+    }
+
+    #[test]
+    fn every_button_has_one_sentence_whichever_sheet_wears_it() {
+        // One label per answer rather than one per sheet, so five sheets cannot
+        // drift about what the same decision is called.
+        let labels: Vec<&str> = Placement::SHELF.iter().map(|p| p.label()).collect();
+        let mut deduped = labels.clone();
+        deduped.sort_unstable();
+        deduped.dedup();
+        assert_eq!(labels.len(), deduped.len(), "no two answers share a label");
+        assert!(labels.iter().all(|l| !l.is_empty()));
+    }
 
     fn book(id: &str, path: &str) -> Row {
         Row::Book(Book {
