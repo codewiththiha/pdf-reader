@@ -8,7 +8,7 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{find_book_mut, find_by_id, fold_books, Book};
-use library_core::conflict::{Answer, MoveAnswer};
+use library_core::conflict::{Answer, MoveAnswer, PlacementAsk};
 use library_core::shelf;
 
 use super::{advance, member_slot, minted_name, ConflictAsk};
@@ -58,6 +58,57 @@ pub fn answer_move(state: AppState, answer: MoveAnswer) {
         MoveAnswer::Link => link_move(state, &ask),
     }
     advance(state);
+}
+
+// ---------------------------------------------------------------------------
+// The row half of the unified apply.
+// ---------------------------------------------------------------------------
+//
+// Four entry points, one per answer that has a row on the other side of it, and
+// each is the existing rule with the question read off a [`PlacementAsk`] instead
+// of off the sheet's own ask type. They are thin on purpose: the merge, the
+// replace and the two namings were already written once each here, and the point
+// of the unified vocabulary is that a folder merge and a shelf collision reach
+// THESE rather than writing their own.
+
+/// *Keep both*: the arrival lands under the next free name.
+pub(super) fn as_new_placement(state: AppState, ask: &PlacementAsk) {
+    as_new(state, &ask_of(ask));
+}
+
+/// *Make link*: a pointer at the row that is there, on the level the arrival was
+/// going to.
+pub(super) fn link_to_row(state: AppState, ask: &PlacementAsk, row_id: &str) {
+    let own = ask_of(ask);
+    let target = row_id.to_string();
+    add_link_at_target(state, &own, &target);
+}
+
+/// *Merge*: the moved row folds into the one that is here, and goes.
+pub(super) fn merge_into_row(state: AppState, ask: &PlacementAsk, _row_id: &str) {
+    merge(state, &ask_of(ask));
+}
+
+/// *Replace*: the row that is here goes and the arrival takes its place.
+pub(super) fn replace_row(state: AppState, ask: &PlacementAsk, _row_id: &str) {
+    replace(state, &ask_of(ask));
+}
+
+/// The sheet's own ask, from the unified one.
+///
+/// A bridge rather than a rewrite: every rule below was written against
+/// [`ConflictAsk`], and the two carry the same three facts — the arrival, the id
+/// of the thing already there, and its name. The kind is the only half that does
+/// not translate, and no rule in this file reads it: a covered file's *keep
+/// both* is the same landing as a name collision's, which is exactly what the
+/// unified vocabulary exists to say.
+fn ask_of(ask: &PlacementAsk) -> ConflictAsk {
+    ConflictAsk {
+        arrival: ask.arrival.clone(),
+        existing_id: ask.existing.id().to_string(),
+        existing_name: ask.existing_name.clone(),
+        kind: super::AskKind::NameCollision,
+    }
 }
 
 /// Whether the row that survives is the library's own copy OF the row that

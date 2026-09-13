@@ -5,7 +5,7 @@
 
 use leptos::prelude::*;
 
-use library_core::conflict::next_shelf_name;
+use library_core::conflict::{next_shelf_name, PlacementAsk};
 use library_core::folder::FolderOpts;
 use library_core::shelf;
 
@@ -174,6 +174,117 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
                 );
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The shelf half of the unified apply.
+// ---------------------------------------------------------------------------
+//
+// The four answers a shelf question has, each as its own entry point so the
+// unified dispatch can reach them without going through [`ShelfAnswer`]. They
+// are the same four writes [`answer_shelf`] has always made; what differs is
+// that a folder merge or a book collision asking for *replace* now lands here
+// instead of having its own.
+//
+// Three of the four take the unified ask and do not read it: `root` and `opts`
+// are the import the question interrupted, which a [`PlacementAsk`] does not
+// carry, because a book collision has no folder to import. They come off the
+// shelf sheet's own ask, which is still on the library state while the sheet is
+// up. The parameter stays in the signature so the four are one shape and the
+// dispatch in `super::apply_placement` does not branch on which of them wants
+// what.
+
+/// *Keep both*: mint the arriving folder's shelf under the next free name and
+/// import into its own tree.
+pub(super) fn as_new_shelf(state: AppState, _ask: &PlacementAsk) {
+    // Cloned out of the signal because [`ShelfConflictAsk`] owns the import it
+    // interrupted, and an apply that held the signal's borrow across a write
+    // would be a second writer of the same list.
+    let Some(pending) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
+        return;
+    };
+    // Counted at the click rather than at the raise: a shelf that landed between
+    // the two is a name the promise has to skip.
+    let name = state.library.shelves.with_untracked(|shelves| {
+        next_shelf_name(shelves, None, &pending.incoming_name)
+    });
+    crate::services::library::import::proceed_folder(
+        state,
+        pending.root,
+        pending.opts,
+        crate::services::library::import::RootPlan {
+            rename: Some(name),
+            ..Default::default()
+        },
+    );
+}
+
+/// *Make link*: a pointer row at the shelf, on the level the import would have
+/// minted one.
+pub(super) fn link_to_shelf(state: AppState, ask: &PlacementAsk, shelf_id: &str) {
+    state
+        .library
+        .add_link(&ask.existing_name, shelf_id, shelf::ALL_SHELF);
+    toast(state, format!("Linked to {}.", ask.existing_name));
+}
+
+/// *Merge*: the arriving folder IS the shelf that is here — its books join it,
+/// and the files whose names it already holds ask one by one on the compact
+/// sheet.
+pub(super) fn merge_into_shelf(state: AppState, _ask: &PlacementAsk, shelf_id: &str) {
+    // Cloned out of the signal because [`ShelfConflictAsk`] owns the import it
+    // interrupted, and an apply that held the signal's borrow across a write
+    // would be a second writer of the same list.
+    let Some(pending) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
+        return;
+    };
+    crate::services::library::import::proceed_folder(
+        state,
+        pending.root,
+        pending.opts,
+        crate::services::library::import::RootPlan {
+            into: Some(shelf_id.to_string()),
+            ..Default::default()
+        },
+    );
+}
+
+/// *Replace*: the books the shelf holds leave the library, and the folder's
+/// copies take the shelf.
+pub(super) fn replace_shelf(state: AppState, _ask: &PlacementAsk, shelf_id: &str) {
+    // Cloned out of the signal because [`ShelfConflictAsk`] owns the import it
+    // interrupted, and an apply that held the signal's borrow across a write
+    // would be a second writer of the same list.
+    let Some(pending) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
+        return;
+    };
+    // The folder's OWN read-at-place tree is the import module's own sweep: the
+    // root's claim first, so a run the reader already started refuses the answer
+    // BEFORE anything is removed and a rescan walking the same tree is waited
+    // out before anything is removed, then the linked books go and the copy walk
+    // spends the logs it wrote. Any other shelf — a stored folder's, a reader's
+    // own — is the removal's receipt over the shelf's members and the copies
+    // filing into it.
+    let own_in_place = pending.own
+        && state.library.folders.with_untracked(|folders| {
+            folders
+                .iter()
+                .any(|f| f.root == pending.root && f.opts.in_place)
+        });
+    if own_in_place {
+        crate::services::library::import::replace_folder_with_copies(
+            state,
+            pending.root,
+            pending.opts,
+        );
+    } else {
+        crate::services::library::import::replace_shelf_with_folder(
+            state,
+            pending.root,
+            pending.opts,
+            shelf_id.to_string(),
+        );
     }
 }
 

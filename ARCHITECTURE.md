@@ -388,7 +388,7 @@ reads it — the departure rule's arithmetic, on the import's side. One file is 
 than the copy: a loose file that sits inside a folder the library READS IN PLACE, where the book
 that folder holds for it is alive and standing. A second linked row of one read-at-place file is
 the duplicate the folder rule never makes, so the drop asks the covered-file question
-(`conflict::CoveredAnswer`): the library's own stored copy on this level, which then still walks
+(`conflict::Placement`, the covered pair): the library's own stored copy on this level, which then still walks
 the level's name question, or the book the folder holds, gone to and lit. A file whose folder
 never placed it — new since the last walk, or outside the folder's filters — is no question and
 simply imports; the folder places its own linked book on the walk that finds it.

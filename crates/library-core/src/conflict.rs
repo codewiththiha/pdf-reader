@@ -374,6 +374,14 @@ impl Placement {
     /// *keep both* lands a stored copy rather than a link.
     pub const COVERED: &'static [Placement] = &[Placement::Open, Placement::KeepBoth];
 
+    /// The three one file of a merging folder is offered on the compact sheet:
+    /// the row the shelf already holds takes the arriving file's measurement,
+    /// the arriving file takes the row's place, or both stand under two names.
+    /// *Open* is not one of them — the reader is importing the folder, so
+    /// "go and look at the shelf" is not an answer to a file inside it.
+    pub const FOLDER_MERGE: &'static [Placement] =
+        &[Placement::Merge, Placement::Replace, Placement::KeepBoth];
+
     /// The five a shelf arriving under a name its level already holds is
     /// offered — every answer, because a shelf is membership and a name, and
     /// both of those can be folded, replaced, kept or pointed at.

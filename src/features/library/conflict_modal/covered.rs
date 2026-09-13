@@ -7,7 +7,9 @@ use leptos::prelude::*;
 
 use crate::components::primitives::menu::choice_row::ChoiceRow;
 use crate::components::primitives::overlay::question_sheet::QuestionSheet;
-use crate::services::library::conflict::{ConflictAsk, CoveredAnswer, self};
+use library_core::conflict::Placement;
+
+use crate::services::library::conflict::{self, ConflictAsk};
 use crate::services::library::folder_label;
 
 use super::info::{more_waiting, where_line};
@@ -69,7 +71,7 @@ pub(super) fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                         on_click=Callback::new(move |_| {
                             conflict::answer_covered(
                                 state,
-                                CoveredAnswer::ImportHere,
+                                Placement::KeepBoth,
                                 apply_all.get_untracked(),
                             )
                         })
@@ -80,7 +82,7 @@ pub(super) fn CoveredSheet(state: AppState, ask: ConflictAsk) -> impl IntoView {
                         on_click=Callback::new(move |_| {
                             conflict::answer_covered(
                                 state,
-                                CoveredAnswer::GoToExisting,
+                                Placement::Open,
                                 apply_all.get_untracked(),
                             )
                         })

@@ -367,7 +367,7 @@ fn the_covered_question_places_nothing_and_lights_the_folders_book() {
     );
     raise(state, vec![ask]);
 
-    answer_covered(state, CoveredAnswer::GoToExisting, false);
+    answer_covered(state, library_core::conflict::Placement::Open, false);
 
     assert_eq!(
         state.library.books.get_untracked().len(),

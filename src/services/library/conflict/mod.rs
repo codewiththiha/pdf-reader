@@ -49,10 +49,10 @@
 //! consulted, and the arrival has no row — but the library already holds the
 //! book this file is, as the folder's own linked book, and a second linked
 //! row of one read-at-place file is the one thing the folder rule never
-//! makes. So the file asks its own two-answer question ([`CoveredAnswer`])
-//! BEFORE the name question: the library's own stored copy on this level
-//! (*import here*), or the book the folder holds, lit where it stands (*show
-//! the imported one*). A copy the reader chose still walks the level's names
+//! makes. So the file asks its own two-answer question
+//! ([`library_core::conflict::Placement::COVERED`]) BEFORE the name question:
+//! the library's own stored copy on this level (*import here*), or the book the
+//! folder holds, lit where it stands (*show the imported one*). A copy the reader chose still walks the level's names
 //! on the way in. A file whose folder never placed it — new since the last
 //! scan, or outside the folder's filters — is no question at all and simply
 //! imports; a file the folder's log remembers REMOVING is not a question
@@ -97,12 +97,12 @@ mod covered;
 mod folder_merge;
 mod name;
 mod note;
-mod shelf;
+pub(crate) mod shelf;
 
 #[cfg(test)]
 mod tests;
 
-pub use covered::{answer_covered, CoveredAnswer};
+pub use covered::answer_covered;
 pub use folder_merge::{answer_folder_merge, FolderMergeAnswer};
 pub use name::{answer, answer_move};
 pub use note::{close_already_imported, raise_note};
@@ -111,7 +111,7 @@ pub use shelf::{answer_shelf, cancel_shelf, raise_shelf, ShelfAnswer, ShelfConfl
 use leptos::prelude::*;
 
 use library_core::book::{find_row, Row};
-use library_core::conflict::{collide, next_name, Arrival};
+use library_core::conflict::{collide, next_name, Arrival, Placement, PlacementAsk, Scope};
 
 use crate::state::AppState;
 
@@ -261,6 +261,101 @@ impl ConflictAsk {
             existing_name,
             kind: AskKind::Covered { folder_id },
         }
+    }
+}
+
+impl ConflictAsk {
+    /// This question, in the unified placement vocabulary.
+    ///
+    /// The mapping is one function rather than one per sheet because the sheets
+    /// differ only in WHICH answers they offer and in what the thing already
+    /// there is — a row or a shelf — and both of those are already on the ask.
+    /// A covered file and a name collision are the same shape of question about
+    /// the same kind of thing; the folder's own name is a question about a shelf.
+    ///
+    /// The offers list is the kind's, so a sheet cannot render a button whose
+    /// answer the apply layer would have to guess at: [`AskKind::Covered`]
+    /// offers [`Placement::COVERED`] (a second link of a read-at-place file is
+    /// the one thing that rule never makes), a name collision offers the
+    /// import's three or the move's, and a folder merge offers the three its
+    /// compact sheet has always had.
+    pub fn placement(&self) -> PlacementAsk {
+        let offers = match &self.kind {
+            AskKind::Covered { .. } => Placement::COVERED,
+            // A row being moved onto a row is two books the reader already has;
+            // an arriving file has no row to fold and no row to displace.
+            AskKind::NameCollision => {
+                if self.arrival.moving.is_some() {
+                    Placement::MOVE
+                } else {
+                    Placement::FILE
+                }
+            }
+            AskKind::FolderMerge { .. } => Placement::FOLDER_MERGE,
+        };
+        PlacementAsk::book(
+            self.arrival.clone(),
+            self.existing_id.clone(),
+            self.existing_name.clone(),
+            offers,
+        )
+    }
+}
+
+/// Apply one answer to one question, whichever kind of question it is.
+///
+/// The single dispatch the five per-kind apply functions used to each write
+/// their own half of. `Merge` and `Replace` are where the duplication actually
+/// cost anything — each of the five re-derived how to purge the loser, how to
+/// fold the reading progress and how to re-seat the shelf membership — and they
+/// now branch once, on whether the thing already there is a row or a shelf,
+/// rather than once per ask type.
+///
+/// An answer the ask does not offer is refused rather than applied: a sheet that
+/// rendered a button its own ask did not offer would be a bug in the view, and
+/// guessing at what the reader meant is worse than doing nothing.
+pub fn apply_placement(state: AppState, ask: &PlacementAsk, choice: Placement) {
+    if !ask.offers_placement(choice) {
+        return;
+    }
+    match choice {
+        Placement::Open => crate::services::library::reveal::reveal_book(state, ask.existing.id()),
+        Placement::KeepBoth => keep_both(state, ask),
+        Placement::LinkOnly => link_to(state, ask),
+        Placement::Merge => merge_into(state, ask),
+        Placement::Replace => replace_with(state, ask),
+    }
+}
+
+/// Land the arrival beside the thing that is there, under the next free name.
+fn keep_both(state: AppState, ask: &PlacementAsk) {
+    match &ask.existing {
+        Scope::Book { .. } => name::as_new_placement(state, ask),
+        Scope::Shelf { .. } => shelf::as_new_shelf(state, ask),
+    }
+}
+
+/// Put a pointer at the thing that is there instead of a second instance.
+fn link_to(state: AppState, ask: &PlacementAsk) {
+    match &ask.existing {
+        Scope::Book { row_id } => name::link_to_row(state, ask, row_id),
+        Scope::Shelf { shelf_id } => shelf::link_to_shelf(state, ask, shelf_id),
+    }
+}
+
+/// Fold the arrival into the thing that is there, and let the arrival go.
+fn merge_into(state: AppState, ask: &PlacementAsk) {
+    match &ask.existing {
+        Scope::Book { row_id } => name::merge_into_row(state, ask, row_id),
+        Scope::Shelf { shelf_id } => shelf::merge_into_shelf(state, ask, shelf_id),
+    }
+}
+
+/// Let the thing that is there go and seat the arrival in its place.
+fn replace_with(state: AppState, ask: &PlacementAsk) {
+    match &ask.existing {
+        Scope::Book { row_id } => name::replace_row(state, ask, row_id),
+        Scope::Shelf { shelf_id } => shelf::replace_shelf(state, ask, shelf_id),
     }
 }
 
