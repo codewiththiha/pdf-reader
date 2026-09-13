@@ -13,7 +13,7 @@
 //!   * [`verify_paths`] re-measures addresses the library already holds — what
 //!     sets a book `missing`, and what replaces a migrated book's placeholder
 //!     fingerprint with a real one;
-//!   * [`store_books`] copies into `<app_data_dir>/Library/<format>/`, the only
+//!   * [`store_books`] copies into `<app_data_dir>/Library/items/<id>/`, the only
 //!     directory this module ever writes to, and stamps each copy with its own
 //!     modification time so it measures as the file it is rather than as the
 //!     one it came from ([`own_stamp`]);
@@ -49,7 +49,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use library_core::book::Fingerprint;
 use library_core::folder::FolderOpts;
 use library_core::hash::{HEAD_BYTES, head_hash, mtime_ms};
-use library_core::scan::{FoundFile, store_dir};
+use library_core::scan::FoundFile;
+use library_core::store;
 // The wire types live in `library-core` because both sides of this IPC depend
 // on it: one declaration, and no contract test needed to prove the halves agree.
 use library_core::wire::{ImportPhase, ImportProgress, PathCheck, StoreRequest, StoreResult};
@@ -584,54 +585,20 @@ fn store_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("no app data directory: {e}"))
 }
 
-/// Where one source file lands in the store: `<root>/<format>/<stem>_<id>.<ext>`.
+/// Where one source file lands in the store: `<root>/items/<id>/source.<ext>`.
 ///
-/// The format directory keeps a store of mixed books navigable in a file
-/// manager; the id suffix is what lets two books both called `report.pdf`
-/// coexist. The stem is sanitised rather than trusted — it came from a filename
-/// on disk, which may carry a separator, a control character, or two hundred
-/// characters.
+/// One folder per book, keyed by the id that never changes — the layout
+/// [`library_core::store`] owns and the reason a copy is the only thing a store
+/// write puts there at first (a book's cover and marks join it later, in the
+/// same folder). Nothing on disk is named after the source file's stem, so a
+/// rename never touches the filesystem and two books both called `report.pdf`
+/// cannot collide; the id is sanitised into its folder name by the crate rather
+/// than trusted here.
 fn store_path(app: &AppHandle, src: &str, id: &str) -> Result<PathBuf, String> {
     let root = store_root(app)?;
-    let source = Path::new(src);
-    let name = source
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .ok_or_else(|| format!("{src} has no file name"))?;
-    let ext = extension_of(source);
-    let stem = name
-        .rsplit_once('.')
-        .map(|(stem, _)| stem)
-        .unwrap_or(name.as_str());
-    let file = format!(
-        "{}_{}.{}",
-        sanitize_component(stem),
-        sanitize_component(id),
-        ext
-    );
-    Ok(root.join(store_dir(&ext)).join(file))
-}
-
-/// One path component, made safe to write: separators, characters Windows
-/// reserves, and control characters become `_`; the result is trimmed of the
-/// dots and spaces that would make it a relative path, capped, and replaced
-/// with `"book"` when nothing is left.
-fn sanitize_component(raw: &str) -> String {
-    let cleaned: String = raw
-        .chars()
-        .map(|c| {
-            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
-                '_'
-            } else {
-                c
-            }
-        })
-        .collect();
-    let capped: String = cleaned.trim_matches(['.', ' ']).chars().take(60).collect();
-    match capped.as_str() {
-        "" | "." | ".." => "book".to_string(),
-        other => other.to_string(),
-    }
+    let items = store::items_root(&path_to_string(&root));
+    let ext = extension_of(Path::new(src));
+    Ok(PathBuf::from(store::source_path(&items, id, &ext)))
 }
 
 /// The lower-case extension of a path, without its dot. Empty for a name Rust
@@ -687,7 +654,7 @@ fn ensure_walkable(root: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_beside_sync, extension_of, own_stamp, relative_to, sanitize_component};
+    use super::{copy_beside_sync, extension_of, own_stamp, relative_to};
     use std::fs;
     use std::path::Path;
     use std::time::{Duration, SystemTime};
@@ -758,31 +725,6 @@ mod tests {
         // A path that is not under the root at all still answers with something
         // usable rather than an empty string that would name the root's shelf.
         assert_eq!(relative_to(root, Path::new("/other/a.pdf")), "/other/a.pdf");
-    }
-
-    #[test]
-    fn a_stored_name_cannot_escape_its_directory() {
-        assert_eq!(sanitize_component("dune"), "dune");
-        assert_eq!(sanitize_component("../../etc/passwd"), "_.._etc_passwd");
-        assert_eq!(sanitize_component("a/b\\c:d"), "a_b_c_d");
-        assert_eq!(sanitize_component("..."), "book");
-        assert_eq!(sanitize_component(""), "book");
-        assert_eq!(sanitize_component("  "), "book");
-        assert_eq!(sanitize_component("."), "book");
-        assert_eq!(sanitize_component(".."), "book");
-        assert!(!sanitize_component("a/b").contains('/'));
-    }
-
-    #[test]
-    fn a_long_stem_is_capped_not_truncated_into_nothing() {
-        let long = "a".repeat(400);
-        assert_eq!(sanitize_component(&long).chars().count(), 60);
-        assert_eq!(sanitize_component(&format!("{long}.pdf")).chars().count(), 60);
-    }
-
-    #[test]
-    fn a_control_character_never_reaches_a_file_name() {
-        assert_eq!(sanitize_component("a\u{0}b\u{1f}c"), "a_b_c");
     }
 
     /// The stamp is what separates a copy's measurement from its source's, and

@@ -55,6 +55,7 @@ pub mod query;
 pub mod scan;
 pub mod shelf;
 pub mod sort;
+pub mod store;
 pub mod text;
 pub mod view;
 pub mod wire;
