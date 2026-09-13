@@ -43,7 +43,9 @@ use leptos::prelude::*;
 use crate::components::primitives::menu::choice_row::ChoiceRow;
 use crate::components::primitives::overlay::modal_shell::ModalShell;
 use crate::components::primitives::overlay::question_sheet::QuestionSheet;
-use crate::services::library::conflict::{self, ShelfAnswer, ShelfConflictAsk};
+use library_core::conflict::Placement;
+
+use crate::services::library::conflict::{self, ShelfConflictAsk};
 use crate::state::AppState;
 
 #[component]
@@ -95,14 +97,17 @@ struct ShelfAskInfo {
     new_note: String,
     merge_note: String,
     replace_note: String,
-    /// Whether the arriving folder reads in place, which is which SET of
-    /// answers the sheet offers: a read-at-place import never offers *as new*
-    /// — the folder's shelf IS the OS folder, and a counter-named twin of it
-    /// would be a second door onto the same ground — and never *replace*,
-    /// because a linked tree is not the level's to empty. A stored arrival
-    /// gets the level's own three and no pointer: copies are the library's to
-    /// make another of, and "show me the first" is a light rather than a row.
-    in_place: bool,
+    /// The answers this arrival gets, in the order the sheet shows them —
+    /// `conflict::shelf_offers`' answer rather than a condition the sheet
+    /// re-derives.
+    ///
+    /// A read-at-place import never offers *keep both*, because the folder's
+    /// shelf IS the OS folder and a counter-named twin of it would be a second
+    /// door onto the same ground, and never *replace*, because a linked tree is
+    /// not the level's to empty. A stored arrival gets the level's own three and
+    /// no pointer: copies are the library's to make another of, and "show me the
+    /// first" is a light rather than a row.
+    offers: &'static [Placement],
 }
 
 /// What a *make link* row promises. A `const` rather than a `format!` because
@@ -203,7 +208,7 @@ impl ShelfAskInfo {
             new_note,
             merge_note,
             replace_note,
-            in_place,
+            offers: conflict::shelf_offers(ask),
         }
     }
 }
@@ -226,7 +231,7 @@ fn ShelfSheet(state: AppState, info: ShelfAskInfo) -> impl IntoView {
         new_note,
         merge_note,
         replace_note,
-        in_place,
+        offers,
     } = info;
 
     view! {
@@ -237,27 +242,28 @@ fn ShelfSheet(state: AppState, info: ShelfAskInfo) -> impl IntoView {
             on_close=Callback::new(move |_| conflict::cancel_shelf(state))
             cancel_title="Import nothing".to_string()
         >
-                    {if in_place {
-                        // The read-at-place arrival's two: a pointer at the
-                        // shelf that is here, or the folder's books joining
-                        // it. No *as new* — a second shelf of one linked
-                        // folder is the second instance the family gate
-                        // exists to prevent — and no *replace*: a linked tree
-                        // is not the level's to empty.
+                    {if offers.contains(&Placement::LinkOnly) {
+                        // The read-at-place arrival's two, which is
+                        // `conflict::shelf_offers`' answer rather than a second
+                        // spelling of the condition here: a pointer at the shelf
+                        // that is here, or the folder's books joining it. No *as
+                        // new* — a second shelf of one linked folder is the
+                        // second instance the family gate exists to prevent — and
+                        // no *replace*: a linked tree is not the level's to empty.
                         view! {
                             <>
                                 <ChoiceRow
                                     label="Make link"
                                     note=LINK_NOTE.to_string()
                                     on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Link)
+                                        conflict::answer_shelf(state, Placement::LinkOnly)
                                     })
                                 />
                                 <ChoiceRow
                                     label="Merge into it"
                                     note=merge_note
                                     on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Merge)
+                                        conflict::answer_shelf(state, Placement::Merge)
                                     })
                                 />
                             </>
@@ -275,21 +281,21 @@ fn ShelfSheet(state: AppState, info: ShelfAskInfo) -> impl IntoView {
                                     label="Show it"
                                     note=show_note
                                     on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Show)
+                                        conflict::answer_shelf(state, Placement::Open)
                                     })
                                 />
                                 <ChoiceRow
                                     label="Replace"
                                     note=replace_note
                                     on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::Replace)
+                                        conflict::answer_shelf(state, Placement::Replace)
                                     })
                                 />
                                 <ChoiceRow
                                     label="Add as new"
                                     note=new_note
                                     on_click=Callback::new(move |_| {
-                                        conflict::answer_shelf(state, ShelfAnswer::AsNew)
+                                        conflict::answer_shelf(state, Placement::KeepBoth)
                                     })
                                 />
                             </>

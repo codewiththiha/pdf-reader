@@ -398,7 +398,7 @@ fn the_show_answer_imports_nothing_and_lights_the_shelf_that_is_here() {
     }));
     state.library.shelf_conflict.open.set(true);
 
-    answer_shelf(state, ShelfAnswer::Show);
+    answer_shelf(state, library_core::conflict::Placement::Open);
 
     assert!(
         state.library.books.get_untracked().is_empty(),

@@ -129,6 +129,25 @@ impl Arrival {
         self
     }
 
+    /// A FOLDER arriving under a name its level already holds.
+    ///
+    /// Neither of the two shapes above: nothing has been measured yet, so there
+    /// is no [`FoundFile`], and nothing is being moved, so there is no row id.
+    /// The name is what collided — the last segment of the path the reader
+    /// picked — and the answers are about a whole import run rather than about
+    /// one placement, which is why the run's own root and options ride the
+    /// app's ask beside this rather than inside it.
+    pub fn folder(name: impl Into<String>, shelf_id: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            moving: None,
+            file: None,
+            shelf_id: shelf_id.into(),
+            from: None,
+            index: None,
+        }
+    }
+
     /// Whether this arrival is a file with no row of its own yet.
     pub fn is_import(&self) -> bool {
         self.file.is_some()
@@ -382,10 +401,25 @@ impl Placement {
     pub const FOLDER_MERGE: &'static [Placement] =
         &[Placement::Merge, Placement::Replace, Placement::KeepBoth];
 
-    /// The five a shelf arriving under a name its level already holds is
-    /// offered — every answer, because a shelf is membership and a name, and
-    /// both of those can be folded, replaced, kept or pointed at.
-    pub const SHELF: &'static [Placement] = &[
+    /// The three a STORED folder arrival is offered — copies the library owns,
+    /// unrelated to any tree, so the question is the level's own: go and look at
+    /// the shelf that is here, replace it, or a shelf of the next free name.
+    /// *Merge* and *link* are not among them, because there is no tree to fold
+    /// into and no read-at-place file to point at.
+    pub const SHELF_STORED: &'static [Placement] =
+        &[Placement::Open, Placement::Replace, Placement::KeepBoth];
+
+    /// The two a READ-AT-PLACE folder arrival of a DIFFERENT folder's name is
+    /// offered: a pointer at the shelf that is here, or the arriving folder IS
+    /// that shelf and its books join it. *Keep both* is withheld as the second
+    /// instance of one ground the family gate exists to prevent, and *replace*
+    /// with it — neither side of a read-at-place collision is the reader's to
+    /// destroy.
+    pub const SHELF_READ_IN_PLACE: &'static [Placement] =
+        &[Placement::LinkOnly, Placement::Merge];
+
+    /// Every answer, for a test that asks what the vocabulary holds.
+    pub const ALL: &'static [Placement] = &[
         Placement::Open,
         Placement::KeepBoth,
         Placement::Merge,
@@ -501,7 +535,7 @@ mod tests {
     fn every_answer_a_sheet_can_offer_is_one_of_five() {
         // The point of the vocabulary: five sheets used to carry five enums
         // between them, and the union of what they offered is these five.
-        let all = Placement::SHELF;
+        let all = Placement::ALL;
         for offer in [
             Placement::Open,
             Placement::KeepBoth,
@@ -531,11 +565,41 @@ mod tests {
         // A covered file is two answers: a second linked row of one read-at-place
         // file is the one thing that rule can never make.
         assert_eq!(Placement::COVERED, &[Placement::Open, Placement::KeepBoth]);
+        // A folder's question is the arrival's MODE: a stored arrival gets the
+        // level's own three, a read-at-place one of another folder's name gets the
+        // pointer and the merge, with *keep both* withheld as the second instance
+        // the family gate exists to prevent.
+        assert_eq!(
+            Placement::SHELF_STORED,
+            &[Placement::Open, Placement::Replace, Placement::KeepBoth]
+        );
+        assert_eq!(
+            Placement::SHELF_READ_IN_PLACE,
+            &[Placement::LinkOnly, Placement::Merge]
+        );
+        assert!(
+            !Placement::SHELF_READ_IN_PLACE.contains(&Placement::KeepBoth),
+            "a second instance of one ground is the answer the gate withholds"
+        );
+        // Every offer list is a subset of the vocabulary, so no sheet can render
+        // a button the apply has never heard of.
+        for list in [
+            Placement::FILE,
+            Placement::MOVE,
+            Placement::MOVE_KEEPING_BOTH,
+            Placement::COVERED,
+            Placement::FOLDER_MERGE,
+            Placement::SHELF_STORED,
+            Placement::SHELF_READ_IN_PLACE,
+        ] {
+            assert!(!list.is_empty());
+            assert!(list.iter().all(|p| Placement::ALL.contains(p)));
+        }
     }
 
     #[test]
     fn only_replace_destroys_the_thing_that_is_already_there() {
-        for offer in Placement::SHELF {
+        for offer in Placement::ALL {
             assert_eq!(offer.is_destructive(), *offer == Placement::Replace);
         }
     }
@@ -556,7 +620,7 @@ mod tests {
             import("dune", "s1"),
             "s2".into(),
             "Sci-fi".into(),
-            Placement::SHELF,
+            Placement::ALL,
         );
         assert_eq!(shelf.existing.id(), "s2");
         assert!(shelf.existing.is_shelf());
@@ -567,7 +631,7 @@ mod tests {
     fn every_button_has_one_sentence_whichever_sheet_wears_it() {
         // One label per answer rather than one per sheet, so five sheets cannot
         // drift about what the same decision is called.
-        let labels: Vec<&str> = Placement::SHELF.iter().map(|p| p.label()).collect();
+        let labels: Vec<&str> = Placement::ALL.iter().map(|p| p.label()).collect();
         let mut deduped = labels.clone();
         deduped.sort_unstable();
         deduped.dedup();

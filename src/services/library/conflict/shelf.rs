@@ -5,7 +5,7 @@
 
 use leptos::prelude::*;
 
-use library_core::conflict::{next_shelf_name, PlacementAsk};
+use library_core::conflict::{next_shelf_name, Arrival, Placement, PlacementAsk};
 use library_core::folder::FolderOpts;
 use library_core::shelf;
 
@@ -16,11 +16,13 @@ use crate::state::AppState;
 /// The folder question on screen: the name arriving, and the shelf already
 /// here wearing it.
 ///
-/// A separate ask rather than a variant of [`ConflictAsk`] because a folder
-/// has no [`Arrival`] — nothing has been measured when its NAME is the
-/// question — and because its answers are about a whole import run rather
-/// than about one placement: the ones that import start the run again with a
-/// plan, and the ones that do not walk away with a light or a pointer.
+/// A separate ask rather than a variant of [`ConflictAsk`] because its answers
+/// are about a whole import run rather than about one placement: the ones that
+/// import start the run again with a plan, and the run's root and options are
+/// facts no book collision has. The [`Arrival`] it builds is the name-only one
+/// ([`Arrival::folder`]) — nothing has been measured when a NAME is the question
+/// — and the answers themselves are the unified placements, applied by
+/// `super::apply_placement` on a shelf scope.
 #[derive(Clone, PartialEq)]
 pub struct ShelfConflictAsk {
     /// What the arriving folder would be called: the last segment of its
@@ -45,49 +47,27 @@ pub struct ShelfConflictAsk {
     pub own: bool,
 }
 
-/// The reader's answer to a folder's name collision.
+/// Which answers the folder's sheet offers, in the unified vocabulary.
 ///
-/// Which of them the sheet offers is the arrival's mode: a STORED arrival —
-/// copies the library owns, unrelated to any tree — gets *show it*,
-/// *replace* and *as new*, the level's own three; a READ-AT-PLACE arrival of
-/// a different folder's name gets *make link* and *merge*, its *as new*
-/// withheld as the second instance the family gate exists to prevent. A
-/// read-at-place arrival of its OWN family never reaches the sheet at all:
-/// the gate answers it with a light, a continuation, or the fold back into
-/// the tree its directory names.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ShelfAnswer {
-    /// Import nothing and go and look: the library navigates to the shelf
-    /// that holds the name and lights it up where it stands — the folder
-    /// import's own spelling of the book sheet's *already imported*, and the
-    /// stored arrival's answer for "oh, that one".
-    Show,
-    /// Mint the arriving folder's shelf under the next free name
-    /// ([`next_shelf_name`]) and import into its own tree. Of ground the
-    /// library already reads in place, the tree it mints holds copies of its
-    /// own — independent books of their own bytes beside the linked ones the
-    /// old tree keeps reading.
-    AsNew,
-    /// Place nothing and import nothing: leave a pointer row at the level —
-    /// the folder's own `library_core::book::Row::Link`, whose target is the
-    /// shelf's id — and a tap on it reveals the shelf it names, lit, wherever
-    /// it hangs. The read-at-place arrival's answer.
-    Link,
-    /// The arriving folder IS the shelf that is here: its books join it, and
-    /// the files whose names it already holds ask, one by one, on the compact
-    /// sheet ([`answer_folder_merge`]). The read-at-place arrival's other
-    /// answer.
-    Merge,
-    /// The destructive answer, and only a stored arrival's sheet offers it:
-    /// the books the shelf that is here holds leave the library through the
-    /// removal's own sweep, and the folder's copies take the shelf, so what
-    /// stands at the end is one shelf of the library's own copies. Of the
-    /// folder's OWN read-at-place tree it is the log-spending sweep the
-    /// import module owns; of any other shelf it is the removal's receipt
-    /// over the shelf's members and the merge's filing into it. The row says
-    /// what goes before the click — how many books leave, highlights and all
-    /// — the way the move sheet's replace does.
-    Replace,
+/// The arrival's MODE decides, and the two sets are [`Placement`]'s own. A
+/// READ-AT-PLACE arrival gets the pointer and the merge (*link*, *merge*), its
+/// *keep both* withheld as the second instance of one ground the family gate
+/// exists to prevent, and *replace* with it — neither side of a read-at-place
+/// collision is the level's to empty. Everything else gets the level's own three
+/// (*open*, *replace*, *keep both*): a STORED arrival is copies the library owns
+/// and unrelated to any tree, and a read-at-place re-pick of the folder's OWN
+/// shelf is a continuation of the tree the reader already has rather than an
+/// arrival from outside it.
+///
+/// One function rather than a branch in the sheet and a second in the answer, so
+/// the two cannot drift about which buttons a given arrival gets — which is what
+/// they did when each spelled the condition out.
+pub fn offers(ask: &ShelfConflictAsk) -> &'static [Placement] {
+    if ask.opts.in_place {
+        Placement::SHELF_READ_IN_PLACE
+    } else {
+        Placement::SHELF_STORED
+    }
 }
 
 /// Put the folder question on screen. One question, no queue: a folder import
@@ -96,85 +76,46 @@ pub fn raise_shelf(state: AppState, ask: ShelfConflictAsk) {
     state.library.shelf_conflict.raise(ask);
 }
 
-/// One of the folder sheet's buttons.
-pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
-    let Some(ask) = state.library.shelf_conflict.ask.get_untracked() else {
+/// One of the folder sheet's buttons, in the unified vocabulary.
+///
+/// The sheet renders [`offers`] and hands back a [`Placement`]; the write is
+/// `super::apply_placement` on a shelf scope, which is the same dispatch a book
+/// collision reaches — the branch that makes a shelf answer different from a row
+/// answer is inside it, not here.
+///
+/// *Open* is the one answer that is not a placement of the arrival: it imports
+/// nothing and lights the shelf that holds the name, wherever it hangs.
+pub fn answer_shelf(state: AppState, answer: Placement) {
+    let Some(ask) = state.library.shelf_conflict.ask.with_untracked(|a| a.clone()) else {
         return;
     };
-    cancel_shelf(state);
-    match answer {
-        ShelfAnswer::AsNew => {
-            // Counted at the click rather than at the raise: a shelf that
-            // landed between the two is a name the promise has to skip.
-            let name = state.library.shelves.with_untracked(|shelves| {
-                next_shelf_name(shelves, None, &ask.incoming_name)
-            });
-            crate::services::library::import::proceed_folder(
-                state,
-                ask.root,
-                ask.opts,
-                crate::services::library::import::RootPlan {
-                    rename: Some(name),
-                    ..Default::default()
-                },
-            );
-        }
-        ShelfAnswer::Show => {
-            // Import nothing and go and look: the light lands on the shelf
-            // that holds the name, wherever it hangs — the stored arrival's
-            // "oh, that one", answered the way the family gate answers a
-            // pick of ground the library already reads.
-            reveal::reveal_shelf(state, &ask.existing_id);
-        }
-        ShelfAnswer::Link => {
-            // A pointer at the shelf, on the level the import would have
-            // minted one: the row the reader can recognise, and no second
-            // door with the same name on it.
-            state
-                .library
-                .add_link(&ask.existing_name, &ask.existing_id, shelf::ALL_SHELF);
-            toast(state, format!("Linked to {}.", ask.existing_name));
-        }
-        ShelfAnswer::Merge => {
-            // The arriving folder's books join the shelf that is here, and
-            // the files whose names it already holds ask one by one on the
-            // compact sheet.
-            crate::services::library::import::proceed_folder(
-                state,
-                ask.root,
-                ask.opts,
-                crate::services::library::import::RootPlan {
-                    into: Some(ask.existing_id),
-                    ..Default::default()
-                },
-            );
-        }
-        ShelfAnswer::Replace => {
-            // The folder's OWN read-at-place tree is the import module's own
-            // sweep: the root's claim first, so a run the reader already started
-            // refuses the answer BEFORE anything is removed and a rescan walking
-            // the same tree is waited out before anything is removed, then the
-            // linked books go and the copy walk spends the logs it wrote. Any
-            // other shelf — a stored folder's, a reader's own — is the removal's
-            // receipt over the shelf's members and the copies filing into it.
-            let own_in_place = ask.own
-                && state.library.folders.with_untracked(|folders| {
-                    folders
-                        .iter()
-                        .any(|f| f.root == ask.root && f.opts.in_place)
-                });
-            if own_in_place {
-                crate::services::library::import::replace_folder_with_copies(state, ask.root, ask.opts);
-            } else {
-                crate::services::library::import::replace_shelf_with_folder(
-                    state,
-                    ask.root,
-                    ask.opts,
-                    ask.existing_id,
-                );
-            }
-        }
+    if !offers(&ask).contains(&answer) {
+        return;
     }
+    let placement = PlacementAsk::shelf(
+        // A folder arrival has no measured file and no row of its own yet — the
+        // NAME is the question — so the arrival carries the name the shelf would
+        // wear and the level it would wear it on.
+        Arrival::folder(ask.incoming_name.clone(), shelf::ALL_SHELF),
+        ask.existing_id.clone(),
+        ask.existing_name.clone(),
+        offers(&ask),
+    );
+    // Dismissed AFTER the ask is read into a value of its own and BEFORE the
+    // apply runs, and the order is load-bearing rather than tidy: the three
+    // answers that import read the interrupted run's root and options off the
+    // sheet's ask, so dismissing first would hand them nothing, and dismissing
+    // last would leave the sheet up over a shelf the answer already moved.
+    cancel_shelf(state);
+    if answer == Placement::Open {
+        // The one answer that places nothing: import no folder and light the
+        // shelf that holds the name, wherever it hangs — the stored arrival's
+        // "oh, that one", answered the way the family gate answers a pick of
+        // ground the library already reads.
+        reveal::reveal_shelf(state, &ask.existing_id);
+        return;
+    }
+    super::apply_placement(state, &placement, answer);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,10 +123,9 @@ pub fn answer_shelf(state: AppState, answer: ShelfAnswer) {
 // ---------------------------------------------------------------------------
 //
 // The four answers a shelf question has, each as its own entry point so the
-// unified dispatch can reach them without going through [`ShelfAnswer`]. They
-// are the same four writes [`answer_shelf`] has always made; what differs is
-// that a folder merge or a book collision asking for *replace* now lands here
-// instead of having its own.
+// unified dispatch can reach them. They are the same four writes
+// [`answer_shelf`] has always made; what differs is that a book collision asking
+// for *replace* now lands on the same rule instead of carrying its own.
 //
 // Three of the four take the unified ask and do not read it: `root` and `opts`
 // are the import the question interrupted, which a [`PlacementAsk`] does not

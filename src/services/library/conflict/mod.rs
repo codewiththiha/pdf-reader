@@ -106,7 +106,7 @@ pub use covered::answer_covered;
 pub use folder_merge::answer_folder_merge;
 pub use name::{answer, answer_move};
 pub use note::{close_already_imported, raise_note};
-pub use shelf::{answer_shelf, cancel_shelf, raise_shelf, ShelfAnswer, ShelfConflictAsk};
+pub use shelf::{answer_shelf, cancel_shelf, offers as shelf_offers, raise_shelf, ShelfConflictAsk};
 
 use leptos::prelude::*;
 
