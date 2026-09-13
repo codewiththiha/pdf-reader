@@ -37,7 +37,8 @@ use super::folder_shelf_of;
 /// A copy that fails costs that book its move and nothing else: it stays where it
 /// was, linked, the toast says so, and the other books in the same drag still go.
 /// `retry` runs the move over the survivors and is called from the spawned task,
-/// which is what lets the caller return at once and keep its own shape.
+/// which is what lets the caller return at once and keep its own shape. The
+/// copying itself is [`depart`], the one primitive a shelf's departure rides too.
 ///
 /// `retry` takes the survivors AND the rows this gate turned into copies, because
 /// the landing owes them one exception: a departure writes a moved-out log, and
@@ -68,26 +69,52 @@ pub(super) fn convert_departures(
     }
     let all: Vec<String> = ids.to_vec();
     spawn_local(async move {
-        let mut failed: Vec<String> = Vec::new();
-        for id in &converting {
-            if let Err(message) = convert_to_stored(state, id).await {
-                failed.push(id.clone());
-                toast(state, message);
-            }
-        }
-        covers::backfill_missing(state);
+        let departed = depart(state, &converting).await;
+        let failed: Vec<String> = converting
+            .into_iter()
+            .filter(|id| !departed.contains(id))
+            .collect();
         let rest: Vec<String> = all.into_iter().filter(|id| !failed.contains(id)).collect();
         if !rest.is_empty() {
-            // A copy that failed left the row linked and logged nothing, so it
-            // departs nothing either.
-            let departed: Vec<String> = converting
-                .into_iter()
-                .filter(|id| !failed.contains(id))
-                .collect();
             retry(rest, departed);
         }
     });
     true
+}
+
+/// Leave governance, for a batch of rows: copy every one of them into the
+/// library's own store and write each folder's moved-out log, then answer with
+/// the rows that actually left.
+///
+/// This is the ONE "a read-at-place book is leaving the ground that made it"
+/// primitive, and both machines that need it call it rather than each writing
+/// their own — a drag or a lift out of a hand-move (`convert_departures` above),
+/// and a whole shelf of rungs leaving at once
+/// (`crate::services::library::arrange::shelf_departure`). The 90% the two used
+/// to duplicate is the loop below: copy, log, count what landed, queue the covers
+/// the copies have never had rendered. What is genuinely different between them
+/// stays theirs — a hand-move owes a landing and a retry over the survivors, a
+/// shelf owes a seam position and an answer about whether the shelf itself comes
+/// back as one of the reader's own.
+///
+/// A copy that fails costs that book its departure and nothing else: it stays
+/// where it was, linked, with no log written for it, the reader hears one
+/// sentence, and the other rows in the same batch still go. That is why the
+/// answer is the rows that LEFT rather than a count — a caller has to know which
+/// ones to leave out of the landing it is about to make.
+pub(super) async fn depart(state: AppState, rows: &[String]) -> Vec<String> {
+    let mut departed: Vec<String> = Vec::with_capacity(rows.len());
+    for id in rows {
+        match convert_to_stored(state, id).await {
+            Ok(()) => departed.push(id.clone()),
+            Err(message) => toast(state, message),
+        }
+    }
+    // The copies have never been rendered, and the linked covers they left behind
+    // belong to files the rows no longer read. One ask for the batch rather than
+    // one per row: the queue re-derives its whole want-list on every call.
+    covers::backfill_missing(state);
+    departed
 }
 
 /// Whether moving this row to this level is a departure that owes a copy: a

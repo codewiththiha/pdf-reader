@@ -11,11 +11,10 @@ use library_core::book::{Origin, Row, book_rows, duplicate_title};
 use library_core::folder::{self as folder_ops, WatchedFolder};
 use library_core::shelf::{self as shelf, Shelf};
 
-use crate::services::library::covers;
 use crate::services::library::{folder_label, toast};
 use crate::state::AppState;
 
-use super::departure::convert_to_stored;
+use super::departure::depart;
 use super::shelves::{nest_shelf, reorder_shelves_to_anchor};
 use crate::services::library::reveal;
 
@@ -551,19 +550,15 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
         return;
     }
 
-    // The copies, through the book departure's own function: bytes into the
-    // store, a moved-out log into every folder that placed the book, the name
-    // pinned into the title, the highlights following the address.
+    // The copies, through the departure's ONE primitive: bytes into the store, a
+    // moved-out log into every folder that placed the book, the name pinned into
+    // the title, and one cover ask for the batch. What is left here is the
+    // shelf's own bookkeeping — which shelves landed, and the sentence a shelf
+    // owes when not one of its books could be copied.
     let mut landed: Vec<String> = Vec::new();
     for dep in &departures {
-        let mut copied = 0usize;
-        for id in &dep.books {
-            match convert_to_stored(state, id).await {
-                Ok(()) => copied += 1,
-                Err(message) => toast(state, message),
-            }
-        }
-        if dep.books.is_empty() || copied > 0 {
+        let copied = depart(state, &dep.books).await;
+        if dep.books.is_empty() || !copied.is_empty() {
             landed.push(dep.id.clone());
         } else {
             toast(
@@ -636,10 +631,9 @@ async fn depart_shelves(state: AppState, ask: ShelfDepartureAsk) {
         }
     });
     crate::storage::persist_library(state.library);
-    // The copies have never been rendered, and the linked covers they left
-    // behind belong to files the rows no longer read: prune ran per
-    // conversion; this queues the fresh store paths.
-    covers::backfill_missing(state);
+    // No cover ask here: `depart` already queued one for the copies, and the
+    // structure pass above renames shelves rather than landing rows, so there is
+    // nothing new for the queue to want.
 
     // The landing, re-dispatched through the very functions the gesture rode:
     // the copies are virtual shelves now, so the screen inside sees nothing to
