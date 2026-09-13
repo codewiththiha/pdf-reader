@@ -81,6 +81,40 @@ pub struct StoreRequest {
     pub id: String,
 }
 
+/// One stored copy to move into its own item folder, for `relocate_stored`.
+///
+/// The old flat store named a copy after the file it came from
+/// (`<root>/<format>/<stem>_<id>.<ext>`); the layout in [`crate::store`] names it
+/// after the book (`<root>/items/<id>/source.<ext>`). Copies made before that
+/// change keep the address recorded in their row and still open, but nothing
+/// writes that shape any more, so a one-time pass brings them across.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateRequest {
+    /// The address the row currently holds. Must be inside the app's store.
+    pub from: String,
+    /// The book's id, which names the item folder the copy moves into.
+    pub id: String,
+}
+
+/// What a relocation pass produced: one row per request, plus the store root the
+/// shell moved them inside.
+///
+/// The root rides along because the frontend cannot compute it — `<app_data_dir>`
+/// is the shell's answer — and it needs it to tell a copy that still sits in the
+/// old flat bucket from one already in its item folder. Asking for it is a
+/// second command and a second round trip; the pass that does the moving already
+/// has it in hand.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelocateResult {
+    /// The app's store root, `<app_data_dir>/Library`, or empty when the shell
+    /// has none — in which case no row moved and nothing is a candidate.
+    pub root: String,
+    /// One answer per request, in the order asked.
+    pub results: Vec<StoreResult>,
+}
+
 /// What one copy produced. A failure is per-file rather than per-batch: a
 /// folder with one locked file in it should still import the other ninety-nine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -154,6 +188,42 @@ mod tests {
         .unwrap();
         assert_eq!(check.mtime_ms, 2);
         assert_eq!(check.head_hash, 3);
+    }
+
+    #[test]
+    fn a_relocation_crosses_the_wire_in_camel_case_and_comes_back_in_order() {
+        let requests = [RelocateRequest {
+            from: "/app/Library/pdf/dune_ab12.pdf".into(),
+            id: "ab12".into(),
+        }];
+        let json = serde_json::to_string(&requests).unwrap();
+        assert!(json.contains("\"from\""), "{json}");
+        assert!(json.contains("\"id\""), "{json}");
+        // The keys are the contract; the values are paths a reader owns, which
+        // carry underscores of their own, so the check names the keys it wants.
+        assert!(!json.contains("\"from_\""), "no snake_case keys: {json}");
+        assert!(!json.contains("\"_id\""), "no snake_case keys: {json}");
+        assert!(json.starts_with("[{\"from\""), "{json}");
+        let back: Vec<RelocateRequest> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, requests);
+
+        // The answer carries the root beside the rows, because the frontend
+        // cannot compute `<app_data_dir>` itself and needs it to recognise a copy
+        // that has not moved yet.
+        let answer: RelocateResult = serde_json::from_str(
+            r#"{"root":"/app/Library","results":[
+                {"id":"ab12","src":"/app/Library/pdf/dune_ab12.pdf",
+                 "store":"/app/Library/items/ab12/source.pdf","error":null}]}"#,
+        )
+        .unwrap();
+        assert_eq!(answer.root, "/app/Library");
+        assert_eq!(answer.results.len(), 1);
+        assert!(answer.results[0].is_ok());
+        // A shell with no app-data directory answers with an empty root and no
+        // row moved, which is what tells the pass to stop rather than retry.
+        let none: RelocateResult =
+            serde_json::from_str(r#"{"root":"","results":[]}"#).unwrap();
+        assert!(none.root.is_empty() && none.results.is_empty());
     }
 
     #[test]

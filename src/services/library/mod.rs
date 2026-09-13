@@ -56,8 +56,8 @@ pub use covers::backfill_missing;
 pub use duplicate::{duplicate_row, duplicate_rows, duplicate_shelf};
 pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
-    dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book,
-    set_folder_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
+    dismiss_task, import_files, import_folder, migrate_store_layout, rescan_watched,
+    restore_deleted_book, set_folder_watch, shelf_watch, verify_library, verify_one, ShelfWatch,
 };
 
 /// The last segment of a path, on either separator, with no trailing separator.
@@ -107,7 +107,9 @@ use wasm_bindgen::JsValue;
 use library_core::book::Fingerprint;
 use library_core::folder::FolderOpts;
 use library_core::scan::FoundFile;
-use library_core::wire::{ImportProgress, PathCheck, StoreRequest, StoreResult};
+use library_core::wire::{
+    ImportProgress, PathCheck, RelocateRequest, RelocateResult, StoreRequest, StoreResult,
+};
 
 use leptos::prelude::*;
 
@@ -137,6 +139,7 @@ const CMD_SCAN: &str = "scan_folder";
 const CMD_VERIFY: &str = "verify_paths";
 const CMD_STORE: &str = "store_books";
 const CMD_DELETE: &str = "delete_stored";
+const CMD_RELOCATE: &str = "relocate_stored";
 const CMD_REVEAL: &str = "reveal_in_folder";
 
 /// What every command here answers when there is no shell to answer: the same
@@ -181,6 +184,11 @@ struct PathsArgs {
 struct StoreArgs<'a> {
     task: &'a str,
     requests: &'a [StoreRequest],
+}
+
+#[derive(Serialize)]
+struct RelocateArgs<'a> {
+    requests: &'a [RelocateRequest],
 }
 
 #[derive(Serialize)]
@@ -257,6 +265,17 @@ pub(crate) async fn copy_and_measure(
         .and_then(|checks| checks.into_iter().next())
         .and_then(|check| check.fingerprint());
     Ok((store, measured))
+}
+
+/// Move stored copies out of the old flat store into their own item folders.
+///
+/// One row per request, plus the store root the shell moved them inside — the
+/// frontend cannot compute that root itself, and it needs it to recognise a copy
+/// that has not been moved yet.
+pub async fn relocate_stored(
+    requests: &[RelocateRequest],
+) -> Result<RelocateResult, String> {
+    call(CMD_RELOCATE, &RelocateArgs { requests }).await
 }
 
 /// Ask the OS file manager to reveal a path: the item selected inside its

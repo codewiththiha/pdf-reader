@@ -62,6 +62,7 @@
 //! | [`restore`] | the books a folder's own log gives back, and the files a log REPRESENTS |
 //! | [`copy`] | the store batch and its per-file failure sentence |
 //! | [`replace`] | the sheet's *replace*: the sweep out and the walk back in |
+//! | [`migrate`] | the one-time move of every stored copy into its own item folder |
 //!
 //! The four rules above are this directory's, not any one file's: the stages
 //! of a run live in [`folder`] and [`files`], and every other module is a
@@ -73,6 +74,7 @@ mod copy;
 mod files;
 mod folder;
 mod gate;
+mod migrate;
 mod replace;
 mod restore;
 mod tasks;
@@ -83,6 +85,7 @@ mod tests;
 
 pub use files::{import_files, land_file};
 pub use gate::import_folder;
+pub use migrate::migrate_store_layout;
 pub use replace::replace_rows_of_tree;
 pub use restore::restore_deleted_book;
 pub use tasks::dismiss_task;

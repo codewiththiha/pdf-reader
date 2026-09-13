@@ -109,6 +109,62 @@ pub fn meta_path(items_root: &str, book_id: &str) -> String {
     join(&item_dir(items_root, book_id), META_FILE)
 }
 
+/// The stem a migrated source keeps in its new name, which is every supported
+/// extension lower-cased. The store's own batch used to name a copy after the
+/// FILE it came from, so an old copy can wear any extension the registry
+/// admits; the new layout names it after its format's pipeline instead, which is
+/// one name per book rather than one per source filename.
+///
+/// `None` for an extension the registry does not know, which leaves the old name
+/// alone: a migration that guessed at a format it could not name would be
+/// renaming a file to something no reader can open.
+pub fn migrated_ext(ext: &str) -> Option<&'static str> {
+    match crate::scan::store_dir(ext) {
+        "other" => None,
+        dir => Some(dir),
+    }
+}
+
+/// The id a copy in the OLD flat store was named with: the token after its last
+/// underscore.
+///
+/// The old name was `<stem>_<id>.<ext>`, and an id is hex with a letter prefix,
+/// so it never carries an underscore — the last one in the stem is the seam
+/// however many underscores the source filename had. `None` for a name with no
+/// seam, which is a file this app did not write and a migration leaves where it
+/// is.
+pub fn flat_store_id(file_name: &str) -> Option<String> {
+    let stem = file_name.rsplit_once('.').map_or(file_name, |(stem, _)| stem);
+    stem.rsplit_once('_')
+        .map(|(_, id)| id.to_string())
+        .filter(|id| !id.is_empty())
+}
+
+/// Whether a recorded store address still sits in the OLD flat bucket, and so is
+/// a candidate for the one-time migration: directly inside one of the three
+/// format directories under the store root, as `<root>/pdf/dune_ab12.pdf`.
+///
+/// Two directories are deliberately not candidates. The item layout puts a
+/// folder between the bucket and the file, so anything under `items/` has already
+/// moved; and `other/` never held a copy, because the format registry refuses an
+/// extension it does not know and a store batch only ever copied a file it
+/// admitted. A linked book's address is the reader's own file and is never a
+/// candidate whatever it is called — the caller asks this of stored books only.
+pub fn is_flat_store_path(store_root: &str, path: &str) -> bool {
+    // A directory edge rather than a string prefix, so `/Library-old/x` is not
+    // under `/Library` — the rule `crate::folder::rel_under` gives a watched
+    // folder, applied to the one directory the app owns.
+    let Some(rest) = crate::folder::rel_under(path, store_root) else {
+        return false;
+    };
+    // One directory and one file, no deeper.
+    let mut parts = rest.split('/');
+    let (Some(dir), Some(_file), None) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    matches!(dir, "pdf" | "text" | "markdown")
+}
+
 /// Drop a trailing separator so a join never produces `root//child`. Both
 /// separators are trimmed: a store root arrives from the host's own path API,
 /// which on Windows ends in `\`.
@@ -264,6 +320,80 @@ mod tests {
         assert_eq!(
             source_path("/r", ID, "pdf/../../x"),
             format!("/r/{ID}/source.pdf_.._.._x")
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // The old flat layout, recognised so a migration can move out of it.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn a_migrated_copy_is_named_after_its_pipeline_not_its_source() {
+        // The old name kept whatever the source file was called; the new one is
+        // the format's own directory name, so every alias of a format agrees.
+        assert_eq!(migrated_ext("pdf"), Some("pdf"));
+        assert_eq!(migrated_ext("TXT"), Some("text"));
+        assert_eq!(migrated_ext("markdown"), Some("markdown"));
+        assert_eq!(migrated_ext("mdown"), Some("markdown"));
+        // A format the registry does not know keeps its old name rather than
+        // being renamed into something no reader can open.
+        assert_eq!(migrated_ext("epub"), None);
+        assert_eq!(migrated_ext(""), None);
+    }
+
+    #[test]
+    fn the_id_an_old_copy_was_named_with_is_the_token_after_its_last_underscore() {
+        assert_eq!(flat_store_id("dune_ab12cd.pdf").as_deref(), Some("ab12cd"));
+        // An id is hex with a letter prefix, so it never carries an underscore:
+        // a source filename full of them still seams at the last one.
+        assert_eq!(
+            flat_store_id("my_big_book_b018c4f9e2a0.pdf").as_deref(),
+            Some("b018c4f9e2a0")
+        );
+        // A name with no seam is a file this app did not write, and a migration
+        // leaves it where it is rather than guessing at an id.
+        assert_eq!(flat_store_id("dune.pdf"), None);
+        assert_eq!(flat_store_id("dune_.pdf"), None, "an empty id is no id");
+        assert_eq!(flat_store_id(""), None);
+        // A name with no extension still seams.
+        assert_eq!(flat_store_id("dune_ab12").as_deref(), Some("ab12"));
+    }
+
+    #[test]
+    fn only_the_three_format_buckets_are_the_old_layout() {
+        let root = "/app/Library";
+        assert!(is_flat_store_path(root, "/app/Library/pdf/dune_ab12.pdf"));
+        assert!(is_flat_store_path(root, "/app/Library/text/notes_ab12.txt"));
+        assert!(is_flat_store_path(root, "/app/Library/markdown/a_ab12.md"));
+        // Already migrated: the item layout puts a folder between bucket and file.
+        assert!(!is_flat_store_path(root, &source_path("/app/Library/items", ID, "pdf")));
+        assert!(!is_flat_store_path(root, "/app/Library/items/x/y.pdf"));
+        // `other` never held a copy — the registry refuses what it does not know.
+        assert!(!is_flat_store_path(root, "/app/Library/other/a_ab12.epub"));
+        // Not in the store at all: a linked book's own file, and a path that
+        // merely starts with the root's characters.
+        assert!(!is_flat_store_path(root, "/books/dune.pdf"));
+        assert!(!is_flat_store_path(root, "/app/Library-old/pdf/dune_ab12.pdf"));
+        // A trailing separator on the root is the same directory.
+        assert!(is_flat_store_path("/app/Library/", "/app/Library/pdf/dune_ab12.pdf"));
+        // Deeper than one bucket is not a copy this app wrote.
+        assert!(!is_flat_store_path(root, "/app/Library/pdf/2024/dune_ab12.pdf"));
+    }
+
+    #[test]
+    fn a_migrated_address_is_the_item_path_under_its_new_name() {
+        // The whole migration in one assertion: recognise the old bucket, read
+        // the id out of the old name, and ask this module where that book's copy
+        // belongs now.
+        let root = "/app/Library";
+        let old = format!("/app/Library/pdf/my_big_book_{ID}.pdf");
+        assert!(is_flat_store_path(root, &old));
+        let id = flat_store_id(&format!("my_big_book_{ID}.pdf")).expect("a seam");
+        assert_eq!(id, ID, "the seam is the id the copy was named with");
+        let ext = migrated_ext("pdf").expect("a known format");
+        assert_eq!(
+            source_path(&items_root(root), &id, ext),
+            format!("/app/Library/items/{ID}/source.pdf")
         );
     }
 }

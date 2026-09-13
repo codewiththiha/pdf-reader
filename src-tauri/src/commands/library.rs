@@ -18,6 +18,8 @@
 //!     modification time so it measures as the file it is rather than as the
 //!     one it came from ([`own_stamp`]);
 //!   * [`delete_stored`] removes a copy, and refuses anything outside it;
+//!   * [`relocate_stored`] moves a copy out of the old flat store into the
+//!     book's own item folder, refusing either end that is not inside it;
 //!   * [`copy_beside`] copies ONE document beside itself — the read-at-place
 //!     half of a duplicate — under a counter name the frontend minted, into
 //!     the original's own directory and nowhere else;
@@ -53,7 +55,10 @@ use library_core::scan::FoundFile;
 use library_core::store;
 // The wire types live in `library-core` because both sides of this IPC depend
 // on it: one declaration, and no contract test needed to prove the halves agree.
-use library_core::wire::{ImportPhase, ImportProgress, PathCheck, StoreRequest, StoreResult};
+use library_core::wire::{
+    ImportPhase, ImportProgress, PathCheck, RelocateRequest, RelocateResult, StoreRequest,
+    StoreResult,
+};
 
 /// The Tauri channel every progress beat is emitted on. The frontend's mirror
 /// of this name lives in `src/services/library/mod.rs`, which re-broadcasts it as
@@ -416,22 +421,21 @@ fn own_stamp(target: &Path) {
 /// The containment check is the whole safety story: the argument arrives from
 /// the webview, and a delete primitive that trusted it would be `rm` with an IPC
 /// wrapper. Only a path inside this app's own store directory is removed, and
-/// the comparison is on canonicalised paths so a `..` cannot walk out.
+/// the comparison is on canonicalised paths so a `..` cannot walk out. It is the
+/// same rule [`relocate_stored`] answers with ([`inside_store`]), because a move
+/// that could be talked into leaving the store would be a delete that could be
+/// talked into anywhere.
 #[tauri::command]
 pub fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
     let root = store_root(&app)?;
     let target = PathBuf::from(&path);
-    let inside = match (target.canonicalize(), root.canonicalize()) {
-        (Ok(t), Ok(r)) => t.starts_with(&r),
-        // A store file that is already gone is what the caller wanted; a path
-        // that cannot be canonicalised for any other reason is refused rather
-        // than guessed at.
-        (Err(_), Ok(r)) => target.starts_with(&r) && !target.exists(),
-        _ => false,
-    };
-    if !inside {
+    // The removal is of the RESOLVED path, not of the string that arrived. A
+    // store file that is already gone is what the caller wanted, and the
+    // containment rule answers it from the nearest ancestor that exists rather
+    // than refusing a path it cannot canonicalise whole.
+    let Some(target) = contained_in(&root, &target) else {
         return Err(format!("refusing to delete a file outside the store: {path}"));
-    }
+    };
     match fs::remove_file(&target) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -577,6 +581,201 @@ pub async fn reveal_in_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Move stored copies out of the old flat buckets and into their own item
+/// folders, one result per request.
+///
+/// The store used to be `<root>/<format>/<stem>_<id>.<ext>`; it is now
+/// `<root>/items/<id>/source.<ext>` ([`library_core::store`]). Copies made
+/// before that change keep the address recorded in their row, so they still open
+/// — but they sit in a layout nothing writes any more, with no folder of their
+/// own for a cover or a set of marks to live in. This is the one-time move that
+/// brings them across.
+///
+/// A MOVE and not a copy, because the bytes are already the app's own: the row
+/// is the only thing that names them, and the frontend rewrites it from the
+/// answer. Per-request rather than per-batch for the reason [`store_books`] is —
+/// one copy a host will not let go of costs that book its old address, which
+/// still opens, and not the other ninety-nine.
+///
+/// Both ends are held inside the store, on canonicalised paths, so a `..` cannot
+/// walk out: `from` because a relocation is not a general file-move primitive
+/// reachable from a webview that parses untrusted documents, and `to` because a
+/// computed target that escaped would be a write the reader never asked for.
+#[tauri::command]
+pub async fn relocate_stored(
+    app: AppHandle,
+    requests: Vec<RelocateRequest>,
+) -> Result<RelocateResult, String> {
+    tauri::async_runtime::spawn_blocking(move || relocate(&app, &requests))
+        .await
+        .map_err(|e| format!("relocate worker failed: {e}"))
+}
+
+fn relocate(app: &AppHandle, requests: &[RelocateRequest]) -> RelocateResult {
+    let root = match store_root(app) {
+        Ok(root) => root,
+        // No store root is no relocation: every row keeps the address it has,
+        // which still opens. The empty root tells the frontend that nothing is a
+        // candidate, so it does not ask again on the next launch either.
+        Err(_) => {
+            return RelocateResult {
+                root: String::new(),
+                results: requests.iter().map(|r| relocated_fail(r, NO_ROOT.to_string())).collect(),
+            }
+        }
+    };
+    let items = store::items_root(&path_to_string(&root));
+    let mut results = Vec::with_capacity(requests.len());
+    for request in requests {
+        results.push(relocate_one(&root, &items, request));
+    }
+    RelocateResult {
+        root: path_to_string(&root),
+        results,
+    }
+}
+
+/// The per-row error a shell with no app-data directory answers with.
+const NO_ROOT: &str = "no store directory";
+
+fn relocate_one(root: &Path, items: &str, request: &RelocateRequest) -> StoreResult {
+    let fail = |error: String| relocated_fail(request, error);
+    let source = Path::new(&request.from);
+    if !inside_store(root, source) {
+        return fail(format!("refusing to move a file outside the store: {}", request.from));
+    }
+    let ext = extension_of(source).to_lowercase();
+    let Some(ext) = store::migrated_ext(&ext) else {
+        return fail(format!("not a format this app stores: {}", request.from));
+    };
+    let target = PathBuf::from(store::source_path(items, &request.id, ext));
+    // Containment is asked of the path itself and not of the resolved one: a
+    // `..` the id carried is refused here even when the file it names happens to
+    // land back inside the store through a symlink, which is the difference
+    // between a rule about the address and a rule about where it ended up.
+    if !inside_store(root, &target) {
+        return fail(format!("refusing to write outside the store: {}", request.id));
+    }
+    // Already where it belongs: a second launch, or a row this pass moved. The
+    // answer is the address it already wears rather than an error, so a
+    // migration that runs twice is a migration that did nothing the second time.
+    if same_file(source, &target) {
+        return StoreResult {
+            id: request.id.clone(),
+            src: request.from.clone(),
+            store: path_to_string(&target),
+            error: None,
+        };
+    }
+    if let Some(parent) = target.parent()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        return fail(format!("could not create the item directory: {e}"));
+    }
+    // A rename is a metadata edit on one volume, and the two ends are both
+    // inside the store root — but an app-data directory that is itself a symlink
+    // onto another volume makes that a cross-device rename, which the host
+    // refuses. The fallback is the same bytes either way: copy, then remove the
+    // source so the old bucket is not left holding a file nothing points at.
+    // The copy is only attempted when the rename left nothing behind, so a
+    // rename that failed for a real reason is reported rather than papered over.
+    if let Err(e) = fs::rename(source, &target) {
+        if target.exists() {
+            return fail(format!("could not move {}: {e}", request.from));
+        }
+        if let Err(e) = fs::copy(source, &target) {
+            return fail(format!("could not move {}: {e}", request.from));
+        }
+        // The copy landed, so the row may move. A source nobody will let go of
+        // is a file left in a bucket nothing reads any more — wasted disk, and a
+        // better trade than losing the reader the book over it.
+        let _ = fs::remove_file(source);
+    }
+    // The move does not write the file, so the stamp a copy needed is already
+    // the one the book was stored with. Leaving it alone is the point: the row's
+    // identity is the measurement of THESE bytes, and re-stamping on a migration
+    // would change a fingerprint every ledger entry and tombstone still names.
+    StoreResult {
+        id: request.id.clone(),
+        src: request.from.clone(),
+        store: path_to_string(&target),
+        error: None,
+    }
+}
+
+fn relocated_fail(request: &RelocateRequest, error: String) -> StoreResult {
+    StoreResult {
+        id: request.id.clone(),
+        src: request.from.clone(),
+        store: String::new(),
+        error: Some(error),
+    }
+}
+
+/// Whether two addresses are the same file, canonicalised so a path that differs
+/// only in how it was spelled does not read as a move onto itself.
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
+/// Whether `path` is inside the store root, compared on canonicalised paths so a
+/// `..` cannot walk out.
+///
+/// The nearest EXISTING ancestor is what gets canonicalised, and the rest of the
+/// path is appended to it, because one of the two ends of a move has not been
+/// created yet: `canonicalize` refuses a path that is not there, and a target
+/// that always answered "outside" would make the migration refuse every book it
+/// was asked to move. Walking up to something real keeps the comparison honest —
+/// a symlinked store root resolves, and a `..` in the tail is still resolved
+/// against the real directory it sits in.
+///
+/// `false` when nothing on the path exists at all, which is a refusal rather
+/// than a guess: a file that is gone cannot be moved either.
+fn inside_store(root: &Path, path: &Path) -> bool {
+    contained_in(root, path).is_some()
+}
+
+/// `path` resolved against `root`, or `None` when it is not inside it.
+///
+/// The nearest EXISTING ancestor is what gets canonicalised and the rest of the
+/// path is resolved lexically on top of it, because one end of a move has not
+/// been created yet: `canonicalize` refuses a path that is not there, and a
+/// target that always answered "outside" would refuse every book the migration
+/// was asked to move. Splitting at the ancestor that is real keeps both halves
+/// honest — a symlinked store root resolves, and a `..` in the tail is honoured
+/// against the real directory it sits in rather than appended to it, so a
+/// computed path that tried to climb out is still refused.
+///
+/// `None` when the root does not exist or nothing on the path does, which is a
+/// refusal rather than a guess.
+fn contained_in(root: &Path, path: &Path) -> Option<PathBuf> {
+    let root = root.canonicalize().ok()?;
+    let mut existing = path;
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let base = loop {
+        if let Ok(real) = existing.canonicalize() {
+            break real;
+        }
+        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
+            return None;
+        };
+        tail.push(name);
+        existing = parent;
+    };
+    let mut full = base;
+    for name in tail.iter().rev() {
+        if *name == std::ffi::OsStr::new("..") {
+            full = full.parent()?.to_path_buf();
+        } else if *name != std::ffi::OsStr::new(".") {
+            full.push(name);
+        }
+    }
+    full.starts_with(&root).then_some(full)
+}
+
 /// `<app_data_dir>/Library` — the only directory this module writes to.
 fn store_root(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
@@ -654,7 +853,9 @@ fn ensure_walkable(root: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_beside_sync, extension_of, own_stamp, relative_to};
+    use super::{
+        copy_beside_sync, extension_of, inside_store, own_stamp, relative_to, same_file,
+    };
     use std::fs;
     use std::path::Path;
     use std::time::{Duration, SystemTime};
@@ -710,6 +911,53 @@ mod tests {
         // Rust reads a dotfile as having no extension, and no extension is
         // nothing the format registry admits — the two agree without a rule.
         assert_eq!(extension_of(Path::new("/books/.gitignore")), "");
+    }
+
+    /// The two refusals that keep a relocation inside the app's own store, on
+    /// canonicalised paths so a `..` cannot walk out — and the agreement about
+    /// "already there", which is what makes a migration that runs twice a
+    /// migration that did nothing the second time.
+    #[test]
+    fn a_relocation_stays_inside_the_store() {
+        let dir = std::env::temp_dir().join(format!("pdf-reader-move-{}", std::process::id()));
+        let store = dir.join("Library");
+        let bucket = store.join("pdf");
+        let outside = dir.join("books");
+        fs::create_dir_all(&bucket).expect("a scratch store");
+        fs::create_dir_all(&outside).expect("a scratch folder");
+        let copy = bucket.join("dune_ab12.pdf");
+        fs::write(&copy, b"%PDF-1.7 dune").expect("a scratch copy");
+        let reader_file = outside.join("dune.pdf");
+        fs::write(&reader_file, b"%PDF-1.7 the reader's own").expect("a scratch file");
+
+        assert!(inside_store(&store, &copy), "a stored copy is inside");
+        assert!(
+            !inside_store(&store, &reader_file),
+            "the reader's own file is not, however document-shaped it is"
+        );
+        // A traversal that lands outside is refused on the canonicalised path,
+        // not on the string that was handed over.
+        let escape = store.join("..").join("books").join("dune.pdf");
+        assert!(!inside_store(&store, &escape));
+        // A target that has not been created yet is the half a move owes, so the
+        // answer comes from the nearest ancestor that IS there. Refusing it would
+        // refuse every book the migration was asked to move.
+        let target = store.join("items").join("b018c4f9e2a0").join("source.pdf");
+        assert!(!target.exists(), "the target is the file this move would make");
+        assert!(inside_store(&store, &target), "and it is inside all the same");
+        // A computed target that climbs out is refused on the canonicalised
+        // ancestor, not on the string that was handed over.
+        assert!(!inside_store(&store, &store.join("items").join("..").join("..").join("etc")));
+
+        // Same file, two spellings: the migration must read this as "already
+        // moved" rather than as a move onto itself.
+        assert!(same_file(&copy, &copy));
+        assert!(same_file(&copy, &store.join("pdf").join("dune_ab12.pdf")));
+        assert!(!same_file(&copy, &reader_file));
+        // Neither end there is still an answer rather than a panic.
+        assert!(!same_file(&bucket.join("a.pdf"), &bucket.join("b.pdf")));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

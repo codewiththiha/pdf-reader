@@ -180,6 +180,7 @@ pub fn run() {
             commands::library::verify_paths,
             commands::library::store_books,
             commands::library::delete_stored,
+            commands::library::relocate_stored,
             commands::library::copy_beside,
             commands::library::reveal_in_folder
         ])

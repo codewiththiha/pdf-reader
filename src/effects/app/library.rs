@@ -31,7 +31,9 @@ use library_core::wire::ImportProgress;
 
 use crate::components::primitives::hooks::use_custom_event::use_typed_event;
 use crate::events::IMPORT_PROGRESS_EVENT;
-use crate::services::library::{backfill_missing, rescan_watched, verify_library};
+use crate::services::library::{
+    backfill_missing, migrate_store_layout, rescan_watched, verify_library,
+};
 use crate::state::AppState;
 
 /// The shortest gap between two rescans, in milliseconds. Focus events are not
@@ -48,6 +50,12 @@ static LAST_RESCAN: AtomicU64 = AtomicU64::new(0);
 /// the middle of the library's first measurement pass.
 pub(crate) fn library_effects(state: AppState) {
     install_progress_sink(state);
+    // A copy still sitting in the old flat store moves into its own item folder
+    // BEFORE the measurement pass, and the order is not negotiable: the move
+    // changes the address the row holds, so measuring first would mark the book
+    // `missing` for a file this pass is about to put somewhere else. On a library
+    // that has already moved it asks for nothing and costs one signal read.
+    migrate_store_layout(state);
     verify_library(state);
     // A library restored from storage holds books whose covers were never
     // rendered, or were rendered by a build that kept fewer of them: the shelf
