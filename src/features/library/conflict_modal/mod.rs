@@ -95,10 +95,12 @@ pub(crate) fn ConflictModal(state: AppState) -> impl IntoView {
                         view! { <FolderMergeSheet state=state ask=ask /> }.into_any(),
                     );
                 }
-                // A covered file's ask is about the file's own ground rather
-                // than the level's name, and its sheet is the two answers the
-                // read-at-place rule leaves.
-                if ask.kind.is_covered() {
+                // A two-answer ask — a covered file's ground, or content the
+                // library already holds — is about the library rather than about
+                // the level's name, and its sheet is the pair the name question
+                // cannot offer: a copy of the library's own, or the book that is
+                // already there.
+                if ask.kind.is_two_answer() {
                     return Some(
                         view! { <CoveredSheet state=state ask=ask /> }.into_any(),
                     );

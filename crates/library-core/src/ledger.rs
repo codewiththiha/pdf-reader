@@ -130,6 +130,50 @@ pub fn registry_of(rows: &[Row]) -> Registry {
     out
 }
 
+/// The row the library already holds for this content, when it holds one.
+///
+/// The question every ingestion door owes a file before it lands a second copy
+/// of it: not "is this NAME on the level I am dropping onto" — which is
+/// [`crate::conflict::collide`], and is a question about a shelf — but "are these
+/// BYTES already a book somewhere in the library". A folder walk has always asked
+/// it, through [`registry_of`] and [`decide`], which is why re-importing a watched
+/// folder reconciles instead of duplicating. A loose file dropped on the library
+/// did not, so the same PDF could be dropped twice and land twice.
+///
+/// `None` for content the library does not hold, and for a fingerprint that is
+/// still a placeholder: an unmeasured row is a promise about a file nobody has
+/// weighed yet, and matching a real measurement against it would either miss
+/// every book the library has or claim one it does not. A caller that gets `None`
+/// for that reason lands the file and the startup measurement settles the rest.
+///
+/// The answer is the row's id and whether its address has died, because those are
+/// the two facts the question behind the question needs: a row that is MISSING is
+/// not a book the reader can be taken to, so "you already have this" is an offer
+/// to relink rather than to open.
+pub fn existing_for(rows: &[Row], fp: Fingerprint) -> Option<ExistingContent> {
+    if fp.mtime_ms == 0 {
+        return None;
+    }
+    // Bound rather than chained: the registry is a temporary, and borrowing out
+    // of one in the same expression drops it before the answer is built.
+    let registry = registry_of(rows);
+    let known = registry.get(&fp)?;
+    if known.path.is_empty() {
+        return None;
+    }
+    Some(ExistingContent {
+        row_id: known.id.clone(),
+        missing: known.missing,
+    })
+}
+
+/// The row that already holds a content, and whether its address still resolves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExistingContent {
+    pub row_id: String,
+    pub missing: bool,
+}
+
 /// What the ledger needs to know about one row.
 fn known_of(book: &crate::book::Book) -> KnownBook {
     KnownBook {
@@ -547,6 +591,79 @@ mod tests {
 
     fn fp(n: u32) -> Fingerprint {
         crate::testkit::fp_n(n)
+    }
+
+    #[test]
+    fn content_the_library_holds_is_a_question_before_it_is_a_second_copy() {
+        // The gap this closes: a folder walk has always asked it, through the
+        // registry, and a loose file dropped on the library never did — so the
+        // same PDF dropped twice landed twice, with no "you already have this".
+        let rows = vec![crate::testkit::row_at("b1", "/books/dune.pdf")];
+        let held = existing_for(&rows, fp(1)).expect("the library holds this content");
+        assert_eq!(held.row_id, "b1");
+        assert!(!held.missing);
+        // Different bytes are a different book, and no question is owed.
+        assert_eq!(existing_for(&rows, fp(2)), None);
+        // A link has no fingerprint, so it is never an answer: a pointer is not
+        // a copy of a file.
+        let with_link = vec![
+            crate::testkit::row_at("b1", "/books/dune.pdf"),
+            crate::testkit::link("l1", "Dune", "b1"),
+        ];
+        assert_eq!(
+            existing_for(&with_link, fp(1)).map(|e| e.row_id).as_deref(),
+            Some("b1")
+        );
+    }
+
+    #[test]
+    fn an_unmeasured_fingerprint_matches_nothing() {
+        // A placeholder is derived from the address and stamped with `mtime_ms`
+        // of zero; matching a real measurement against one would either miss
+        // every book the library has or claim one it does not. The caller lands
+        // the file and the startup measurement settles it.
+        let pending = vec![Row::Book(Book {
+            fp: Fingerprint::placeholder("/books/dune.pdf"),
+            fp_pending: true,
+            ..crate::testkit::book("b1")
+        })];
+        assert_eq!(existing_for(&pending, Fingerprint::placeholder("/books/dune.pdf")), None);
+        assert_eq!(existing_for(&pending, fp(1)), None);
+        // A measured row answers, which is what makes the guard about the
+        // fingerprint rather than about the row.
+        let measured = vec![crate::testkit::row_at("b1", "/books/dune.pdf")];
+        assert!(existing_for(&measured, fp(1)).is_some());
+    }
+
+    #[test]
+    fn a_book_whose_address_died_is_still_the_book_the_library_holds() {
+        // `missing` rides the answer because it changes what the question means:
+        // a row that resolves is an offer to open it, and one that does not is an
+        // offer to find the file again rather than to add a second copy beside a
+        // book the reader already has.
+        let gone = vec![Row::Book(Book {
+            missing: true,
+            ..crate::testkit::book_at("b1", "/books/dune.pdf")
+        })];
+        let held = existing_for(&gone, fp(1)).expect("the content is still held");
+        assert_eq!(held.row_id, "b1");
+        assert!(held.missing);
+    }
+
+    #[test]
+    fn a_duplicate_the_reader_kept_is_still_one_content() {
+        // Two honest rows of one file share a fingerprint, and the registry is
+        // first-wins: the answer names a real row the reader can be taken to,
+        // which is all "you already have this" owes.
+        let twins = vec![
+            crate::testkit::row_at("b1", "/books/dune.pdf"),
+            Row::Book(Book {
+                independent: true,
+                ..crate::testkit::book_at("b2", "/books/dune.pdf")
+            }),
+        ];
+        let held = existing_for(&twins, fp(1)).expect("one content");
+        assert_eq!(held.row_id, "b1", "the shared row answers, not the private one");
     }
 
     fn file(n: u32, path: &str) -> FoundFile {

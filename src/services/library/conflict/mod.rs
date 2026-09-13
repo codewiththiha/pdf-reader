@@ -164,6 +164,18 @@ pub enum AskKind {
         /// covers the ground the file stands on.
         folder_id: String,
     },
+    /// A loose import of a file whose CONTENT the library already holds, no
+    /// folder's ground involved. The question is the library's rather than the
+    /// level's: the reader already has this book, somewhere, under whatever name
+    /// it was filed with, and what is being asked is whether they meant to add a
+    /// second instance of it or to go to the one they have.
+    ///
+    /// Two answers, the covered file's pair, and for the same reason — a name
+    /// collision's third answer is a pointer at a row on THIS level, and here
+    /// there is no row on this level to point at. The difference between the two
+    /// kinds is which fact the sheet prints: a covered file names the folder that
+    /// reads it, and this one names the book the library holds.
+    AlreadyHave,
 }
 
 impl AskKind {
@@ -172,7 +184,7 @@ impl AskKind {
     /// does not know about is a book the next rescan adds again.
     pub fn folder_id(&self) -> Option<&str> {
         match self {
-            AskKind::NameCollision => None,
+            AskKind::NameCollision | AskKind::AlreadyHave => None,
             AskKind::FolderMerge { folder_id, .. } => folder_id.as_deref(),
             AskKind::Covered { folder_id } => Some(folder_id),
         }
@@ -194,9 +206,12 @@ impl AskKind {
         matches!(self, AskKind::FolderMerge { .. })
     }
 
-    /// Whether this ask wears the covered file's two answers.
-    pub fn is_covered(&self) -> bool {
-        matches!(self, AskKind::Covered { .. })
+    /// Whether this ask wears two answers rather than three — the covered file's
+    /// shape, which the library's content question shares. One predicate for the
+    /// sheet rather than two, because the two render the same rows and differ
+    /// only in the sentence above them.
+    pub fn is_two_answer(&self) -> bool {
+        matches!(self, AskKind::Covered { .. } | AskKind::AlreadyHave)
     }
 }
 
@@ -250,6 +265,16 @@ impl ConflictAsk {
         }
     }
 
+    /// A loose import of a file whose content the library already holds.
+    pub fn already_have(arrival: Arrival, existing_id: String, existing_name: String) -> Self {
+        Self {
+            arrival,
+            existing_id,
+            existing_name,
+            kind: AskKind::AlreadyHave,
+        }
+    }
+
     /// A loose import of a file an in-place tree already holds a living book for.
     pub fn covered(
         arrival: Arrival,
@@ -287,7 +312,10 @@ impl ConflictAsk {
     /// [`offers_for`] reads them. Every other kind answers from `self`.
     pub fn placement(&self, state: AppState) -> PlacementAsk {
         let offers = match &self.kind {
-            AskKind::Covered { .. } => Placement::COVERED,
+            // A covered file and a file the library already holds are the same
+            // shape of question about the same kind of thing: two answers, a copy
+            // of the library's own or the book that is already there.
+            AskKind::Covered { .. } | AskKind::AlreadyHave => Placement::COVERED,
             // A row being moved onto a row is two books the reader already has;
             // an arriving file has no row to fold and no row to displace; and the
             // pointer shape swaps *replace* for the link that keeps both sides.

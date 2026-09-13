@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use super::claim::{claim_root, root_is_claimed, when_root_is_free};
-use super::files::land_file;
+use super::files::{land_file, screen_content};
 use super::folder::{
     mint_walked_row, resolve_folder, returned_memberships, Landing, Minted, Snapshot,
 };use super::gate::{covered_shelf, displaced_member, reclaim_rung, run_fold, RootPlan};
@@ -21,6 +21,91 @@ use reader_core::format::Format;
 
 /// A measured Markdown file: the cover queue skips anything that is not a
 /// PDF, so a host test that lands one never starts the wasm render chain.
+/// A drop of a file the library already holds is a question before it is a
+/// second copy — the content screen, which a folder walk has always had and a
+/// loose file never did.
+#[test]
+fn a_loose_file_whose_content_the_library_holds_asks_instead_of_landing() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    // The book the reader already has: on another shelf, under another name,
+    // which is exactly the case a NAME screen cannot see.
+    state.library.books.set(vec![Row::Book(Book {
+        title: Some("Dune (imported last week)".to_string()),
+        origin: Origin::Linked {
+            src: "/elsewhere/dune.pdf".to_string(),
+        },
+        ..library_core::testkit::book("b1")
+    })]);
+    state.library.shelves.set(vec![library_core::testkit::shelf(
+        "s1",
+        "Sci-fi",
+        &["b1"],
+        None,
+    )]);
+
+    // The same content, dropped from a different address and under a different
+    // name. `found(.., 1)` is `fp_n(1)` — every field 1 — which is the neutral
+    // fingerprint `testkit::book` carries, so this file IS the row above by
+    // content while sharing nothing with it by name or address.
+    let mut found = vec![found("/downloads/DUNE.pdf", 1)];
+    let asks = screen_content(state, &mut found, "all");
+
+    assert!(found.is_empty(), "the file did not stay in the walk to land");
+    assert_eq!(asks.len(), 1);
+    let ask = &asks[0];
+    assert!(
+        matches!(
+            ask.kind,
+            crate::services::library::conflict::AskKind::AlreadyHave
+        ),
+        "the library's own content question, not a folder's ground"
+    );
+    assert_eq!(ask.existing_id, "b1");
+    assert_eq!(
+        ask.existing_name, "Dune (imported last week)",
+        "the sheet names the book the reader has, not the file they dropped"
+    );
+    assert_eq!(
+        ask.kind.folder_id(),
+        None,
+        "no folder's ground is involved, so the sheet names the library"
+    );
+}
+
+#[test]
+fn a_loose_file_the_library_does_not_hold_stays_in_the_walk() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    state.library.books.set(vec![library_core::testkit::row("b1")]);
+    let mut found = vec![found("/downloads/other.pdf", 2)];
+    let asks = screen_content(state, &mut found, "all");
+    assert!(asks.is_empty());
+    assert_eq!(found.len(), 1, "an ordinary import is no question at all");
+}
+
+#[test]
+fn a_held_book_whose_address_died_is_not_offered_as_the_one_you_have() {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    state.library.books.set(vec![Row::Book(Book {
+        missing: true,
+        ..library_core::testkit::book("b1")
+    })]);
+    // `fp_n(1)` again, so the content matches the missing row and the only
+    // reason not to ask is that the row's address is dead.
+    let mut found = vec![found("/downloads/dune.pdf", 1)];
+    let asks = screen_content(state, &mut found, "all");
+    assert!(
+        asks.is_empty(),
+        "a row the reader cannot be taken to is not an answer to the question"
+    );
+    assert_eq!(found.len(), 1, "so the file stays in the walk");
+}
+
 fn found(path: &str, n: u32) -> FoundFile {
     library_core::testkit::found_md(path, n)
 }

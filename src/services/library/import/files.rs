@@ -95,6 +95,51 @@ fn screen_files(
     (restored, covered_asks)
 }
 
+/// The library's own answer for every loose file, after the folder's and before
+/// the level's name question: a file whose CONTENT the library already holds is a
+/// file the reader already has, wherever it is filed and whatever it is called.
+///
+/// A folder walk has always asked this, through the ledger's registry, which is
+/// why re-importing a watched folder reconciles instead of duplicating. A loose
+/// file did not, so the same PDF dropped twice landed twice — and the app's own
+/// duplicate action could make a third — with no "you already have this" in
+/// between. The identity infrastructure was there; it was wired to one door.
+///
+/// Asked BEFORE the name question because the two are different questions and
+/// this one is the stronger: a file whose twin sits on another shelf under another
+/// name is not a name collision at all, and answering it as one would offer the
+/// reader a second copy of a book they already have. A file no folder answers for
+/// and no content matches stays in the walk as an ordinary import.
+///
+/// A file whose row is MISSING is left in the walk rather than asked about: the
+/// honest answer to "the library has this" is a book the reader can be taken to,
+/// and a row whose address died is not one. Relinking it is the removal sheet's
+/// and the relink dialog's question, not an import's.
+pub(super) fn screen_content(
+    state: AppState,
+    found: &mut Vec<FoundFile>,
+    shelf_id: &str,
+) -> Vec<ConflictAsk> {
+    let rows = state.library.books.get_untracked();
+    let mut asks: Vec<ConflictAsk> = Vec::new();
+    found.retain(|file| {
+        let Some(held) = ledger::existing_for(&rows, file.fp) else {
+            return true;
+        };
+        if held.missing {
+            return true;
+        }
+        let existing_name = state.library.row_name(&held.row_id);
+        asks.push(ConflictAsk::already_have(
+            Arrival::import(file.clone(), shelf_id.to_string(), None),
+            held.row_id,
+            existing_name,
+        ));
+        false
+    });
+    asks
+}
+
 /// Import loose files: measure them, then answer each one by the ground it
 /// stands on — a file of a read-at-place folder is that folder's business
 /// first, and the rest land as the library's own stored copies, except the
@@ -146,6 +191,10 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     if !restored.is_empty() {
         crate::storage::persist_library(state.library);
     }
+
+    // The library's own answer, before the level's: content the reader already
+    // holds is a question about the library rather than about a name on a shelf.
+    let held_asks = screen_content(state, &mut found, &shelf_id);
 
     // Every file whose NAME the target level already holds is a question
     // rather than a placement — the old rule resolved the file to the row the
@@ -199,6 +248,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
                 // library rather than about the store, and every answer can
                 // still land — or fail — on its own terms.
                 let mut asks = covered_asks;
+                asks.extend(held_asks.clone());
                 asks.extend(conflicts);
                 conflict::raise(state, asks);
                 return fail(state, &task, message, FailMode::Toast);
@@ -242,7 +292,7 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     let placed = landed
         + (restored.len() + stone_landings.len()) as u32
         + represented.len() as u32;
-    let waiting = (conflicts.len() + covered_asks.len()) as u32;
+    let waiting = (conflicts.len() + covered_asks.len() + held_asks.len()) as u32;
     // The landed rows may read from addresses the cover cache has no art for:
     // one ask for the batch rather than one per file.
     if placed > 0 {
@@ -262,9 +312,10 @@ async fn run_files(state: AppState, task: String, paths: Vec<String>, target: Op
     }
     // Raised after the clean half landed: the sheet counts the questions, and
     // a landing that shifted a member list is one the answers resolve against.
-    // The covered questions go first: the folder's answer was asked first, in
-    // the walk's own order.
+    // The order is the order the screens asked in — the folder's ground first,
+    // then the library's content, then the level's name.
     let mut asks = covered_asks;
+    asks.extend(held_asks);
     asks.extend(conflicts);
     conflict::raise(state, asks);
     crate::storage::persist_library(state.library);
