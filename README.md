@@ -1037,7 +1037,8 @@ bundle's selection tracker — the last in a sandbox with no engine and no pdf.j
 which is the point of it.
 
 Five small scripts guard facts that are written down more than once, where nothing else
-would notice a drift: `check-versions.ts` (the app version in four files),
+would notice a drift: `check-versions.ts` (the app version in four files, plus the two
+lockfile entries cargo derives from them),
 `check-formats.ts` (the openable formats in the reader-core registry, the shell's
 filesystem gate and the bundle's file associations), `check-doc-paths.ts` (every module and
 file path named in a Rust comment still resolves, every path named in a stylesheet comment,

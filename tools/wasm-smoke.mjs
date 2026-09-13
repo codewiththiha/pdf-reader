@@ -1,14 +1,21 @@
 // Mount the real wasm bundle in Node, the way the webview does.
 //
-// CI compiles the frontend and runs the host tests, but nothing ever MOUNTED
+// CI compiles the frontend and runs the host tests, but neither ever MOUNTS
 // the app: a panic on the library page's first frame is invisible to both —
 // the bundle builds, the tests pass, and the reader gets a blank window whose
 // only evidence is a line in a webview console nobody is watching. This is
-// the missing check: jsdom stands in for the webview, localStorage is seeded
+// the check for that: jsdom stands in for the webview, localStorage is seeded
 // with a library that resembles a real one (books, a book whose file is
 // gone, a link row, a watched folder, a cover), the bundle is required — and
 // for a bin crate, requiring runs `main` — and the script asserts that the
 // shelf actually painted, with no panic on the way.
+//
+// It used to run in CI on every push and cost more than it caught: the mount
+// itself is four seconds, but the wasm codegen that feeds it is a minute of a
+// runner's time to re-prove what `cargo check --target wasm32-unknown-unknown`
+// has already established. Run it by hand before a release, or after touching
+// the startup path (the library's first frame, the measure-and-rescan, the
+// storage read) — that is where a blank window comes from.
 //
 // Two passes, because the app has two environments:
 //   node tools/wasm-smoke.mjs            plain browser: no window.__TAURI__,
@@ -20,8 +27,19 @@
 //                                        folder, so the startup passes —
 //                                        verify, then rescan — run for real.
 //
-// Prereqs (CI provides them): the bundle bound for Node in ./smoke
-// (wasm-bindgen --target nodejs) and jsdom installed.
+// Prereqs, which nothing installs for you any more:
+//
+//   cargo build --target wasm32-unknown-unknown --bin pdf-reader
+//   wasm-bindgen --target nodejs --out-dir smoke \
+//     target/wasm32-unknown-unknown/debug/pdf-reader.wasm
+//   printf '{"type":"commonjs"}\n' > smoke/package.json
+//   npm install --no-save --no-package-lock jsdom
+//
+// The `wasm-bindgen` CLI has to be the version Cargo.lock pins or the glue it
+// emits will not agree with the bundle. The package.json is there because the
+// repo is an ES module and the nodejs glue is CommonJS: the directory it lands
+// in has to say which of the two it is, or `require` reads the glue as a module
+// and it dies on its own `exports` before a line of the app has run.
 
 import { existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
