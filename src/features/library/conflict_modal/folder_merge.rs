@@ -5,11 +5,11 @@
 use leptos::prelude::*;
 
 use library_core::book::find_row;
-use library_core::conflict::next_name;
+use library_core::conflict::{next_name, Placement};
 
 use crate::components::primitives::menu::choice_row::ChoiceRow;
 use crate::components::primitives::overlay::question_sheet::QuestionSheet;
-use crate::services::library::conflict::{ConflictAsk, FolderMergeAnswer, self};
+use crate::services::library::conflict::{self, ConflictAsk};
 
 use super::info::more_waiting;
 use crate::state::AppState;
@@ -89,7 +89,7 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
                         on_click=Callback::new(move |_| {
                             conflict::answer_folder_merge(
                                 state,
-                                FolderMergeAnswer::Merge,
+                                Placement::Merge,
                                 apply_all.get_untracked(),
                             )
                         })
@@ -100,7 +100,7 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
                         on_click=Callback::new(move |_| {
                             conflict::answer_folder_merge(
                                 state,
-                                FolderMergeAnswer::Replace,
+                                Placement::Replace,
                                 apply_all.get_untracked(),
                             )
                         })
@@ -113,7 +113,7 @@ pub(super) fn FolderMergeSheet(state: AppState, ask: ConflictAsk) -> impl IntoVi
                                 on_click=Callback::new(move |_| {
                                     conflict::answer_folder_merge(
                                         state,
-                                        FolderMergeAnswer::AsNew,
+                                        Placement::KeepBoth,
                                         apply_all.get_untracked(),
                                     )
                                 })
