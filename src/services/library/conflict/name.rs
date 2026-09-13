@@ -8,10 +8,10 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{find_book_mut, find_by_id, fold_books, Book};
-use library_core::conflict::{Answer, MoveAnswer, PlacementAsk};
+use library_core::conflict::{Placement, PlacementAsk};
 use library_core::shelf;
 
-use super::{advance, member_slot, minted_name, ConflictAsk};
+use super::{advance, apply_placement, member_slot, minted_name, ConflictAsk};
 use crate::services::library::arrange::{
     converts_on_move_to, convert_to_stored, drop_row, memberships, move_row, purge_books,
     unlist_row, write_moved_stones, Departed, PurgeOpts,
@@ -20,43 +20,27 @@ use crate::services::library::covers;
 use crate::services::library::toast;
 use crate::state::AppState;
 
-/// One of the three buttons.
-pub fn answer(state: AppState, answer: Answer) {
-    let Some(ask) = state.library.conflict.ask.get_untracked() else {
-        return;
-    };
-    match answer {
-        // Nothing to place: the reader asked to be shown the row they already
-        // have, which is the library's own reveal — its shelf, then its card.
-        Answer::GoToExisting => crate::services::library::reveal::reveal_book(state, &ask.existing_id),
-        Answer::AsNew => as_new(state, &ask),
-        Answer::AsLink => {
-            let target = ask.existing_id.clone();
-            add_link_at_target(state, &ask, &target);
-        }
-    }
-    advance(state);
-}
-
-/// One of the three buttons on a MOVE's sheet.
+/// One of the sheet's buttons, in the unified vocabulary.
 ///
-/// The arrival is a row the reader is holding, so every answer here writes that
-/// row rather than minting one — and an ask whose arrival names no row (it went
-/// while the sheet was up) has nothing to write, so it is answered by moving on.
-pub fn answer_move(state: AppState, answer: MoveAnswer) {
+/// The one answer function the name sheet calls, whichever shape the question
+/// is: an import's three and a move's three are the same five answers read
+/// against a different offer list, and [`super::apply_placement`] is what the
+/// click reaches. It used to be two functions over two enums, one for a file
+/// arriving and one for a row being moved, and the two differed in nothing but
+/// which buttons they spelled — which is what made each of them a place to fix
+/// the same bug twice.
+pub fn answer_placement(state: AppState, answer: Placement) {
     let Some(ask) = state.library.conflict.ask.get_untracked() else {
         return;
     };
-    if ask.arrival.moving.is_none() {
+    // A move whose arrival names no row has nothing to write: the row went while
+    // the sheet was up, and the honest answer is to move on rather than to place
+    // a file the reader never dropped.
+    if ask.arrival.moving.is_none() && !ask.arrival.is_import() {
         advance(state);
         return;
     }
-    match answer {
-        MoveAnswer::Merge => merge(state, &ask),
-        MoveAnswer::Replace => replace(state, &ask),
-        MoveAnswer::AsNew => as_new(state, &ask),
-        MoveAnswer::Link => link_move(state, &ask),
-    }
+    apply_placement(state, &ask.placement(state), answer);
     advance(state);
 }
 
@@ -80,8 +64,36 @@ pub(super) fn as_new_placement(state: AppState, ask: &PlacementAsk) {
 /// going to.
 pub(super) fn link_to_row(state: AppState, ask: &PlacementAsk, row_id: &str) {
     let own = ask_of(ask);
-    let target = row_id.to_string();
-    add_link_at_target(state, &own, &target);
+    // An import has no row of its own to dissolve, so the pointer is the whole
+    // of the answer. A MOVE does, and the two are not the same write: the row the
+    // reader was holding goes, the pointers at it go with it, and — when the
+    // survivor is the library's own copy of the file that row read — the folder
+    // that placed it takes a moved-out log naming the survivor, so a later import
+    // of the OS file lights this row up instead of bringing a linked book back
+    // beside the copy. Dropping that half here would be the silent regression a
+    // unified apply is supposed to end rather than cause.
+    let Some(gone_id) = own.arrival.moving.clone() else {
+        add_link_at_target(state, &own, row_id);
+        return;
+    };
+    let gone_book = state
+        .library
+        .books
+        .with_untracked(|rows| find_by_id(rows, &gone_id).cloned());
+    if let Some(book) = &gone_book
+        && survivor_is_the_copy_of(state, row_id, book)
+    {
+        write_moved_stones(state, book, Some(row_id));
+    }
+    // The pointers at the dissolved row go with it, as they do in every
+    // removal: a link at nothing is a row that renders, is clicked and does
+    // nothing. `unlist_row` is the one spelling of that.
+    unlist_row(state, &gone_id);
+    // The pointer wears the survivor's name, which is what makes the row
+    // recognisable beside the book it points at — the import answer's rule, and
+    // the one spelling of it.
+    add_link_at_target(state, &own, row_id);
+    crate::storage::persist_library(state.library);
 }
 
 /// *Merge*: the moved row folds into the one that is here, and goes.
@@ -338,43 +350,4 @@ fn as_new(state: AppState, ask: &ConflictAsk) {
             );
         }
     }
-}
-
-/// Make link, a move's: the row the reader dragged dissolves into a pointer
-/// at the row that is here.
-///
-/// The third answer for a read-at-place book meeting the library's own stored
-/// copy of a name: the copy stays, the file on disk stays, and the level gains
-/// a row that reaches it instead of a second book. Two things ride the
-/// dissolution. The dragged row's highlights STAY under its address — the file
-/// is still the folder's, and an import that brings the linked book back
-/// should bring its marks with it, which a sweep here would have deleted. And
-/// the folder takes a moved-out log bound to the survivor when the survivor is
-/// a copy of that very file — the provenance `src` is the check — so a later
-/// import of the file highlights the copy instead of minting a neighbour. A
-/// different book of the same name gets no log: `placed` already keeps the
-/// rescan quiet, and a re-import should bring the dragged book itself back.
-fn link_move(state: AppState, ask: &ConflictAsk) {
-    let Some(gone_id) = ask.arrival.moving.clone() else {
-        return;
-    };
-    let survivor = ask.existing_id.clone();
-    let gone_book = state
-        .library
-        .books
-        .with_untracked(|rows| find_by_id(rows, &gone_id).cloned());
-    if let Some(book) = &gone_book
-        && survivor_is_the_copy_of(state, &survivor, book)
-    {
-        write_moved_stones(state, book, Some(&survivor));
-    }
-    // The pointers at the dissolved row go with it, as they do in every
-    // removal: a link at nothing is a row that renders, is clicked and does
-    // nothing. `unlist_row` is the one spelling of that.
-    unlist_row(state, &gone_id);
-    // The pointer wears the survivor's name, which is what makes the row
-    // recognisable beside the book it points at — the import answer's rule, and
-    // the one spelling of it.
-    add_link_at_target(state, ask, &survivor);
-    crate::storage::persist_library(state.library);
 }

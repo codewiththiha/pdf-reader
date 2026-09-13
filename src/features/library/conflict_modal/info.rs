@@ -9,11 +9,10 @@
 
 use leptos::prelude::*;
 
-use library_core::book::find_row;
 use library_core::conflict::next_name;
 use library_core::shelf::ALL_SHELF;
 
-use crate::services::library::conflict::ConflictAsk;
+use crate::services::library::conflict::{self, ConflictAsk};
 use crate::state::AppState;
 
 /// Everything the sheet prints, read once per answer — the remove receipt's
@@ -22,9 +21,16 @@ use crate::state::AppState;
 pub(super) struct NameSheetInfo {
     /// The name arriving — the heading.
     pub(super) incoming: String,
-    /// Whether the arrival is a file with no row of its own yet, which is the
-    /// fact that decides which three rows the sheet offers.
+    /// Whether the arrival is a file with no row of its own yet. The sheet's
+    /// sentence turns on it — an import has nothing of its own to keep, so its
+    /// question is "what do I put here" rather than "which of the two do I keep".
     pub(super) import: bool,
+    /// The answers this question offers, in the order the sheet shows them —
+    /// `library_core::conflict::Placement`'s own lists, chosen by what is
+    /// arriving. The sheet renders these and cannot offer a button the apply has
+    /// never heard of, which is what the two used to be able to do when each
+    /// spelled the condition out.
+    pub(super) offers: &'static [library_core::conflict::Placement],
     /// The name already on the level, which *already imported* goes to and
     /// *make link* points at.
     pub(super) existing_name: String,
@@ -39,13 +45,6 @@ pub(super) struct NameSheetInfo {
     pub(super) where_line: String,
     /// How many questions wait behind this one.
     pub(super) waiting: usize,
-    /// Whether the move is the pointer shape: the row being dragged is a
-    /// read-at-place book an in-place folder placed, and the row on the level
-    /// is one of the library's own stored copies. Neither side is the
-    /// reader's to destroy, so the sheet offers *make link* in place of the
-    /// destructive *replace*: reach the copy from here, and keep both the
-    /// file on disk and the bytes in the store exactly as they are.
-    pub(super) link_offer: bool,
 }
 
 /// The level an arrival is going to, as a sheet's sentence says it. One
@@ -95,27 +94,15 @@ impl NameSheetInfo {
             .get(&ask.existing_id)
             .map(Vec::len)
             .unwrap_or(0);
-        // The pointer shape is a fact about the two ROWS, read off the same
-        // snapshot the rest of the sheet counts against.
-        let link_offer = ask.arrival.moving.as_ref().is_some_and(|moved_id| {
-            find_row(&rows, &ask.existing_id)
-                .and_then(|row| row.book())
-                .is_some_and(|book| book.origin.is_stored())
-                && crate::services::library::arrange::converts_on_move_to(
-                    state,
-                    moved_id,
-                    &ask.arrival.shelf_id,
-                )
-        });
         Self {
             incoming: ask.arrival.name.clone(),
             import: ask.arrival.is_import(),
+            offers: conflict::offers_for(state, ask),
             existing_name: ask.existing_name.clone(),
             marks,
             new_name,
             where_line,
             waiting: state.library.conflict_waiting.with_untracked(|w| w.len()),
-            link_offer,
         }
     }
 }

@@ -5,8 +5,8 @@
 //! naming problem with a naming answer — the counter a file manager appends —
 //! and a reader who wants a pointer rather than a copy gets a row that points
 //! ([`crate::book::Row::Link`]). So this module is one predicate
-//! ([`collide`]), one namer ([`next_name`]) and the three answers
-//! ([`Answer`]) the sheet offers when the predicate says yes.
+//! ([`collide`]), one namer ([`next_name`]) and the answers
+//! ([`Placement`]) the sheet offers when the predicate says yes.
 //!
 //! ## Why names and not content
 //!
@@ -18,7 +18,8 @@
 //! `1_1` knows they are two books, and a reader looking at two rows both
 //! called `1` does not. So the collision is a name collision, on the level the
 //! arrival is going to, and everything the fingerprint used to decide is now
-//! either a naming decision ([`next_name`]) or a pointer ([`Answer::AsLink`]).
+//! either a naming decision ([`next_name`]) or a pointer
+//! ([`Placement::LinkOnly`]).
 //!
 //! Fingerprints are not gone from the library — a watched folder's rescan
 //! ([`crate::ledger`]) and a path check ([`crate::book::apply_check`]) still
@@ -154,69 +155,6 @@ impl Arrival {
     }
 }
 
-/// The reader's answer to a name collision, when the arrival is a FILE.
-///
-/// An import has nothing of its own yet — no row, no resume point, no
-/// highlights — so its answers are about what to put on the level: nothing
-/// (go to the book that is already there), a second book under a new name, or
-/// a pointer instead of a copy. Merging or replacing is not among them, and
-/// cannot be: there is no row to fold and no row to take the place of.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Answer {
-    /// Place nothing: take the reader to the row that is already there,
-    /// wherever in the library it is filed.
-    GoToExisting,
-    /// Place it under the next free name — `1` → `1_1` → `1_2` — so both rows
-    /// are books and each is a book of its own
-    /// ([`crate::book::Book::independent`]).
-    AsNew,
-    /// Place a [`Row::Link`] pointing at the row that is already there: a row
-    /// on this shelf that is not a second copy of anything.
-    AsLink,
-}
-
-/// The reader's answer to a name collision, when the arrival is a ROW being
-/// moved — a drag, a filing, a lift out to the root.
-///
-/// A move is the other question, and its answers are about the two books the
-/// reader already has: two rows of one name on one level, and the reader is
-/// the only one who knows whether that is one book seen twice, a book
-/// superseding a book, or two books that happen to rhyme. *Go to the one that
-/// is there* is not among them — the reader is holding the other one, so they
-/// know where both are.
-///
-/// Which three the sheet offers is the shape's own fact. The usual shape is
-/// Merge / Replace / As new. The shape where the row being moved is a
-/// read-at-place book and the row on the level is one of the library's own
-/// stored copies swaps the destructive *Replace* for [`MoveAnswer::Link`]:
-/// there the reader has a file on disk and a copy in the store, and
-/// "reach the copy from here" is an answer that keeps both.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MoveAnswer {
-    /// One book: the row already on the level survives with its id, its name
-    /// and its memberships, and the moved row dissolves into it — the further
-    /// place in it wins, a name or an author fills a gap, the shelves the
-    /// moved row KEEPS and the highlights of both end up on the survivor
-    /// ([`crate::book::fold_books`]). The level the move departs
-    /// ([`Arrival::from`]) is the one shelf the survivor does not take over:
-    /// the departure is the move the reader made, and a fold that re-filed
-    /// the survivor there would leave the book visibly where it was lifted
-    /// from.
-    Merge,
-    /// The row already on the level goes, and the moved row takes its slot and
-    /// every other shelf it was filed on.
-    Replace,
-    /// Keep both: the moved row takes the next free name — [`Answer::AsNew`]'s
-    /// naming, on the row that already exists rather than on a row to mint.
-    AsNew,
-    /// Reach the row that is here instead of putting a second book beside it:
-    /// the moved row dissolves into a `Row::Link` at the level's survivor.
-    /// Offered instead of *Replace* when the row being moved reads a file at
-    /// its place and the row on the level is a stored copy — neither side is
-    /// the reader's to destroy, and a pointer is the answer that keeps both.
-    Link,
-}
-
 /// Whether two names are the same name. Case-insensitive and nothing else: a
 /// shelf is read by a person, and `Report` beside `report` is two rows of one
 /// name however the filesystem would have spelled them.
@@ -313,9 +251,9 @@ pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> S
 /// about an arrival that met something already there — a name on the level, a
 /// folder merging into a shelf, a file an in-place tree holds, a shelf arriving
 /// under a name its level has, a row dragged onto a row — is offering some
-/// subset of these five. They used to be five separate enums
-/// ([`Answer`], [`MoveAnswer`], and the app's own folder-merge, covered and
-/// shelf answers), each with its own apply function, and each of those
+/// subset of these five. They used to be five separate enums — an import's
+/// three, a move's four, and the app's own folder-merge, covered and shelf
+/// answers — each with its own apply function, and each of those
 /// re-derived "how do I purge the loser", "how do I fold the reading progress"
 /// and "how do I re-seat the shelf membership" for itself — which is why every
 /// one of them had its own bugs and needed its own fix.
@@ -326,23 +264,23 @@ pub fn next_shelf_name(shelves: &[Shelf], parent: Option<&str>, name: &str) -> S
 /// of the buttons that make sense, rather than one enum per combination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Placement {
-    /// Place nothing: take the reader to the thing that is already there.
-    /// [`Answer::GoToExisting`], and the covered sheet's *go to the book the
-    /// folder holds*.
+    /// Place nothing: take the reader to the thing that is already there — the
+    /// import sheet's *already imported*, and the covered sheet's *go to the
+    /// book the folder holds*.
     Open,
     /// Land it beside what is there, under the next free name — both are books
-    /// of their own. [`Answer::AsNew`] and [`MoveAnswer::AsNew`].
+    /// of their own. *Add as new* on either sheet.
     KeepBoth,
     /// Fold the arrival into the thing that is there: the further reading place
     /// wins, a name or an author fills a gap, the arrival's shelves and marks
     /// join the survivor, and the arrival goes ([`crate::book::fold_books`]).
-    /// [`MoveAnswer::Merge`], and a folder merging into the shelf it found.
+    /// The move sheet's *merge*, and a folder merging into the shelf it found.
     Merge,
     /// The thing that is there goes and the arrival takes its place — its slot,
-    /// its name and every other shelf it was filed on. [`MoveAnswer::Replace`].
+    /// its name and every other shelf it was filed on.
     Replace,
     /// Put a pointer at the thing that is there instead of a second instance: a
-    /// [`Row::Link`] on this level. [`Answer::AsLink`] and [`MoveAnswer::Link`].
+    /// [`crate::book::Row::Link`] on this level. *Make link* on either sheet.
     LinkOnly,
 }
 

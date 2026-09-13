@@ -634,8 +634,9 @@ the file I already placed" is a question about bytes and only bytes can answer i
 The sheet (`features::library::conflict_modal`) offers three answers, and WHICH three is a fact
 about the arrival rather than a setting on the sheet: a file arriving has no row of its own, and a
 row being moved has two books in the question. `Arrival::is_import` is the whole of the branch, and
-the two answer sets are two types (`conflict::Answer`, `conflict::MoveAnswer`), so a sheet cannot
-offer a file's answer to a move or a move's to a file.
+the answer sets are lists of one type (`conflict::Placement`), so a sheet cannot offer a file's
+answer to a move or a move's to a file. The list the sheet renders and the list the apply accepts
+come from the same function, which is what keeps a button from promising an answer nothing applies.
 
 An **import** asks what to put on this level, and nothing it offers is destructive:
 

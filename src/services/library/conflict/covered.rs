@@ -33,5 +33,5 @@ pub fn answer_covered(state: AppState, answer: Placement, apply_all: bool) {
 
 /// One answer, applied by the unified placement apply.
 fn apply_one(state: AppState, ask: &ConflictAsk, answer: Placement) {
-    apply_placement(state, &ask.placement(), answer);
+    apply_placement(state, &ask.placement(state), answer);
 }

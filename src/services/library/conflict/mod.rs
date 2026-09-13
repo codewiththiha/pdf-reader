@@ -104,9 +104,11 @@ mod tests;
 
 pub use covered::answer_covered;
 pub use folder_merge::answer_folder_merge;
-pub use name::{answer, answer_move};
+pub use name::answer_placement;
 pub use note::{close_already_imported, raise_note};
-pub use shelf::{answer_shelf, cancel_shelf, offers as shelf_offers, raise_shelf, ShelfConflictAsk};
+pub use shelf::{
+    answer_shelf, cancel_shelf, offers as shelf_offers, raise_shelf, ShelfConflictAsk,
+};
 
 use leptos::prelude::*;
 
@@ -279,18 +281,17 @@ impl ConflictAsk {
     /// the one thing that rule never makes), a name collision offers the
     /// import's three or the move's, and a folder merge offers the three its
     /// compact sheet has always had.
-    pub fn placement(&self) -> PlacementAsk {
+    ///
+    /// It takes the state because one of those choices is not the kind's alone:
+    /// whether a move is the pointer shape is a fact about the two rows, and
+    /// [`offers_for`] reads them. Every other kind answers from `self`.
+    pub fn placement(&self, state: AppState) -> PlacementAsk {
         let offers = match &self.kind {
             AskKind::Covered { .. } => Placement::COVERED,
             // A row being moved onto a row is two books the reader already has;
-            // an arriving file has no row to fold and no row to displace.
-            AskKind::NameCollision => {
-                if self.arrival.moving.is_some() {
-                    Placement::MOVE
-                } else {
-                    Placement::FILE
-                }
-            }
+            // an arriving file has no row to fold and no row to displace; and the
+            // pointer shape swaps *replace* for the link that keeps both sides.
+            AskKind::NameCollision => offers_for(state, self),
             AskKind::FolderMerge { .. } => Placement::FOLDER_MERGE,
         };
         PlacementAsk::book(
@@ -356,6 +357,53 @@ fn replace_with(state: AppState, ask: &PlacementAsk) {
     match &ask.existing {
         Scope::Book { row_id } => name::replace_row(state, ask, row_id),
         Scope::Shelf { shelf_id } => shelf::replace_shelf(state, ask, shelf_id),
+    }
+}
+
+/// Whether a move's question is the pointer shape: the row being dragged is a
+/// read-at-place book an in-place folder placed, and the row already on the
+/// level is one of the library's own stored copies.
+///
+/// Neither side is the reader's to destroy, so the sheet offers *make link* in
+/// place of *replace* — reach the copy from here and keep both the file on disk
+/// and the bytes in the store exactly as they are. It is a fact about the two
+/// ROWS rather than about the arrival, which is why the ask cannot carry it and
+/// why both halves of the question read it here: a sheet that offered *replace*
+/// for a shape the apply would answer as a link is a button that does something
+/// other than what its row promised.
+pub fn link_shape(state: AppState, ask: &ConflictAsk) -> bool {
+    let Some(moved_id) = ask.arrival.moving.as_deref() else {
+        return false;
+    };
+    let existing_is_a_copy = state.library.books.with_untracked(|rows| {
+        find_row(rows, &ask.existing_id)
+            .and_then(|row| row.book())
+            .is_some_and(|book| book.origin.is_stored())
+    });
+    existing_is_a_copy
+        && crate::services::library::arrange::converts_on_move_to(
+            state,
+            moved_id,
+            &ask.arrival.shelf_id,
+        )
+}
+
+/// Which answers a name collision offers, in the unified vocabulary.
+///
+/// One function rather than a branch in the sheet and a second in the answer, so
+/// the two cannot drift about which buttons a given arrival gets. Three shapes:
+/// a FILE arriving has no row to fold and no row to displace, so it gets the
+/// import's three; a ROW being moved gets the move's three; and a row being moved
+/// whose twin on the level is one of the library's own copies — `link_shape`, a
+/// fact about the two rows rather than about the arrival — swaps the destructive
+/// *replace* for the pointer that keeps both sides.
+pub fn offers_for(state: AppState, ask: &ConflictAsk) -> &'static [Placement] {
+    if ask.arrival.is_import() {
+        Placement::FILE
+    } else if link_shape(state, ask) {
+        Placement::MOVE_KEEPING_BOTH
+    } else {
+        Placement::MOVE
     }
 }
 

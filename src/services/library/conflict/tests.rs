@@ -1,6 +1,6 @@
 use super::*;
 use library_core::book::{Book, Fingerprint, Origin, Row};
-use library_core::conflict::{Answer, MoveAnswer};
+use library_core::conflict::Placement;
 use library_core::folder::FolderOpts;
 use library_core::tracking::TrackingTree;
 use library_core::shelf::Shelf;
@@ -189,7 +189,7 @@ fn already_imported_places_nothing_and_lights_the_row_it_names() {
     let ask = the_ask(state, Arrival::import(file("dune", 2), "s", None));
     raise(state, vec![ask]);
 
-    answer(state, Answer::GoToExisting);
+    answer_placement(state, Placement::Open);
 
     assert_eq!(
         state.library.books.get_untracked().len(),
@@ -206,7 +206,7 @@ fn already_imported_places_nothing_and_lights_the_row_it_names() {
     // nobody is told about.
     let ask = the_ask(state, Arrival::import(file("dune", 2), "s", None));
     raise(state, vec![ask]);
-    answer(state, Answer::GoToExisting);
+    answer_placement(state, Placement::Open);
     let second = state.library.reveal.get_untracked().expect("a second reveal");
     assert_ne!(first.nonce, second.nonce);
 }
@@ -223,7 +223,7 @@ fn make_link_puts_a_pointer_on_the_level_and_no_second_book() {
     let ask = the_ask(state, Arrival::import(file("dune", 1), "s", None));
     raise(state, vec![ask]);
 
-    answer(state, Answer::AsLink);
+    answer_placement(state, Placement::LinkOnly);
 
     let rows = state.library.books.get_untracked();
     assert_eq!(rows.len(), 2, "a link is a row, and not a second book");
@@ -277,7 +277,7 @@ fn merge_keeps_the_row_that_was_here_and_folds_the_other_into_it() {
     let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None));
     raise(state, vec![ask]);
 
-    answer_move(state, MoveAnswer::Merge);
+    answer_placement(state, Placement::Merge);
 
     let rows = state.library.books.get_untracked();
     assert_eq!(rows.len(), 1, "two books became one");
@@ -321,7 +321,7 @@ fn a_merge_after_a_move_leaves_the_level_the_book_departed() {
     let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None).leaving("t"));
     raise(state, vec![ask]);
 
-    answer_move(state, MoveAnswer::Merge);
+    answer_placement(state, Placement::Merge);
 
     let rows = state.library.books.get_untracked();
     assert_eq!(rows.len(), 1, "two books became one");
@@ -424,7 +424,7 @@ fn replace_sends_the_row_that_was_here_out_and_seats_the_arrival_in_its_place() 
     let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None));
     raise(state, vec![ask]);
 
-    answer_move(state, MoveAnswer::Replace);
+    answer_placement(state, Placement::Replace);
 
     let rows = state.library.books.get_untracked();
     assert_eq!(rows.len(), 1);
@@ -483,7 +483,7 @@ fn add_as_new_renames_a_moved_row_and_then_moves_it() {
     let ask = the_ask(state, Arrival::moved("b2", "Dune", "s", None));
     raise(state, vec![ask]);
 
-    answer_move(state, MoveAnswer::AsNew);
+    answer_placement(state, Placement::KeepBoth);
 
     let rows = state.library.books.get_untracked();
     let renamed = rows
@@ -533,7 +533,7 @@ fn a_link_answer_dissolves_the_dragged_row_into_a_pointer_and_binds_the_log() {
     let ask = the_ask(state, Arrival::moved("b1", "Dune", "t", None));
     raise(state, vec![ask]);
 
-    answer_move(state, MoveAnswer::Link);
+    answer_placement(state, Placement::LinkOnly);
 
     let rows = state.library.books.get_untracked();
     assert!(find_row(&rows, "b1").is_none(), "the dragged row is gone");
@@ -584,7 +584,7 @@ fn a_merge_into_the_stored_copy_binds_the_folder_log_to_the_survivor() {
     let ask = the_ask(state, Arrival::moved("b1", "Dune", "t", None));
     raise(state, vec![ask]);
 
-    answer_move(state, MoveAnswer::Merge);
+    answer_placement(state, Placement::Merge);
 
     let rows = state.library.books.get_untracked();
     assert_eq!(rows.len(), 1, "two books became one");
@@ -617,7 +617,7 @@ fn a_merge_of_two_different_books_writes_no_log() {
     let ask = the_ask(state, Arrival::moved("b1", "Dune", "t", None));
     raise(state, vec![ask]);
 
-    answer_move(state, MoveAnswer::Merge);
+    answer_placement(state, Placement::Merge);
 
     let folders = state.library.folders.get_untracked();
     assert!(

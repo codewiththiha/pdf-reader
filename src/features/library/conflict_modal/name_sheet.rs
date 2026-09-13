@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 
-use library_core::conflict::{Answer, MoveAnswer};
+use library_core::conflict::Placement;
 
 use crate::components::primitives::menu::choice_row::ChoiceRow;
 use crate::components::primitives::overlay::question_sheet::QuestionSheet;
@@ -20,7 +20,10 @@ use super::info::{more_waiting, NameSheetInfo};
 pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
     let subtitle = more_waiting(format!("Already {}", info.where_line), info.waiting);
     let import = info.import;
-    let link_offer = info.link_offer;
+    // Which answers this arrival gets, in the order the sheet shows them — the
+    // apply's own list rather than a condition the sheet re-derives, so a button
+    // the sheet renders is a button the answer will take.
+    let offers = info.offers;
     let question = if import {
         // An import's *add as new* is a stored copy of the library's own — a
         // book of its own bytes, whatever the level's twin reads — so no
@@ -31,7 +34,7 @@ pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
              instead, or go to the one you have.",
             info.incoming, info.where_line
         )
-    } else if link_offer {
+    } else if offers.contains(&Placement::LinkOnly) {
         format!(
             "A book called “{}” is already {}, and it is one of the library's own copies. \
              Keep one book, reach the copy from here, or keep both under a new name.",
@@ -90,81 +93,97 @@ pub(super) fn NameSheet(state: AppState, info: NameSheetInfo) -> impl IntoView {
             question=question
             on_close=Callback::new(move |_| conflict::cancel(state))
         >
-                    {if import {
-                        // A file arriving: what to put on this level.
-                        view! {
-                            <>
-                                <ChoiceRow
-                                    label="Already imported"
-                                    note=go_to_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer(state, Answer::GoToExisting)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Add as new"
-                                    note=new_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer(state, Answer::AsNew)
-                                    })
-                                />
-                                <ChoiceRow
-                                    label="Make link"
-                                    note=LINK_NOTE.to_string()
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer(state, Answer::AsLink)
-                                    })
-                                />
-                            </>
-                        }
-                            .into_any()
-                    } else {
-                        // A row being moved: which of the two books this level
-                        // keeps.
-                        view! {
-                            <>
-                                <ChoiceRow
-                                    label="Merge"
-                                    note=merge_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_move(state, MoveAnswer::Merge)
-                                    })
-                                />
-                                {if link_offer {
-                                    // The pointer shape: the destructive answer is
-                                    // replaced by the one that keeps both sides.
-                                    view! {
-                                        <ChoiceRow
-                                            label="Make link"
-                                            note=link_note
-                                            on_click=Callback::new(move |_| {
-                                                conflict::answer_move(state, MoveAnswer::Link)
-                                            })
-                                        />
-                                    }
-                                        .into_any()
-                                } else {
-                                    view! {
-                                        <ChoiceRow
-                                            label="Replace"
-                                            note=replace_note
-                                            on_click=Callback::new(move |_| {
-                                                conflict::answer_move(state, MoveAnswer::Replace)
-                                            })
-                                        />
-                                    }
-                                        .into_any()
-                                }}
-                                <ChoiceRow
-                                    label="As new"
-                                    note=move_new_note
-                                    on_click=Callback::new(move |_| {
-                                        conflict::answer_move(state, MoveAnswer::AsNew)
-                                    })
-                                />
-                            </>
-                        }
-                            .into_any()
+                    // One row per answer the ask offers, in its order. An
+                    // import's *keep both* is a stored copy of the library's own
+                    // and its *make link* is a pointer; a move's are the same two
+                    // answers about a row the reader is holding — which is why the
+                    // labels differ and the answers do not.
+                    //
+                    // A `match` that builds the row rather than a tuple of
+                    // strings: each row's `on_click` captures the note by move,
+                    // and a leptos view is not `Clone`, so the sentence has to be
+                    // built in the arm that uses it.
+                    {move || {
+                        offers
+                            .iter()
+                            .map(|choice| match choice {
+                                Placement::Open => view! {
+                                    <ChoiceRow
+                                        label="Already imported"
+                                        note=go_to_note.clone()
+                                        on_click=Callback::new(move |_| {
+                                            conflict::answer_placement(state, Placement::Open)
+                                        })
+                                    />
+                                }
+                                    .into_any(),
+                                Placement::KeepBoth if import => view! {
+                                    <ChoiceRow
+                                        label="Add as new"
+                                        note=new_note.clone()
+                                        on_click=Callback::new(move |_| {
+                                            conflict::answer_placement(state, Placement::KeepBoth)
+                                        })
+                                    />
+                                }
+                                    .into_any(),
+                                Placement::KeepBoth => view! {
+                                    <ChoiceRow
+                                        label="As new"
+                                        note=move_new_note.clone()
+                                        on_click=Callback::new(move |_| {
+                                            conflict::answer_placement(state, Placement::KeepBoth)
+                                        })
+                                    />
+                                }
+                                    .into_any(),
+                                // The pointer's own sentence is the move's when
+                                // the shape keeps both sides, and the import's
+                                // otherwise: one promises a dragged book becomes a
+                                // pointer, the other promises a row that is not a
+                                // copy.
+                                Placement::LinkOnly if import => view! {
+                                    <ChoiceRow
+                                        label="Make link"
+                                        note=LINK_NOTE.to_string()
+                                        on_click=Callback::new(move |_| {
+                                            conflict::answer_placement(state, Placement::LinkOnly)
+                                        })
+                                    />
+                                }
+                                    .into_any(),
+                                Placement::LinkOnly => view! {
+                                    <ChoiceRow
+                                        label="Make link"
+                                        note=link_note.clone()
+                                        on_click=Callback::new(move |_| {
+                                            conflict::answer_placement(state, Placement::LinkOnly)
+                                        })
+                                    />
+                                }
+                                    .into_any(),
+                                Placement::Merge => view! {
+                                    <ChoiceRow
+                                        label="Merge"
+                                        note=merge_note.clone()
+                                        on_click=Callback::new(move |_| {
+                                            conflict::answer_placement(state, Placement::Merge)
+                                        })
+                                    />
+                                }
+                                    .into_any(),
+                                Placement::Replace => view! {
+                                    <ChoiceRow
+                                        label="Replace"
+                                        note=replace_note.clone()
+                                        on_click=Callback::new(move |_| {
+                                            conflict::answer_placement(state, Placement::Replace)
+                                        })
+                                    />
+                                }
+                                    .into_any(),
+                            })
+                            .collect::<Vec<_>>()
                     }}
         </QuestionSheet>
     }
