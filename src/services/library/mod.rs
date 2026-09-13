@@ -137,7 +137,6 @@ const CMD_SCAN: &str = "scan_folder";
 const CMD_VERIFY: &str = "verify_paths";
 const CMD_STORE: &str = "store_books";
 const CMD_DELETE: &str = "delete_stored";
-const CMD_COPY_BESIDE: &str = "copy_beside";
 const CMD_REVEAL: &str = "reveal_in_folder";
 
 /// What every command here answers when there is no shell to answer: the same
@@ -182,12 +181,6 @@ struct PathsArgs {
 struct StoreArgs<'a> {
     task: &'a str,
     requests: &'a [StoreRequest],
-}
-
-#[derive(Serialize)]
-struct CopyBesideArgs<'a> {
-    path: &'a str,
-    dest: &'a str,
 }
 
 #[derive(Serialize)]
@@ -264,16 +257,6 @@ pub(crate) async fn copy_and_measure(
         .and_then(|checks| checks.into_iter().next())
         .and_then(|check| check.fingerprint());
     Ok((store, measured))
-}
-
-/// Copy ONE document beside itself, answering with the copy's own measurement:
-/// the read-at-place half of a duplicate (`crate::services::library::duplicate`).
-///
-/// `dest` is a counter name beside the original — the shell refuses a copy
-/// anywhere else and a name already taken, so a probe that raced a file
-/// arriving is an error the caller can step past rather than an overwrite.
-pub(crate) async fn copy_beside(path: &str, dest: &str) -> Result<PathCheck, String> {
-    call(CMD_COPY_BESIDE, &CopyBesideArgs { path, dest }).await
 }
 
 /// Ask the OS file manager to reveal a path: the item selected inside its

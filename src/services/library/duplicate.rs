@@ -1,18 +1,20 @@
 //! The shelf's "Duplicate": a second instance of one thing, asked for by name.
 //!
-//! What a duplicate IS depends on how the library holds the bytes, and the two
-//! answers are the import module's own two modes:
+//! A duplicate is the app's own object from the moment it exists, so a BOOK
+//! always duplicates into the library's own store — never into the folder the
+//! original reads from, whatever its origin. The store's own batch names the
+//! copy after the row's new id, stamps it with its own modification time, and
+//! answers with the copy's own measurement, so the row is known by that
+//! measurement from the first moment; the source the original recorded stays the
+//! provenance both wear.
 //!
-//!   * a book read AT ITS PLACE is the file, so its duplicate is a second FILE
-//!     beside the first — the copy lands in the reader's own folder wearing the
-//!     file manager's counter name (`dune.pdf` → `dune_1.pdf`), the row reads
-//!     the copy, and the folders whose ground the copy stands on take it into
-//!     their ledgers, so removing the duplicate later is a removal the next
-//!     rescan honours instead of a book that walks back in;
-//!   * a book the library COPIED is its store file, so its duplicate is a
-//!     second store copy — the store's own batch names it after the row's new
-//!     id, the row is known by the copy's own measurement, and the source the
-//!     first copy recorded stays the provenance both wear.
+//! A read-at-place book used to duplicate as a second FILE beside the first, on
+//! the reader's own disk. That sibling was still linked, so a later move off its
+//! folder's shelf copied it AGAIN into the store and left the first copy
+//! orphaned on disk, owned by nothing and invisible to the library. Copying
+//! straight into the store removes the sibling, the orphan and the second
+//! conversion at once: the duplicate was never linked, so the departure rule
+//! never sees it.
 //!
 //! Either way the duplicate is a row of its own in the persisted ledger: its
 //! own id, its own name — the level's counter, the conflict sheet's own
@@ -26,8 +28,8 @@
 //! copy and says so by not being offered (the menu's `missing` rule, which is
 //! the Open row's own).
 //!
-//! A SHELF duplicates as a shelf, and is the third answer rather than a batch
-//! of the first two: a shelf holds membership and never held a byte, so its
+//! A SHELF duplicates as a shelf, and is the other answer rather than a batch
+//! of book duplicates: a shelf holds membership and never held a byte, so its
 //! duplicate is a second shelf of the reader's own holding the same books, with
 //! the whole tree inside it copied along (`duplicate_shelf_row`). The
 //! right-click lands on both kinds and the selection holds both, so one door
@@ -40,15 +42,11 @@ use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{Book, Fingerprint, Origin, Row};
 use library_core::conflict::{next_name, next_shelf_name};
-use library_core::folder::rel_under;
 use library_core::id;
-use library_core::scan::FoundFile;
-use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind, ALL_SHELF};
-use reader_core::filename::strip_copy_counter;
+use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
 
 use crate::services::library::covers;
-use crate::services::library::import::{land_file, settle_ledger};
-use crate::services::library::{file_name, toast};
+use crate::services::library::toast;
 use crate::services::library as wire;
 use crate::state::AppState;
 use crate::time::now_ms;
@@ -145,11 +143,7 @@ async fn duplicate_one(state: AppState, id: &str) -> Option<Duplicated> {
             if book.missing {
                 return None;
             }
-            if book.origin.is_stored() {
-                duplicate_stored(state, book).await
-            } else {
-                duplicate_linked(state, book).await
-            }
+            duplicate_book(state, book).await
         }
     }?;
     Some(Duplicated { name, shelf: false })
@@ -168,85 +162,32 @@ fn duplicate_link(state: AppState, row_id: &str, name: &str, target: &str) -> St
     title
 }
 
-/// A read-at-place book's duplicate: a second file beside the first, and the
-/// linked row that reads it.
+/// A book's duplicate: a second copy in the library's own store, and the row
+/// that reads it — whatever origin the original had.
 ///
-/// The copy is the shell's (`wire::copy_beside`): created rather than
-/// overwritten, stamped with its own modification time, and answered with its
-/// own measurement — so the row is known by the copy's fingerprint from the
-/// first moment, which is what keeps the two files two books to every walk
-/// that ever sees them.
-async fn duplicate_linked(state: AppState, book: Book) -> Option<String> {
-    let src = book.path().to_string();
-    let original_id = book.id.clone();
-    let Some(dest) = free_sibling(&src).await else {
-        toast(
-            state,
-            format!("Could not find a free name beside {}.", file_name(&src)),
-        );
-        return None;
-    };
-    let check = match wire::copy_beside(&src, &dest).await {
-        Ok(check) => check,
-        Err(message) => {
-            toast(state, message);
-            return None;
-        }
-    };
-    let Some(fp) = check.fingerprint() else {
-        toast(
-            state,
-            format!("Could not measure the copy of {}.", file_name(&src)),
-        );
-        return None;
-    };
-    let title = name_for(state, &book.title());
-    let found = FoundFile {
-        rel: file_name(&dest),
-        ext: extension_of(&dest),
-        size: check.size,
-        path: dest.clone(),
-        fp,
-    };
-    // The landing is the loose-file landing: a linked row of its own at an
-    // address nothing else reads. It files nowhere itself — the memberships
-    // below are the duplicate's whole placement, and a spelling of them that
-    // ran through the landing would place the first shelf twice.
-    let dup_id = land_file(state, &found, Some(title.clone()), ALL_SHELF, None);
-    file_beside(state, &original_id, &dup_id);
-    // The copy stands on ground folders read, and from now on their ledgers
-    // answer for it: a removal of the duplicate writes the tombstone that
-    // keeps the next rescan quiet, because a book the reader took out is not
-    // a file the folder offers back. A duplicate of a book no folder placed
-    // marks nothing, and needs nothing marked.
-    let covering: Vec<String> = state.library.folders.with_untracked(|folders| {
-        folders
-            .iter()
-            .filter(|f| rel_under(&dest, &f.root).is_some())
-            .map(|f| f.id.clone())
-            .collect()
-    });
-    for folder_id in covering {
-        settle_ledger(state, Some(&folder_id), fp);
-    }
-    Some(title)
-}
-
-/// A stored book's duplicate: a second copy in the library's own store, and
-/// the row that reads it.
+/// A duplicate is the app's own object from the moment it exists, so it always
+/// lands as an [`Origin::Stored`] copy and NEVER writes into the folder the
+/// original reads from. A read-at-place book used to duplicate as a second FILE
+/// beside the first, on the reader's own disk; that copy was still linked, so a
+/// later move off its folder's shelf copied it AGAIN into the store and left the
+/// first sibling orphaned on disk, owned by nothing and invisible to the library.
+/// Copying straight into the store means there is no sibling to orphan and no
+/// second conversion to make: the duplicate was never linked, so the departure
+/// rule never sees it.
 ///
-/// The copy is made from the STORE file rather than the recorded source — the
-/// source is provenance and may be long gone, while the store copy is the
-/// library's to read — and it is made through the store's own batch, which
-/// names the file after the row's new id and stamps it, exactly as the first
-/// copy was named and stamped.
-async fn duplicate_stored(state: AppState, book: Book) -> Option<String> {
+/// The copy is made from the address the book reads — the source file for a
+/// linked book, the store copy for a stored one — through the store's own batch,
+/// which names the file after the row's new id and stamps it with its own
+/// modification time, so the row is known by the copy's fingerprint from the
+/// first moment and the two instances stay two books to every walk that sees
+/// them.
+async fn duplicate_book(state: AppState, book: Book) -> Option<String> {
     // Minted BEFORE the copy: the stored file wears the id, and a mint after
     // the copy would be a name with nothing to wear it.
     let book_id = id::next_id(now_ms());
     let task = format!("duplicate-{book_id}");
-    let store = book.path().to_string();
-    let (new_store, measured) = match wire::copy_and_measure(&task, &store, &book_id).await {
+    let from = book.path().to_string();
+    let (new_store, measured) = match wire::copy_and_measure(&task, &from, &book_id).await {
         Ok(pair) => pair,
         Err(message) => {
             toast(state, message);
@@ -260,9 +201,10 @@ async fn duplicate_stored(state: AppState, book: Book) -> Option<String> {
         Fingerprint::placeholder(&new_store),
         book.format,
         Origin::Stored {
-            // The provenance the first copy recorded, worn by the second: a
-            // duplicate is a sibling instance of the same source, not a copy
-            // of a copy the reader has to trace back.
+            // The provenance the original recorded, worn by the second instance:
+            // a duplicate is a sibling of the same source, not a copy of a copy
+            // the reader has to trace back. For a linked original that is the
+            // address it reads; for a stored one, the source its first copy kept.
             src: book.origin.source().map(str::to_string),
             store: new_store,
         },
@@ -425,98 +367,9 @@ fn file_beside(state: AppState, original_id: &str, dup_id: &str) {
     });
 }
 
-/// How many counter names one probe asks the shell about before giving up.
-/// A directory holding thirty-one duplicates of one file is a directory with
-/// a question in it, and the honest answer is a sentence rather than a probe
-/// of unbounded length.
-const PROBE: u32 = 32;
-
-/// The first free counter name beside `path`: `dune_1.pdf`, `dune_2.pdf` —
-/// the same convention `library_core::book::duplicate_title` mints for shelf
-/// names, spelled on the disk's own list rather than the library's. Free is
-/// the shell's answer (`wire::verify_paths` reports what exists), and the
-/// copy that follows is created rather than overwritten, so a name taken
-/// between the probe and the copy is a refusal the reader hears instead of a
-/// file lost.
-async fn free_sibling(path: &str) -> Option<String> {
-    let (dir, file) = split_dir_file(path)?;
-    let (stem, ext) = split_stem_ext(&file);
-    // A trailing counter is stepped rather than stacked: duplicating
-    // `dune_1.pdf` asks for `dune_2.pdf`, the reading a file manager gives.
-    let base = strip_copy_counter(&stem);
-    let candidates: Vec<String> = (1..=PROBE)
-        .map(|n| format!("{dir}{base}_{n}{ext}"))
-        .collect();
-    let checks = wire::verify_paths(candidates.clone()).await.ok()?;
-    candidates
-        .into_iter()
-        .zip(checks)
-        .find(|(_, check)| !check.exists)
-        .map(|(candidate, _)| candidate)
-}
-
-/// (`dir` with its trailing separator, the file's own name), or `None` for an
-/// address with no directory in it — which no absolute path has, and a
-/// relative one is refused everywhere else too.
-fn split_dir_file(path: &str) -> Option<(String, String)> {
-    // The separator is ASCII, so the byte index is the char boundary.
-    let at = path.rfind(['/', '\\'])?;
-    Some((path[..=at].to_string(), path[at + 1..].to_string()))
-}
-
-/// A file name's stem and its extension, the extension keeping its dot. A
-/// name with nothing after its last dot, or nothing before it, has no
-/// extension to keep: the stem is the whole name.
-fn split_stem_ext(name: &str) -> (String, String) {
-    match name.rsplit_once('.') {
-        Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => {
-            (stem.to_string(), format!(".{ext}"))
-        }
-        _ => (name.to_string(), String::new()),
-    }
-}
-
-/// The lower-case extension without its dot, empty when the name has none —
-/// the found-file field's own spelling, so the row the landing mints wears
-/// the format the registry reads off it.
-fn extension_of(path: &str) -> String {
-    let (_, ext) = split_stem_ext(&file_name(path));
-    ext.trim_start_matches('.').to_lowercase()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_counter_name_steps_rather_than_stacks() {
-        // The disk's own convention: a trailing counter is stepped, and a
-        // name with dots in it keeps only the last as the extension's.
-        let (dir, file) = split_dir_file("/books/dune.pdf").unwrap();
-        assert_eq!(dir, "/books/");
-        assert_eq!(file, "dune.pdf");
-        let (stem, ext) = split_stem_ext(&file);
-        assert_eq!(stem, "dune");
-        assert_eq!(ext, ".pdf");
-        assert_eq!(strip_copy_counter(&stem), "dune");
-        let (_, file) = split_dir_file("C:\\books\\dune_1.pdf").unwrap();
-        let (stem, ext) = split_stem_ext(&file);
-        assert_eq!(strip_copy_counter(&stem), "dune", "a duplicate of a duplicate steps");
-        assert_eq!(ext, ".pdf");
-        // A name with no extension keeps its whole self, and a dotfile's dot
-        // is not an extension's.
-        assert_eq!(split_stem_ext("Makefile"), ("Makefile".to_string(), String::new()));
-        assert_eq!(split_stem_ext(".bashrc"), (".bashrc".to_string(), String::new()));
-        // No directory in the address is no sibling to ask for.
-        assert!(split_dir_file("dune.pdf").is_none());
-    }
-
-    #[test]
-    fn the_extension_a_found_file_wears_has_no_dot() {
-        assert_eq!(extension_of("/books/dune.pdf"), "pdf");
-        assert_eq!(extension_of("/books/DUNE.EPUB"), "epub");
-        assert_eq!(extension_of("/books/Makefile"), "");
-    }
 
     #[test]
     fn a_duplicate_of_a_link_is_a_link_beside_it() {
