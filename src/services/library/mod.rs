@@ -53,7 +53,7 @@ pub use arrange::{
     relink_search_folder, rename_shelf, reorder_shelves_to_anchor, unfile_books,
 };
 pub use covers::backfill_missing;
-pub use duplicate::{duplicate_row, duplicate_rows};
+pub use duplicate::{duplicate_row, duplicate_rows, duplicate_shelf};
 pub use reveal::{path_of_row, path_of_shelf, reveal_book, reveal_in_folder, reveal_shelf};
 pub use import::{
     dismiss_task, import_files, import_folder, rescan_watched, restore_deleted_book,

@@ -91,7 +91,7 @@ use crate::components::primitives::menu::menu_item::{MenuItem, MenuItemTone};
 use crate::components::primitives::floating::menu_popover::MenuPopover;
 use crate::features::library::dnd::controller::DragController;
 use crate::features::library::dnd::target::{DropTargetEntry, DropTargetId, DropTargetKind};
-use crate::services::library::{delete_shelf, rename_shelf};
+use crate::services::library::{delete_shelf, duplicate_shelf, rename_shelf};
 use crate::state::AppState;
 
 use fold::choose_split;
@@ -458,10 +458,11 @@ fn LevelCrumb(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoV
 }
 
 
-/// The shelf the page is on: its own popover — rename in place, or take the
-/// shelf apart — and still a drop target, because releasing a held book here
-/// files it onto the level the reader is already looking at, which is how a
-/// drag from inside a nested shelf lands back on the shelf that contains it.
+/// The shelf the page is on: its own popover — rename in place, a second shelf
+/// of the reader's own, or take the shelf apart — and still a drop target,
+/// because releasing a held book here files it onto the level the reader is
+/// already looking at, which is how a drag from inside a nested shelf lands back
+/// on the shelf that contains it.
 #[component]
 fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl IntoView {
     let menu_open = RwSignal::new(false);
@@ -528,6 +529,17 @@ fn ShelfCrumbMenu(state: AppState, ctrl: DragController, crumb: Crumb) -> impl I
                                         draft.set(shelf_name_now(state, &id));
                                     }
                                     renaming.set(true);
+                                }
+                            />
+                            <MenuItem
+                                icon=IconName::Copy
+                                label="Duplicate"
+                                title="A second shelf of your own, holding the same books".to_string()
+                                on_click=move || {
+                                    menu_open.set(false);
+                                    if let Some(id) = current_shelf_id(state) {
+                                        duplicate_shelf(state, &id);
+                                    }
                                 }
                             />
                             <MenuItem

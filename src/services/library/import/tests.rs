@@ -1,10 +1,12 @@
 use std::cell::Cell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use super::claim::{claim_root, root_is_claimed, when_root_is_free};
 use super::files::land_file;
-use super::folder::{mint_walked_row, resolve_folder, Landing, Minted};
-use super::gate::{covered_shelf, displaced_member, reclaim_rung, run_fold, RootPlan};
+use super::folder::{
+    mint_walked_row, resolve_folder, returned_memberships, Landing, Minted, Snapshot,
+};use super::gate::{covered_shelf, displaced_member, reclaim_rung, run_fold, RootPlan};
 use super::replace::{purge_folder_linked_books, replace_rows_of_tree};
 use super::restore::{covered_fate, restore_covered_file, CoveredFate};
 use super::{rel_of, shelf_name, Asked};
@@ -163,10 +165,19 @@ fn folder_in_mode(id: &str, root: &str, in_place: bool, watch: bool) -> WatchedF
     }
 }
 
-/// A shelf of folder `id`'s tree: what makes the folder one the reader can
-/// still see, which is the standing half of the watch lock's condition.
+/// A shelf of folder `id`'s tree, at the rung its root files onto: a seat for
+/// every ground in the tree, which is the standing half of the watch lock's
+/// condition.
 fn standing(shelf_id: &str, folder_id: &str) -> Shelf {
-    library_core::testkit::folder_shelf(shelf_id, shelf_id, folder_id, None, &[], None)
+    standing_at(shelf_id, folder_id, None)
+}
+
+/// The same shelf at a rung of the tree's own: [`standing`]'s root seat, and a
+/// seat for the ground it names and the ground below it — but not for the ground
+/// above it, which is what a removal of the shelf that seated that ground leaves
+/// behind.
+fn standing_at(shelf_id: &str, folder_id: &str, rel: Option<&str>) -> Shelf {
+    library_core::testkit::folder_shelf(shelf_id, shelf_id, folder_id, rel, &[], None)
 }
 
 #[test]
@@ -230,6 +241,55 @@ fn a_watched_folder_no_shelf_of_stands_holds_no_lock() {
         &RootPlan::default(),
     );
     assert!(asked.opts.watch);
+}
+
+#[test]
+fn a_rung_left_standing_by_a_removal_does_not_lock_the_ground_above_it() {
+    // What taking a watched folder's ROOT shelf apart leaves behind: the shelves
+    // inside it are lifted to the level it was on and still stand, and the map's
+    // pointer at the root is the one the removal cut. The ground the reader freed
+    // is the sheet's again in both directions — an import of it with the switch
+    // off ends the watch rather than being overruled by a rung hanging somewhere
+    // below it, which was a switch stuck on for a folder just taken apart.
+    let folders = vec![folder_in_mode("f1", "/books", true, true)];
+    let lifted = vec![standing_at("s1", "f1", Some("scifi"))];
+    let freed = resolve_folder(
+        &folders,
+        &lifted,
+        "/books",
+        FolderOpts::default(),
+        &RootPlan::default(),
+    );
+    assert_eq!(freed.id, "f1", "the ledger row is still the one standing");
+    assert!(
+        !freed.opts.watch,
+        "the ground a removal freed takes the sheet's answer"
+    );
+    // The rung's own ground is still the tree's, and so is ground under it: both
+    // are imports the tree answers on a seat the reader can see.
+    for ground in ["/books/scifi", "/books/scifi/deep"] {
+        let seated = resolve_folder(
+            &folders,
+            &lifted,
+            ground,
+            FolderOpts::default(),
+            &RootPlan::default(),
+        );
+        assert!(seated.opts.watch, "{ground} is seated by the rung that stands");
+    }
+    // A SIBLING of the standing rung is seated by nothing either: the rung that
+    // hangs is not an ancestor of the ground beside it.
+    let beside = resolve_folder(
+        &folders,
+        &lifted,
+        "/books/poetry",
+        FolderOpts::default(),
+        &RootPlan::default(),
+    );
+    assert!(
+        !beside.opts.watch,
+        "a rung is not a seat for the ground beside it"
+    );
 }
 
 #[test]
@@ -1181,5 +1241,123 @@ fn a_replace_takes_the_linked_books_and_leaves_the_copies() {
     assert!(
         folders[0].placed.contains(&fp(1)) && folders[0].placed.contains(&fp(2)),
         "the placements stay: they are what keeps a rescan quiet until the copies land"
+    );
+}
+
+// -------------------------------------------------------------------
+// The reconciliation's merge.
+// -------------------------------------------------------------------
+
+/// A watched tree with two rungs and three books, one per shape a re-import
+/// meets: a book still on its rung, a book the reader filed onto a shelf of
+/// their own, and a book whose rung holds nothing.
+fn reconciled_state() -> (AppState, Owner) {
+    let owner = Owner::new();
+    owner.set();
+    let state = AppState::default();
+    let mut one = folder("f1", "/books", &[1, 2, 3], Vec::new());
+    one.shelf_map.insert(String::new(), "s1".to_string());
+    one.shelf_map.insert("scifi".to_string(), "s2".to_string());
+    state.library.folders.set(vec![one]);
+    let mut root = library_core::testkit::folder_shelf("s1", "Books", "f1", None, &[], None);
+    root.books = vec!["b1".to_string()];
+    let rung =
+        library_core::testkit::folder_shelf("s2", "scifi", "f1", Some("scifi"), &[], Some("s1"));
+    let mut mine = plain("mine");
+    mine.books = vec!["b2".to_string()];
+    state.library.shelves.set(vec![root, rung, mine]);
+    state.library.books.set(vec![
+        linked("b1", "/books/a.md", 1),
+        linked("b2", "/books/scifi/b.md", 2),
+        linked("b3", "/books/scifi/c.md", 3),
+    ]);
+    (state, owner)
+}
+
+/// The walk of `/books`, as the shell's scan would report it.
+fn walked() -> Vec<FoundFile> {
+    vec![
+        found_under("/books", "/books/a.md", 1),
+        found_under("/books", "/books/scifi/b.md", 2),
+        found_under("/books", "/books/scifi/c.md", 3),
+    ]
+}
+
+/// The merge stage's answer over that walk, with no file owed a row of its own.
+fn returned(state: AppState, folder_id: &str) -> Vec<String> {
+    let rows = state.library.books.get_untracked();
+    let found = walked();
+    let copy_paths: HashSet<String> = HashSet::new();
+    let registry = library_core::ledger::registry_of(&rows);
+    let snap = Snapshot {
+        books: &rows,
+        registry: &registry,
+        found: &found,
+        copy_paths: &copy_paths,
+    };
+    returned_memberships(state, &snap, folder_id, &[])
+        .into_iter()
+        .map(|(row_id, _)| row_id)
+        .collect()
+}
+
+#[test]
+fn a_re_import_re_files_the_books_its_tree_stopped_holding() {
+    // The merge half of a re-pick, and the half the ledger's table cannot
+    // answer: a book the reader filed elsewhere and a book whose shelf holds
+    // nothing are both a Skip — the content is known and its address has not
+    // moved — and both are a book the reader picking this folder again is asking
+    // to see on it. Without this the walk reported nothing new, lit the folder,
+    // and left the books it was asked for off the shelf it lit.
+    let (state, _owner) = reconciled_state();
+    assert_eq!(
+        returned(state, "f1"),
+        vec!["b2".to_string(), "b3".to_string()],
+        "the book on a shelf of the reader's, and the book on no shelf at all"
+    );
+}
+
+#[test]
+fn a_tree_that_holds_its_books_owes_no_merge() {
+    // The other half of the same rule: a re-pick of a tree whose shelves hold
+    // everything the walk found is the note's own case, and a merge that
+    // re-filed books already filed would turn every re-import into an import.
+    let (state, _owner) = reconciled_state();
+    state.library.shelves.update(|shelves| {
+        for shelf in shelves.iter_mut() {
+            if shelf.id == "s2" {
+                shelf.books = vec!["b2".to_string(), "b3".to_string()];
+            }
+        }
+    });
+    assert!(
+        returned(state, "f1").is_empty(),
+        "every book the walk found is on a shelf the folder owns"
+    );
+}
+
+#[test]
+fn a_merge_is_about_one_tree_and_not_the_shelf_beside_it() {
+    // The question is asked of the folder that is walking: another folder's tree
+    // holding the same books is not this tree holding them, and a reader's own
+    // shelf is not a rung of it either.
+    let (state, _owner) = reconciled_state();
+    let mut other = folder("f2", "/elsewhere", &[], Vec::new());
+    other.shelf_map.insert(String::new(), "theirs".to_string());
+    state.library.folders.update(|folders| folders.push(other));
+    state.library.shelves.update(|shelves| {
+        shelves.push(library_core::testkit::folder_shelf(
+            "theirs",
+            "Elsewhere",
+            "f2",
+            None,
+            &["b1", "b2", "b3"],
+            None,
+        ));
+    });
+    assert_eq!(
+        returned(state, "f1"),
+        vec!["b2".to_string(), "b3".to_string()],
+        "another tree's shelves do not answer for this one's"
     );
 }

@@ -73,7 +73,7 @@ pub fn departs_on_move(
     let Some(shelf) = find(shelves, shelf_id) else {
         return false;
     };
-    let ShelfKind::Folder { folder_id, rel } = &shelf.kind else {
+    let ShelfKind::Folder { folder_id, .. } = &shelf.kind else {
         return false;
     };
     let Some(folder) = folders
@@ -87,8 +87,8 @@ pub fn departs_on_move(
     if shelf.parent.as_deref() == parent {
         return false;
     }
-    let key = rel.clone().unwrap_or_default();
-    let seat = crate::folder::parent_key(&key).and_then(|rung| folder.shelf_map.get(rung));
+    let key = shelf.kind.rung();
+    let seat = crate::folder::parent_key(key).and_then(|rung| folder.shelf_map.get(rung));
     seat.map(String::as_str) != parent
 }
 

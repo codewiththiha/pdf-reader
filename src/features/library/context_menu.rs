@@ -3,9 +3,9 @@
 //! A card used to answer a right-click with the removal receipt and nothing else,
 //! which is one row of a menu wearing the whole gesture. The receipt is still what
 //! a removal costs and still asks first — it is just reached from a row now, beside
-//! the things a right-click is actually for: opening, selecting, duplicating a row
-//! as a second copy beside itself, revealing the file in the OS's own manager,
-//! finding a book whose address died, taking a shelf apart.
+//! the things a right-click is actually for: opening, selecting, duplicating the
+//! thing under the pointer as a second instance beside itself, revealing the file in
+//! the OS's own manager, finding a book whose address died, taking a shelf apart.
 //!
 //! One host and one signal, for the reason the removal sheet is one: a right-click
 //! can land on a card, a row, a folder or the empty shelf, and four surfaces each
@@ -40,8 +40,9 @@ use crate::features::library::selection::{
 };
 use crate::services::document;
 use crate::services::library::{
-    create_shelf_and_enter, delete_shelf, duplicate_row, duplicate_rows, path_of_row, path_of_shelf,
-    relink_dialog, reveal_in_folder, set_folder_watch, shelf_watch, ShelfWatch,
+    create_shelf_and_enter, delete_shelf, duplicate_row, duplicate_rows, duplicate_shelf,
+    path_of_row, path_of_shelf, relink_dialog, reveal_in_folder, set_folder_watch, shelf_watch,
+    ShelfWatch,
 };
 use crate::state::AppState;
 
@@ -268,6 +269,15 @@ fn BookMenu(state: AppState, id: String, missing: bool, close: Callback<()>) -> 
 /// filed inside the one that was asked, whichever level the page is on, because
 /// "new shelf" on a folder is an answer about that folder and not about the page.
 ///
+/// It carries the same Duplicate a book's menu does, and the two are one gesture
+/// with two answers rather than two gestures: a right-click that duplicated a card
+/// and quietly did nothing on a folder is a menu whose rows mean different things
+/// depending on what happened to be under the pointer. What differs is the copy —
+/// a shelf holds membership and never held a byte, so its duplicate is a second
+/// shelf of the reader's own holding the same books, and a folder shelf's copy is
+/// the reader's own too rather than a second door to one directory
+/// (`crate::services::library::duplicate`).
+///
 /// It is also the one place a folder's WATCH is turned on and off, and the reason
 /// it lives here rather than on the import sheet is the sheet's own lock: ground a
 /// watched tree already covers is not the sheet's to un-watch, because an import of
@@ -290,6 +300,7 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
     let watch: Option<ShelfWatch> = shelf_watch(state, &id);
     let open_id = id.clone();
     let select_id = id.clone();
+    let dup_id = id.clone();
     let inside_id = id.clone();
     let remove_id = id;
 
@@ -309,6 +320,19 @@ fn FolderMenu(state: AppState, id: String, close: Callback<()>) -> impl IntoView
                 on_click=move || {
                     close.run(());
                     enter_selection(state, &select_id);
+                }
+            />
+            <MenuItem
+                icon=IconName::Copy
+                label="Duplicate"
+                // A shelf holds membership and never held a byte, so its copy is
+                // a second shelf of the reader's own with the same books in it —
+                // including a folder shelf, which IS the OS directory and cannot
+                // be a second door to one directory (`duplicate_shelf_row`).
+                title="A second shelf of your own, holding the same books".to_string()
+                on_click=move || {
+                    close.run(());
+                    duplicate_shelf(state, &dup_id);
                 }
             />
             {reveal.map(|path| {
@@ -408,11 +432,13 @@ fn SelectionMenu(state: AppState, remove_sheet: RemoveSheet, close: Callback<()>
             <MenuItem
                 icon=IconName::Copy
                 label=duplicate_label
-                // One row per selected thing, and each one is the single
-                // duplicate's own act — a copy beside the original, in the
-                // counter name the level gives it. Rows that cannot be copied
-                // (a book whose file died) are skipped by the service, which
-                // is where that fact lives.
+                // One act per selected thing, and each is the single duplicate's
+                // own — a copy beside the original, in the counter name the level
+                // gives it. The set holds both kinds of thing a right-click lands
+                // on, so a shelf in it duplicates as a shelf (its own copy, its
+                // own subtree) and a book as a book; things that cannot be copied
+                // (a book whose file died) are skipped by the service, which is
+                // where that fact lives.
                 on_click=move || {
                     close.run(());
                     let ids: Vec<String> = state

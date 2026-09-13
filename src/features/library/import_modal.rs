@@ -11,15 +11,23 @@
 //! than disables, because a switch that cannot be turned on is noise.
 //!
 //! One ground the watch switch is NOT the reader's to set, and it disables rather
-//! than hides: ground a watched read-at-place tree already covers AND still
-//! stands in — the folder itself re-picked, or a rung of it — is watched, and an
-//! import of it is the reader asking for its books again rather than asking the
-//! library to stop looking. The switch locks on and says why, because the
-//! alternative is a sheet whose defaults quietly un-track a folder by importing
-//! it. A folder whose shelves the reader took apart does not lock: its watch is
-//! one nobody can see, and an import of its ground with the switch off is how it
-//! ends. Turning a watch off is the shelf's own right-click, which asks nothing
-//! of a walk (`crate::services::library::set_folder_watch`).
+//! than hides: ground a watched read-at-place tree is SEATED on — the folder
+//! itself re-picked, a rung of it, or a directory under a rung that still hangs —
+//! is watched, and an import of it is the reader asking for its books again rather
+//! than asking the library to stop looking. The switch locks on and says why,
+//! because the alternative is a sheet whose defaults quietly un-track a folder by
+//! importing it.
+//!
+//! The seat is the GROUND's and not the folder's, and the difference is what a
+//! removal leaves behind: taking a folder's shelf apart lifts the shelves inside
+//! it to the level it was on, so the folder keeps shelves the reader can see
+//! while the ground they took one off is seated by nothing. That ground locks no
+//! more — the next import of it mints a fresh shelf with the sheet's own options,
+//! and an import of it with the switch off is how the invisible watch ends. A
+//! rung below a ground is not a seat for it, and a lock that read "this folder
+//! still has shelves somewhere" was a switch stuck on for a folder the reader had
+//! just taken apart. Turning a watch off by hand is the shelf's own right-click,
+//! which asks nothing of a walk (`crate::services::library::set_folder_watch`).
 //!
 //! The lock is the READ-AT-PLACE ground's, and only while the run stays
 //! read-at-place: a folder imported as copies is a different mode, whose watch
@@ -106,11 +114,12 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
 
     let in_place = Signal::derive(move || opts.with(|o| o.in_place));
     let watching = Signal::derive(move || opts.with(|o| o.watch));
-    // Ground a watched read-at-place tree already covers, where the watch is the
-    // folder's answer and not the sheet's question. Read on the OPEN as well as
-    // on the root: the root survives the sheet closing, so a folder whose watch
-    // the reader turned off from its own menu in between would be answered from
-    // the last look this sheet took at the ledger.
+    // Ground a watched read-at-place tree is SEATED on, where the watch is the
+    // folder's answer and not the sheet's question. The lock reads the ledger
+    // reactively (`ground_is_watched`), so a folder whose watch the reader
+    // turned off from its own menu in between — or whose shelf another surface
+    // took apart while this sheet was open — frees the switch on the frame it
+    // happens rather than at the next open onto it.
     let watch_locked = Signal::derive(move || {
         sheet.open.get()
             && sheet
@@ -419,19 +428,24 @@ pub(crate) fn ImportModal(state: AppState, sheet: ImportSheet) -> impl IntoView 
     }
 }
 
-/// Whether ground a watched read-at-place tree already covers is what the sheet
-/// is pointed at: the folder itself, or a rung inside one — and the tree still
-/// STANDS, because a folder whose shelves the reader took apart is a watch
-/// nobody can see, and its ground is the sheet's again. One question with the
-/// folder run's own lock on the other side of it (`import::folder::resolve_folder`),
-/// answered by the same function so the sheet and the ledger cannot disagree
-/// about which imports are locked.
+/// Whether ground a watched read-at-place tree is SEATED on is what the sheet is
+/// pointed at: the folder itself, a rung of it, or a directory under a rung that
+/// still hangs — and not a ground whose shelf the reader took apart, however many
+/// rungs below it still stand. One question with the folder run's own lock on the
+/// other side of it (`import::folder::resolve_folder`), answered by the same
+/// function so the sheet and the ledger cannot disagree about which imports are
+/// locked.
+///
+/// Tracked rather than read once: the ledger moves under an open sheet — a focus
+/// rescan mints a rung, a removal on another surface takes one apart — and a lock
+/// answered from the last look this sheet took would be a switch stuck the wrong
+/// way for as long as the sheet stayed up.
 fn ground_is_watched(state: AppState, root: &str) -> bool {
-    state.library.folders.with_untracked(|folders| {
+    state.library.folders.with(|folders| {
         state
             .library
             .shelves
-            .with_untracked(|shelves| watching_over(folders, shelves, root).is_some())
+            .with(|shelves| watching_over(folders, shelves, root).is_some())
     })
 }
 

@@ -376,21 +376,25 @@ touches a file you own.
   no other surface. Every crumb is a drop target, which is what makes a deep level reachable with a
   hand full of books; the ellipsis itself is a place to rest and not a place to drop.
 - **A right-click is a menu, per kind of thing.** A book gets Open, Select, Duplicate, Reveal in
-  folder, Find again when its address died, and Remove; a folder gets Open, Select, Reveal in
-  folder, the watch toggle for the folder its shelf belongs to, a New shelf filed inside the one
-  you asked whichever level the page is on, and Take shelf apart; a card already in a selection
+  folder, Find again when its address died, and Remove; a folder gets Open, Select, Duplicate,
+  Reveal in folder, the watch toggle for the folder its shelf belongs to, a New shelf filed inside
+  the one you asked whichever level the page is on, and Take shelf apart; a card already in a selection
   gets the set's menu — New shelf from these, Duplicate, Remove, Clear — because a right-click on
   one of several things means all of them; and the empty shelf gets New shelf and Select all.
   **Reveal in folder** opens the OS file manager on the thing itself: a book the library copied
   reveals the copy in the library's store, a book read at its place reveals the file where it
   stands, a link reveals what it points at, and a folder shelf reveals the directory its tree cut
   it from — with no row at all for a shelf the reader owns, which has no directory to show.
-  **Duplicate** makes a second instance of the row beside itself: a book read at its place gets a
-  second FILE beside the first, in the file manager's counter name (`dune_1.pdf`, and a duplicate
-  of a duplicate steps rather than stacks); a book the library copied gets a second copy in the
-  store; a link duplicates as a link. Either way the duplicate is its own row — its own name on
-  the level's counter, its own resume point and highlights — filed right behind the row you
-  pointed at, on every shelf the original is on. No row carries a second line explaining itself:
+  **Duplicate** makes a second instance of the thing under the pointer: a book read at its place
+  gets a second FILE beside the first, in the file manager's counter name (`dune_1.pdf`, and a
+  duplicate of a duplicate steps rather than stacks); a book the library copied gets a second copy
+  in the store; a link duplicates as a link. Either way the duplicate is its own row — its own
+  name on the level's counter, its own resume point and highlights — filed right behind the row
+  you pointed at, on every shelf the original is on. A SHELF duplicates as a shelf: a second one
+  of your own holding the same books, with the whole tree inside it copied along, in the level's
+  counter name and right behind the shelf it came from. It costs no disk, because a shelf holds
+  membership and never held a byte — and a folder's shelf copies as one of yours rather than as a
+  second shelf of the folder, because one directory is one linked shelf. No row carries a second line explaining itself:
   a right-click is a reader who knows what the rows mean. One host answers all four, so the menu
   is the same menu wherever it was asked
   from, and a right-click never starts a drag: a menu row is clicked by a pointer that has already
@@ -495,7 +499,12 @@ touches a file you own.
   explicit import it is: files the folder gained join the shelf as linked books, books you had
   removed or moved away — whose logs have been keeping rescans quiet — come back in their old
   names, and the books that were already there keep every bit of their data, because nothing
-  about them is a question. What a FOLDER import lights is the FOLDER: you stay on the level
+  about them is a question. A book the folder still holds but its shelf no longer does comes back
+  too, which is the merge half of a re-import and the half no ledger table can answer: a book you
+  filed onto a shelf of your own, and a book whose shelf you took apart, are each a file the walk
+  finds and the library holds, so each is a *nothing to do* to the rescan's table. The re-import
+  files them back onto the rung their own directory names — as a second membership and not a move,
+  so the shelf you carried a book to keeps it. What a FOLDER import lights is the FOLDER: you stay on the level
   that holds it and its card lights up — only a file import goes to a book and lights that.
   Only a walk that found nothing new says so: the *already imported* note, which lights the
   shelf when you close it. Picking a SUBFOLDER of a tree the library reads in place is the same

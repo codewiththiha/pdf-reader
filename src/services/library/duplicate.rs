@@ -1,4 +1,4 @@
-//! The shelf's "Duplicate": a second instance of one row, asked for by name.
+//! The shelf's "Duplicate": a second instance of one thing, asked for by name.
 //!
 //! What a duplicate IS depends on how the library holds the bytes, and the two
 //! answers are the import module's own two modes:
@@ -25,16 +25,25 @@
 //! second pointer costs no bytes. A book whose address died has nothing to
 //! copy and says so by not being offered (the menu's `missing` rule, which is
 //! the Open row's own).
+//!
+//! A SHELF duplicates as a shelf, and is the third answer rather than a batch
+//! of the first two: a shelf holds membership and never held a byte, so its
+//! duplicate is a second shelf of the reader's own holding the same books, with
+//! the whole tree inside it copied along (`duplicate_shelf_row`). The
+//! right-click lands on both kinds and the selection holds both, so one door
+//! answers for both and the report counts them by kind.
+
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::book::{Book, Fingerprint, Origin, Row};
-use library_core::conflict::next_name;
+use library_core::conflict::{next_name, next_shelf_name};
 use library_core::folder::rel_under;
 use library_core::id;
 use library_core::scan::FoundFile;
-use library_core::shelf::{self as shelves_ops, ALL_SHELF};
+use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind, ALL_SHELF};
 use reader_core::filename::strip_copy_counter;
 
 use crate::services::library::covers;
@@ -51,22 +60,30 @@ pub fn duplicate_row(state: AppState, row_id: &str) {
     duplicate_rows(state, std::slice::from_ref(&row_id.to_string()));
 }
 
-/// Duplicate a set of rows — the selection's right-click — as one task.
+/// Duplicate one shelf: a folder card's or a shelf row's own right-click. The
+/// same door as [`duplicate_row`], because the two kinds of thing a right-click
+/// lands on are one gesture and one report.
+pub fn duplicate_shelf(state: AppState, shelf_id: &str) {
+    duplicate_rows(state, std::slice::from_ref(&shelf_id.to_string()));
+}
+
+/// Duplicate a set — the selection's right-click, which can hold books and
+/// shelves together — as one task.
 ///
 /// Sequential on purpose: two duplicates of one book asked in the same tick
 /// would probe the same free counter name and race for it, and a set that
 /// lands nine of ten with one refusal each is a report nobody can read. One
 /// task, one pass, one toast that counts what landed.
-pub fn duplicate_rows(state: AppState, row_ids: &[String]) {
-    if row_ids.is_empty() {
+pub fn duplicate_rows(state: AppState, ids: &[String]) {
+    if ids.is_empty() {
         return;
     }
-    let ids = row_ids.to_vec();
+    let ids = ids.to_vec();
     spawn_local(async move {
-        let mut landed: Vec<String> = Vec::new();
-        for row_id in ids {
-            if let Some(name) = duplicate_one(state, &row_id).await {
-                landed.push(name);
+        let mut landed: Vec<Duplicated> = Vec::new();
+        for id in ids {
+            if let Some(one) = duplicate_one(state, &id).await {
+                landed.push(one);
             }
         }
         if landed.is_empty() {
@@ -74,25 +91,53 @@ pub fn duplicate_rows(state: AppState, row_ids: &[String]) {
         }
         // A new row is a plate without art and a blob without its write: the
         // import's own tail, because a duplicate is an import of one file the
-        // reader already had.
+        // reader already had. A shelf's copy has no art of its own, but a set
+        // can hold both and the covers are a question of the books in it.
         covers::backfill_missing(state);
         crate::storage::persist_library(state.library);
-        toast(
-            state,
-            match landed.len() {
-                1 => format!("Duplicated as “{}”.", landed[0]),
-                n => format!("Duplicated {n} books."),
-            },
-        );
+        toast(state, report(&landed));
     });
 }
 
-/// One row's duplicate, and the name it landed under. `None` is a row that
-/// could not be copied — gone, missing, or a file the shell refused — and
-/// every such refusal has already said so on the toast.
-async fn duplicate_one(state: AppState, row_id: &str) -> Option<String> {
-    match state.library.row(row_id)? {
-        Row::Link { name, target, .. } => Some(duplicate_link(state, row_id, &name, &target)),
+/// What one duplicate landed as: the name the reader sees, and whether the
+/// thing duplicated was a shelf or a row.
+struct Duplicated {
+    name: String,
+    shelf: bool,
+}
+
+/// The sentence a batch of duplicates owes. One name is worth saying out loud;
+/// a set is worth counting, and counted by kind, because "3 books" for a set
+/// that held two shelves is a report the reader cannot check against the page.
+fn report(landed: &[Duplicated]) -> String {
+    if landed.len() == 1 {
+        return format!("Duplicated as “{}”.", landed[0].name);
+    }
+    let shelves = landed.iter().filter(|one| one.shelf).count();
+    let books = landed.len() - shelves;
+    let noun = match (books, shelves) {
+        (_, 0) => "books",
+        (0, _) => "shelves",
+        _ => "shelves and books",
+    };
+    format!("Duplicated {} {noun}.", landed.len())
+}
+
+/// One thing's duplicate, and the name it landed under. `None` is a thing that
+/// could not be copied — gone, missing, or a file the shell refused — and every
+/// such refusal has already said so on the toast.
+///
+/// The id is a row's or a shelf's, and the two kinds are disjoint by prefix
+/// (`library_core::id::is_shelf`), so the row list answering "not mine" is the
+/// shelf list's turn rather than a thing that does not exist: a selection holds
+/// both kinds, and a menu that duplicated one and quietly dropped the other
+/// would be a report that counted less than the reader asked for.
+async fn duplicate_one(state: AppState, id: &str) -> Option<Duplicated> {
+    let Some(row) = state.library.row(id) else {
+        return duplicate_shelf_row(state, id).map(|name| Duplicated { name, shelf: true });
+    };
+    let name = match row {
+        Row::Link { name, target, .. } => Some(duplicate_link(state, id, &name, &target)),
         Row::Book(book) => {
             // A book whose address died has nothing to copy. The menu does not
             // offer the row; a selection that swept one in skips it the same
@@ -106,7 +151,8 @@ async fn duplicate_one(state: AppState, row_id: &str) -> Option<String> {
                 duplicate_linked(state, book).await
             }
         }
-    }
+    }?;
+    Some(Duplicated { name, shelf: false })
 }
 
 /// A pointer duplicates as a pointer: one more link, same target, the level's
@@ -231,6 +277,110 @@ async fn duplicate_stored(state: AppState, book: Book) -> Option<String> {
     state.library.books.update(|rows| rows.push(Row::Book(dup)));
     file_beside(state, &original_id, &dup_id);
     Some(title)
+}
+
+/// A shelf's duplicate: a second shelf of the reader's own, holding the same
+/// books, with the whole tree inside it copied along. Answers the name it
+/// landed under; `None` is a shelf that is not there, which is nothing to say —
+/// a right-click on a card a rescan has just replaced is a click on no shelf.
+///
+/// A shelf holds membership and never held a byte, so this is the one duplicate
+/// that costs the reader no disk and no measurement: what is copied is the list,
+/// and the books are the same books on two shelves, which is the folder's own
+/// "also show it here" asked of a whole level at once. Every copied shelf is the
+/// reader's OWN, whatever the original was, and that is a rule rather than a
+/// simplification:
+///
+///   * a folder shelf IS the OS directory, and one directory is one linked shelf
+///     — a folder's map names one shelf per rung, so a second folder shelf of one
+///     rung would be two doors to one directory with only one of them on the
+///     ledger, and the rescan that re-hangs the tree would be re-hanging a shelf
+///     the reader made;
+///   * a `Virtual` shelf is no scan's business, so the copy keeps the place this
+///     put it and never answers to a walk, a fold or a departure — the three
+///     questions a folder shelf owes its ground.
+///
+/// The copy's root wears the LEVEL's counter name (`next_shelf_name`, the shelf
+/// half of the counter a book's duplicate wears), because the collision that
+/// matters is the one the reader can see: two shelves of one name on one level
+/// are two doors they cannot tell apart. Everything inside it keeps its own
+/// name, since the copy's levels are fresh and hold nothing to collide with. The
+/// copy lands right behind the original's own row, which is `file_beside`'s
+/// answer one kind up: a duplicate that appeared at the end of the level would
+/// be a shelf the reader has to go and find.
+fn duplicate_shelf_row(state: AppState, shelf_id: &str) -> Option<String> {
+    let shelves = state.library.shelves.get_untracked();
+    let original = shelves_ops::find(&shelves, shelf_id)?;
+    let now = now_ms();
+    let name = next_shelf_name(&shelves, original.parent.as_deref(), &original.name);
+
+    // The subtree, walked with an explicit stack and a seen-set rather than
+    // recursively: the forest is finite because a load cuts cycles out of it,
+    // but this reads a list that can be caught between two writes, and a
+    // recursion over a graph with a loop in it is a stack that never unwinds.
+    // Children are taken in the order the level holds them, which is the only
+    // order a level reads — the copy's siblings have to be in the original's
+    // order or the copy is a rearrangement nobody asked for.
+    let mut order: Vec<&Shelf> = vec![original];
+    let mut seen: HashSet<String> = HashSet::from([original.id.clone()]);
+    let mut stack: Vec<&str> = vec![original.id.as_str()];
+    while let Some(parent) = stack.pop() {
+        for child in shelves_ops::children_of(&shelves, Some(parent)) {
+            if !seen.insert(child.id.clone()) {
+                continue;
+            }
+            order.push(child);
+            stack.push(child.id.as_str());
+        }
+    }
+
+    // Every id minted before any shelf is built: the copy's edges point at the
+    // copy's own ids, and a parent minted after its child would be an edge at a
+    // name nothing wears yet.
+    let mut fresh: HashMap<String, String> = HashMap::with_capacity(order.len());
+    for shelf in &order {
+        fresh.insert(shelf.id.clone(), id::next_shelf_id(now));
+    }
+    let copies: Vec<Shelf> = order
+        .iter()
+        .enumerate()
+        .map(|(at, shelf)| Shelf {
+            id: fresh.get(&shelf.id).cloned().unwrap_or_default(),
+            name: if at == 0 {
+                name.clone()
+            } else {
+                shelf.name.clone()
+            },
+            kind: ShelfKind::Virtual,
+            books: shelf.books.clone(),
+            // The copy's root hangs where the original hangs, which is a place
+            // the graph already allows; every shelf below it hangs off its own
+            // copy's parent, so the subtree keeps its shape and closes no loop.
+            // A parent the walk could not reach — which is only a blob carrying
+            // a cycle — is no parent at all rather than an edge at the ORIGINAL,
+            // an edge that would file the copy inside the shelf it came from.
+            parent: if at == 0 {
+                original.parent.clone()
+            } else {
+                shelf.parent.as_deref().and_then(|p| fresh.get(p).cloned())
+            },
+            manual_parent: false,
+        })
+        .collect();
+
+    state.library.shelves.update(|shelves| {
+        // Right behind the original's own row: the shelf list IS the render
+        // order, and `children_of` filters it in order, so a copy appended to
+        // the end would be a shelf the reader has to go and find. A shelf that
+        // went between the read and the write is a copy at the end of the level
+        // rather than a copy that lands nowhere.
+        let at = shelves
+            .iter()
+            .position(|s| s.id == shelf_id)
+            .map_or(shelves.len(), |at| at + 1);
+        shelves.splice(at..at, copies);
+    });
+    Some(name)
 }
 
 /// The duplicate's name: the file manager's counter — `Dune` → `Dune_1`, and
@@ -401,6 +551,158 @@ mod tests {
             shelves[0].books,
             vec!["b1".to_string(), "l1".to_string(), dup.id().to_string()],
             "filed right behind the row the reader pointed at"
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // A shelf's duplicate.
+    // -------------------------------------------------------------------
+
+    /// A shelf of the reader's own with one book and a shelf inside it, hanging
+    /// at the root level beside another shelf: the shape the copy has to keep.
+    fn nested_state() -> (AppState, Owner) {
+        let owner = Owner::new();
+        owner.set();
+        let state = AppState::default();
+        state.library.books.set(vec![
+            library_core::testkit::markdown_row("b1"),
+            library_core::testkit::markdown_row("b2"),
+        ]);
+        state.library.shelves.set(vec![
+            library_core::testkit::shelf("s1", "Shelf", &["b1"], None),
+            library_core::testkit::shelf("s2", "Inside", &["b2"], Some("s1")),
+            library_core::testkit::shelf("s3", "Other", &[], None),
+        ]);
+        (state, owner)
+    }
+
+    /// The copy's root, found by the name the counter gave it.
+    fn copy_of(shelves: &[Shelf], name: &str) -> Shelf {
+        shelves
+            .iter()
+            .find(|s| s.name == name)
+            .unwrap_or_else(|| panic!("no shelf called {name}"))
+            .clone()
+    }
+
+    #[test]
+    fn a_shelf_duplicates_as_a_second_shelf_beside_it() {
+        let (state, _owner) = nested_state();
+        let name = duplicate_shelf_row(state, "s1").expect("the shelf is there");
+        assert_eq!(name, "Shelf_1", "the level's counter, not a collision");
+
+        let shelves = state.library.shelves.get_untracked();
+        assert_eq!(shelves.len(), 5, "the shelf and the one inside it, copied");
+        let root = copy_of(&shelves, "Shelf_1");
+        assert_eq!(root.books, vec!["b1".to_string()], "the same book, not a copy of it");
+        assert_eq!(root.parent, None, "on the level the original hangs on");
+        assert!(
+            !root.is_folder(),
+            "the reader's own, whatever the original was"
+        );
+        // The level's own order is the list's, so the copy sits right behind the
+        // shelf it came from rather than at the end of the page.
+        let level: Vec<&str> = library_core::shelf::children_of(&shelves, None)
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert_eq!(level, vec!["Shelf", "Shelf_1", "Other"]);
+        // And the shelf inside it came along, keeping its own name and its place
+        // under the copy rather than under the original.
+        let inside: Vec<&str> = library_core::shelf::children_of(&shelves, Some(root.id.as_str()))
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert_eq!(inside, vec!["Inside"]);
+        assert_eq!(
+            library_core::shelf::children_of(&shelves, Some("s1"))
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Inside"],
+            "the original keeps its own"
+        );
+    }
+
+    #[test]
+    fn a_folder_shelf_duplicates_as_a_shelf_of_the_readers_own() {
+        // One directory is one linked shelf: a folder's map names one shelf per
+        // rung, so a second folder shelf of one rung would be two doors to one
+        // directory with only one of them on the ledger — and a rescan would
+        // re-hang a shelf the reader made. The copy is the reader's own second
+        // door onto the same books, which no walk, fold or departure answers for.
+        let (state, _owner) = nested_state();
+        state.library.shelves.update(|shelves| {
+            shelves[0] = library_core::testkit::folder_shelf(
+                "s1",
+                "Books",
+                "f1",
+                None,
+                &["b1"],
+                None,
+            );
+        });
+        let name = duplicate_shelf_row(state, "s1").expect("the shelf is there");
+        let shelves = state.library.shelves.get_untracked();
+        let root = copy_of(&shelves, &name);
+        assert_eq!(name, "Books_1");
+        assert!(
+            root.kind.folder_id().is_none(),
+            "the copy is not a second shelf of the folder"
+        );
+        assert_eq!(root.books, vec!["b1".to_string()]);
+        // The original is untouched: the copy is not a rung of the folder, so a
+        // walk that mints the tree again mints the tree it already had.
+        let original = library_core::shelf::find(&shelves, "s1").expect("the original stands");
+        assert_eq!(original.kind.folder_id(), Some("f1"));
+    }
+
+    #[test]
+    fn a_duplicate_of_a_duplicate_steps_the_shelf_counter() {
+        let (state, _owner) = nested_state();
+        assert_eq!(
+            duplicate_shelf_row(state, "s1").as_deref(),
+            Some("Shelf_1")
+        );
+        // Duplicating the copy steps rather than stacks, the reading a file
+        // manager gives: the counter is not part of the name.
+        let shelves = state.library.shelves.get_untracked();
+        let first = copy_of(&shelves, "Shelf_1");
+        assert_eq!(
+            duplicate_shelf_row(state, &first.id).as_deref(),
+            Some("Shelf_2")
+        );
+    }
+
+    #[test]
+    fn a_shelf_that_is_not_there_duplicates_into_nothing() {
+        let (state, _owner) = nested_state();
+        assert!(duplicate_shelf_row(state, "gone").is_none());
+        // "All" is the book list and not a shelf, so it has no second instance
+        // to make either — the pseudo-shelf's own answer everywhere else.
+        assert!(duplicate_shelf_row(state, library_core::shelf::ALL_SHELF).is_none());
+        assert_eq!(state.library.shelves.get_untracked().len(), 3);
+    }
+
+    #[test]
+    fn a_report_counts_the_kinds_it_landed() {
+        let one = |name: &str, shelf| Duplicated {
+            name: name.to_string(),
+            shelf,
+        };
+        assert_eq!(report(&[one("Dune_1", false)]), "Duplicated as “Dune_1”.");
+        assert_eq!(report(&[one("Shelf_1", true)]), "Duplicated as “Shelf_1”.");
+        assert_eq!(
+            report(&[one("a", false), one("b", false)]),
+            "Duplicated 2 books."
+        );
+        assert_eq!(
+            report(&[one("a", true), one("b", true)]),
+            "Duplicated 2 shelves."
+        );
+        assert_eq!(
+            report(&[one("a", true), one("b", false), one("c", false)]),
+            "Duplicated 3 shelves and books."
         );
     }
 }

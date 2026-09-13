@@ -99,6 +99,23 @@ impl ShelfKind {
     pub fn is_folder_root(&self) -> bool {
         matches!(self, ShelfKind::Folder { rel: None, .. })
     }
+
+    /// The rung this shelf stands on, as the folder's own map keys one: the
+    /// empty string for the shelf at a watched root, and the empty string for a
+    /// shelf the reader made, which no directory names.
+    ///
+    /// One spelling of the question "which rung of its tree is this", for the
+    /// callers that ask it of a standing shelf rather than of a ledger — the
+    /// seat a ground is covered by ([`crate::folder::watching_over`]) among
+    /// them. The two empty answers are the same answer on purpose: a reader's
+    /// shelf is a seat for nothing below it, and a folder's root shelf is the
+    /// seat every rung of that folder's tree hangs under.
+    pub fn rung(&self) -> &str {
+        match self {
+            ShelfKind::Virtual => "",
+            ShelfKind::Folder { rel, .. } => rel.as_deref().unwrap_or(""),
+        }
+    }
 }
 
 /// One shelf.

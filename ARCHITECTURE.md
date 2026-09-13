@@ -718,7 +718,14 @@ its copies being the library's own second instance, unrelated to any tree:
   instance of itself. New files join the tree as linked books, the logs a removal or a departure
   wrote are spent by their books coming back — wherever in the tree they stood, a book deleted
   inside a nested folder returns on a re-pick of the nested folder exactly as on a re-pick of
-  the root — and only a walk that found nothing new raises the note
+  the root — and the books the tree still holds but its shelves stopped holding come back as
+  memberships of the rungs their directories name (`import::folder::returned_memberships`): a book
+  the reader filed onto a shelf of their own and a book whose shelf they took apart are each a
+  file the walk finds and the library holds, so each is a *skip* to both ledger tables and neither
+  is a tombstone, which makes the merge the one half of a reconciliation no table can answer. It
+  is a membership and not a move, so the shelf the reader carried a book to keeps it, and a RESCAN
+  never asks — staying out of the reader's arrangement is the whole of a passive walk's job. Only
+  a walk that found nothing new raises the note
   (`features::library::already_imported_modal`), saying so and lighting the shelf. What a FOLDER
   import reveals is the folder: the walk ends on the shelf the pick named — the tree's root
   shelf for its root, the rung's own shelf for a rung — lit on the level that holds it, while a
@@ -746,17 +753,23 @@ because its books are the files themselves.
 
 The watch itself has two doors and one lock. The import sheet's switch is the first door, and it is
 the only one that can set a watch on ground the library has not seen. Ground a watched read-at-place
-tree ALREADY covers AND still stands in — the folder re-picked, or a rung of it — is watched, and
-there the switch is locked on and says why (`library_core::folder::watching_over`): an import of a
-folder is the reader asking for its books again, not asking the library to stop looking, and a sheet
-whose defaults are "not watched" would otherwise un-track a folder by importing it. A folder whose
-shelves the reader took apart holds no lock — the row keeps watching, because a shelf comes back
-when the folder next places a book, but a watch nobody can see is not one the sheet may enforce,
-and an import of its ground with the switch off is how it ends. The folder run reads the same
-function before it writes the sheet's answers over a standing ledger, so a route that never passed
-the sheet cannot do it either — and a run that COPIES is exempt, because the sheet does not offer the
-watch beside a copy, so there is no lock to honour and a watched copy would be a folder with no door
-left on it. The second door is the shelf's own right-click, which is where a watch is turned off
+tree is SEATED on — the folder re-picked, a rung of it, or a directory under a rung that still hangs
+— is watched, and there the switch is locked on and says why
+(`library_core::folder::watching_over`): an import of a folder is the reader asking for its books
+again, not asking the library to stop looking, and a sheet whose defaults are "not watched" would
+otherwise un-track a folder by importing it. The seat is the GROUND's and not the folder's, and the
+difference is what a removal leaves behind: taking a folder's shelf apart lifts the shelves inside it
+to the level it was on, so the folder keeps shelves the reader can see while the ground they took one
+off is seated by nothing. That ground holds no lock — the row keeps watching, because a shelf comes
+back when the folder next places a book, but a watch nobody can see on the ground they are importing
+is not one the sheet may enforce, and an import of that ground with the switch off is how it ends. A
+rung below a ground is not a seat for it, and reading the lock as "this folder still has shelves
+somewhere" was a switch stuck on for a folder the reader had just taken apart, on the one ground the
+removal had freed. The folder run reads the same function before it writes the sheet's answers over a
+standing ledger, so a route that never passed the sheet cannot do it either — and a run that COPIES is
+exempt, because the sheet does not offer the watch beside a copy, so there is no lock to honour and a
+watched copy would be a folder with no door left on it. The second door is the shelf's own
+right-click, which is where a watch is turned off
 (`services::library::set_folder_watch`): the flag is the FOLDER's, one answer about one ground, so
 the folder's root shelf and every rung of its tree ask the same question, and so does a shelf the
 reader made inside that tree — the row names the folder it is about, because "stop watching" from
@@ -1192,8 +1205,8 @@ shelf the reader owns has no ground and gets no row, a book whose address died g
 one, and the shell's verb is per platform — the item selected on macOS and Windows, the
 containing folder on Linux, which has no standard select (`commands::library::reveal_in_folder`).
 
-One row makes a second instance of what was pointed at: *Duplicate*
-(`services::library::duplicate`). A book read AT ITS PLACE gets a second file beside the first —
+One right-click makes a second instance of what was pointed at, whichever kind of thing it was:
+*Duplicate* (`services::library::duplicate`). A book read AT ITS PLACE gets a second file beside the first —
 the shell's `commands::library::copy_beside` creates it inside the original's own directory under
 a name the frontend probed free, refuses a name already taken rather than overwriting it, and
 stamps it with its own modification time, so the copy measures as a second book and not as the
@@ -1209,11 +1222,25 @@ fresh highlights. A book whose address died has nothing to copy and gets the dis
 Open row's own rule; the selection's menu duplicates the set, one task and one report, because
 two duplicates of one book asked in the same tick would race for one counter name.
 
+A SHELF is the third answer and not a batch of the first two: it holds membership and never held a
+byte, so its duplicate is a second shelf of the reader's own holding the same books, with the whole
+subtree copied along — every shelf a fresh id, the sibling order the level reads kept, the copy's
+root hung where the original hangs and spliced in right behind it, because the shelf list IS the
+render order. The root wears the level's counter (`library_core::conflict::next_shelf_name`, the
+shelf half of the same convention) and everything inside it keeps its own name, since the copy's
+levels are fresh and hold nothing to collide with. Every copied shelf is `ShelfKind::Virtual`
+whatever the original was, and that is a rule rather than a simplification: one directory is one
+linked shelf, and a folder's `shelf_map` names one shelf per rung, so a second folder shelf of one
+rung would be two doors to one directory with only one of them on the ledger — and a virtual shelf
+is no scan's business, so the copy answers to no re-hang, no fold and no departure. The door is the
+right-click's folder menu and the crumb's own popover, which is the second door to every other act
+a shelf has.
+
 A card's right-click is stopped before the hold's exhaust is even asked about. A completed hold
 answers with a synthetic `contextmenu` on some platforms, and one that went on to bubble would open
 the LEVEL's menu under the finger that was busy selecting.
 
 The current shelf's crumb carries the shelf's own popover: a rename in place — the thing being
 named is the thing being typed over, so no dialog has to describe a shelf the reader can already
-see — and the removal, with the watched-folder note when one applies. It is the second door to
-both acts beside the right-click's folder menu, and the only door to a rename.
+see — a duplicate, and the removal, with the watched-folder note when one applies. It is the second
+door to those acts beside the right-click's folder menu, and the only door to a rename.

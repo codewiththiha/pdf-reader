@@ -455,6 +455,11 @@ pub fn delete_stored(app: AppHandle, path: String) -> Result<(), String> {
 /// source's fingerprint, and the ledger would read two files as one book. The
 /// answer is the copy's own measurement, so the row the frontend mints is
 /// known by the copy's bytes from the start.
+///
+/// A refusal takes back only the file the copy made. The name being taken is
+/// the refusal a probe that raced a file arriving gets, and the file standing
+/// there is the reader's: a duplicate that could not be made is an answer, not
+/// a removal.
 #[tauri::command]
 pub async fn copy_beside(path: String, dest: String) -> Result<PathCheck, String> {
     tauri::async_runtime::spawn_blocking(move || copy_beside_sync(&path, &dest))
@@ -470,6 +475,10 @@ fn copy_beside_sync(src: &str, dest: &str) -> Result<PathCheck, String> {
     if source.parent() != target.parent() {
         return Err("The copy has to live beside the original.".to_string());
     }
+    // Whether the file at `dest` exists because THIS call made it. `create_new`
+    // is what tells the two apart: it refuses a name that is taken, so the copy
+    // only ever created the file when the failure came after it opened.
+    let mut made = false;
     let copied = (|| -> Result<(), String> {
         let mut reader =
             fs::File::open(source).map_err(|e| format!("Could not read {src}: {e}"))?;
@@ -484,16 +493,22 @@ fn copy_beside_sync(src: &str, dest: &str) -> Result<PathCheck, String> {
                     format!("Could not create {dest}: {e}")
                 }
             })?;
+        made = true;
         std::io::copy(&mut reader, &mut writer)
             .map_err(|e| format!("Could not write {dest}: {e}"))?;
         Ok(())
     })();
-    if copied.is_err() {
+    if let Err(message) = copied {
         // A half-written copy is a file in the reader's folder nobody asked
-        // for: take it back off. Best effort — the copy's own failure is the
-        // one being reported.
-        let _ = fs::remove_file(target);
-        return copied;
+        // for: take it back off. Best effort, and only the file this call made
+        // — a refusal because the name was TAKEN is an answer about a file that
+        // is the reader's, and sweeping it would turn a duplicate that could
+        // not be made into a book that was deleted. The copy's own failure is
+        // the one being reported either way.
+        if made {
+            let _ = fs::remove_file(target);
+        }
+        return Err(message);
     }
     own_stamp(target);
     let check = check_path(dest);

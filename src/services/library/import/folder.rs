@@ -94,13 +94,15 @@ fn chain_for(
 /// taking those files out of the add list. The heal half of the migrated-row
 /// rule: a file at an address the library reads IS that book, whatever the two
 /// fingerprints say, and the walk has just made the measurement the startup
-/// pass could not. Answers how many rows it healed.
+/// pass could not. Answers the addresses it healed, which is the count the card
+/// reports and the set the merge stage passes by: a healed row's membership is
+/// the reader's business, exactly as the landing's own heal leaves it.
 fn heal_by_address(
     books: &mut [Row],
     adds: &mut Vec<FoundFile>,
     skip: &HashSet<String>,
-) -> usize {
-    let mut healed = 0usize;
+) -> HashSet<String> {
+    let mut healed = HashSet::new();
     adds.retain(|file| {
         // A copies run's file is an add BECAUSE the library holds the
         // address: healing it into the row that is there would answer the
@@ -111,7 +113,7 @@ fn heal_by_address(
         match book_rows_mut(books).find(|b| b.path() == file.path) {
             Some(book) => {
                 book.heal(file.fp);
-                healed += 1;
+                healed.insert(file.path.clone());
                 false
             }
             None => true,
@@ -128,11 +130,15 @@ fn heal_by_address(
 /// taking its own borrow of four locals. Nothing in it is written back — what
 /// lands is applied to the LIVE signals at the end, so a book the reader opened
 /// while the walk was running is not overwritten by one.
-struct Snapshot<'a> {
-    books: &'a [Row],
-    registry: &'a ledger::Registry,
-    found: &'a [FoundFile],
-    copy_paths: &'a HashSet<String>,
+///
+/// `pub(super)` for the same reason [`Landing`] is: the stages are the run's
+/// units, and a stage a host test cannot build a picture for is a stage whose
+/// rule is only ever asserted by reading it.
+pub(super) struct Snapshot<'a> {
+    pub(super) books: &'a [Row],
+    pub(super) registry: &'a ledger::Registry,
+    pub(super) found: &'a [FoundFile],
+    pub(super) copy_paths: &'a HashSet<String>,
 }
 
 /// The folder's ledger row for this run.
@@ -143,10 +149,9 @@ struct Snapshot<'a> {
 /// the library has never seen is minted here, and a minted row carries no
 /// history for any rule to misread.
 ///
-/// The options are the sheet's, except the watch on ground a watched tree
-/// already covers and still stands in: that one belongs to the folder, and the
-/// shelf's menu is where a hand turns it off
-/// (`crate::services::library::set_folder_watch`).
+/// The options are the sheet's, except the watch on ground a watched tree is
+/// SEATED on: that one belongs to the folder, and the shelf's menu is where a
+/// hand turns it off (`crate::services::library::set_folder_watch`).
 pub(super) fn resolve_folder(
     folders: &[WatchedFolder],
     shelves: &[Shelf],
@@ -167,16 +172,17 @@ pub(super) fn resolve_folder(
     });
     // The sheet's answers are this import's truth, and the next scan's — with
     // one answer the ground has already given. A watched read-at-place tree
-    // that still STANDS stays watched through an import of itself or of a rung
-    // of itself, because an import of a folder is the reader asking for its
-    // books again and not asking the library to stop looking. The sheet locks
-    // its own switch on that ground and this is the same rule behind it, so the
-    // two cannot drift: an import that arrived with the defaults — whose watch
-    // is off — would otherwise un-track the tree it was importing, as a side
-    // effect no reader asked for and none could see happen. A tree whose
-    // shelves the reader took apart is not standing, and its ground is the
-    // sheet's: the lock is for a watch the reader can see, and an import of an
-    // invisible one with the switch off is how it ends.
+    // that is still SEATED on this ground stays watched through an import of
+    // itself or of a rung of itself, because an import of a folder is the reader
+    // asking for its books again and not asking the library to stop looking. The
+    // sheet locks its own switch on that ground and this is the same rule behind
+    // it, so the two cannot drift: an import that arrived with the defaults —
+    // whose watch is off — would otherwise un-track the tree it was importing, as
+    // a side effect no reader asked for and none could see happen. A tree whose
+    // seat on this ground the reader took apart is not seated here, however many
+    // rungs below it still hang, and the ground is the sheet's: the lock is for a
+    // watch the reader can see on the ground they are importing, and an import of
+    // a ground nothing seats with the switch off is how an invisible watch ends.
     //
     // A run that COPIES is exempt, and the exemption is the sheet's own: the
     // watch is not offered beside a copy, so there is no locked switch here to
@@ -187,6 +193,11 @@ pub(super) fn resolve_folder(
     if ground_is_watched {
         folder.opts.watch = true;
     }
+    // A pointer at a shelf that is gone is a rung the walk reuses instead of
+    // minting, and every placement that rides it lands on no shelf at all. Cut
+    // before the map is written to below, so a merge's root and an *as new*
+    // run's clearing are answers about the map that is left.
+    folder.prune_shelf_map(shelves);
     // A merge files into the shelf the level already held: the folder's root
     // rung is that shelf, and the map is the one place the walk, the chain
     // minting and every later rescan read the answer from — which is what makes
@@ -376,6 +387,78 @@ fn screen_merge_adds(
     asks
 }
 
+/// The walked files this folder's tree owes a membership of and does not have
+/// one for: a file whose row the library still holds, but on no shelf this
+/// folder owns.
+///
+/// The merge half of a re-pick, and the half the ledger's table cannot answer.
+/// Two readers make this shape, and neither is a tombstone:
+///
+///   * a book the reader filed onto a shelf of their own. The row is where they
+///     put it and the file is still on this folder's ground, so both tables
+///     answer `Skip` — the content is known and its address has not moved — and
+///     the folder's shelf is left holding nothing for a book the folder holds;
+///   * a book whose shelf the reader took apart. A shelf is a list of ids and
+///     never held a byte, so the row survives it and is in the library on no
+///     shelf at all: a book the walk can see and the reader cannot.
+///
+/// A reader who picks this folder again is asking for its books, so both come
+/// back onto the rung their own directory names — and both come back as a
+/// MEMBERSHIP rather than a move, which is the folder's own "also show it here":
+/// the shelf the reader carried a book to keeps it, because a re-import is an ask
+/// about this folder and not an undo of the arrangement beside it. The files this
+/// run is minting a row for are not asked (their placement is the landing's own),
+/// and neither are the copies a copying run owes, which land as books of their
+/// own rather than as memberships of the row they duplicate.
+///
+/// Empty for a tree whose shelf already holds everything the walk found, which
+/// is what leaves the "nothing new" note the answer for a re-pick that really
+/// did reconcile a tree with nothing to give back.
+pub(super) fn returned_memberships(
+    state: AppState,
+    snap: &Snapshot<'_>,
+    folder_id: &str,
+    adds: &[FoundFile],
+) -> Vec<(String, FoundFile)> {
+    let shelves_now = state.library.shelves.get_untracked();
+    let mut out = Vec::new();
+    for file in snap.found {
+        if adds.iter().any(|add| add.path == file.path) {
+            continue;
+        }
+        // A file the copies run owes lands as a book of its own, not as a
+        // membership of the row it duplicates.
+        if snap.copy_paths.contains(&file.path) {
+            continue;
+        }
+        // The row the library holds this file in: by content identity first (the
+        // ledger's own answer), and by address second for the migrated row whose
+        // placeholder identity no measurement matched.
+        let Some(row_id) = snap
+            .registry
+            .get(&file.fp)
+            .map(|known| known.id.clone())
+            .or_else(|| {
+                book_rows(snap.books)
+                    .find(|b| b.path() == file.path)
+                    .map(|b| b.id.clone())
+            })
+        else {
+            continue;
+        };
+        // Which shelves a book is on is the shelf module's question, and which of
+        // them this folder owns is the shelf KIND's — one spelling of each, the
+        // pair the folder's restore menu asks the same way.
+        let on_the_tree = shelves_ops::containing(&shelves_now, &row_id)
+            .iter()
+            .any(|shelf| shelf.kind.folder_id() == Some(folder_id));
+        if !on_the_tree {
+            out.push((row_id, file.clone()));
+        }
+    }
+    out
+}
+
 /// What one walked file needs in order to become a row: the copies that landed,
 /// the measurements of the copies run's own, and the shape of the tree to mint
 /// into.
@@ -559,7 +642,8 @@ struct WalkPlan {
 
 /// The diff stage: everything between the walk's raw findings and the copy
 /// batch — the registry the ledger reads, the ledger's own two tables, the
-/// heal of the rows the walk re-measured, the planned tree's memberships and
+/// heal of the rows the walk re-measured, the planned tree's memberships, the
+/// memberships a reconciliation owes the books its tree stopped holding, and
 /// the questions a merge asks. Decides against the SNAPSHOT; the only thing
 /// it writes is the folder's own ledger row, which the run holds.
 #[allow(clippy::too_many_arguments)]
@@ -644,7 +728,7 @@ fn plan_the_walk(
     // The snapshot every stage below reads, so they all decide against one
     // picture of the library rather than each taking its own borrow of four
     // locals. Dropped by the heal underneath it, which writes to `books`.
-    let (replacements, mut asks) = {
+    let (mut replacements, mut asks) = {
         let snap = Snapshot {
             books,
             registry: &registry,
@@ -661,7 +745,8 @@ fn plan_the_walk(
     // would put a second copy of the same file on the shelf next to its own
     // twin. Healing the row is the honest answer, and the walk has just made the
     // measurement the startup pass could not.
-    let healed = heal_by_address(books, &mut adds, &copy_paths);
+    let healed_paths = heal_by_address(books, &mut adds, &copy_paths);
+    let healed = healed_paths.len();
 
     // One book per fingerprint INSIDE a single scan, always: a tree holding two
     // byte-identical files is one book, and copying both would leave an orphan
@@ -688,6 +773,40 @@ fn plan_the_walk(
         asks.extend(screen_merge_adds(state, &snap, folder, plan, &mut adds));
     }
 
+    // The reconciliation's merge, which is the half of a re-pick that is not an
+    // add: the walked files this folder's tree owes a membership of and does not
+    // have one for. Asked last, once `adds` is the list that is actually going
+    // to be minted, so a file this run is making a row for is not also asked for
+    // a membership of the row it is about to replace.
+    if !quiet
+        && folder.opts.in_place
+        && replacements.is_empty()
+        && plan.rename.is_none()
+        && plan.into.is_none()
+    {
+        let folder_id = folder.id.clone();
+        let mut returned = {
+            let snap = Snapshot {
+                books,
+                registry: &registry,
+                found,
+                copy_paths: &copy_paths,
+            };
+            returned_memberships(state, &snap, &folder_id, &adds)
+        };
+        // A row the walk just healed keeps the membership it had, which is the
+        // landing's own rule for a heal, and counting it here as well would be
+        // counting one file twice on the card that reports the run.
+        returned.retain(|(_, file)| !healed_paths.contains(&file.path));
+        // The folder's shelf holds these files from this run on, which is what
+        // `placed` says: a book removed after it is a removal THIS folder takes
+        // a tombstone for, and a fingerprint the ledger skips with no book
+        // behind it is the one state a folder cannot recover from on its own.
+        for (_, file) in &returned {
+            folder.mark_placed(file.fp);
+        }
+        replacements = returned;
+    }
 
     WalkPlan {
         adds,
@@ -978,6 +1097,14 @@ pub(super) async fn run_folder(
     let root_rung = folder.shelf_map.get("").cloned();
     let folder_id = folder.id.clone();
     write_folder(state, folder);
+    // The tree the walk just finished is hung on the seats the disk names, in
+    // the run that finished it rather than at the start of the next one. The
+    // re-hang at the top of this function read the map the walk was about to
+    // write, so a rung the map had lost — a root shelf taken apart, its rungs
+    // lifted to the level it was on — is a rung this run minted a fresh seat
+    // for and then left hanging where the removal put it. Same pass, same rule,
+    // and a no-op for a tree that was already on its seats.
+    rehang(state, &folder_id);
     crate::storage::persist_library(state.library);
     // A folder import is the case this matters most: it is the one way a shelf
     // arrives with dozens of books at once, and a plate of fallbacks is not a
