@@ -48,6 +48,7 @@ pub mod blob;
 pub mod book;
 pub mod conflict;
 pub mod folder;
+pub mod governance;
 pub mod hash;
 pub mod id;
 pub mod ledger;

@@ -23,22 +23,7 @@ pub fn family_for(
     shelves: &[Shelf],
     ground: &str,
 ) -> Option<(String, String)> {
-    folders
-        .iter()
-        .filter(|f| f.opts.in_place)
-        .filter_map(|f| {
-            crate::folder::rel_under(ground, &f.root)
-                .filter(|rel| !rel.is_empty())
-                .map(|rel| (rel.len(), f, rel))
-        })
-        .max_by_key(|(len, _, _)| *len)
-        .and_then(|(_, folder, rel)| {
-            let vacant = match folder.shelf_map.get(&rel) {
-                Some(id) => !shelves.iter().any(|s| s.id == *id),
-                None => true,
-            };
-            vacant.then(|| (folder.id.clone(), rel))
-        })
+    crate::governance::Governance::new(folders, shelves).family(ground)
 }
 
 /// Whether moving this shelf under `parent` is a departure that owes a copy:

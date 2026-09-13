@@ -8,6 +8,7 @@ use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
 use library_core::folder::{self as folder_ops, rel_under, FolderOpts, WatchedFolder};
+use library_core::governance::Governance;
 use library_core::id;
 use library_core::scan::FoundFile;
 use library_core::shelf::{self as shelves_ops, Shelf, ShelfKind};
@@ -249,29 +250,18 @@ pub(super) fn covered_of(
     shelves: &[Shelf],
     root: &str,
 ) -> Option<Covered> {
-    let mut rung: Option<Covered> = None;
-    for folder in folders.iter().filter(|f| f.opts.in_place) {
-        let Some(rel) = rel_under(root, &folder.root) else {
-            continue;
-        };
-        let Some(shelf_id) = folder.shelf_map.get(&rel) else {
-            continue;
-        };
-        if let Some(shelf) = shelves_ops::find(shelves, shelf_id) {
-            let covered = Covered {
-                shelf_id: shelf.id.clone(),
-                shelf_name: shelf.name.clone(),
-                tree_root: folder.root.clone(),
-            };
-            if rel.is_empty() {
-                return Some(covered);
-            }
-            if rung.is_none() {
-                rung = Some(covered);
-            }
-        }
-    }
-    rung
+    // The resolver owns the walk and the empty-rung precedence; this is the
+    // gate's own value built from its answer. Both lookups below are guaranteed
+    // to land — `covering` only names a shelf it found standing and a folder it
+    // read out of `folders` — so the `?` is a shape, not a second rule.
+    let coverage = Governance::new(folders, shelves).covering(root)?;
+    let shelf = shelves_ops::find(shelves, &coverage.shelf_id)?;
+    let folder = folder_ops::find(folders, &coverage.folder_id)?;
+    Some(Covered {
+        shelf_name: shelf.name.clone(),
+        tree_root: folder.root.clone(),
+        shelf_id: coverage.shelf_id,
+    })
 }
 
 /// A member of this tree that is standing outside it.
