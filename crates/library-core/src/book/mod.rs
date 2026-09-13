@@ -39,7 +39,7 @@ pub mod sanitize;
 pub use check::{add_book, apply_check, drop_dangling_links, drop_dead_shelf_links, remove_row};
 pub use merge::{fold_books, further_point};
 pub use naming::{duplicate_title, stem_of};
-pub use query::{find_book_mut, find_by_id, find_by_path, gloss_key_of, index_by_id, resume_point};
+pub use query::{find_book_mut, find_by_id, find_by_path, index_by_id, resume_point};
 pub use read::{ReadPoint, record_read, record_read_row, rows_for_read};
 pub use sanitize::{sanitize};
 
@@ -228,9 +228,9 @@ pub struct Book {
     /// fact about the FILE, so a read and a path check write every row at the
     /// address, and the highlights and the cover are keyed by the address
     /// itself. An independent row opts out of the first half of that — its
-    /// resume point is its own, and its marks live under [`Book::gloss_key`],
-    /// which carries its id, so a removal of either row cannot take the other's
-    /// highlights with it. It does NOT opt out of the address's fate: whether
+    /// resume point is its own, and its marks are its own — every row's
+    /// highlights are keyed by its id, so a removal of either row cannot take
+    /// the other's with it. It does NOT opt out of the address's fate: whether
     /// the file resolves is still a fact about the file, so [`apply_check`]
     /// writes every row at the address whatever this says.
     ///
@@ -415,28 +415,6 @@ impl Book {
     /// The address this book is read from. See [`Origin::path`].
     pub fn path(&self) -> &str {
         self.origin.path()
-    }
-
-    /// The key this book's highlights are stored under.
-    ///
-    /// The address for a shared row, which is the whole of the twin rule: two
-    /// rows of one file read one mark list, and a writer that keys on the
-    /// address cannot help but keep them in step. An independent row's key
-    /// carries its id in front of that address, so its marks are its own —
-    /// nothing else in the library can name the key, which is what makes
-    /// "removing one of the two takes nothing from the other" a property of
-    /// the storage rather than a rule every remover has to remember.
-    ///
-    /// The id in front is what makes the key unforgeable: no address ever
-    /// reads like one, so a sweep keyed on an address and a sweep keyed on a
-    /// book cannot meet, and a row that loses its independence simply starts
-    /// reading the address's list again.
-    pub fn gloss_key(&self) -> String {
-        if self.independent {
-            format!("{}::{}", self.id, self.path())
-        } else {
-            self.path().to_string()
-        }
     }
 
     /// The name to show: the document's own title, else the file stem, else
@@ -865,27 +843,41 @@ mod tests {
     }
 
     #[test]
-    fn a_private_book_stores_its_marks_under_its_own_key() {
-        // The whole of the opt-out is the key: a shared row's marks live at
-        // the address, so every row there reads and writes one list, and a
-        // private row's carry its id, so no other row can name them.
+    fn two_rows_of_one_file_are_two_books_with_two_ids() {
+        // The marks are keyed by row id, so "removing one of the two takes
+        // nothing from the other" is a property of the storage rather than of a
+        // key a private row had to be given. What the crate owes is that the two
+        // rows really are two ids, and that a shared one and a private one at the
+        // same address do not resolve to each other.
         let shared = linked("a", "/books/dune.pdf");
         let own = private("b", "/books/dune.pdf");
-        assert_eq!(shared.gloss_key(), "/books/dune.pdf");
-        assert_eq!(own.gloss_key(), "b::/books/dune.pdf");
-        // The reader names the row, so the key follows the row — and an id
-        // that is not there, or is there at another address, falls back to
-        // the address rather than to a key nothing can read back.
-        let books = rows([shared.clone(), own.clone()]);
-        assert_eq!(gloss_key_of(&books, Some("b"), "/books/dune.pdf"), "b::/books/dune.pdf");
-        assert_eq!(gloss_key_of(&books, Some("a"), "/books/dune.pdf"), "/books/dune.pdf");
-        assert_eq!(gloss_key_of(&books, None, "/books/dune.pdf"), "/books/dune.pdf");
-        assert_eq!(gloss_key_of(&books, Some("zzz"), "/books/dune.pdf"), "/books/dune.pdf");
-        assert_eq!(
-            gloss_key_of(&books, Some("b"), "/moved/dune.pdf"),
-            "/moved/dune.pdf",
-            "a row of another address is no row of this one"
-        );
+        assert_eq!(shared.id, "a");
+        assert_eq!(own.id, "b");
+        assert_ne!(shared.id, own.id, "two rows, two keys, two mark lists");
+        assert!(own.independent && !shared.independent);
+        // An import resolving this address never lands on the private row, which
+        // is what keeps a reader's own book off a shelf the question never
+        // mentioned — `add_book`'s rule rather than the address lookup's, since
+        // `find_by_path` answers with whichever row the list holds first.
+        // `shared` is the arrival: same content as the private row, so a dedupe
+        // that did not skip private rows would resolve onto it and file the
+        // reader's own book on a shelf the import never mentioned.
+        let mut list = rows([own.clone()]);
+        assert_eq!(add_book(&mut list, shared.clone()), "a", "a private row holds nothing back");
+        assert_eq!(list.len(), 2, "so the arrival joins as a book of its own");
+        // A shared row beside the private one is the answer instead, whichever
+        // order the list happens to hold them in.
+        for order in [
+            rows([shared.clone(), own.clone()]),
+            rows([own.clone(), shared.clone()]),
+        ] {
+            let mut both = order;
+            assert_eq!(
+                add_book(&mut both, Book { fp: fp(10, 1, 7), ..linked("new", "/books/dune.pdf") }),
+                "a",
+                "a shared row at the address is the one an import resolves to"
+            );
+        }
     }
 
     #[test]

@@ -7,7 +7,7 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use library_core::book::{Book, Origin, book_rows, find_book_mut, find_row};
+use library_core::book::{Book, Origin, find_book_mut, find_row};
 use library_core::conflict::same_name;
 use library_core::folder::{self as folder_ops, Tombstone};
 use library_core::ledger::tombstone;
@@ -180,7 +180,9 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
         return Ok(());
     }
     let path = book.path().to_string();
-    let from_key = book.gloss_key();
+    // The highlights do not travel: they are keyed by this row's id, which a
+    // conversion leaves alone. That is the whole of why the move needed a
+    // `migrate_gloss` and no longer does.
     let (store, measured) =
         wire::copy_and_measure(&format!("move-{row_id}"), &path, row_id).await?;
 
@@ -194,16 +196,6 @@ pub(crate) async fn convert_to_stored(state: AppState, row_id: &str) -> Result<(
             book.become_stored(&path, store.clone(), measured);
         }
     });
-    let to_key = state.library.books.with_untracked(|rows| {
-        find_row(rows, row_id)
-            .and_then(|row| row.book())
-            .map(Book::gloss_key)
-    });
-    if let Some(to) = to_key
-        && to != from_key
-    {
-        migrate_gloss(state, &from_key, &to, &path);
-    }
     // The old address's cover belongs to the file the row no longer reads, and
     // the copy has never been rendered: prune one, queue the other.
     prune_now(state);
@@ -247,32 +239,6 @@ pub(crate) fn write_moved_stones(state: AppState, book: &Book, returned_row: Opt
         .folders
         .update(|folders| tombstone(folders, &entry));
     crate::storage::persist_library(state.library);
-}
-
-/// The highlights follow the row's address: a conversion changes the address,
-/// and marks left under the old key are marks nothing paints again. Moved
-/// outright when no remaining row reads the old address, copied when a shared
-/// twin still does — a twin's key IS the address, and the address is still
-/// its. A private row's key carries its id, so its list is always a move.
-///
-/// Private to the departure: every row the library flips to its own copy owes
-/// its marks this same move, and the flip is one function's.
-fn migrate_gloss(state: AppState, from_key: &str, to_key: &str, address: &str) {
-    let shared = from_key == address
-        && state
-            .library
-            .books
-            .with_untracked(|rows| book_rows(rows).any(|b| b.path() == address));
-    let Some(marks) = crate::storage::load_gloss().remove(from_key) else {
-        return;
-    };
-    if marks.is_empty() {
-        return;
-    }
-    crate::storage::persist_gloss(to_key, &marks);
-    if !shared {
-        crate::storage::remove_gloss(from_key);
-    }
 }
 
 /// A stored book landing on a shelf of the folder it once left is a return:

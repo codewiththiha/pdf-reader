@@ -77,16 +77,24 @@ pub(super) fn identity(state: AppState, doc: DocumentIdentity) {
 /// be missed here.
 ///
 /// Which list "this document's" is, is [`crate::services::document::gloss_key`]'s
-/// answer and not the address's: a book of its own reads the marks its own
-/// reader made, and every other book at the address reads the address's. The
-/// address the tail measured is the fallback for the moment before the
-/// document's identity is on the state, and for an open that named no row.
-pub(super) fn load_marks(state: AppState, path: &str) {
+/// answer: the id of the row the library holds for it. Two rows of one file are
+/// two lists, and a book of its own reads the marks its own reader made — which
+/// falls out of the key being an id rather than out of a rule about privacy.
+///
+/// There is deliberately no fallback to the address. Marks are keyed by row id
+/// and the storage migrates an address-keyed list onto the row that was reading
+/// it (`crate::storage::migrate_gloss_keys`), so an address read here would only
+/// ever find a list the migration had already claimed — and finding it would put
+/// one file's marks on a different book at the same address. An open with no row
+/// to name has no marks to load, which is the honest answer rather than a guess.
+pub(super) fn load_marks(state: AppState) {
     state.reader.gloss.reset();
     let key = crate::services::document::gloss_key(state);
-    let key = if key.is_empty() { path } else { key.as_str() };
+    if key.is_empty() {
+        return;
+    }
     let marks: Vec<GlossMark> = crate::storage::load_gloss()
-        .remove(key)
+        .remove(&key)
         .unwrap_or_default();
     state.reader.gloss.marks.set(marks);
 }

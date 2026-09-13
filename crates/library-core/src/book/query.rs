@@ -58,13 +58,6 @@ pub fn index_by_id(rows: &[Row]) -> std::collections::HashMap<&str, &Row> {
     index
 }
 
-pub fn gloss_key_of(rows: &[Row], book_id: Option<&str>, path: &str) -> String {
-    book_id
-        .and_then(|id| find_by_id(rows, id))
-        .filter(|b| b.path() == path)
-        .map_or_else(|| path.to_string(), Book::gloss_key)
-}
-
 /// Where the reader left off in the book they are about to open: the resume
 /// page and the fractional stream position (see [`Book::fraction`]), clamped
 /// the way [`ReadPoint::settled`] clamps a write.

@@ -7,7 +7,6 @@
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use ai_core::gloss::GlossMark;
 use library_core::book::{find_book_mut, find_by_id, fold_books, Book};
 use library_core::conflict::{Answer, MoveAnswer};
 use library_core::shelf;
@@ -104,7 +103,6 @@ fn merge(state: AppState, ask: &ConflictAsk) {
     let Some(gone_id) = ask.arrival.moving.clone() else {
         return;
     };
-    fold_marks(state, &survivor, &gone_id);
     let gone_book = state
         .library
         .books
@@ -246,49 +244,6 @@ fn add_link_at_target(state: AppState, ask: &ConflictAsk, target: &str) {
     state
         .library
         .add_link(&name, target, &ask.arrival.shelf_id);
-}
-
-/// Both rows' highlights under the survivor's key, and nothing else: the marks
-/// keep their ids, and the AI answers ride the ids, so a mark that travels
-/// arrives with the answer it already had.
-///
-/// Two rows of ONE address already share one list, and there is nothing to
-/// move — which is the common case, and the reason this reads the keys rather
-/// than assuming they differ.
-fn fold_marks(state: AppState, survivor_id: &str, gone_id: &str) {
-    let (into, from) = state.library.books.with_untracked(|rows| {
-        (
-            find_by_id(rows, survivor_id).map(Book::gloss_key),
-            find_by_id(rows, gone_id).map(Book::gloss_key),
-        )
-    });
-    let (Some(into), Some(from)) = (into, from) else {
-        return;
-    };
-    if into == from {
-        return;
-    }
-    let all = crate::storage::load_gloss();
-    let mine = all.get(&into).cloned().unwrap_or_default();
-    let Some(theirs) = all.get(&from).filter(|marks| !marks.is_empty()) else {
-        return;
-    };
-    crate::storage::persist_gloss(&into, &union_marks(&mine, theirs));
-}
-
-/// The union of two mark lists by spot identity: everything `base` holds, in
-/// its order, plus every mark of `extra` denoting a spot `base` has not
-/// marked. [`GlossMark::same_spot`] is the identity — the same rule a capture
-/// dedupes by and a re-click toggles by — so a merged shelf agrees with the
-/// page it renders on about what "the same mark" is.
-fn union_marks(base: &[GlossMark], extra: &[GlossMark]) -> Vec<GlossMark> {
-    let mut union: Vec<GlossMark> = base.to_vec();
-    for mark in extra {
-        if !union.iter().any(|kept| kept.same_spot(mark)) {
-            union.push(mark.clone());
-        }
-    }
-    union
 }
 
 /// Add as new: the arrival takes the next free name on that level and lands.

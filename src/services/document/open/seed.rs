@@ -65,7 +65,7 @@ pub(super) fn seed(state: AppState, path: &str, open: OpenResult, saved_page: u3
     // Gloss highlights for THIS document, loaded where the reflowable tail
     // loads them: before anything mounts, so the first painted page already
     // carries them. For a PDF they are page-space rects, not DOM state.
-    enter::load_marks(state, path);
+    enter::load_marks(state);
 
     let resume = enter::resume_page(saved_page, num_pages);
 

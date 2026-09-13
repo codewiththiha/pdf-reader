@@ -160,23 +160,9 @@ fn purge_one(state: AppState, row: &Row, opts: PurgeOpts) {
 /// is the leak [`crate::storage::remove_gloss`] exists to prevent. The cover
 /// is the FILE's art, so any row at the address still earns it.
 fn sweep_path(state: AppState, path: &str, delete_store: bool) {
-    let (gloss_in_use, path_in_use) = state.library.books.with_untracked(|rows| {
-        let mut gloss = false;
-        let mut any = false;
-        for book in book_rows(rows) {
-            if book.path() == path {
-                any = true;
-                gloss |= !book.independent;
-            }
-        }
-        (gloss, any)
+    let path_in_use = state.library.books.with_untracked(|rows| {
+        book_rows(rows).any(|book| book.path() == path)
     });
-    // The highlights are the largest thing the library holds about a book
-    // besides its cover, and they are keyed by an address nothing points at
-    // any more.
-    if !gloss_in_use {
-        crate::storage::remove_gloss(path);
-    }
     if path_in_use {
         return;
     }
@@ -191,15 +177,13 @@ fn sweep_path(state: AppState, path: &str, delete_store: bool) {
 /// One removed row's side data: the marks that were its ALONE, and then the
 /// address's own sweep.
 ///
-/// A private row's marks are keyed by its id
-/// ([`library_core::book::Book::gloss_key`]), which is why removing one takes
-/// nothing from its twin — and why [`sweep_path`]'s address guard can never
-/// see them. They go with the row that owned them, always, and the address's
-/// tables are then swept by their own rule.
+/// Every row's marks are keyed by its id, so removing a row always takes its own
+/// list and never its twin's — there is no address guard to get past and no
+/// privacy flag to consult. The address's other tables are then swept by their
+/// own rule, which is about the FILE and so still asks whether another row reads
+/// it.
 fn sweep_book(state: AppState, book: &Book, delete_store: bool) {
-    if book.independent {
-        crate::storage::remove_gloss(&book.gloss_key());
-    }
+    crate::storage::remove_gloss(&book.id);
     sweep_path(state, book.path(), delete_store);
 }
 

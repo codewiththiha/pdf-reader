@@ -88,17 +88,12 @@ impl NameSheetInfo {
             &ask.arrival.shelf_id,
             &ask.arrival.name,
         );
-        // The row's OWN key, not its address: a book of its own keeps its
-        // marks under a key of its id, and a count taken from the address would
-        // promise a loss the removal cannot make.
-        let marks = find_row(&rows, &ask.existing_id)
-            .and_then(|row| row.book())
-            .map(|book| {
-                crate::storage::load_gloss()
-                    .get(&book.gloss_key())
-                    .map(Vec::len)
-                    .unwrap_or(0)
-            })
+        // The row's own id, which is the row's own list: a count taken from the
+        // address would promise a loss the merge cannot make, because a twin
+        // still reading that address keeps its own marks.
+        let marks = crate::storage::load_gloss()
+            .get(&ask.existing_id)
+            .map(Vec::len)
             .unwrap_or(0);
         // The pointer shape is a fact about the two ROWS, read off the same
         // snapshot the rest of the sheet counts against.

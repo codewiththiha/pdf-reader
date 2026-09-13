@@ -185,6 +185,28 @@ fn open_at(state: AppState, book_id: Option<String>, path: String) {
     // gloss: which row this open belongs to is a fact about the attempt, not
     // something the tails discover later, and a write that ran first would be
     // a write against the book that was open before this one.
+    //
+    // An open that arrived as nothing but an address settles onto the row the
+    // library already holds for it here, rather than waiting for the tail's
+    // shelf record. Two reasons, and the second is the load-bearing one: the
+    // highlights are keyed by the row's id and are loaded before any tail runs,
+    // so a key derived later would be a key the marks were not stored under; and
+    // a drop of a file already on the shelf should resume where the reader left
+    // it rather than reading as a book the library has never seen.
+    //
+    // Only a SHARED row is settled onto. A book of its own is the reader's
+    // private instance of the file, and an open that could not name a row has
+    // not said it meant that one — which is the rule `add_book` and
+    // `rows_for_read` already keep, so a drop never hijacks a private book's
+    // resume point or its marks. A file with no row keeps `None` and joins the
+    // library when the tail records the read, exactly as before.
+    let book_id = book_id.or_else(|| {
+        state.library.books.with_untracked(|books| {
+            library_core::book::book_rows(books)
+                .find(|b| b.path() == path && !b.independent)
+                .map(|b| b.id.clone())
+        })
+    });
     state.reader.document.book_id.set(book_id.clone());
     // Re-arm the first-paint cover for THIS document: an open over a mounted
     // reader (drag-drop, "Open with") never passes through `close_document`'s

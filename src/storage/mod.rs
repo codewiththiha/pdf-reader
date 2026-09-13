@@ -38,7 +38,28 @@ const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// (`components::ai::reflow_anchor`) — because its pages are re-cut whenever
 /// the typography or column width moves. The envelope is versioned by its own
 /// tag, so a change there needs no new storage key.
-const GLOSS_KEY: &str = "pdfreader.gloss.v1";
+/// The marks are keyed by the ROW ID the library holds for a book, which is why
+/// this is `v2` rather than a schema edit under `v1`: a `v1` map is keyed by
+/// address, and the two shapes cannot be told apart by looking at one entry, so
+/// [`migrate_gloss_keys`] reads the old key and writes the new one rather than
+/// overwriting a map this build cannot parse.
+///
+/// Versioned like the rest for the second reason too: a PDF's mark is a
+/// page-space rect in CSS px — stable across zoom and sessions, but NOT across a
+/// change in how a page is laid out. If page rendering metrics ever change, bump
+/// this rather than let old marks drift onto the wrong words.
+///
+/// A reflowable mark carries its identity in `context` instead — a tagged
+/// envelope holding a block index and a character range
+/// (`components::ai::reflow_anchor`) — because its pages are re-cut whenever
+/// the typography or column width moves. The envelope is versioned by its own
+/// tag, so a change there needs no new storage key.
+const GLOSS_KEY: &str = "pdfreader.gloss.v2";
+
+/// The address-keyed map this build migrated from. Read once, left alone: a
+/// reader who downgrades should still find the highlights the build they
+/// downgraded to wrote.
+const GLOSS_V1_KEY: &str = "pdfreader.gloss.v1";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
 /// error). The UI must never crash on these — but they must not vanish.
@@ -261,7 +282,75 @@ pub fn persist_covers(library: LibraryState) {
     }
 }
 
-/// Load every document's gloss highlights (path -> marks).
+/// Carry the address-keyed highlights a previous build wrote onto the rows that
+/// were reading them.
+///
+/// The key changed from an address to a row id, and the two shapes are not
+/// distinguishable entry by entry, so this runs once at load with the row list in
+/// hand: an `"<id>::<address>"` entry is a private row's own list and is re-keyed
+/// onto that id, and a bare address is the list every shared row at it read,
+/// which goes to the first such row — the one a reader opening that file by
+/// address would have been given.
+///
+/// An entry no row answers for is left where it is rather than dropped. It is a
+/// list belonging to a book the library no longer holds, and the honest answer to
+/// "whose marks are these" is that nobody knows; a later load that finds the row
+/// again picks them up, and a removal that never comes costs one localStorage
+/// entry rather than a reader's highlights.
+///
+/// Log-and-skip throughout: a highlight that could not be carried is a sentence
+/// on the console, not a library that refuses to load.
+pub fn migrate_gloss_keys(books: &[library_core::book::Row]) {
+    let Some(raw) = get(GLOSS_V1_KEY) else {
+        return;
+    };
+    let old: HashMap<String, Vec<GlossMark>> = parse("gloss v1", &raw);
+    if old.is_empty() {
+        return;
+    }
+    let mut carried = load_gloss();
+    let mut moved = 0usize;
+    for (key, marks) in old {
+        if marks.is_empty() {
+            continue;
+        }
+        let id = match key.split_once("::") {
+            // A private row's own list: the id is the half in front of the seam,
+            // and it is re-keyed onto that row whether or not the address it wore
+            // is still the one it reads.
+            Some((id, _)) => library_core::book::find_by_id(books, id)
+                .map(|b| b.id.clone())
+                .unwrap_or_else(|| id.to_string()),
+            // The list every shared row at this address read.
+            None => library_core::book::book_rows(books)
+                .find(|b| b.path() == key && !b.independent)
+                .map(|b| b.id.clone())
+                .unwrap_or_default(),
+        };
+        if id.is_empty() {
+            continue;
+        }
+        // Two old keys can land on one row — an address and a private row of it —
+        // so the marks are unioned rather than overwritten.
+        let existing = carried.entry(id).or_default();
+        for mark in marks {
+            if !existing.iter().any(|kept| kept.same_spot(&mark)) {
+                existing.push(mark);
+            }
+        }
+        moved += 1;
+    }
+    if moved == 0 {
+        return;
+    }
+    if let Err(e) = save_gloss(&carried) {
+        e.report();
+        return;
+    }
+    log_info(&format!("[storage] carried {moved} highlight lists onto their books"));
+}
+
+/// Load every book's gloss highlights, keyed by row id.
 pub fn load_gloss() -> HashMap<String, Vec<GlossMark>> {
     get(GLOSS_KEY)
         .map(|raw| parse("gloss", &raw))

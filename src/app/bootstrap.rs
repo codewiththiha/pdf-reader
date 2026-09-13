@@ -20,6 +20,11 @@ pub(crate) fn create_app_state() -> AppState {
     // does not notify the books. The blob is loaded once and split here; the
     // storage module never sees a signal.
     let library = load_library();
+    // The highlights are keyed by row id, and a map written by a build that keyed
+    // them by address is carried across here — with the row list in hand, which
+    // is the only moment the two can be matched up. Before the state exists,
+    // because the first open reads its marks straight out of storage.
+    crate::storage::migrate_gloss_keys(&library.books);
     AppState {
         settings: RwSignal::new(load_settings()),
         library: crate::state::library::LibraryState {

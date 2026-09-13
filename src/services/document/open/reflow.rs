@@ -213,7 +213,7 @@ fn ready(
     // puts a mark on the right page at first paint instead of a frame
     // later.
     state.reader.document.content.reflow.reset();
-    super::enter::load_marks(state, &path);
+    super::enter::load_marks(state);
 
     // The reflowable content: blocks in, estimate cut out.
     // `set_initial_heights` carries the page count and the per-page sizes
