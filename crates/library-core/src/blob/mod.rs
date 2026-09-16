@@ -19,7 +19,7 @@ pub mod migrate;
 /// under `v2`: the list changed from books to [`Row`]s, and a `v2` blob this
 /// build cannot parse must not be overwritten by the default before
 /// [`migrate::migrate_v2`] has read it.
-pub const LIBRARY_KEY: &str = "pdfreader.library.v3";
+pub const LIBRARY_KEY: &str = "mareader.library.v3";
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

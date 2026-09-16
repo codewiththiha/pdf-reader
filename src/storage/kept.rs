@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{StorageError, get, parse, set};
 
-const KEPT_KEY: &str = "pdfreader.kept.v1";
+const KEPT_KEY: &str = "mareader.kept.v1";
 
 /// How many removals' worth of reading data the app holds. A ceiling,
 /// because every removal adds and only an import of the same file takes away:

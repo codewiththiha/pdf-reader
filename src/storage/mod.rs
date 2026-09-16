@@ -28,7 +28,7 @@ use library_core::blob::migrate::{BlobV2, LEGACY_KEY, RecentBook, V2_KEY, migrat
 use library_core::blob::sanitize as sanitize_library;
 use reader_core::settings::{SETTINGS_KEY, Settings, sanitize};
 
-const COVERS_KEY: &str = "pdfreader.covers.v1";
+const COVERS_KEY: &str = "mareader.covers.v1";
 /// Gloss highlights, keyed by the ROW ID the library holds for a book.
 ///
 /// A PDF's mark is a page-space rect in CSS px — stable across zoom and
@@ -42,7 +42,7 @@ const COVERS_KEY: &str = "pdfreader.covers.v1";
 /// keyed by address, and the two shapes cannot be told apart entry by entry,
 /// so [`migrate_gloss_keys`] reads the old key and writes the new one rather
 /// than overwriting a map this build cannot parse.
-const GLOSS_KEY: &str = "pdfreader.gloss.v2";
+const GLOSS_KEY: &str = "mareader.gloss.v2";
 
 /// The address-keyed map this build migrated from. Read once, left alone: a
 /// reader who downgrades should still find the highlights the build they
@@ -51,7 +51,7 @@ const GLOSS_V1_KEY: &str = "pdfreader.gloss.v1";
 
 /// One-shot gate for the address-to-row migration. The v1 data itself stays
 /// in place so an older build can still read it after a downgrade.
-const GLOSS_V2_MIGRATED_KEY: &str = "pdfreader.gloss.v2.migrated";
+const GLOSS_V2_MIGRATED_KEY: &str = "mareader.gloss.v2.migrated";
 
 /// A persistence failure (quota exceeded, storage blocked, serialization
 /// error). The UI must never crash on these — but they must not vanish.
